@@ -33,6 +33,20 @@ func setupProjectCompletionFlowTestDB(t *testing.T) *gorm.DB {
 		&model.Transaction{},
 		&model.MerchantIncome{},
 		&model.SystemConfig{},
+		&model.QuoteCategory{},
+		&model.QuoteLibraryItem{},
+		&model.QuoteTemplate{},
+		&model.QuoteTemplateItem{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
+		&model.QuoteList{},
+		&model.QuoteListItem{},
+		&model.QuoteInvitation{},
+		&model.QuoteSubmission{},
+		&model.QuoteSubmissionItem{},
+		&model.QuoteSubmissionRevision{},
+		&model.QuotePriceBook{},
+		&model.QuotePriceBookItem{},
 	)...); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}

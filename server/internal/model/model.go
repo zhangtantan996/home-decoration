@@ -730,10 +730,13 @@ type MerchantIncome struct {
 	ProviderID         uint64     `json:"providerId" gorm:"index"`
 	OrderID            uint64     `json:"orderId" gorm:"index"`
 	BookingID          uint64     `json:"bookingId" gorm:"index"`
-	Type               string     `json:"type" gorm:"size:20"`     // intent_fee, design_fee, construction
-	Amount             float64    `json:"amount"`                  // 原始金额
-	PlatformFee        float64    `json:"platformFee"`             // 平台抽成
-	NetAmount          float64    `json:"netAmount"`               // 实际到账
+	Type               string     `json:"type" gorm:"size:20"` // intent_fee, design_fee, construction
+	Amount             float64    `json:"amount"`              // 原始金额
+	AmountCent         int64      `json:"amountCent" gorm:"default:0"`
+	PlatformFee        float64    `json:"platformFee"` // 平台抽成
+	PlatformFeeCent    int64      `json:"platformFeeCent" gorm:"default:0"`
+	NetAmount          float64    `json:"netAmount"` // 实际到账
+	NetAmountCent      int64      `json:"netAmountCent" gorm:"default:0"`
 	Status             int8       `json:"status" gorm:"default:0"` // 0:待结算 1:待出款 2:已出款
 	SettledAt          *time.Time `json:"settledAt"`
 	SettlementOrderID  uint64     `json:"settlementOrderId" gorm:"index"`
@@ -763,6 +766,7 @@ type MerchantWithdraw struct {
 	ProviderID      uint64     `json:"providerId" gorm:"index"`
 	OrderNo         string     `json:"orderNo" gorm:"uniqueIndex;size:32"`
 	Amount          float64    `json:"amount"`
+	AmountCent      int64      `json:"amountCent" gorm:"default:0"`
 	BankAccount     string     `json:"bankAccount" gorm:"size:100"` // 收款账户（脱敏存储）
 	BankName        string     `json:"bankName" gorm:"size:50"`
 	Status          int8       `json:"status" gorm:"default:0"` // 0:待审核 1:待打款 2:已打款 3:已拒绝

@@ -35,13 +35,13 @@ const (
 )
 
 const (
-	PaymentStatusCreated   = "created"
-	PaymentStatusLaunching = "launching"
-	PaymentStatusPending   = "pending"
+	PaymentStatusCreated     = "created"
+	PaymentStatusLaunching   = "launching"
+	PaymentStatusPending     = "pending"
 	PaymentStatusScanPending = "scan_pending"
-	PaymentStatusPaid      = "paid"
-	PaymentStatusClosed    = "closed"
-	PaymentStatusFailed    = "failed"
+	PaymentStatusPaid        = "paid"
+	PaymentStatusClosed      = "closed"
+	PaymentStatusFailed      = "failed"
 )
 
 const (
@@ -49,6 +49,12 @@ const (
 	RefundOrderStatusProcessing = "processing"
 	RefundOrderStatusSucceeded  = "succeeded"
 	RefundOrderStatusFailed     = "failed"
+)
+
+const (
+	PaymentRefundStatusNone            = "none"
+	PaymentRefundStatusPartialRefunded = "partial_refunded"
+	PaymentRefundStatusRefunded        = "refunded"
 )
 
 // PaymentOrder 外部支付单
@@ -64,6 +70,10 @@ type PaymentOrder struct {
 	TerminalType         string     `json:"terminalType" gorm:"size:20"`
 	Subject              string     `json:"subject" gorm:"size:128"`
 	Amount               float64    `json:"amount"`
+	AmountCent           int64      `json:"amountCent" gorm:"default:0"`
+	RefundedAmount       float64    `json:"refundedAmount" gorm:"default:0"`
+	RefundedAmountCent   int64      `json:"refundedAmountCent" gorm:"default:0"`
+	RefundStatus         string     `json:"refundStatus" gorm:"size:30;default:'none';index"`
 	OutTradeNo           string     `json:"outTradeNo" gorm:"size:64;uniqueIndex"`
 	ProviderTradeNo      string     `json:"providerTradeNo" gorm:"size:64;index"`
 	Status               string     `json:"status" gorm:"size:20;index"`
@@ -107,6 +117,7 @@ type RefundOrder struct {
 	RefundApplicationID  uint64     `json:"refundApplicationId" gorm:"index"`
 	OutRefundNo          string     `json:"outRefundNo" gorm:"size:64;uniqueIndex"`
 	Amount               float64    `json:"amount"`
+	AmountCent           int64      `json:"amountCent" gorm:"default:0"`
 	Reason               string     `json:"reason" gorm:"size:200"`
 	Status               string     `json:"status" gorm:"size:20;index"`
 	ProviderResponseJSON string     `json:"providerResponseJson" gorm:"type:jsonb;default:'{}'"`

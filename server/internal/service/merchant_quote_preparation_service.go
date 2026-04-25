@@ -141,7 +141,7 @@ func (s *QuoteService) ReplaceMerchantConstructionPreparationItems(providerID, q
 			continue
 		}
 		quantity := roundQuantityByUnit(raw.Quantity, templateResolved.LibraryByID[templateItem.LibraryItemID].Unit)
-		if quantity < 0 {
+		if quantity <= 0 {
 			continue
 		}
 		raw.Quantity = quantity
@@ -559,6 +559,24 @@ func (s *QuoteService) buildPreparationTemplateStateWithDB(
 		}
 		existingByStandardID[standardID] = item
 	}
+	existingQuoteItemsByStandardID := make(map[uint64]model.QuoteListItem)
+	if quoteList != nil && quoteList.ID > 0 {
+		var quoteItems []model.QuoteListItem
+		_ = db.Where("quote_list_id = ?", quoteList.ID).Order("sort_order ASC, id ASC").Find(&quoteItems).Error
+		for _, item := range quoteItems {
+			standardID := item.StandardItemID
+			if standardID == 0 {
+				standardID = item.MatchedStandardItemID
+			}
+			if standardID == 0 || item.Quantity <= 0 {
+				continue
+			}
+			if _, exists := existingQuoteItemsByStandardID[standardID]; exists {
+				continue
+			}
+			existingQuoteItemsByStandardID[standardID] = item
+		}
+	}
 
 	type sectionIndexEntry struct {
 		index int
@@ -596,15 +614,21 @@ func (s *QuoteService) buildPreparationTemplateStateWithDB(
 			Required:       templateItem.Required,
 			Applicable:     true,
 		}
+		hasEffectiveInput := false
 		if existing, exists := existingByStandardID[templateItem.LibraryItemID]; exists {
 			row.InputQuantity = roundQuantityByUnit(existing.Quantity, row.Unit)
 			row.BaselineNote = strings.TrimSpace(existing.BaselineNote)
+			hasEffectiveInput = row.InputQuantity > 0
+		} else if existing, exists := existingQuoteItemsByStandardID[templateItem.LibraryItemID]; exists {
+			row.InputQuantity = roundQuantityByUnit(existing.Quantity, row.Unit)
+			row.BaselineNote = strings.TrimSpace(existing.PricingNote)
+			hasEffectiveInput = row.InputQuantity > 0
 		} else if includeSuggestions {
 			if suggestedQuantity := suggestPreparationQuantity(libraryItem, snapshot); suggestedQuantity > 0 {
 				row.SuggestedQuantity = suggestedQuantity
 			}
 		}
-		if row.InputQuantity >= 0 {
+		if hasEffectiveInput {
 			state.EffectiveItemCount++
 		} else if templateItem.Required {
 			state.MissingRequiredNames = append(state.MissingRequiredNames, row.Name)

@@ -31,6 +31,8 @@ func AdminListBusinessFlows(c *gin.Context) {
 		ProjectID:         parseUint64(c.Query("projectId")),
 		OrderStatus:       strings.TrimSpace(c.Query("orderStatus")),
 		PaymentPlanStatus: strings.TrimSpace(c.Query("paymentPlanStatus")),
+		SettlementStatus:  strings.TrimSpace(c.Query("settlementStatus")),
+		PayoutStatus:      strings.TrimSpace(c.Query("payoutStatus")),
 		RefundStatus:      strings.TrimSpace(c.Query("refundStatus")),
 		RiskStatus:        strings.TrimSpace(c.Query("riskStatus")),
 		Page:              page,

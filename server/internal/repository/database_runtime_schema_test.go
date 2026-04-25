@@ -107,6 +107,17 @@ func TestEnsureRuntimeSchemaColumnsAlignsLegacyQuoteWorkflowTables(t *testing.T)
 			created_at DATETIME,
 			updated_at DATETIME
 		)`,
+		`CREATE TABLE payment_plans (
+			id INTEGER PRIMARY KEY,
+			order_id INTEGER,
+			type TEXT,
+			seq INTEGER,
+			name TEXT,
+			amount REAL,
+			status TEXT,
+			created_at DATETIME,
+			updated_at DATETIME
+		)`,
 	} {
 		if err := DB.Exec(statement).Error; err != nil {
 			t.Fatalf("create legacy quote table: %v", err)
@@ -132,6 +143,7 @@ func TestEnsureRuntimeSchemaColumnsAlignsLegacyQuoteWorkflowTables(t *testing.T)
 		{model: &model.QuoteSubmissionItem{}, column: "GeneratedUnitPriceCent", label: "quote_submission_items.generated_unit_price_cent"},
 		{model: &model.QuoteSubmissionItem{}, column: "QuotedQuantity", label: "quote_submission_items.quoted_quantity"},
 		{model: &model.QuoteSubmissionItem{}, column: "QuantityChangeReason", label: "quote_submission_items.quantity_change_reason"},
+		{model: &model.PaymentPlan{}, column: "ChangeOrderID", label: "payment_plans.change_order_id"},
 	} {
 		if !DB.Migrator().HasColumn(check.model, check.column) {
 			t.Fatalf("expected %s to exist", check.label)

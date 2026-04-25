@@ -123,6 +123,7 @@ type paymentSideEffect struct {
 	PaymentID      uint64
 	ProviderID     uint64
 	ProviderUserID uint64
+	MilestoneID    uint64
 	Amount         float64
 	OrderType      string
 	PlanName       string
@@ -821,6 +822,102 @@ func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
 	return nil
 }
 
+func (s *PaymentService) HandleWechatRefundNotify(request *http.Request) error {
+	channel, err := s.getChannelService(model.PaymentChannelWechat)
+	if err != nil {
+		return err
+	}
+	parser, ok := channel.(PaymentChannelRefundNotifyParser)
+	if !ok {
+		return errors.New("微信退款回调解析器未配置")
+	}
+	notifyResult, err := parser.ParseRefundNotifyRequest(context.Background(), request)
+	if err != nil {
+		return err
+	}
+	outRefundNo := strings.TrimSpace(notifyResult.OutRefundNo)
+	if outRefundNo == "" {
+		return errors.New("微信退款回调缺少 out_refund_no")
+	}
+
+	var refundID uint64
+	var succeeded bool
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
+		var refund model.RefundOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("out_refund_no = ?", outRefundNo).First(&refund).Error; err != nil {
+			return errors.New("退款单不存在")
+		}
+		refundID = refund.ID
+
+		var payment model.PaymentOrder
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&payment, refund.PaymentOrderID).Error; err != nil {
+			return errors.New("关联支付单不存在")
+		}
+
+		callbackNotifyID := buildRefundNotifyID(outRefundNo, notifyResult.RawJSON)
+		callback, err := upsertPaymentCallbackTx(tx, &payment, callbackNotifyID, "wechat_refund_notify", map[string]string{
+			"out_refund_no": outRefundNo,
+			"out_trade_no":  notifyResult.OutTradeNo,
+			"trade_no":      notifyResult.ProviderTradeNo,
+			"success":       fmt.Sprintf("%t", notifyResult.Success),
+			"pending":       fmt.Sprintf("%t", notifyResult.Pending),
+		})
+		if err != nil {
+			return err
+		}
+		if callback.Processed {
+			succeeded = refund.Status == model.RefundOrderStatusSucceeded
+			return nil
+		}
+
+		updates := map[string]any{
+			"provider_response_json": notifyResult.RawJSON,
+			"failure_reason":         notifyResult.FailureReason,
+		}
+		now := time.Now()
+		switch {
+		case notifyResult.Success:
+			updates["status"] = model.RefundOrderStatusSucceeded
+			if refund.SucceededAt == nil {
+				updates["succeeded_at"] = &now
+			}
+			refund.Status = model.RefundOrderStatusSucceeded
+			succeeded = true
+		case notifyResult.Pending:
+			updates["status"] = model.RefundOrderStatusProcessing
+			refund.Status = model.RefundOrderStatusProcessing
+		default:
+			updates["status"] = model.RefundOrderStatusFailed
+			refund.Status = model.RefundOrderStatusFailed
+		}
+		if err := tx.Model(&refund).Updates(updates).Error; err != nil {
+			_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
+			return err
+		}
+		if refund.Status == model.RefundOrderStatusSucceeded {
+			if err := s.refreshRefundProjectionTx(tx, refund.PaymentOrderID); err != nil {
+				_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
+				return err
+			}
+		}
+
+		return tx.Model(callback).Updates(map[string]any{
+			"processed":    true,
+			"processed_at": &now,
+			"verified":     true,
+		}).Error
+	})
+	if err != nil {
+		return err
+	}
+	if succeeded && refundID > 0 {
+		if _, finalizeErr := s.FinalizeRefundOrderIfReady(refundID); finalizeErr != nil && !strings.Contains(finalizeErr.Error(), "未支持的独立退款单类型") {
+			return finalizeErr
+		}
+	}
+	return nil
+}
+
 func (s *PaymentService) ResolveReturnURL(paymentID uint64, terminalType string) (string, error) {
 	var payment model.PaymentOrder
 	if err := repository.DB.First(&payment, paymentID).Error; err != nil {
@@ -870,7 +967,11 @@ func (s *PaymentService) ExecuteRefundOrder(refundOrderID uint64) (*model.Refund
 	if err := repository.DB.First(&refund, refundOrderID).Error; err != nil {
 		return nil, errors.New("退款单不存在")
 	}
-	if refund.Status == model.RefundOrderStatusSucceeded || refund.Status == model.RefundOrderStatusFailed {
+	if refund.Status == model.RefundOrderStatusSucceeded {
+		_ = s.refreshRefundProjectionByRefundOrderID(refund.ID)
+		return &refund, nil
+	}
+	if refund.Status == model.RefundOrderStatusFailed {
 		return &refund, nil
 	}
 
@@ -917,6 +1018,11 @@ func (s *PaymentService) ExecuteRefundOrder(refundOrderID uint64) (*model.Refund
 	if err := repository.DB.Model(&refund).Updates(updates).Error; err != nil {
 		return nil, err
 	}
+	if refund.Status == model.RefundOrderStatusSucceeded {
+		if err := s.refreshRefundProjectionByRefundOrderID(refund.ID); err != nil {
+			return nil, err
+		}
+	}
 	if refund.RefundApplicationID > 0 && refund.Status == model.RefundOrderStatusFailed {
 		_ = s.writeRefundExecutionFailureAudit(refund.RefundApplicationID, result.FailureReason, []model.RefundOrder{refund})
 	}
@@ -928,7 +1034,11 @@ func (s *PaymentService) SyncRefundOrder(refundOrderID uint64) (*model.RefundOrd
 	if err := repository.DB.First(&refund, refundOrderID).Error; err != nil {
 		return nil, errors.New("退款单不存在")
 	}
-	if refund.Status == model.RefundOrderStatusSucceeded || refund.Status == model.RefundOrderStatusFailed {
+	if refund.Status == model.RefundOrderStatusSucceeded {
+		_ = s.refreshRefundProjectionByRefundOrderID(refund.ID)
+		return &refund, nil
+	}
+	if refund.Status == model.RefundOrderStatusFailed {
 		return &refund, nil
 	}
 
@@ -968,6 +1078,11 @@ func (s *PaymentService) SyncRefundOrder(refundOrderID uint64) (*model.RefundOrd
 	refund.FailureReason = result.FailureReason
 	if err := repository.DB.Model(&refund).Updates(updates).Error; err != nil {
 		return nil, err
+	}
+	if refund.Status == model.RefundOrderStatusSucceeded {
+		if err := s.refreshRefundProjectionByRefundOrderID(refund.ID); err != nil {
+			return nil, err
+		}
 	}
 	if refund.RefundApplicationID > 0 && refund.Status == model.RefundOrderStatusFailed {
 		_ = s.writeRefundExecutionFailureAudit(refund.RefundApplicationID, result.FailureReason, []model.RefundOrder{refund})
@@ -1236,12 +1351,16 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 				return nil, err
 			}
 		} else {
+			if floatToCents(existing.Amount) != floatToCents(spec.Amount) {
+				return nil, errors.New("已有待支付支付单金额与当前业务金额不一致，请等待原支付单关闭后重新发起")
+			}
 			if err := tx.Model(&existing).Updates(map[string]any{
 				"scene":                   spec.Scene,
 				"fund_scene":              spec.FundScene,
 				"terminal_type":           spec.TerminalType,
 				"subject":                 spec.Subject,
 				"amount":                  spec.Amount,
+				"amount_cent":             floatToCents(spec.Amount),
 				"status":                  model.PaymentStatusLaunching,
 				"launch_token_hash":       tokenHash,
 				"launch_token_expired_at": expiresAt,
@@ -1284,6 +1403,8 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 		TerminalType:         spec.TerminalType,
 		Subject:              spec.Subject,
 		Amount:               spec.Amount,
+		AmountCent:           floatToCents(spec.Amount),
+		RefundStatus:         model.PaymentRefundStatusNone,
 		OutTradeNo:           outTradeNo,
 		Status:               model.PaymentStatusLaunching,
 		LaunchTokenHash:      tokenHash,
@@ -1872,6 +1993,24 @@ func confirmPaymentPlanPaidTx(tx *gorm.DB, planID uint64) (*paymentSideEffect, e
 	if err := tx.Model(&plan).Updates(map[string]any{"status": 1, "paid_at": &now}).Error; err != nil {
 		return nil, err
 	}
+	if plan.MilestoneID > 0 {
+		var milestone model.Milestone
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&milestone, plan.MilestoneID).Error; err != nil {
+			return nil, errors.New("验收节点不存在")
+		}
+		milestoneUpdates := map[string]any{}
+		if milestone.PaidAt == nil {
+			milestoneUpdates["paid_at"] = &now
+		}
+		if milestone.Status == model.MilestoneStatusPending {
+			milestoneUpdates["status"] = model.MilestoneStatusInProgress
+		}
+		if len(milestoneUpdates) > 0 {
+			if err := tx.Model(&milestone).Updates(milestoneUpdates).Error; err != nil {
+				return nil, err
+			}
+		}
+	}
 	newPaidAmount := normalizeAmount(order.PaidAmount + plan.Amount)
 	updates := map[string]any{"paid_amount": newPaidAmount}
 	if newPaidAmount >= normalizeAmount(order.TotalAmount) {
@@ -1895,6 +2034,7 @@ func confirmPaymentPlanPaidTx(tx *gorm.DB, planID uint64) (*paymentSideEffect, e
 		ProjectID:      project.ID,
 		ProviderID:     providerID,
 		ProviderUserID: providerUserID,
+		MilestoneID:    plan.MilestoneID,
 		Amount:         plan.Amount,
 		OrderType:      order.OrderType,
 		PlanName:       strings.TrimSpace(plan.Name),
@@ -1939,6 +2079,99 @@ func upsertPaymentCallbackTx(tx *gorm.DB, payment *model.PaymentOrder, notifyID,
 		return nil, err
 	}
 	return &callback, nil
+}
+
+func buildRefundNotifyID(outRefundNo, rawPayload string) string {
+	key := strings.TrimSpace(outRefundNo)
+	if key == "" {
+		key = "unknown"
+	}
+	digest := digestString(rawPayload)
+	if digest == "" {
+		digest = digestString(key)
+	}
+	if len(digest) > 32 {
+		digest = digest[:32]
+	}
+	return fmt.Sprintf("wechat_refund:%s:%s", key, digest)
+}
+
+func refundProjectionStatus(amount, refundedAmount float64) string {
+	amountCent := floatToCents(amount)
+	refundedCent := floatToCents(refundedAmount)
+	if refundedCent <= 0 {
+		return model.PaymentRefundStatusNone
+	}
+	if amountCent > 0 && refundedCent >= amountCent {
+		return model.PaymentRefundStatusRefunded
+	}
+	return model.PaymentRefundStatusPartialRefunded
+}
+
+func (s *PaymentService) refreshRefundProjectionByRefundOrderID(refundOrderID uint64) error {
+	if refundOrderID == 0 {
+		return nil
+	}
+	return repository.DB.Transaction(func(tx *gorm.DB) error {
+		var refund model.RefundOrder
+		if err := tx.First(&refund, refundOrderID).Error; err != nil {
+			return err
+		}
+		return s.refreshRefundProjectionTx(tx, refund.PaymentOrderID)
+	})
+}
+
+func (s *PaymentService) refreshRefundProjectionTx(tx *gorm.DB, paymentOrderID uint64) error {
+	if tx == nil {
+		tx = repository.DB
+	}
+	if paymentOrderID == 0 {
+		return nil
+	}
+	var payment model.PaymentOrder
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&payment, paymentOrderID).Error; err != nil {
+		return err
+	}
+	var refundedAmount float64
+	if err := tx.Model(&model.RefundOrder{}).
+		Where("payment_order_id = ? AND status = ?", payment.ID, model.RefundOrderStatusSucceeded).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&refundedAmount).Error; err != nil {
+		return err
+	}
+	refundedAmount = normalizeAmount(refundedAmount)
+	if err := tx.Model(&payment).Updates(map[string]any{
+		"refunded_amount":      refundedAmount,
+		"refunded_amount_cent": floatToCents(refundedAmount),
+		"refund_status":        refundProjectionStatus(payment.Amount, refundedAmount),
+	}).Error; err != nil {
+		return err
+	}
+
+	if payment.BizType != model.PaymentBizTypePaymentPlan || payment.BizID == 0 {
+		return nil
+	}
+	var plan model.PaymentPlan
+	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&plan, payment.BizID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return err
+	}
+	var planRefundedAmount float64
+	if err := tx.Table("refund_orders AS r").
+		Joins("JOIN payment_orders AS p ON p.id = r.payment_order_id").
+		Where("p.biz_type = ? AND p.biz_id = ? AND r.status = ?", model.PaymentBizTypePaymentPlan, plan.ID, model.RefundOrderStatusSucceeded).
+		Select("COALESCE(SUM(r.amount), 0)").
+		Scan(&planRefundedAmount).Error; err != nil {
+		return err
+	}
+	planRefundedAmount = normalizeAmount(planRefundedAmount)
+	return tx.Model(&plan).Updates(map[string]any{
+		"refunded_amount":      planRefundedAmount,
+		"refunded_amount_cent": floatToCents(planRefundedAmount),
+		"refund_status":        refundProjectionStatus(plan.Amount, planRefundedAmount),
+	}).Error
 }
 
 func lockOrderForUserTx(tx *gorm.DB, userID, orderID uint64) (*model.Order, error) {
@@ -2951,6 +3184,7 @@ func (s *PaymentService) createRefundOrderTx(tx *gorm.DB, refundApplicationID ui
 		RefundApplicationID: refundApplicationID,
 		OutRefundNo:         outRefundNo,
 		Amount:              plan.Amount,
+		AmountCent:          floatToCents(plan.Amount),
 		Reason:              strings.TrimSpace(plan.Reason),
 		Status:              model.RefundOrderStatusCreated,
 	}
@@ -3001,7 +3235,7 @@ func resolvePaymentProjectionScopeTx(tx *gorm.DB, payment *model.PaymentOrder, e
 		return 0, 0, 0, nil
 	}
 	if effect != nil && effect.ProjectID > 0 {
-		return effect.ProjectID, effect.ProviderID, 0, nil
+		return effect.ProjectID, effect.ProviderID, effect.MilestoneID, nil
 	}
 	switch payment.BizType {
 	case model.PaymentBizTypeOrder:

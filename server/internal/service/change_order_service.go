@@ -259,38 +259,17 @@ func (s *ChangeOrderService) RejectByOwner(changeOrderID, userID uint64, input *
 }
 
 func (s *ChangeOrderService) CancelByProvider(changeOrderID, providerID uint64, input *ChangeOrderDecisionInput) (*ChangeOrderView, error) {
-	reason := ""
-	if input != nil {
-		reason = strings.TrimSpace(input.Reason)
-	}
-	var view *ChangeOrderView
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
-		changeOrder, _, err := s.lockProviderChangeOrderTx(tx, changeOrderID, providerID)
+		_, _, err := s.lockProviderChangeOrderTx(tx, changeOrderID, providerID)
 		if err != nil {
 			return err
 		}
-		if changeOrder.Status != model.ChangeOrderStatusPendingUserConfirm {
-			return errors.New("当前变更单不可取消")
-		}
-		if err := tx.Model(&model.ChangeOrder{}).Where("id = ?", changeOrder.ID).Updates(map[string]any{
-			"status":            model.ChangeOrderStatusCancelled,
-			"settlement_reason": reason,
-		}).Error; err != nil {
-			return err
-		}
-		changeOrder.Status = model.ChangeOrderStatusCancelled
-		changeOrder.SettlementReason = reason
-		viewResult, viewErr := s.toViewTx(tx, changeOrder)
-		if viewErr != nil {
-			return viewErr
-		}
-		view = viewResult
-		return nil
+		return errors.New("当前阶段未开放商家端变更单操作")
 	})
 	if err != nil {
 		return nil, err
 	}
-	return view, nil
+	return nil, nil
 }
 
 func (s *ChangeOrderService) SettleByAdmin(changeOrderID, adminID uint64, input *ChangeOrderSettleInput) (*ChangeOrderView, error) {

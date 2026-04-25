@@ -5,12 +5,12 @@ import "time"
 // InspectionChecklist 验收清单
 type InspectionChecklist struct {
 	Base
-	MilestoneID uint64 `json:"milestoneId" gorm:"index"`
-	ProjectID   uint64 `json:"projectId" gorm:"index"`
-	Category    string `json:"category" gorm:"size:50"` // 水电、瓦工、木工、油漆
-	Items       string `json:"items" gorm:"type:jsonb;default:'[]'"`
-	Status      string `json:"status" gorm:"size:20;default:'pending'"` // pending, passed, failed, resubmitted
-	SubmittedBy uint64 `json:"submittedBy" gorm:"index"`
+	MilestoneID uint64     `json:"milestoneId" gorm:"index"`
+	ProjectID   uint64     `json:"projectId" gorm:"index"`
+	Category    string     `json:"category" gorm:"size:50"` // 水电、瓦工、木工、油漆
+	Items       string     `json:"items" gorm:"type:jsonb;default:'[]'"`
+	Status      string     `json:"status" gorm:"size:20;default:'pending'"` // pending, passed, failed, resubmitted
+	SubmittedBy uint64     `json:"submittedBy" gorm:"index"`
 	SubmittedAt *time.Time `json:"submittedAt"`
 	ReviewedBy  uint64     `json:"reviewedBy"`
 	ReviewedAt  *time.Time `json:"reviewedAt"`

@@ -7,7 +7,7 @@ import (
 	"home-decoration-server/internal/model"
 )
 
-func TestSettlementServiceReleaseMilestoneWritesArtifactsAndAudit(t *testing.T) {
+func TestSettlementServiceReleaseMilestoneSchedulesManualPayoutAndAudit(t *testing.T) {
 	db := setupProjectRiskServiceTestDB(t)
 	user, provider, project, milestone, _ := seedProjectRiskFixture(t, db)
 
@@ -26,23 +26,26 @@ func TestSettlementServiceReleaseMilestoneWritesArtifactsAndAudit(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ReleaseMilestone: %v", err)
 	}
-	if result == nil || result.Transaction == nil || result.MerchantIncome == nil {
+	if result == nil || result.SettlementOrder == nil || result.MerchantIncome == nil {
 		t.Fatalf("expected release artifacts, got %+v", result)
+	}
+	if result.Transaction != nil {
+		t.Fatalf("manual payout projection must not create release transaction before transfer confirmation, got %+v", result.Transaction)
 	}
 
 	var refreshedMilestone model.Milestone
 	if err := db.First(&refreshedMilestone, milestone.ID).Error; err != nil {
 		t.Fatalf("reload milestone: %v", err)
 	}
-	if refreshedMilestone.Status != model.MilestoneStatusPaid || refreshedMilestone.ReleasedAt == nil {
-		t.Fatalf("expected paid milestone with releasedAt, got %+v", refreshedMilestone)
+	if refreshedMilestone.Status != model.MilestoneStatusAccepted || refreshedMilestone.ReleasedAt != nil {
+		t.Fatalf("expected accepted milestone waiting for manual payout, got %+v", refreshedMilestone)
 	}
 
 	var escrow model.EscrowAccount
 	if err := db.Where("project_id = ?", project.ID).First(&escrow).Error; err != nil {
 		t.Fatalf("reload escrow: %v", err)
 	}
-	if escrow.AvailableAmount != 25000 || escrow.ReleasedAmount != 5000 {
+	if escrow.AvailableAmount != 30000 || escrow.ReleasedAmount != 0 {
 		t.Fatalf("unexpected escrow balances: %+v", escrow)
 	}
 
@@ -52,6 +55,16 @@ func TestSettlementServiceReleaseMilestoneWritesArtifactsAndAudit(t *testing.T) 
 	}
 	if incomes != 1 {
 		t.Fatalf("expected 1 merchant income, got %d", incomes)
+	}
+	var payout model.PayoutOrder
+	if err := db.First(&payout, result.SettlementOrder.PayoutOrderID).Error; err != nil {
+		t.Fatalf("expected payout order: %v", err)
+	}
+	if payout.Status != model.PayoutStatusProcessing {
+		t.Fatalf("expected manual payout to wait in processing, got %+v", payout)
+	}
+	if result.SettlementOrder.Status != model.SettlementStatusPayoutProcessing {
+		t.Fatalf("expected settlement payout_processing, got %+v", result.SettlementOrder)
 	}
 
 	var auditLog model.AuditLog
@@ -162,7 +175,7 @@ func TestSettlementServiceRejectsInvalidReleaseMatrixWithoutArtifacts(t *testing
 		OperatorID:   user.ID,
 		Reason:       "重复放款",
 		Source:       "test.duplicate_release",
-	}); err == nil || !strings.Contains(err.Error(), "未通过验收") {
+	}); err == nil || !strings.Contains(err.Error(), "已存在待处理结算") {
 		t.Fatalf("expected duplicate release failure, got %v", err)
 	}
 
@@ -170,8 +183,8 @@ func TestSettlementServiceRejectsInvalidReleaseMatrixWithoutArtifacts(t *testing
 	if err := db.Model(&model.Transaction{}).Where("type = ?", "release").Count(&transactions).Error; err != nil {
 		t.Fatalf("count release transactions: %v", err)
 	}
-	if transactions != 1 {
-		t.Fatalf("expected exactly 1 release transaction, got %d", transactions)
+	if transactions != 0 {
+		t.Fatalf("expected no release transaction before manual payout confirmation, got %d", transactions)
 	}
 
 	var incomes int64
@@ -180,6 +193,33 @@ func TestSettlementServiceRejectsInvalidReleaseMatrixWithoutArtifacts(t *testing
 	}
 	if incomes != 1 {
 		t.Fatalf("expected exactly 1 construction income, got %d", incomes)
+	}
+}
+
+func TestLocalCustodyGatewayCreatePayoutRequiresManualTransfer(t *testing.T) {
+	payout := &model.PayoutOrder{
+		OutPayoutNo: "PO-test",
+		Status:      model.PayoutStatusProcessing,
+	}
+	result, err := NewCustodyGateway().CreatePayout(nil, payout)
+	if err != nil {
+		t.Fatalf("CreatePayout: %v", err)
+	}
+	if result == nil || result.Status != model.PayoutStatusProcessing {
+		t.Fatalf("expected local custody payout to remain processing, got %+v", result)
+	}
+	if result.PaidAt != nil {
+		t.Fatalf("manual transfer projection must not set paidAt before voucher confirmation")
+	}
+	if result.ProviderPayoutNo != "" {
+		t.Fatalf("manual transfer projection must not synthesize provider payout number, got %q", result.ProviderPayoutNo)
+	}
+	queried, err := NewCustodyGateway().QueryPayout(nil, payout)
+	if err != nil {
+		t.Fatalf("QueryPayout: %v", err)
+	}
+	if queried == nil || queried.ProviderPayoutNo != "" {
+		t.Fatalf("manual transfer query must not synthesize provider payout number, got %+v", queried)
 	}
 }
 

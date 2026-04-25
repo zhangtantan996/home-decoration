@@ -38,6 +38,7 @@ const (
 	projectConstructionConfirmLegacyCode      = "PROJECT_CONSTRUCTION_CONFIRM_LEGACY_DISABLED"
 	projectConstructionQuoteConfirmLegacyCode = "PROJECT_CONSTRUCTION_QUOTE_CONFIRM_LEGACY_DISABLED"
 	projectCompleteLegacyDisabledCode         = "PROJECT_COMPLETE_LEGACY_DISABLED"
+	legacyQuotePKRetiredCode                  = "legacy_quote_pk_retired"
 )
 
 // InitHandlers 初始化处理器
@@ -1126,24 +1127,7 @@ func GetEscrowAccount(c *gin.Context) {
 
 // Deposit 存入托管
 func Deposit(c *gin.Context) {
-	userId := getCurrentUserID(c)
-	projectId := parseUint64(c.Param("id"))
-
-	var req struct {
-		Amount      float64 `json:"amount" binding:"required"`
-		MilestoneID uint64  `json:"milestoneId"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
-		return
-	}
-
-	if err := escrowService.DepositForOwner(projectId, userId, req.Amount, req.MilestoneID); err != nil {
-		respondDomainMutationError(c, err, "充值失败")
-		return
-	}
-
-	response.Success(c, gin.H{"message": "存入成功"})
+	response.Forbidden(c, "业主侧托管直充值入口已禁用，请通过订单中心支付")
 }
 
 // ReleaseFunds 释放资金

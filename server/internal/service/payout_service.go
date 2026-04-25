@@ -527,7 +527,7 @@ func (s *PayoutService) applySettlementPayoutTx(tx *gorm.DB, payout *model.Payou
 	if settlement.BizType == model.PayoutBizTypeMilestoneRelease {
 		if err := tx.Model(&model.Milestone{}).Where("id = ?", settlement.BizID).Updates(map[string]any{
 			"status":      model.MilestoneStatusPaid,
-			"paid_at":     payout.PaidAt,
+			"paid_at":     gorm.Expr("COALESCE(paid_at, ?)", payout.PaidAt),
 			"released_at": payout.PaidAt,
 		}).Error; err != nil {
 			return err
@@ -617,7 +617,7 @@ func (s *PayoutService) applyMilestonePayoutTx(tx *gorm.DB, payout *model.Payout
 	}
 	if err := tx.Model(&milestone).Updates(map[string]any{
 		"status":      model.MilestoneStatusPaid,
-		"paid_at":     payout.PaidAt,
+		"paid_at":     gorm.Expr("COALESCE(paid_at, ?)", payout.PaidAt),
 		"released_at": payout.PaidAt,
 	}).Error; err != nil {
 		return err

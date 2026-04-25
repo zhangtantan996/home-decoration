@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"errors"
+
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 
@@ -81,12 +83,11 @@ func MerchantCreateProjectChangeOrder(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-	item, err := changeOrderService.CreateByProvider(projectID, c.GetUint64("providerId"), &req)
-	if err != nil {
-		respondDomainMutationError(c, err, "创建变更单失败")
+	if _, err := changeOrderService.ListForProvider(projectID, c.GetUint64("providerId")); err != nil {
+		respondScopedAccessError(c, err, "创建变更单失败")
 		return
 	}
-	response.SuccessWithMessage(c, "变更单已创建", gin.H{"changeOrder": item})
+	respondDomainMutationError(c, errors.New("当前阶段未开放商家端变更单操作"), "创建变更单失败")
 }
 
 func MerchantCancelChangeOrder(c *gin.Context) {

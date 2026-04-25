@@ -262,9 +262,11 @@ func buildBridgeQuoteBaselineSummary(ctx bridgeContext) *BridgeQuoteBaselineSumm
 		sourceStage = firstNonBlank(ctx.quoteList.SourceType, sourceStage)
 	}
 	if ctx.quantityBase != nil {
+		var totalCount int64
+		_ = repository.DB.Model(&model.QuantityBaseItem{}).Where("quantity_base_id = ?", ctx.quantityBase.ID).Count(&totalCount).Error
+		itemCount = int(totalCount)
 		var items []model.QuantityBaseItem
 		if err := repository.DB.Where("quantity_base_id = ?", ctx.quantityBase.ID).Order("sort_order ASC, id ASC").Limit(6).Find(&items).Error; err == nil {
-			itemCount = len(items)
 			for _, item := range items {
 				highlights = append(highlights, fmt.Sprintf("%s：基准量 %.2f%s", firstNonBlank(item.SourceItemName, item.SourceItemCode, fmt.Sprintf("基线项#%d", item.ID)), item.Quantity, firstNonBlank(item.Unit, "项")))
 			}

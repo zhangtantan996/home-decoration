@@ -129,22 +129,26 @@ func (Order) TableName() string {
 // PaymentPlan 支付计划
 type PaymentPlan struct {
 	Base
-	OrderID       uint64     `json:"orderId" gorm:"index"`
-	Type          string     `json:"type" gorm:"size:20"` // milestone, onetime
-	Seq           int        `json:"seq"`                 // 期数顺序
-	Name          string     `json:"name" gorm:"size:50"` // e.g., "开工款"
-	Amount        float64    `json:"amount"`
-	Percentage    float32    `json:"percentage"`
-	Status        int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付 2:已失效
-	ActivatedAt   *time.Time `json:"activatedAt"`
-	DueAt         *time.Time `json:"dueAt"` // 应付日期
-	PaidAt        *time.Time `json:"paidAt"`
-	MilestoneID   uint64     `json:"milestoneId" gorm:"index"` // 关联里程碑ID（施工费分期）
-	ChangeOrderID *uint64    `json:"changeOrderId,omitempty" gorm:"index"`
-	Payable       bool       `json:"payable" gorm:"-"`
-	PayableReason string     `json:"payableReason,omitempty" gorm:"-"`
-	ExpiresAt     *time.Time `json:"expiresAt,omitempty" gorm:"-"`
-	PlanType      string     `json:"planType,omitempty" gorm:"-"`
+	OrderID            uint64     `json:"orderId" gorm:"index"`
+	Type               string     `json:"type" gorm:"size:20"` // milestone, onetime
+	Seq                int        `json:"seq"`                 // 期数顺序
+	Name               string     `json:"name" gorm:"size:50"` // e.g., "开工款"
+	Amount             float64    `json:"amount"`
+	AmountCent         int64      `json:"amountCent" gorm:"default:0"`
+	Percentage         float32    `json:"percentage"`
+	Status             int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付 2:已失效
+	RefundedAmount     float64    `json:"refundedAmount" gorm:"default:0"`
+	RefundedAmountCent int64      `json:"refundedAmountCent" gorm:"default:0"`
+	RefundStatus       string     `json:"refundStatus" gorm:"size:30;default:'none';index"`
+	ActivatedAt        *time.Time `json:"activatedAt"`
+	DueAt              *time.Time `json:"dueAt"` // 应付日期
+	PaidAt             *time.Time `json:"paidAt"`
+	MilestoneID        uint64     `json:"milestoneId" gorm:"index"` // 关联里程碑ID（施工费分期）
+	ChangeOrderID      *uint64    `json:"changeOrderId,omitempty" gorm:"index"`
+	Payable            bool       `json:"payable" gorm:"-"`
+	PayableReason      string     `json:"payableReason,omitempty" gorm:"-"`
+	ExpiresAt          *time.Time `json:"expiresAt,omitempty" gorm:"-"`
+	PlanType           string     `json:"planType,omitempty" gorm:"-"`
 }
 
 // TableName 指定表名

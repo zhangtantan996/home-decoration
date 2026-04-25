@@ -27,6 +27,7 @@ type PayoutOrder struct {
 	BizID            uint64     `json:"bizId" gorm:"index:idx_payout_orders_biz"`
 	ProviderID       uint64     `json:"providerId" gorm:"index"`
 	Amount           float64    `json:"amount"`
+	AmountCent       int64      `json:"amountCent" gorm:"default:0"`
 	Channel          string     `json:"channel" gorm:"size:20;index"`
 	FundScene        string     `json:"fundScene" gorm:"size:40;index"`
 	OutPayoutNo      string     `json:"outPayoutNo" gorm:"size:64;uniqueIndex"`

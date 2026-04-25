@@ -155,6 +155,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			payments.HEAD("/:id/qr", handler.PaymentQRCode)
 			payments.POST("/alipay/notify", handler.PaymentAlipayNotify)
 			payments.POST("/wechat/notify", handler.PaymentWechatNotify)
+			payments.POST("/wechat/refund/notify", handler.PaymentWechatRefundNotify)
 			payments.GET("/alipay/return", handler.PaymentAlipayReturn)
 		}
 
@@ -473,7 +474,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				quoteTasks.GET("/:id/user-view", handler.UserGetQuoteTask)
 			}
 
-			// 多工长报价PK系统
+			// Legacy quote-pk 历史兼容只读区：写入口保留路由但固定返回 retired 冲突，不再承接现行主链。
 			quotePK := authorized.Group("/quote-pk")
 			{
 				quotePK.POST("/tasks", handler.CreateQuoteTask)                   // 用户发起报价需求
@@ -764,6 +765,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 财务管理
 			admin.GET("/finance/overview", financeEscrowListPerm, handler.AdminGetFinanceOverview)
 			admin.GET("/finance/escrow-accounts", financeEscrowListPerm, handler.AdminListEscrowAccounts)
+			admin.GET("/finance/payment-orders", financeTransactionListPerm, handler.AdminListPaymentOrders)
+			admin.GET("/finance/payment-orders/:id", financeTransactionViewPerm, handler.AdminGetPaymentOrderDetail)
 			admin.GET("/finance/transactions", financeTransactionListPerm, handler.AdminListTransactions)
 			admin.GET("/finance/transactions/export", financeTransactionListPerm, handler.AdminExportTransactions)
 			admin.GET("/finance/reconciliations", financeTransactionListPerm, handler.AdminListFinanceReconciliations)
@@ -905,12 +908,14 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/quote-lists", projectListPerm, handler.AdminListQuoteLists)
 			admin.GET("/quote-lists/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
 			admin.POST("/quote-lists", projectEditPerm, handler.AdminCreateQuoteList)
+			admin.POST("/quote-lists/rebuild-from-legacy", projectEditPerm, handler.AdminRebuildQuoteListFromLegacy)
 			admin.POST("/quote-lists/:id/items/batch-upsert", projectEditPerm, handler.AdminBatchUpsertQuoteListItems)
 			admin.POST("/quote-lists/:id/invitations", projectEditPerm, handler.AdminCreateQuoteInvitations)
 			admin.POST("/quote-lists/:id/start", projectEditPerm, handler.AdminStartQuoteList)
 			admin.GET("/quote-lists/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
 			admin.POST("/quote-lists/:id/award", projectEditPerm, handler.AdminAwardQuote)
 			admin.GET("/providers/:id/price-book", providerListPerm, handler.AdminGetProviderPriceBook)
+			admin.GET("/provider-price-books/inspection", providerListPerm, handler.AdminListProviderPriceBookInspection)
 			admin.GET("/quote-tasks", projectListPerm, handler.AdminListQuoteLists)
 			admin.GET("/quote-tasks/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
 			admin.POST("/quote-tasks", projectEditPerm, handler.AdminCreateQuoteList)
@@ -1028,7 +1033,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.POST("/quote-tasks/:id/recommend-foremen", handler.MerchantRecommendForemen)
 			merchant.POST("/quote-tasks/:id/select-foremen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
 
-			// 多工长报价PK系统（商家端）
+			// Legacy quote-pk 历史兼容区：商家写入口固定 retired，仅保留深链兼容。
 			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                         // 商家获取报价任务列表
 			merchant.POST("/quote-pk/tasks/:id/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
 			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)

@@ -486,7 +486,7 @@ func normalizeAmount(amount float64) float64 {
 	if amount < 0 {
 		return 0
 	}
-	return amount
+	return NormalizeMoneyAmount(amount)
 }
 
 func clearProjectDisputeStateTx(tx *gorm.DB, projectID uint64) error {
@@ -522,4 +522,3 @@ func buildBookingRefundActionURL(bookingID uint64) string {
 func timePtr(t time.Time) *time.Time {
 	return &t
 }
-

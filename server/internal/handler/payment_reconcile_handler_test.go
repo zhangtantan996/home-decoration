@@ -65,7 +65,7 @@ func TestGetProposalRefreshesPendingOrderStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db := setupSQLiteDB(t)
-	if err := db.AutoMigrate(&model.Proposal{}, &model.Order{}, &model.PaymentOrder{}, &model.SystemConfig{}); err != nil {
+	if err := db.AutoMigrate(&model.Proposal{}, &model.Order{}, &model.PaymentPlan{}, &model.PaymentOrder{}, &model.SystemConfig{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -147,7 +147,7 @@ func TestGetOrderRefreshesPendingOrderStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db := setupSQLiteDB(t)
-	if err := db.AutoMigrate(&model.Booking{}, &model.Proposal{}, &model.Order{}, &model.PaymentOrder{}); err != nil {
+	if err := db.AutoMigrate(&model.Booking{}, &model.Proposal{}, &model.Order{}, &model.PaymentPlan{}, &model.PaymentOrder{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 

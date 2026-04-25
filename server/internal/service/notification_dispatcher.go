@@ -213,14 +213,13 @@ func (d *NotificationDispatcher) NotifyQuoteDecision(providerUserID, quoteListID
 	if providerUserID == 0 {
 		return
 	}
-	title := "施工报价已确认"
-	content := "用户已确认施工报价，请按计划推进项目。"
-	notificationType := "quote.confirmed"
-	if !approved {
-		title = "施工报价被拒绝"
-		content = fmt.Sprintf("用户已拒绝施工报价。原因：%s", strings.TrimSpace(reason))
-		notificationType = "quote.rejected"
+	if approved {
+		d.NotifyConstructionQuoteAwarded(providerUserID, quoteListID, projectID, 0)
+		return
 	}
+	title := "施工报价被拒绝"
+	content := fmt.Sprintf("用户已拒绝施工报价。原因：%s", strings.TrimSpace(reason))
+	notificationType := "quote.rejected"
 	_ = d.service.Create(&CreateNotificationInput{
 		UserID:      providerUserID,
 		UserType:    "provider",
@@ -1514,4 +1513,3 @@ func (d *NotificationDispatcher) NotifyMilestoneResubmitted(userID, projectID, m
 		},
 	})
 }
-

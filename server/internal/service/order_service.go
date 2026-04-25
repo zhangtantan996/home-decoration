@@ -263,6 +263,7 @@ func (s *OrderService) EnsureConstructionOrderAndPaymentPlansTx(tx *gorm.DB, pro
 	if submission != nil && submission.TotalCent > 0 {
 		totalAmount = float64(submission.TotalCent) / 100
 	}
+	totalAmount = normalizeAmount(totalAmount)
 	if totalAmount <= 0 {
 		return nil, errors.New("施工报价金额无效，无法创建施工订单")
 	}
@@ -358,7 +359,7 @@ func (s *OrderService) createConstructionPaymentPlansTx(tx *gorm.DB, project *mo
 				Type:        planType,
 				Seq:         idx + 1,
 				Name:        milestone.Name,
-				Amount:      milestone.Amount,
+				Amount:      normalizeAmount(milestone.Amount),
 				Percentage:  milestone.Percentage,
 				Status:      0,
 			}
@@ -390,7 +391,7 @@ func (s *OrderService) createConstructionPaymentPlansTx(tx *gorm.DB, project *mo
 				Type:       planType,
 				Seq:        idx + 1,
 				Name:       cfg.Name,
-				Amount:     totalAmount * float64(cfg.Percentage) / 100,
+				Amount:     SafeMoneyPercentage(totalAmount, float64(cfg.Percentage)),
 				Percentage: cfg.Percentage,
 				Status:     0,
 			}

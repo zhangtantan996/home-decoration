@@ -2,10 +2,12 @@ package service
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -35,11 +37,17 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 		&model.Notification{},
 		&model.AuditLog{},
 		&model.Provider{},
+		&model.QuoteTask{},
+		&model.QuotePKSubmission{},
 		&model.Booking{},
 		&model.Proposal{},
 		&model.Project{},
 		&model.Order{},
 		&model.PaymentPlan{},
+		&model.ChangeOrder{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
+		&model.MerchantIncome{},
 		&model.EscrowAccount{},
 		&model.ProjectPhase{},
 		&model.PhaseTask{},
@@ -80,6 +88,15 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 	})
 
 	return db
+}
+
+func mustParseTimePointer(t *testing.T, value string) *time.Time {
+	t.Helper()
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		t.Fatalf("parse time %q: %v", value, err)
+	}
+	return &parsed
 }
 
 func seedQuotePreparationTemplate(
@@ -290,6 +307,151 @@ func TestImportQuoteLibraryFromERP_IsIdempotent(t *testing.T) {
 	}
 	if count != int64(first.Imported) {
 		t.Fatalf("unexpected quote library item count: got=%d want=%d", count, first.Imported)
+	}
+}
+
+func TestListProviderPriceBookInspectionUsesApplicableScopeAndIssues(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	user := model.User{Base: model.Base{ID: 61101}, Phone: "13800161101", Nickname: "水电施工队"}
+	provider := model.Provider{
+		Base:         model.Base{ID: 61102},
+		UserID:       user.ID,
+		ProviderType: 3,
+		SubType:      "foreman",
+		CompanyName:  "水电施工队",
+		WorkTypes:    "plumber",
+		Status:       1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	waterItem := model.QuoteLibraryItem{
+		Base:               model.Base{ID: 61201},
+		ERPItemCode:        "ERP-WATER-INSPECT",
+		StandardCode:       "STD-WATER-INSPECT",
+		Name:               "水路改造",
+		Unit:               "m",
+		CategoryL1:         "水路",
+		ReferencePriceCent: 1000,
+		Status:             model.QuoteLibraryItemStatusEnabled,
+		ExtensionsJSON:     `{"required":true}`,
+	}
+	masonItem := model.QuoteLibraryItem{
+		Base:               model.Base{ID: 61202},
+		ERPItemCode:        "ERP-MASON-INSPECT",
+		StandardCode:       "STD-MASON-INSPECT",
+		Name:               "墙砖铺贴",
+		Unit:               "㎡",
+		CategoryL1:         "泥瓦",
+		ReferencePriceCent: 2000,
+		Status:             model.QuoteLibraryItemStatusEnabled,
+		ExtensionsJSON:     `{"required":true}`,
+	}
+	if err := db.Create(&waterItem).Error; err != nil {
+		t.Fatalf("create water item: %v", err)
+	}
+	if err := db.Create(&masonItem).Error; err != nil {
+		t.Fatalf("create mason item: %v", err)
+	}
+
+	book := model.QuotePriceBook{
+		ProviderID: provider.ID,
+		Status:     model.QuotePriceBookStatusActive,
+		Version:    2,
+	}
+	if err := db.Create(&book).Error; err != nil {
+		t.Fatalf("create price book: %v", err)
+	}
+	if err := db.Create(&model.QuotePriceBookItem{
+		PriceBookID:    book.ID,
+		StandardItemID: waterItem.ID,
+		Unit:           waterItem.Unit,
+		UnitPriceCent:  1600,
+		Status:         model.QuoteLibraryItemStatusEnabled,
+	}).Error; err != nil {
+		t.Fatalf("create price item: %v", err)
+	}
+
+	items, err := svc.ListProviderPriceBookInspection("")
+	if err != nil {
+		t.Fatalf("inspection: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one provider inspection item, got %d", len(items))
+	}
+	got := items[0]
+	if got.CoverageRate != 1 {
+		t.Fatalf("coverage should use applicable plumber items only, got %.2f", got.CoverageRate)
+	}
+	if got.MissingRequiredCount != 0 {
+		t.Fatalf("mason item should not count as missing for plumber provider, got %d", got.MissingRequiredCount)
+	}
+	if got.AbnormalPriceCount != 1 {
+		t.Fatalf("expected one abnormal applicable price, got %d", got.AbnormalPriceCount)
+	}
+	if len(got.Issues) != 1 || got.Issues[0].IssueType != "abnormal_price" || got.Issues[0].StandardItemID != waterItem.ID {
+		t.Fatalf("expected abnormal price issue for water item, got %+v", got.Issues)
+	}
+}
+
+func TestBuildSubmissionHealthSummaryCountsMissingRequiredListItems(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+
+	quoteList := model.QuoteList{Title: "缺行报价", Status: model.QuoteListStatusPricingInProgress, Currency: "CNY"}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("create quote list: %v", err)
+	}
+	first := model.QuoteListItem{
+		QuoteListID:    quoteList.ID,
+		Name:           "水路改造",
+		Unit:           "m",
+		Quantity:       10,
+		ExtensionsJSON: `{"required":true}`,
+	}
+	second := model.QuoteListItem{
+		QuoteListID:    quoteList.ID,
+		Name:           "电路改造",
+		Unit:           "m",
+		Quantity:       8,
+		ExtensionsJSON: `{"required":true}`,
+	}
+	if err := db.Create(&first).Error; err != nil {
+		t.Fatalf("create first item: %v", err)
+	}
+	if err := db.Create(&second).Error; err != nil {
+		t.Fatalf("create second item: %v", err)
+	}
+	submission := model.QuoteSubmission{
+		QuoteListID: quoteList.ID,
+		ProviderID:  1,
+		Status:      model.QuoteSubmissionStatusDraft,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("create submission: %v", err)
+	}
+	submissionItem := model.QuoteSubmissionItem{
+		QuoteSubmissionID: submission.ID,
+		QuoteListItemID:   first.ID,
+		UnitPriceCent:     1200,
+		QuotedQuantity:    10,
+		AmountCent:        12000,
+	}
+	if err := db.Create(&submissionItem).Error; err != nil {
+		t.Fatalf("create submission item: %v", err)
+	}
+
+	summary := buildSubmissionHealthSummaryWithDB(db, &quoteList, &submission, []model.QuoteSubmissionItem{submissionItem})
+	if summary.MissingPriceCount != 1 {
+		t.Fatalf("expected missing required quote list item to be counted, got %d", summary.MissingPriceCount)
+	}
+	if summary.CanSubmit {
+		t.Fatalf("expected canSubmit=false while required item is missing")
 	}
 }
 
@@ -1990,6 +2152,35 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	db := setupQuoteServiceDB(t)
 	svc := &QuoteService{}
 	fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusSubmittedToUser)
+	listItem := model.QuoteListItem{
+		Base:           model.Base{ID: 98101},
+		QuoteListID:    fixture.quoteList.ID,
+		StandardItemID: 88101,
+		LineNo:         1,
+		Name:           "水路改造",
+		Unit:           "m",
+		Quantity:       12,
+		CategoryL1:     "水电",
+		CategoryL2:     "水路",
+		PricingNote:    "按实际延米结算",
+		ExtensionsJSON: `{"required":true}`,
+	}
+	if err := db.Create(&listItem).Error; err != nil {
+		t.Fatalf("create quote list item: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmissionItem{
+		Base:                   model.Base{ID: 98201},
+		QuoteSubmissionID:      fixture.submission.ID,
+		QuoteListItemID:        listItem.ID,
+		GeneratedUnitPriceCent: 1500,
+		UnitPriceCent:          1600,
+		QuotedQuantity:         12,
+		AmountCent:             19200,
+		AdjustedFlag:           true,
+		Remark:                 "现场按标准工艺施工",
+	}).Error; err != nil {
+		t.Fatalf("create quote submission item: %v", err)
+	}
 
 	confirmedTask, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
 	if err != nil {
@@ -2029,6 +2220,9 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	if project.ProviderID != fixture.foreman.ID || project.ConstructionProviderID != 0 || project.ForemanID != fixture.foreman.ID {
 		t.Fatalf("expected foreman-only subject binding, got provider_id=%d construction_provider_id=%d foreman_id=%d", project.ProviderID, project.ConstructionProviderID, project.ForemanID)
 	}
+	if strings.TrimSpace(project.ConstructionQuoteSnapshot) == "" {
+		t.Fatalf("expected construction quote snapshot")
+	}
 
 	var order model.Order
 	if err := db.Where("project_id = ? AND order_type = ?", project.ID, model.OrderTypeConstruction).First(&order).Error; err != nil {
@@ -2047,6 +2241,25 @@ func TestUserConfirmQuoteSubmissionCreatesProjectAndBindsFlow(t *testing.T) {
 	}
 	if plans[0].DueAt == nil {
 		t.Fatalf("expected first payment plan due date")
+	}
+	var snapshot struct {
+		QuoteListID        uint64 `json:"quoteListId"`
+		QuoteSubmissionID  uint64 `json:"quoteSubmissionId"`
+		TotalCent          int64  `json:"totalCent"`
+		Items              []any  `json:"items"`
+		PaymentPlanSummary []any  `json:"paymentPlanSummary"`
+	}
+	if err := json.Unmarshal([]byte(project.ConstructionQuoteSnapshot), &snapshot); err != nil {
+		t.Fatalf("decode construction quote snapshot: %v", err)
+	}
+	if snapshot.QuoteListID != fixture.quoteList.ID || snapshot.QuoteSubmissionID != fixture.submission.ID || snapshot.TotalCent != fixture.submission.TotalCent {
+		t.Fatalf("unexpected snapshot identity: %+v", snapshot)
+	}
+	if len(snapshot.Items) != 1 {
+		t.Fatalf("expected confirmed snapshot to include quote line items, got %d", len(snapshot.Items))
+	}
+	if len(snapshot.PaymentPlanSummary) != len(plans) {
+		t.Fatalf("expected confirmed snapshot to include payment plans, got %d want %d", len(snapshot.PaymentPlanSummary), len(plans))
 	}
 
 	var escrow model.EscrowAccount
@@ -2554,6 +2767,309 @@ func TestGetMerchantQuoteListDetailIncludesQuantityBase(t *testing.T) {
 	}
 	if detail.QuantityItems[0].BaselineNote != "按设计方案基准量计算" {
 		t.Fatalf("expected baseline note to be returned")
+	}
+}
+
+func TestRebuildQuoteListFromLegacy_IsIdempotentAndPersistsSource(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	owner := model.User{Base: model.Base{ID: 6001}, Phone: "13800600001", Nickname: "业主", Status: 1}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	legacyTask := model.QuoteTask{
+		Base:        model.Base{ID: 6101},
+		UserID:      owner.ID,
+		Area:        98,
+		Style:       "现代简约",
+		Region:      "上海",
+		Budget:      280000,
+		Description: "旧链待重建任务",
+		Status:      "completed",
+	}
+	if err := db.Create(&legacyTask).Error; err != nil {
+		t.Fatalf("create legacy task: %v", err)
+	}
+	quantityBase := model.QuantityBase{
+		Base:        model.Base{ID: 6201},
+		OwnerUserID: owner.ID,
+		SourceType:  model.QuantitySourceTypeAdminImported,
+		SourceID:    legacyTask.ID,
+		Status:      model.QuantityBaseStatusActive,
+		Version:     2,
+		Title:       "旧链重建基线",
+	}
+	if err := db.Create(&quantityBase).Error; err != nil {
+		t.Fatalf("create quantity base: %v", err)
+	}
+	quantityItem := model.QuantityBaseItem{
+		Base:           model.Base{ID: 6202},
+		QuantityBaseID: quantityBase.ID,
+		SourceItemName: "水电点位调整",
+		Unit:           "项",
+		Quantity:       2,
+		CategoryL1:     "水电",
+		SortOrder:      1,
+	}
+	if err := db.Create(&quantityItem).Error; err != nil {
+		t.Fatalf("create quantity item: %v", err)
+	}
+
+	first, err := svc.RebuildQuoteListFromLegacy(&LegacyQuotePKRebuildInput{
+		LegacyTaskID:   legacyTask.ID,
+		QuantityBaseID: quantityBase.ID,
+		Title:          "旧链重建报价单",
+	})
+	if err != nil {
+		t.Fatalf("first rebuild: %v", err)
+	}
+	if first.QuoteListID == 0 {
+		t.Fatalf("expected quote list id")
+	}
+	if !first.Created {
+		t.Fatalf("expected first rebuild to create new quote list")
+	}
+
+	second, err := svc.RebuildQuoteListFromLegacy(&LegacyQuotePKRebuildInput{
+		LegacyTaskID:   legacyTask.ID,
+		QuantityBaseID: quantityBase.ID,
+		Title:          "旧链重建报价单",
+	})
+	if err != nil {
+		t.Fatalf("second rebuild: %v", err)
+	}
+	if second.QuoteListID != first.QuoteListID {
+		t.Fatalf("expected idempotent quote list id, got first=%d second=%d", first.QuoteListID, second.QuoteListID)
+	}
+	if second.Created {
+		t.Fatalf("expected second rebuild to reuse existing quote list")
+	}
+
+	var quoteList model.QuoteList
+	if err := db.First(&quoteList, first.QuoteListID).Error; err != nil {
+		t.Fatalf("load rebuilt quote list: %v", err)
+	}
+	if quoteList.SourceType != QuoteListSourceTypeLegacyQuotePKRebuild {
+		t.Fatalf("unexpected source type: %s", quoteList.SourceType)
+	}
+	if quoteList.SourceID != legacyTask.ID {
+		t.Fatalf("unexpected source id: got=%d want=%d", quoteList.SourceID, legacyTask.ID)
+	}
+	if quoteList.QuantityBaseID != quantityBase.ID {
+		t.Fatalf("unexpected quantity base id: got=%d want=%d", quoteList.QuantityBaseID, quantityBase.ID)
+	}
+
+	var itemCount int64
+	if err := db.Model(&model.QuoteListItem{}).Where("quote_list_id = ?", quoteList.ID).Count(&itemCount).Error; err != nil {
+		t.Fatalf("count rebuilt quote list items: %v", err)
+	}
+	if itemCount != 1 {
+		t.Fatalf("expected quantity-base items to be synchronized, got %d", itemCount)
+	}
+}
+
+func TestUnifiedQuoteRuntimeSummariesExposeSameTruthAcrossDetails(t *testing.T) {
+	db := setupQuoteServiceDB(t)
+	svc := &QuoteService{}
+
+	owner := model.User{Base: model.Base{ID: 7101}, Phone: "13800710101", Nickname: "业主B", Status: 1}
+	providerUser := model.User{Base: model.Base{ID: 7102}, Phone: "13800710102", Nickname: "施工商B", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 7103}, UserID: providerUser.ID, ProviderType: 2, CompanyName: "施工公司B", Status: 1}
+	project := model.Project{
+		Base:                      model.Base{ID: 7104},
+		OwnerID:                   owner.ID,
+		ProviderID:                provider.ID,
+		Name:                      "统一摘要项目",
+		Address:                   "上海市徐汇区测试路 8 号",
+		Status:                    model.ProjectStatusActive,
+		BusinessStatus:            model.ProjectBusinessStatusConstructionQuoteConfirmed,
+		CurrentPhase:              "待监理协调开工",
+		QuoteConfirmedAt:          mustParseTimePointer(t, "2026-04-21T09:30:00Z"),
+		PaymentPaused:             true,
+		PaymentPausedReason:       "等待支付首付款",
+		ConstructionQuote:         4567,
+		SelectedQuoteSubmissionID: 7108,
+	}
+	order := model.Order{Base: model.Base{ID: 7105}, ProjectID: project.ID, OrderType: model.OrderTypeConstruction, OrderNo: "ORD-7105", Status: model.OrderStatusPending}
+	planDueAt := mustParseTimePointer(t, "2026-04-25T10:00:00Z")
+	paymentPlan := model.PaymentPlan{Base: model.Base{ID: 7106}, OrderID: order.ID, Type: "construction", Seq: 1, Name: "首付款", Amount: 4567, Status: model.PaymentPlanStatusPending, DueAt: planDueAt, Payable: true}
+	quoteList := model.QuoteList{
+		Base:                   model.Base{ID: 7107},
+		ProjectID:              project.ID,
+		OwnerUserID:            owner.ID,
+		Title:                  "正式施工报价单",
+		Status:                 model.QuoteListStatusSubmittedToUser,
+		Currency:               "CNY",
+		SourceType:             model.QuantitySourceTypeProposal,
+		SourceID:               9001,
+		PrerequisiteStatus:     model.QuoteTaskPrerequisiteComplete,
+		UserConfirmationStatus: model.QuoteUserConfirmationPending,
+		ActiveSubmissionID:     7108,
+		AwardedProviderID:      provider.ID,
+	}
+	quoteItem := model.QuoteListItem{Base: model.Base{ID: 7109}, QuoteListID: quoteList.ID, Name: "防水施工", Unit: "㎡", Quantity: 12, SortOrder: 1}
+	invitation := model.QuoteInvitation{Base: model.Base{ID: 7110}, QuoteListID: quoteList.ID, ProviderID: provider.ID, Status: model.QuoteInvitationStatusInvited}
+	submission := model.QuoteSubmission{
+		Base:                   model.Base{ID: 7108},
+		QuoteListID:            quoteList.ID,
+		ProviderID:             provider.ID,
+		ProviderType:           provider.ProviderType,
+		Status:                 model.QuoteSubmissionStatusSubmitted,
+		TaskStatus:             model.QuoteListStatusSubmittedToUser,
+		Currency:               "CNY",
+		TotalCent:              456700,
+		EstimatedDays:          35,
+		TeamSize:               6,
+		WorkTypes:              "水电,瓦工",
+		ConstructionMethodNote: "先做闭水，再做墙地面找平",
+		SiteVisitRequired:      true,
+		SubmittedToUser:        true,
+		ReviewStatus:           model.QuoteSubmissionReviewStatusPending,
+	}
+	submissionItem := model.QuoteSubmissionItem{
+		Base:                 model.Base{ID: 7111},
+		QuoteSubmissionID:    submission.ID,
+		QuoteListItemID:      quoteItem.ID,
+		UnitPriceCent:        38000,
+		QuotedQuantity:       12,
+		AmountCent:           456000,
+		MissingPriceFlag:     true,
+		DeviationFlag:        true,
+		PlatformReviewFlag:   true,
+		QuantityChangeReason: "现场补量",
+	}
+	revision := model.QuoteSubmissionRevision{
+		Base:              model.Base{ID: 7112},
+		QuoteSubmissionID: submission.ID,
+		QuoteListID:       quoteList.ID,
+		ProviderID:        provider.ID,
+		RevisionNo:        3,
+		Action:            "submit",
+		PreviousStatus:    model.QuoteSubmissionStatusDraft,
+		NextStatus:        model.QuoteSubmissionStatusSubmitted,
+		PreviousTotalCent: 420000,
+		NextTotalCent:     submission.TotalCent,
+		ChangeReason:      "调整防水单价并补充现场增量",
+	}
+	changeOrder := model.ChangeOrder{
+		Base:         model.Base{ID: 7113},
+		ProjectID:    project.ID,
+		Title:        "卫生间包管增项",
+		AmountImpact: 1288,
+		Status:       model.ChangeOrderStatusAdminSettlementRequired,
+	}
+	scheduledAt := mustParseTimePointer(t, "2026-04-26T08:00:00Z")
+	payoutPaidAt := mustParseTimePointer(t, "2026-04-27T12:00:00Z")
+	payout := model.PayoutOrder{
+		Base:        model.Base{ID: 7114},
+		BizType:     model.PayoutBizTypeSettlementOrder,
+		BizID:       7115,
+		ProviderID:  provider.ID,
+		Amount:      9800,
+		Channel:     model.PayoutChannelCustody,
+		Status:      model.PayoutStatusProcessing,
+		ScheduledAt: scheduledAt,
+		PaidAt:      payoutPaidAt,
+	}
+	settlement := model.SettlementOrder{
+		Base:              model.Base{ID: 7115},
+		BizType:           model.PayoutBizTypeSettlementOrder,
+		BizID:             changeOrder.ID,
+		ProjectID:         project.ID,
+		ProviderID:        provider.ID,
+		GrossAmount:       10800,
+		MerchantNetAmount: 9800,
+		DueAt:             scheduledAt,
+		PayoutOrderID:     payout.ID,
+		Status:            model.SettlementStatusScheduled,
+	}
+
+	for _, record := range []interface{}{
+		&owner,
+		&providerUser,
+		&provider,
+		&project,
+		&order,
+		&paymentPlan,
+		&quoteList,
+		&quoteItem,
+		&invitation,
+		&submission,
+		&submissionItem,
+		&revision,
+		&changeOrder,
+		&payout,
+		&settlement,
+	} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed unified summary fixture: %v", err)
+		}
+	}
+
+	adminDetail, err := svc.GetAdminQuoteListDetail(quoteList.ID)
+	if err != nil {
+		t.Fatalf("GetAdminQuoteListDetail: %v", err)
+	}
+	if adminDetail.QuoteTruthSummary == nil || adminDetail.QuoteTruthSummary.ActiveSubmissionID != submission.ID {
+		t.Fatalf("admin detail missing quote truth summary: %+v", adminDetail.QuoteTruthSummary)
+	}
+	if adminDetail.SubmissionHealth == nil || adminDetail.SubmissionHealth.MissingPriceCount != 1 || adminDetail.SubmissionHealth.LastRevisionNo != 3 {
+		t.Fatalf("admin detail missing submission health: %+v", adminDetail.SubmissionHealth)
+	}
+	if adminDetail.ChangeOrderSummary == nil || adminDetail.ChangeOrderSummary.PendingSettlementCount != 1 {
+		t.Fatalf("admin detail missing change-order summary: %+v", adminDetail.ChangeOrderSummary)
+	}
+	if adminDetail.SettlementSummary == nil || adminDetail.SettlementSummary.LatestSettlementID != settlement.ID {
+		t.Fatalf("admin detail missing settlement summary: %+v", adminDetail.SettlementSummary)
+	}
+	if adminDetail.PayoutSummary == nil || adminDetail.PayoutSummary.LatestPayoutID != payout.ID {
+		t.Fatalf("admin detail missing payout summary: %+v", adminDetail.PayoutSummary)
+	}
+
+	merchantDetail, err := svc.GetMerchantQuoteListDetail(quoteList.ID, provider.ID)
+	if err != nil {
+		t.Fatalf("GetMerchantQuoteListDetail: %v", err)
+	}
+	if merchantDetail.CommercialExplanation == nil || merchantDetail.CommercialExplanation.TeamSize != 6 {
+		t.Fatalf("merchant detail missing commercial explanation: %+v", merchantDetail.CommercialExplanation)
+	}
+	if merchantDetail.QuoteTruthSummary == nil || merchantDetail.QuoteTruthSummary.TotalCent != submission.TotalCent {
+		t.Fatalf("merchant detail missing quote truth summary: %+v", merchantDetail.QuoteTruthSummary)
+	}
+	if merchantDetail.SubmissionHealth == nil || merchantDetail.SubmissionHealth.CanSubmit {
+		t.Fatalf("merchant detail should be locked after submit-to-user: %+v", merchantDetail.SubmissionHealth)
+	}
+
+	userView, err := svc.GetUserQuoteTask(quoteList.ID, owner.ID)
+	if err != nil {
+		t.Fatalf("GetUserQuoteTask: %v", err)
+	}
+	if userView.QuoteTruthSummary == nil || userView.QuoteTruthSummary.QuoteListID != quoteList.ID {
+		t.Fatalf("user quote task missing quote truth summary: %+v", userView.QuoteTruthSummary)
+	}
+	if userView.CommercialExplanation == nil || len(userView.CommercialExplanation.WorkTypes) != 2 {
+		t.Fatalf("user quote task missing commercial explanation: %+v", userView.CommercialExplanation)
+	}
+
+	projectDetail, err := (&ProjectService{}).GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if projectDetail.QuoteTruthSummary == nil || projectDetail.QuoteTruthSummary.ActiveSubmissionID != submission.ID {
+		t.Fatalf("project detail missing quote truth summary: %+v", projectDetail.QuoteTruthSummary)
+	}
+	if projectDetail.ChangeOrderSummary == nil || projectDetail.ChangeOrderSummary.TotalCount != 1 {
+		t.Fatalf("project detail missing change-order summary: %+v", projectDetail.ChangeOrderSummary)
+	}
+	if projectDetail.SettlementSummary == nil || projectDetail.SettlementSummary.Status != model.SettlementStatusScheduled {
+		t.Fatalf("project detail missing settlement summary: %+v", projectDetail.SettlementSummary)
+	}
+	if projectDetail.PayoutSummary == nil || projectDetail.PayoutSummary.Status != model.PayoutStatusProcessing {
+		t.Fatalf("project detail missing payout summary: %+v", projectDetail.PayoutSummary)
+	}
+	if projectDetail.FinancialClosureStatus == "" || projectDetail.NextPendingAction == "" {
+		t.Fatalf("project detail missing closure status: financial=%q next=%q", projectDetail.FinancialClosureStatus, projectDetail.NextPendingAction)
 	}
 }
 

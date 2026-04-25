@@ -135,6 +135,10 @@ func (s *QuoteEstimateService) GetQuoteTemplate(area float64, style string, regi
 
 // CalculateDuration 计算工期
 func (s *QuoteEstimateService) CalculateDuration(area float64, baseDuration int) int {
+	if area > 0 && area <= 30 {
+		return 30
+	}
+
 	// 基础工期 + 面积调整
 	// 每增加 20 平米，工期增加 5 天
 	extraDays := int(math.Floor((area - 80) / 20 * 5))

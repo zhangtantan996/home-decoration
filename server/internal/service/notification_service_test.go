@@ -242,6 +242,30 @@ func TestNotificationDispatcherChangeOrderAdminActionURLsUseOrderCenterFilters(t
 	}
 }
 
+func TestNotificationDispatcherQuoteDecisionApprovedUsesCanonicalAwardedRoute(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+	dispatcher := NewNotificationDispatcher()
+
+	dispatcher.NotifyQuoteDecision(101, 202, 303, true, "")
+
+	var notifications []model.Notification
+	if err := db.Where("user_id = ? AND user_type = ?", 101, "provider").Find(&notifications).Error; err != nil {
+		t.Fatalf("load provider notifications: %v", err)
+	}
+	if len(notifications) != 1 {
+		t.Fatalf("expected one provider notification, got %d", len(notifications))
+	}
+	if notifications[0].Type != "quote.awarded" {
+		t.Fatalf("expected canonical quote.awarded, got %s", notifications[0].Type)
+	}
+	if notifications[0].RelatedType != "project" || notifications[0].RelatedID != 303 {
+		t.Fatalf("expected project-related awarded notification, got type=%s id=%d", notifications[0].RelatedType, notifications[0].RelatedID)
+	}
+	if notifications[0].ActionURL != "/projects/303" {
+		t.Fatalf("expected awarded notification to jump project execution, got %s", notifications[0].ActionURL)
+	}
+}
+
 func TestAdminActionURLHelpersUseFrontendRoutes(t *testing.T) {
 	if got := buildAdminRefundActionURL(18); got != "/refunds/18" {
 		t.Fatalf("expected admin refund route /refunds/18, got %s", got)

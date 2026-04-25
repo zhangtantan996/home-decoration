@@ -136,6 +136,20 @@ func AdminCreateQuoteList(c *gin.Context) {
 	response.Success(c, quoteList)
 }
 
+func AdminRebuildQuoteListFromLegacy(c *gin.Context) {
+	var input service.LegacyQuotePKRebuildInput
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "legacy 重建参数错误")
+		return
+	}
+	result, err := quoteService.RebuildQuoteListFromLegacy(&input)
+	if err != nil {
+		respondDomainMutationError(c, err, "重建 legacy quote-pk 报价单失败")
+		return
+	}
+	response.Success(c, result)
+}
+
 func AdminBatchUpsertQuoteListItems(c *gin.Context) {
 	quoteListID := parseUint(c.Param("id"))
 	var input struct {
@@ -187,6 +201,15 @@ func AdminGetQuoteComparison(c *gin.Context) {
 		return
 	}
 	response.Success(c, result)
+}
+
+func AdminListProviderPriceBookInspection(c *gin.Context) {
+	list, err := quoteService.ListProviderPriceBookInspection(c.Query("keyword"))
+	if err != nil {
+		respondScopedAccessError(c, err, "获取施工主体价格库巡检失败")
+		return
+	}
+	response.Success(c, gin.H{"list": list})
 }
 
 func AdminAwardQuote(c *gin.Context) {

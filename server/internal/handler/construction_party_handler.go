@@ -39,7 +39,7 @@ func SelectConstructionParty(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"message": "工长选择成功，等待工长确认",
+		"message": "施工主体选择成功，施工桥接推进中",
 	})
 }
 

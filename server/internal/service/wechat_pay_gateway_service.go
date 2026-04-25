@@ -5,7 +5,9 @@ import (
 	"crypto/rsa"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"sync"
@@ -14,6 +16,7 @@ import (
 	"github.com/wechatpay-apiv3/wechatpay-go/core"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/auth/verifiers"
+	"github.com/wechatpay-apiv3/wechatpay-go/core/consts"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/downloader"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/notify"
 	"github.com/wechatpay-apiv3/wechatpay-go/core/option"
@@ -99,6 +102,30 @@ func (g *WechatPayGateway) ParseNotifyRequest(ctx context.Context, request *http
 		ProviderTradeNo: stringValue(transaction.TransactionId),
 		TradeStatus:     stringValue(transaction.TradeState),
 		RawJSON:         strings.TrimSpace(notifyReq.Resource.Plaintext),
+	}, nil
+}
+
+func (g *WechatPayGateway) ParseRefundNotifyRequest(ctx context.Context, request *http.Request) (*PaymentChannelRefundResult, error) {
+	if request == nil {
+		return nil, errors.New("微信退款回调请求不能为空")
+	}
+	if err := g.ensureInitialized(ctx); err != nil {
+		return nil, err
+	}
+	refund := new(refunddomestic.Refund)
+	notifyReq, err := g.notifyHandler.ParseNotifyRequest(ctx, request, refund)
+	if err != nil {
+		return nil, err
+	}
+	status := strings.TrimSpace(refundStatusValue(refund.Status))
+	return &PaymentChannelRefundResult{
+		ProviderTradeNo: stringValue(refund.TransactionId),
+		OutTradeNo:      stringValue(refund.OutTradeNo),
+		OutRefundNo:     stringValue(refund.OutRefundNo),
+		Success:         status == string(refunddomestic.STATUS_SUCCESS),
+		Pending:         status == string(refunddomestic.STATUS_PROCESSING),
+		RawJSON:         strings.TrimSpace(notifyReq.Resource.Plaintext),
+		FailureReason:   wechatRefundFailureReason(status),
 	}, nil
 }
 
@@ -322,7 +349,7 @@ func refundStatusValue(status *refunddomestic.Status) string {
 }
 
 func amountYuanToFen(amount float64) int64 {
-	return int64(normalizeAmount(amount)*100 + 0.5)
+	return floatToCents(amount)
 }
 
 func amountFenToYuan(amount int64) float64 {
@@ -423,7 +450,41 @@ func (g *WechatPayGateway) DownloadBill(ctx context.Context, billDate string, bi
 	if err := g.ensureInitialized(ctx); err != nil {
 		return nil, err
 	}
-	return nil, errors.New("微信支付账单下载功能暂未实现")
+	query := url.Values{}
+	query.Set("bill_date", strings.TrimSpace(billDate))
+	query.Set("bill_type", strings.ToUpper(strings.TrimSpace(billType)))
+	result, err := g.client.Request(ctx, http.MethodGet, consts.WechatPayAPIServer+"/v3/bill/tradebill", nil, query, nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("获取微信支付账单下载地址失败: %w", err)
+	}
+	var downloadResp struct {
+		DownloadURL string `json:"download_url"`
+	}
+	if err := core.UnMarshalResponse(result.Response, &downloadResp); err != nil {
+		return nil, fmt.Errorf("解析微信支付账单下载地址失败: %w", err)
+	}
+	downloadURL := strings.TrimSpace(downloadResp.DownloadURL)
+	if downloadURL == "" {
+		return nil, errors.New("微信支付账单下载地址为空")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建微信支付账单下载请求失败: %w", err)
+	}
+	req.Header.Set("Accept", "text/plain, text/csv, */*")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("下载微信支付账单失败: %w", err)
+	}
+	defer resp.Body.Close()
+	body, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, fmt.Errorf("读取微信支付账单失败: %w", readErr)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return nil, fmt.Errorf("下载微信支付账单失败: HTTP %d %s", resp.StatusCode, strings.TrimSpace(string(body)))
+	}
+	return body, nil
 }
 
 func wechatRefundFailureReason(status string) string {
@@ -438,15 +499,15 @@ func wechatRefundFailureReason(status string) string {
 }
 
 type TransferToBankCardInput struct {
-	OutBatchNo      string  // 商户批次单号
-	BatchName       string  // 批次名称
-	BatchRemark     string  // 批次备注
-	TransferSceneID string  // 转账场景ID
-	OutDetailNo     string  // 商户明细单号
-	TransferAmount  int64   // 转账金额（分）
-	TransferRemark  string  // 转账备注
-	UserName        string  // 收款人姓名（需加密）
-	BankCardNumber  string  // 银行卡号（需加密）
+	OutBatchNo      string // 商户批次单号
+	BatchName       string // 批次名称
+	BatchRemark     string // 批次备注
+	TransferSceneID string // 转账场景ID
+	OutDetailNo     string // 商户明细单号
+	TransferAmount  int64  // 转账金额（分）
+	TransferRemark  string // 转账备注
+	UserName        string // 收款人姓名（需加密）
+	BankCardNumber  string // 银行卡号（需加密）
 }
 
 type TransferToBankCardResult struct {

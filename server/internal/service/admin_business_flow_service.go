@@ -23,6 +23,8 @@ type AdminBusinessFlowFilter struct {
 	ProjectID         uint64
 	OrderStatus       string
 	PaymentPlanStatus string
+	SettlementStatus  string
+	PayoutStatus      string
 	RefundStatus      string
 	RiskStatus        string
 	PaymentPaused     *bool
@@ -96,6 +98,8 @@ type AdminBusinessFlowListItem struct {
 	PrimaryOrderNo        string                    `json:"primaryOrderNo,omitempty"`
 	OrderStatus           string                    `json:"orderStatus"`
 	PaymentPlanStatus     string                    `json:"paymentPlanStatus"`
+	SettlementStatus      string                    `json:"settlementStatus"`
+	PayoutStatus          string                    `json:"payoutStatus"`
 	RefundStatus          string                    `json:"refundStatus"`
 	RiskStatus            string                    `json:"riskStatus"`
 	PaymentPaused         bool                      `json:"paymentPaused"`
@@ -129,46 +133,64 @@ type AdminBusinessFlowDetail struct {
 	ProjectAudits           []ProjectAuditView               `json:"projectAudits,omitempty"`
 	RiskWarnings            []model.RiskWarning              `json:"riskWarnings,omitempty"`
 	Arbitrations            []model.Arbitration              `json:"arbitrations,omitempty"`
+	QuoteTruthSummary       *QuoteTruthSummary               `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation   *CommercialExplanation           `json:"commercialExplanation,omitempty"`
+	SubmissionHealth        *SubmissionHealthSummary         `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary      *ChangeOrderSummary              `json:"changeOrderSummary,omitempty"`
+	SettlementSummary       *SettlementSummary               `json:"settlementSummary,omitempty"`
+	PayoutSummary           *PayoutSummary                   `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus  string                           `json:"financialClosureStatus,omitempty"`
+	NextPendingAction       string                           `json:"nextPendingAction,omitempty"`
 	Risk                    *AdminBusinessFlowRiskSnapshot   `json:"risk,omitempty"`
 	AuditLogs               []AdminAuditLogItem              `json:"auditLogs,omitempty"`
 	AvailableAdminActions   []AdminBusinessFlowAction        `json:"availableAdminActions"`
 }
 
 type adminBusinessFlowContext struct {
-	flow                  *model.BusinessFlow
-	flowID                string
-	sourceType            string
-	sourceID              uint64
-	booking               *model.Booking
-	demand                *model.Demand
-	proposal              *model.Proposal
-	quoteTask             *model.QuoteList
-	quoteSubmission       *model.QuoteSubmission
-	project               *model.Project
-	milestones            []model.Milestone
-	orders                []model.Order
-	paymentPlans          []model.PaymentPlan
-	changeOrders          []ChangeOrderView
-	escrow                *model.EscrowAccount
-	transactions          []model.Transaction
-	refundApplications    []RefundApplicationView
-	projectAudits         []ProjectAuditView
-	riskWarnings          []model.RiskWarning
-	arbitrations          []model.Arbitration
-	auditLogs             []AdminAuditLogItem
-	owner                 *AdminBusinessFlowActor
-	provider              *AdminBusinessFlowActor
-	designerProvider      *AdminBusinessFlowActor
-	constructionProvider  *AdminBusinessFlowActor
-	summary               BusinessFlowSummary
-	orderStatus           string
-	paymentPlanStatus     string
-	refundStatus          string
-	riskStatus            string
-	paymentPaused         bool
-	stageChangedAt        *time.Time
-	availableAdminActions []AdminBusinessFlowAction
-	riskSnapshot          *AdminBusinessFlowRiskSnapshot
+	flow                   *model.BusinessFlow
+	flowID                 string
+	sourceType             string
+	sourceID               uint64
+	booking                *model.Booking
+	demand                 *model.Demand
+	proposal               *model.Proposal
+	quoteTask              *model.QuoteList
+	quoteSubmission        *model.QuoteSubmission
+	project                *model.Project
+	milestones             []model.Milestone
+	orders                 []model.Order
+	paymentPlans           []model.PaymentPlan
+	changeOrders           []ChangeOrderView
+	escrow                 *model.EscrowAccount
+	transactions           []model.Transaction
+	refundApplications     []RefundApplicationView
+	projectAudits          []ProjectAuditView
+	riskWarnings           []model.RiskWarning
+	arbitrations           []model.Arbitration
+	auditLogs              []AdminAuditLogItem
+	owner                  *AdminBusinessFlowActor
+	provider               *AdminBusinessFlowActor
+	designerProvider       *AdminBusinessFlowActor
+	constructionProvider   *AdminBusinessFlowActor
+	summary                BusinessFlowSummary
+	orderStatus            string
+	paymentPlanStatus      string
+	settlementStatus       string
+	payoutStatus           string
+	refundStatus           string
+	riskStatus             string
+	paymentPaused          bool
+	quoteTruthSummary      *QuoteTruthSummary
+	commercialExplanation  *CommercialExplanation
+	submissionHealth       *SubmissionHealthSummary
+	changeOrderSummary     *ChangeOrderSummary
+	settlementSummary      *SettlementSummary
+	payoutSummary          *PayoutSummary
+	financialClosureStatus string
+	nextPendingAction      string
+	stageChangedAt         *time.Time
+	availableAdminActions  []AdminBusinessFlowAction
+	riskSnapshot           *AdminBusinessFlowRiskSnapshot
 }
 
 type sourceRef struct {
@@ -365,6 +387,11 @@ func (s *AdminBusinessFlowService) buildContext(flow *model.BusinessFlow, source
 	ctx.stageChangedAt = s.resolveStageChangedAt(ctx)
 	ctx.orderStatus = summarizeOrderStatus(ctx.orders)
 	ctx.paymentPlanStatus = summarizePaymentPlanStatus(ctx.paymentPlans)
+	if err := s.resolveQuoteRuntimeSummaries(ctx); err != nil {
+		return nil, err
+	}
+	ctx.settlementStatus = summarizeSettlementStatus(ctx.settlementSummary)
+	ctx.payoutStatus = summarizePayoutStatus(ctx.payoutSummary)
 	ctx.refundStatus = summarizeRefundStatus(ctx.refundApplications)
 	ctx.paymentPaused = ctx.project != nil && ctx.project.PaymentPaused
 	ctx.riskSnapshot = summarizeRiskSnapshot(ctx)
@@ -909,6 +936,51 @@ func (s *AdminBusinessFlowService) resolveStageChangedAt(ctx *adminBusinessFlowC
 	return &latest
 }
 
+func (s *AdminBusinessFlowService) resolveQuoteRuntimeSummaries(ctx *adminBusinessFlowContext) error {
+	if ctx == nil || ctx.project == nil || ctx.project.ID == 0 {
+		return nil
+	}
+	runtimeSummary, err := loadProjectQuoteRuntimeSummaryWithDB(repository.DB, ctx.project)
+	if err != nil {
+		return err
+	}
+	if runtimeSummary != nil {
+		ctx.quoteTruthSummary = runtimeSummary.QuoteTruthSummary
+		ctx.commercialExplanation = runtimeSummary.CommercialExplanation
+		ctx.submissionHealth = runtimeSummary.SubmissionHealth
+		ctx.changeOrderSummary = runtimeSummary.ChangeOrderSummary
+		ctx.settlementSummary = runtimeSummary.SettlementSummary
+		ctx.payoutSummary = runtimeSummary.PayoutSummary
+		ctx.financialClosureStatus = runtimeSummary.FinancialClosureStatus
+		ctx.nextPendingAction = runtimeSummary.NextPendingAction
+	}
+	if ctx.changeOrderSummary == nil {
+		changeOrderSummary, err := buildChangeOrderSummaryWithDB(repository.DB, ctx.project.ID)
+		if err != nil {
+			return err
+		}
+		ctx.changeOrderSummary = changeOrderSummary
+	}
+	if ctx.settlementSummary == nil || ctx.payoutSummary == nil {
+		settlementSummary, payoutSummary, err := buildFinanceRuntimeSummaryWithDB(repository.DB, ctx.project.ID)
+		if err != nil {
+			return err
+		}
+		if ctx.settlementSummary == nil {
+			ctx.settlementSummary = settlementSummary
+		}
+		if ctx.payoutSummary == nil {
+			ctx.payoutSummary = payoutSummary
+		}
+	}
+	if ctx.financialClosureStatus == "" || ctx.nextPendingAction == "" {
+		closureSummary := buildProjectClosureSummaryWithDB(repository.DB, ctx.project.ID)
+		ctx.financialClosureStatus = firstNonBlank(ctx.financialClosureStatus, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.FinancialClosureStatus }))
+		ctx.nextPendingAction = firstNonBlank(ctx.nextPendingAction, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.NextPendingAction }))
+	}
+	return nil
+}
+
 func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusinessFlowContext) []AdminBusinessFlowAction {
 	actions := make([]AdminBusinessFlowAction, 0)
 	appendAction := func(action AdminBusinessFlowAction) {
@@ -1054,6 +1126,8 @@ func (ctx *adminBusinessFlowContext) toListItem() AdminBusinessFlowListItem {
 		PrimaryOrderNo:        primaryOrderNo(ctx.orders),
 		OrderStatus:           ctx.orderStatus,
 		PaymentPlanStatus:     ctx.paymentPlanStatus,
+		SettlementStatus:      ctx.settlementStatus,
+		PayoutStatus:          ctx.payoutStatus,
 		RefundStatus:          ctx.refundStatus,
 		RiskStatus:            ctx.riskStatus,
 		PaymentPaused:         ctx.paymentPaused,
@@ -1093,6 +1167,14 @@ func (ctx *adminBusinessFlowContext) toDetail() *AdminBusinessFlowDetail {
 		ProjectAudits:           ctx.projectAudits,
 		RiskWarnings:            ctx.riskWarnings,
 		Arbitrations:            ctx.arbitrations,
+		QuoteTruthSummary:       ctx.quoteTruthSummary,
+		CommercialExplanation:   ctx.commercialExplanation,
+		SubmissionHealth:        ctx.submissionHealth,
+		ChangeOrderSummary:      ctx.changeOrderSummary,
+		SettlementSummary:       ctx.settlementSummary,
+		PayoutSummary:           ctx.payoutSummary,
+		FinancialClosureStatus:  ctx.financialClosureStatus,
+		NextPendingAction:       ctx.nextPendingAction,
 		Risk:                    ctx.riskSnapshot,
 		AuditLogs:               ctx.auditLogs,
 		AvailableAdminActions:   ctx.availableAdminActions,
@@ -1244,6 +1326,20 @@ func summarizePaymentPlanStatus(paymentPlans []model.PaymentPlan) string {
 	}
 }
 
+func summarizeSettlementStatus(summary *SettlementSummary) string {
+	if summary == nil || strings.TrimSpace(summary.Status) == "" {
+		return "none"
+	}
+	return strings.TrimSpace(summary.Status)
+}
+
+func summarizePayoutStatus(summary *PayoutSummary) string {
+	if summary == nil || strings.TrimSpace(summary.Status) == "" {
+		return "none"
+	}
+	return strings.TrimSpace(summary.Status)
+}
+
 func firstChangeOrderByStatus(items []ChangeOrderView, status string) *ChangeOrderView {
 	for idx := range items {
 		if strings.TrimSpace(items[idx].Status) == strings.TrimSpace(status) {
@@ -1367,6 +1463,12 @@ func matchesBusinessFlowFilter(ctx *adminBusinessFlowContext, item AdminBusiness
 		return false
 	}
 	if filter.PaymentPlanStatus != "" && item.PaymentPlanStatus != strings.TrimSpace(filter.PaymentPlanStatus) {
+		return false
+	}
+	if filter.SettlementStatus != "" && item.SettlementStatus != strings.TrimSpace(filter.SettlementStatus) {
+		return false
+	}
+	if filter.PayoutStatus != "" && item.PayoutStatus != strings.TrimSpace(filter.PayoutStatus) {
 		return false
 	}
 	if filter.RefundStatus != "" && item.RefundStatus != strings.TrimSpace(filter.RefundStatus) {

@@ -349,6 +349,13 @@ func GetOrder(c *gin.Context) {
 			result["bridgeConversionSummary"] = projectDetail.BridgeConversionSummary
 			result["businessStage"] = projectDetail.BusinessStage
 			result["flowSummary"] = projectDetail.FlowSummary
+			result["quoteTruthSummary"] = projectDetail.QuoteTruthSummary
+			result["commercialExplanation"] = projectDetail.CommercialExplanation
+			result["changeOrderSummary"] = projectDetail.ChangeOrderSummary
+			result["settlementSummary"] = projectDetail.SettlementSummary
+			result["payoutSummary"] = projectDetail.PayoutSummary
+			result["financialClosureStatus"] = projectDetail.FinancialClosureStatus
+			result["nextPendingAction"] = projectDetail.NextPendingAction
 		}
 	}
 

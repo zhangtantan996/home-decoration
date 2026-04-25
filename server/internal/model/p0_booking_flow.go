@@ -36,25 +36,25 @@ func (SiteSurvey) TableName() string {
 // BudgetConfirmation stores the latest budget/design-intent confirmation for a booking.
 type BudgetConfirmation struct {
 	Base
-	BookingID             uint64     `json:"bookingId" gorm:"uniqueIndex"`
-	ProviderID            uint64     `json:"providerId" gorm:"index"`
-	BudgetMin             float64    `json:"budgetMin" gorm:"default:0"`
-	BudgetMax             float64    `json:"budgetMax" gorm:"default:0"`
-	Includes              string     `json:"-" gorm:"type:jsonb;default:'{}'"`
-	StyleDirection        string     `json:"styleDirection" gorm:"type:text"`
-	SpaceRequirements     string     `json:"spaceRequirements" gorm:"type:text"`
-	ExpectedDurationDays  int        `json:"expectedDurationDays" gorm:"default:0"`
-	SpecialRequirements   string     `json:"specialRequirements" gorm:"type:text"`
-	Notes                 string     `json:"notes" gorm:"type:text"`
-	DesignIntent          string     `json:"designIntent" gorm:"type:text"`
-	Status                string     `json:"status" gorm:"size:32;default:'submitted';index"`
-	RejectCount           int        `json:"rejectCount" gorm:"default:0"`
-	RejectLimit           int        `json:"rejectLimit" gorm:"default:3"`
-	SubmittedAt           *time.Time `json:"submittedAt"`
-	AcceptedAt            *time.Time `json:"acceptedAt"`
-	RejectedAt            *time.Time `json:"rejectedAt"`
-	LastRejectedAt        *time.Time `json:"lastRejectedAt"`
-	RejectionReason       string     `json:"rejectionReason" gorm:"type:text"`
+	BookingID            uint64     `json:"bookingId" gorm:"uniqueIndex"`
+	ProviderID           uint64     `json:"providerId" gorm:"index"`
+	BudgetMin            float64    `json:"budgetMin" gorm:"default:0"`
+	BudgetMax            float64    `json:"budgetMax" gorm:"default:0"`
+	Includes             string     `json:"-" gorm:"type:jsonb;default:'{}'"`
+	StyleDirection       string     `json:"styleDirection" gorm:"type:text"`
+	SpaceRequirements    string     `json:"spaceRequirements" gorm:"type:text"`
+	ExpectedDurationDays int        `json:"expectedDurationDays" gorm:"default:0"`
+	SpecialRequirements  string     `json:"specialRequirements" gorm:"type:text"`
+	Notes                string     `json:"notes" gorm:"type:text"`
+	DesignIntent         string     `json:"designIntent" gorm:"type:text"`
+	Status               string     `json:"status" gorm:"size:32;default:'submitted';index"`
+	RejectCount          int        `json:"rejectCount" gorm:"default:0"`
+	RejectLimit          int        `json:"rejectLimit" gorm:"default:3"`
+	SubmittedAt          *time.Time `json:"submittedAt"`
+	AcceptedAt           *time.Time `json:"acceptedAt"`
+	RejectedAt           *time.Time `json:"rejectedAt"`
+	LastRejectedAt       *time.Time `json:"lastRejectedAt"`
+	RejectionReason      string     `json:"rejectionReason" gorm:"type:text"`
 }
 
 func (BudgetConfirmation) TableName() string {

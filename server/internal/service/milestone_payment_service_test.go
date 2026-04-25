@@ -1,6 +1,8 @@
 package service
 
 import (
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +22,8 @@ func setupTestDB(t *testing.T) *gorm.DB {
 		&model.User{},
 		&model.Project{},
 		&model.Milestone{},
+		&model.Order{},
+		&model.PaymentPlan{},
 		&model.EscrowAccount{},
 		&model.Transaction{},
 		&model.Provider{},
@@ -77,7 +81,7 @@ func TestCreateMilestonePaymentPlan(t *testing.T) {
 	assert.Equal(t, float32(10), milestones[3].Percentage)
 }
 
-func TestPayMilestone(t *testing.T) {
+func TestPayMilestoneRetiredDoesNotMutateFunds(t *testing.T) {
 	db := setupTestDB(t)
 
 	// 创建测试数据
@@ -107,7 +111,6 @@ func TestPayMilestone(t *testing.T) {
 	}
 	db.Create(milestone)
 
-	// 测试支付节点
 	service := &MilestonePaymentService{}
 	input := &PayMilestoneInput{
 		ProjectID:   project.ID,
@@ -117,23 +120,93 @@ func TestPayMilestone(t *testing.T) {
 	}
 
 	transaction, err := service.PayMilestone(input)
-	assert.NoError(t, err)
-	assert.NotNil(t, transaction)
-	assert.Equal(t, 30000.0, transaction.Amount)
-	assert.Equal(t, "deposit", transaction.Type)
+	assert.Error(t, err)
+	assert.Nil(t, transaction)
+	if assert.Error(t, err) {
+		assert.Contains(t, err.Error(), "订单中心")
+	}
 
-	// 验证节点状态更新
 	var updatedMilestone model.Milestone
 	db.First(&updatedMilestone, milestone.ID)
-	assert.Equal(t, int8(1), updatedMilestone.Status)
-	assert.NotNil(t, updatedMilestone.PaidAt)
+	assert.Equal(t, model.MilestoneStatusPending, updatedMilestone.Status)
+	assert.Nil(t, updatedMilestone.PaidAt)
 
-	// 验证托管账户创建
-	var escrow model.EscrowAccount
-	err = db.Where("project_id = ?", project.ID).First(&escrow).Error
-	assert.NoError(t, err)
-	assert.Equal(t, 30000.0, escrow.TotalAmount)
-	assert.Equal(t, 30000.0, escrow.AvailableAmount)
+	var escrowCount int64
+	assert.NoError(t, db.Model(&model.EscrowAccount{}).Where("project_id = ?", project.ID).Count(&escrowCount).Error)
+	assert.Equal(t, int64(0), escrowCount)
+
+	var txCount int64
+	assert.NoError(t, db.Model(&model.Transaction{}).Where("milestone_id = ?", milestone.ID).Count(&txCount).Error)
+	assert.Equal(t, int64(0), txCount)
+}
+
+func TestReleaseMilestonePaymentRequiresAcceptedAndAllowsUserPaidAt(t *testing.T) {
+	db := setupProjectRiskServiceTestDB(t)
+	user, _, project, milestone, _ := seedProjectRiskFixture(t, db)
+	userPaidAt := time.Now().Add(-2 * time.Hour).Round(time.Second)
+
+	if _, err := (&MilestonePaymentService{}).ReleaseMilestonePayment(project.ID, milestone.ID, user.ID); err == nil || !strings.Contains(err.Error(), "未通过验收") {
+		t.Fatalf("expected unaccepted milestone release failure, got %v", err)
+	}
+
+	if err := db.Model(&milestone).Updates(map[string]any{
+		"status":      model.MilestoneStatusAccepted,
+		"accepted_at": time.Now().Add(-time.Hour),
+		"paid_at":     &userPaidAt,
+	}).Error; err != nil {
+		t.Fatalf("mark milestone accepted and user-paid: %v", err)
+	}
+
+	result, err := (&MilestonePaymentService{}).ReleaseMilestonePayment(project.ID, milestone.ID, user.ID)
+	if err != nil {
+		t.Fatalf("ReleaseMilestonePayment: %v", err)
+	}
+	if result == nil || result.SettlementOrder == nil || result.MerchantIncome == nil {
+		t.Fatalf("expected settlement projection, got %+v", result)
+	}
+
+	var refreshed model.Milestone
+	if err := db.First(&refreshed, milestone.ID).Error; err != nil {
+		t.Fatalf("reload milestone: %v", err)
+	}
+	if refreshed.Status != model.MilestoneStatusAccepted || refreshed.ReleasedAt != nil {
+		t.Fatalf("expected accepted milestone waiting for manual payout, got %+v", refreshed)
+	}
+	if refreshed.PaidAt == nil || !refreshed.PaidAt.Equal(userPaidAt) {
+		t.Fatalf("expected user payment paidAt to stay %v, got %+v", userPaidAt, refreshed.PaidAt)
+	}
+
+	payoutPaidAt := userPaidAt.Add(3 * time.Hour)
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		var payout model.PayoutOrder
+		if err := tx.First(&payout, result.SettlementOrder.PayoutOrderID).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&payout).Updates(map[string]any{
+			"status":  model.PayoutStatusPaid,
+			"paid_at": &payoutPaidAt,
+		}).Error; err != nil {
+			return err
+		}
+		payout.Status = model.PayoutStatusPaid
+		payout.PaidAt = &payoutPaidAt
+		return (&PayoutService{ledger: &LedgerService{}}).applyPayoutProjectionTx(tx, &payout)
+	}); err != nil {
+		t.Fatalf("apply payout projection: %v", err)
+	}
+
+	if err := db.First(&refreshed, milestone.ID).Error; err != nil {
+		t.Fatalf("reload paid milestone: %v", err)
+	}
+	if refreshed.Status != model.MilestoneStatusPaid {
+		t.Fatalf("expected milestone settled after payout confirmation, got %+v", refreshed)
+	}
+	if refreshed.PaidAt == nil || !refreshed.PaidAt.Equal(userPaidAt) {
+		t.Fatalf("expected payout confirmation to preserve user paidAt %v, got %+v", userPaidAt, refreshed.PaidAt)
+	}
+	if refreshed.ReleasedAt == nil || !refreshed.ReleasedAt.Equal(payoutPaidAt) {
+		t.Fatalf("expected releasedAt to reflect payout time %v, got %+v", payoutPaidAt, refreshed.ReleasedAt)
+	}
 }
 
 func TestGetMilestonePaymentStatus(t *testing.T) {
@@ -166,6 +239,27 @@ func TestGetMilestonePaymentStatus(t *testing.T) {
 	for _, m := range milestones {
 		db.Create(&m)
 	}
+	order := &model.Order{
+		ProjectID:   project.ID,
+		OrderNo:     "CO202604250001",
+		OrderType:   model.OrderTypeConstruction,
+		TotalAmount: 100000,
+		Status:      model.OrderStatusPending,
+	}
+	assert.NoError(t, db.Create(order).Error)
+	var firstMilestone model.Milestone
+	assert.NoError(t, db.Where("project_id = ? AND seq = ?", project.ID, 1).First(&firstMilestone).Error)
+	assert.NoError(t, db.Create(&model.PaymentPlan{
+		OrderID:     order.ID,
+		MilestoneID: firstMilestone.ID,
+		Type:        "down_payment",
+		Seq:         1,
+		Name:        firstMilestone.Name,
+		Amount:      firstMilestone.Amount,
+		Percentage:  firstMilestone.Percentage,
+		Status:      model.PaymentPlanStatusPaid,
+		PaidAt:      &now,
+	}).Error)
 
 	// 测试获取付款状态
 	service := &MilestonePaymentService{}
@@ -177,4 +271,7 @@ func TestGetMilestonePaymentStatus(t *testing.T) {
 	assert.Equal(t, 30000.0, status["paidAmount"])
 	assert.Equal(t, 4, status["milestoneCount"])
 	assert.Equal(t, 1, status["paidCount"])
+	assert.Equal(t, order.ID, status["constructionOrderId"])
+	assert.Equal(t, "construction_order:"+strconv.FormatUint(order.ID, 10), status["constructionOrderEntryKey"])
+	assert.NotEmpty(t, status["paymentPlans"])
 }

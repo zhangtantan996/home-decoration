@@ -89,6 +89,19 @@ func (s *SettlementService) CreateMilestoneSettlementScheduleTx(tx *gorm.DB, inp
 	if err != nil {
 		return nil, nil, nil, nil, err
 	}
+	var existing model.SettlementOrder
+	err = tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("biz_type = ? AND biz_id = ? AND status NOT IN ?", model.PayoutBizTypeMilestoneRelease, milestone.ID, []string{
+			model.SettlementStatusRefunded,
+			model.SettlementStatusException,
+		}).
+		First(&existing).Error
+	if err == nil {
+		return nil, nil, nil, nil, errors.New("该节点已存在待处理结算")
+	}
+	if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil, nil, nil, err
+	}
 	if escrow.Status == escrowStatusFrozen {
 		return nil, nil, nil, nil, errors.New("项目资金当前已冻结，无法进入结算")
 	}
@@ -344,7 +357,8 @@ func (s *SettlementService) ExecuteSettlementTx(tx *gorm.DB, id uint64) (*model.
 	}).Error; err != nil {
 		return nil, err
 	}
-	if _, err := payoutSvc.ExecutePayoutTx(tx, payout.ID); err != nil {
+	executedPayout, err := payoutSvc.ExecutePayoutTx(tx, payout.ID)
+	if err != nil {
 		if errReload := tx.First(&settlement, settlement.ID).Error; errReload == nil {
 			return &settlement, err
 		}
@@ -352,6 +366,24 @@ func (s *SettlementService) ExecuteSettlementTx(tx *gorm.DB, id uint64) (*model.
 	}
 	if err := tx.First(&settlement, settlement.ID).Error; err != nil {
 		return nil, err
+	}
+	if executedPayout != nil {
+		incomeUpdates := map[string]any{
+			"settlement_status":    settlement.Status,
+			"payout_order_id":      executedPayout.ID,
+			"payout_status":        executedPayout.Status,
+			"payout_failed_reason": executedPayout.FailureReason,
+		}
+		switch executedPayout.Status {
+		case model.PayoutStatusPaid:
+			incomeUpdates["status"] = 2
+			incomeUpdates["payouted_at"] = executedPayout.PaidAt
+		default:
+			incomeUpdates["status"] = 1
+		}
+		if err := tx.Model(&model.MerchantIncome{}).Where("settlement_order_id = ?", settlement.ID).Updates(incomeUpdates).Error; err != nil {
+			return nil, err
+		}
 	}
 	return &settlement, nil
 }
@@ -584,11 +616,11 @@ func (s *SettlementService) validateMilestoneSettlementScopeTx(tx *gorm.DB, inpu
 	if milestone.ProjectID != input.ProjectID {
 		return nil, nil, nil, 0, errors.New("验收节点不属于当前项目")
 	}
+	if milestone.ReleasedAt != nil {
+		return nil, nil, nil, 0, errors.New("当前节点已完成放款")
+	}
 	if milestone.Status != model.MilestoneStatusAccepted {
 		return nil, nil, nil, 0, errors.New("节点未通过验收，无法放款")
-	}
-	if milestone.PaidAt != nil || milestone.ReleasedAt != nil {
-		return nil, nil, nil, 0, errors.New("当前节点已完成放款")
 	}
 	var escrow model.EscrowAccount
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", input.ProjectID).First(&escrow).Error; err != nil {

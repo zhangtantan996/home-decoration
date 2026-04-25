@@ -31,6 +31,13 @@ type ProjectCompletionDetail struct {
 	CompletionRejectedAt      *time.Time             `json:"completionRejectedAt,omitempty"`
 	InspirationCaseDraftID    uint64                 `json:"inspirationCaseDraftId,omitempty"`
 	ClosureSummary            *ProjectClosureSummary `json:"closureSummary,omitempty"`
+	QuoteTruthSummary         *QuoteTruthSummary     `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation     *CommercialExplanation `json:"commercialExplanation,omitempty"`
+	ChangeOrderSummary        *ChangeOrderSummary    `json:"changeOrderSummary,omitempty"`
+	SettlementSummary         *SettlementSummary     `json:"settlementSummary,omitempty"`
+	PayoutSummary             *PayoutSummary         `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus    string                 `json:"financialClosureStatus,omitempty"`
+	NextPendingAction         string                 `json:"nextPendingAction,omitempty"`
 }
 
 type ProjectCompletionApprovalResult struct {
@@ -502,6 +509,11 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 		return nil, err
 	}
 	photos = imgutil.GetFullImageURLs(photos)
+	closureSummary := buildProjectClosureSummaryFromProjectWithDB(db, &project)
+	runtimeSummary, err := loadProjectQuoteRuntimeSummaryWithDB(db, &project)
+	if err != nil {
+		return nil, err
+	}
 	return &ProjectCompletionDetail{
 		ProjectID:                 project.ID,
 		BusinessStage:             flowSummary.CurrentStage,
@@ -513,7 +525,14 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 		CompletionRejectionReason: project.CompletionRejectionReason,
 		CompletionRejectedAt:      project.CompletionRejectedAt,
 		InspirationCaseDraftID:    project.InspirationCaseDraftID,
-		ClosureSummary:            BuildProjectClosureSummary(&project),
+		ClosureSummary:            closureSummary,
+		QuoteTruthSummary:         runtimeSummary.QuoteTruthSummary,
+		CommercialExplanation:     runtimeSummary.CommercialExplanation,
+		ChangeOrderSummary:        runtimeSummary.ChangeOrderSummary,
+		SettlementSummary:         runtimeSummary.SettlementSummary,
+		PayoutSummary:             runtimeSummary.PayoutSummary,
+		FinancialClosureStatus:    firstNonBlank(runtimeSummary.FinancialClosureStatus, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.FinancialClosureStatus })),
+		NextPendingAction:         firstNonBlank(runtimeSummary.NextPendingAction, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.NextPendingAction })),
 	}, nil
 }
 

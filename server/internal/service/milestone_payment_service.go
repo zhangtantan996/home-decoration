@@ -3,13 +3,11 @@ package service
 import (
 	"errors"
 	"fmt"
-	"time"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 
 	"gorm.io/gorm"
-	"gorm.io/gorm/clause"
 )
 
 type MilestonePaymentService struct{}
@@ -114,109 +112,7 @@ func (s *MilestonePaymentService) CreateMilestonePaymentPlan(input *CreateMilest
 
 // PayMilestone 用户支付节点款项到托管账户
 func (s *MilestonePaymentService) PayMilestone(input *PayMilestoneInput) (*model.Transaction, error) {
-	if input == nil || input.ProjectID == 0 || input.MilestoneID == 0 || input.UserID == 0 {
-		return nil, errors.New("参数不能为空")
-	}
-
-	var transaction *model.Transaction
-	err := repository.DB.Transaction(func(tx *gorm.DB) error {
-		// 验证项目和节点
-		var project model.Project
-		if err := tx.First(&project, input.ProjectID).Error; err != nil {
-			return fmt.Errorf("项目不存在: %w", err)
-		}
-
-		var milestone model.Milestone
-		if err := tx.Where("id = ? AND project_id = ?", input.MilestoneID, input.ProjectID).First(&milestone).Error; err != nil {
-			return fmt.Errorf("节点不存在: %w", err)
-		}
-
-		// 验证节点状态
-		if milestone.Status != 0 {
-			return errors.New("节点已支付或已完成")
-		}
-
-		// 验证用户是项目所有者
-		if project.OwnerID != input.UserID {
-			return errors.New("只有项目所有者可以支付节点款项")
-		}
-
-		// 获取或创建托管账户（使用悲观锁）
-		var escrow model.EscrowAccount
-		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("project_id = ?", input.ProjectID).
-			First(&escrow).Error
-
-		if err == gorm.ErrRecordNotFound {
-			// 创建托管账户
-			escrow = model.EscrowAccount{
-				ProjectID:       input.ProjectID,
-				UserID:          input.UserID,
-				ProjectName:     project.Name,
-				UserName:        "", // 需要从User表获取
-				TotalAmount:     0,
-				FrozenAmount:    0,
-				AvailableAmount: 0,
-				ReleasedAmount:  0,
-				Status:          1, // 1:正常
-			}
-			if err := tx.Create(&escrow).Error; err != nil {
-				return fmt.Errorf("创建托管账户失败: %w", err)
-			}
-		} else if err != nil {
-			return fmt.Errorf("获取托管账户失败: %w", err)
-		}
-
-		// 验证托管账户状态
-		if escrow.Status == 2 {
-			return errors.New("托管账户已冻结")
-		}
-		if escrow.Status == 3 {
-			return errors.New("托管账户已关闭")
-		}
-
-		// 更新托管账户余额
-		escrow.TotalAmount += milestone.Amount
-		escrow.AvailableAmount += milestone.Amount
-		if err := tx.Save(&escrow).Error; err != nil {
-			return fmt.Errorf("更新托管账户失败: %w", err)
-		}
-
-		// 更新节点状态
-		now := time.Now()
-		milestone.Status = 1 // 1:已支付待验收
-		milestone.PaidAt = &now
-		if err := tx.Save(&milestone).Error; err != nil {
-			return fmt.Errorf("更新节点状态失败: %w", err)
-		}
-
-		// 创建交易记录
-		orderID := fmt.Sprintf("MP%d%d%d", input.ProjectID, input.MilestoneID, time.Now().Unix())
-		transaction = &model.Transaction{
-			OrderID:     orderID,
-			EscrowID:    escrow.ID,
-			MilestoneID: input.MilestoneID,
-			Type:        "deposit",
-			Amount:      milestone.Amount,
-			FromUserID:  input.UserID,
-			FromAccount: input.PaymentType,
-			ToUserID:    0, // 托管账户
-			ToAccount:   "escrow",
-			Status:      1, // 1:成功
-			Remark:      fmt.Sprintf("支付%s款项", milestone.Name),
-			CompletedAt: &now,
-		}
-		if err := tx.Create(transaction).Error; err != nil {
-			return fmt.Errorf("创建交易记录失败: %w", err)
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-	return transaction, nil
+	return nil, errors.New("节点直付入口已停用，请通过订单中心发起支付")
 }
 
 // ReleaseMilestonePayment 用户确认节点完成后平台放款给商家
@@ -239,8 +135,11 @@ func (s *MilestonePaymentService) ReleaseMilestonePayment(projectID, milestoneID
 	if err := repository.DB.Where("id = ? AND project_id = ?", milestoneID, projectID).First(&milestone).Error; err != nil {
 		return nil, fmt.Errorf("节点不存在: %w", err)
 	}
-	if milestone.Status != 1 {
-		return nil, errors.New("节点未支付或已完成")
+	if milestone.Status != model.MilestoneStatusAccepted {
+		return nil, errors.New("节点未通过验收，无法结算")
+	}
+	if milestone.ReleasedAt != nil {
+		return nil, errors.New("节点已完成结算")
 	}
 
 	// 调用结算服务进行放款
@@ -286,6 +185,21 @@ func (s *MilestonePaymentService) GetMilestonePaymentStatus(projectID uint64) (m
 		return nil, fmt.Errorf("获取节点列表失败: %w", err)
 	}
 
+	var constructionOrder model.Order
+	var paymentPlans []model.PaymentPlan
+	constructionOrderID := uint64(0)
+	constructionOrderEntryKey := ""
+	if err := repository.DB.
+		Where("project_id = ? AND order_type = ?", projectID, model.OrderTypeConstruction).
+		Order("id DESC").
+		First(&constructionOrder).Error; err == nil {
+		constructionOrderID = constructionOrder.ID
+		constructionOrderEntryKey = fmt.Sprintf("construction_order:%d", constructionOrder.ID)
+		paymentPlans, _ = (&OrderService{}).GetPaymentPlansByOrder(constructionOrder.ID)
+	} else if err != gorm.ErrRecordNotFound {
+		return nil, fmt.Errorf("获取施工订单失败: %w", err)
+	}
+
 	// 统计付款情况
 	var totalAmount, paidAmount, releasedAmount float64
 	var paidCount, releasedCount int
@@ -302,16 +216,19 @@ func (s *MilestonePaymentService) GetMilestonePaymentStatus(projectID uint64) (m
 	}
 
 	return map[string]interface{}{
-		"projectId":         project.ID,
-		"projectName":       project.Name,
-		"totalAmount":       totalAmount,
-		"paidAmount":        paidAmount,
-		"releasedAmount":    releasedAmount,
-		"milestoneCount":    len(milestones),
-		"paidCount":         paidCount,
-		"releasedCount":     releasedCount,
-		"milestones":        milestones,
-		"escrowAccount":     escrow,
-		"constructionQuote": project.ConstructionQuote,
+		"projectId":                 project.ID,
+		"projectName":               project.Name,
+		"totalAmount":               totalAmount,
+		"paidAmount":                paidAmount,
+		"releasedAmount":            releasedAmount,
+		"milestoneCount":            len(milestones),
+		"paidCount":                 paidCount,
+		"releasedCount":             releasedCount,
+		"milestones":                milestones,
+		"paymentPlans":              paymentPlans,
+		"constructionOrderId":       constructionOrderID,
+		"constructionOrderEntryKey": constructionOrderEntryKey,
+		"escrowAccount":             escrow,
+		"constructionQuote":         project.ConstructionQuote,
 	}, nil
 }

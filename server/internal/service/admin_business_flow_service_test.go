@@ -91,6 +91,22 @@ func TestAdminBusinessFlowContextToDetailKeepsChangeOrdersAndActions(t *testing.
 		changeOrders: []ChangeOrderView{
 			{ID: 1004, ProjectID: 1001, Title: "减项调整", Status: model.ChangeOrderStatusAdminSettlementRequired},
 		},
+		changeOrderSummary: &ChangeOrderSummary{
+			TotalCount:             1,
+			PendingSettlementCount: 1,
+			LatestChangeOrderID:    1004,
+		},
+		settlementSummary: &SettlementSummary{
+			LatestSettlementID: 1005,
+			Status:             model.SettlementStatusScheduled,
+			NetAmount:          8800,
+		},
+		payoutSummary: &PayoutSummary{
+			LatestPayoutID: 1006,
+			Status:         model.PayoutStatusProcessing,
+		},
+		financialClosureStatus: "settlement_scheduled",
+		nextPendingAction:      "wait_payout",
 		availableAdminActions: []AdminBusinessFlowAction{
 			{Key: "settle_change_order", Label: "处理减项结算", Kind: "mutation"},
 		},
@@ -111,5 +127,38 @@ func TestAdminBusinessFlowContextToDetailKeepsChangeOrdersAndActions(t *testing.
 	}
 	if len(detail.Orders[0].PaymentPlan) != 1 || detail.Orders[0].PaymentPlan[0].ID != 1003 {
 		t.Fatalf("expected payment plan snapshot to stay attached, got %+v", detail.Orders[0].PaymentPlan)
+	}
+	if detail.ChangeOrderSummary == nil || detail.ChangeOrderSummary.PendingSettlementCount != 1 {
+		t.Fatalf("expected change-order summary to be exposed, got %+v", detail.ChangeOrderSummary)
+	}
+	if detail.SettlementSummary == nil || detail.SettlementSummary.Status != model.SettlementStatusScheduled {
+		t.Fatalf("expected settlement summary to be exposed, got %+v", detail.SettlementSummary)
+	}
+	if detail.PayoutSummary == nil || detail.PayoutSummary.Status != model.PayoutStatusProcessing {
+		t.Fatalf("expected payout summary to be exposed, got %+v", detail.PayoutSummary)
+	}
+	if detail.FinancialClosureStatus != "settlement_scheduled" || detail.NextPendingAction != "wait_payout" {
+		t.Fatalf("expected financial closure conclusion, got status=%s action=%s", detail.FinancialClosureStatus, detail.NextPendingAction)
+	}
+}
+
+func TestAdminBusinessFlowFilterMatchesSettlementAndPayoutStatus(t *testing.T) {
+	ctx := &adminBusinessFlowContext{
+		settlementStatus: model.SettlementStatusScheduled,
+		payoutStatus:     model.PayoutStatusProcessing,
+	}
+	item := ctx.toListItem()
+
+	if !matchesBusinessFlowFilter(ctx, item, AdminBusinessFlowFilter{
+		SettlementStatus: model.SettlementStatusScheduled,
+		PayoutStatus:     model.PayoutStatusProcessing,
+	}) {
+		t.Fatalf("expected matching settlement/payout filters")
+	}
+	if matchesBusinessFlowFilter(ctx, item, AdminBusinessFlowFilter{SettlementStatus: model.SettlementStatusPaid}) {
+		t.Fatalf("expected mismatched settlement status to be filtered out")
+	}
+	if matchesBusinessFlowFilter(ctx, item, AdminBusinessFlowFilter{PayoutStatus: model.PayoutStatusFailed}) {
+		t.Fatalf("expected mismatched payout status to be filtered out")
 	}
 }

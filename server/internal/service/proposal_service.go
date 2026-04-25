@@ -3,7 +3,6 @@ package service
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -350,10 +349,9 @@ func (s *ProposalService) confirmProposalForBooking(
 		tx.Rollback()
 		return nil, err
 	}
-	// PRD v2.3规则1：设计确认后进入 design_confirmed 状态，不再自动推进到工长选择
-	// 用户需要主动选择工长
+	// 设计确认后进入施工桥接，后续在同一桥接链路内完成基线、施工主体与正式报价确认。
 	if err := businessFlowSvc.AdvanceBySource(tx, model.BusinessFlowSourceBooking, booking.ID, map[string]interface{}{
-		"current_stage":         model.BusinessFlowStageDesignConfirmed,
+		"current_stage":         model.BusinessFlowStageConstructionPartyPending,
 		"confirmed_proposal_id": proposal.ID,
 		"designer_provider_id":  booking.ProviderID,
 		"project_id":            0,
@@ -838,7 +836,7 @@ func (s *ProposalService) RejectProposal(userID, proposalID uint64, input *Rejec
 				Type:        "refund.application.created",
 				RelatedID:   abnormalRefund.ID,
 				RelatedType: "refund_application",
-				ActionURL:   fmt.Sprintf("/admin/refunds/%d", abnormalRefund.ID),
+				ActionURL:   buildAdminRefundActionURL(abnormalRefund.ID),
 			})
 		}
 	}

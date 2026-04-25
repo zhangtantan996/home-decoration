@@ -38,6 +38,8 @@ services:
     environment:
       - APP_ENV=local
       - SERVER_PUBLIC_URL=http://localhost:8080
+      - WECHAT_MINI_APPID=${WECHAT_MINI_APPID:-}
+      - WECHAT_MINI_SECRET=${WECHAT_MINI_SECRET:-}
       - ALIPAY_ENABLED=${ALIPAY_ENABLED:-false}
       - ALIPAY_SANDBOX=${ALIPAY_SANDBOX:-false}
       - ALIPAY_GATEWAY_URL=${ALIPAY_GATEWAY_URL:-https://openapi.alipay.com/gateway.do}

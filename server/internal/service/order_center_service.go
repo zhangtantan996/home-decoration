@@ -66,6 +66,13 @@ type OrderCenterProjectSummary struct {
 	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
 	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
 	ClosureSummary                 *ProjectClosureSummary   `json:"closureSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation   `json:"commercialExplanation,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary      `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary       `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary           `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                   `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                   `json:"nextPendingAction,omitempty"`
 	RiskSummary                    *ProjectRiskSummary      `json:"riskSummary,omitempty"`
 }
 
@@ -169,6 +176,13 @@ type OrderCenterEntryDetail struct {
 	SupervisorSummary              *BridgeSupervisorSummary        `json:"supervisorSummary,omitempty"`
 	BridgeConversionSummary        *BridgeConversionSummary        `json:"bridgeConversionSummary,omitempty"`
 	ClosureSummary                 *ProjectClosureSummary          `json:"closureSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary              `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation          `json:"commercialExplanation,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary             `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary              `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary                  `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                          `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                          `json:"nextPendingAction,omitempty"`
 	DescriptionSections            []OrderCenterDescriptionSection `json:"descriptionSections,omitempty"`
 	PaymentPlans                   []OrderCenterPaymentPlanItem    `json:"paymentPlans,omitempty"`
 	NextPayablePlan                *OrderCenterPaymentPlanItem     `json:"nextPayablePlan,omitempty"`
@@ -385,6 +399,13 @@ func (b baseOrderCenterSource) projectSummary(project *ProjectDetail) *OrderCent
 		SupervisorSummary:              project.SupervisorSummary,
 		BridgeConversionSummary:        project.BridgeConversionSummary,
 		ClosureSummary:                 project.ClosureSummary,
+		QuoteTruthSummary:              project.QuoteTruthSummary,
+		CommercialExplanation:          project.CommercialExplanation,
+		ChangeOrderSummary:             project.ChangeOrderSummary,
+		SettlementSummary:              project.SettlementSummary,
+		PayoutSummary:                  project.PayoutSummary,
+		FinancialClosureStatus:         project.FinancialClosureStatus,
+		NextPendingAction:              project.NextPendingAction,
 		RiskSummary:                    project.RiskSummary,
 	}
 }
@@ -703,6 +724,13 @@ func (s *businessOrderCenterSource) GetEntryDetailForUser(userID, primaryID uint
 		detail.SupervisorSummary = projectDetail.SupervisorSummary
 		detail.BridgeConversionSummary = projectDetail.BridgeConversionSummary
 		detail.ClosureSummary = projectDetail.ClosureSummary
+		detail.QuoteTruthSummary = projectDetail.QuoteTruthSummary
+		detail.CommercialExplanation = projectDetail.CommercialExplanation
+		detail.ChangeOrderSummary = projectDetail.ChangeOrderSummary
+		detail.SettlementSummary = projectDetail.SettlementSummary
+		detail.PayoutSummary = projectDetail.PayoutSummary
+		detail.FinancialClosureStatus = projectDetail.FinancialClosureStatus
+		detail.NextPendingAction = projectDetail.NextPendingAction
 	}
 	detail.DescriptionSections = buildBusinessOrderSections(order, detail, nextPlan)
 	detail.Timeline = buildBusinessOrderTimeline(order, nextPlan)

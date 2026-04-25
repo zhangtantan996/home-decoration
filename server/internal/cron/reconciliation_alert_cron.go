@@ -58,7 +58,7 @@ func checkOverdueDifferences() error {
 			diff.CreatedAt.Format(time.RFC3339),
 		)
 
-		actionURL := fmt.Sprintf("/admin/reconciliation/%d/differences?differenceId=%d",
+		actionURL := fmt.Sprintf("/finance/reconciliations?reconciliationId=%d&differenceId=%d",
 			diff.ReconciliationID, diff.ID)
 
 		_, _, err := alertService.UpsertAlert(&service.CreateSystemAlertInput{

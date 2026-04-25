@@ -1394,6 +1394,62 @@ func MerchantDashboardStats(c *gin.Context) {
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&monthRevenue)
 
+	var pendingQuoteInvitations int64
+	repository.DB.Model(&model.QuoteInvitation{}).
+		Where("provider_id = ? AND status = ?", providerID, model.QuoteInvitationStatusInvited).
+		Count(&pendingQuoteInvitations)
+
+	var draftQuoteSubmissions int64
+	repository.DB.Model(&model.QuoteSubmission{}).
+		Where("provider_id = ? AND status IN ?", providerID, []string{
+			model.QuoteSubmissionStatusDraft,
+			model.QuoteSubmissionStatusGenerated,
+			model.QuoteSubmissionStatusMerchantReviewing,
+		}).
+		Count(&draftQuoteSubmissions)
+
+	var rejectedQuoteSubmissions int64
+	repository.DB.Model(&model.QuoteSubmission{}).
+		Where("provider_id = ? AND task_status = ?", providerID, model.QuoteListStatusRejected).
+		Count(&rejectedQuoteSubmissions)
+
+	var submittedToUserQuotes int64
+	repository.DB.Model(&model.QuoteSubmission{}).
+		Where("provider_id = ? AND (submitted_to_user = ? OR task_status = ?)", providerID, true, model.QuoteListStatusSubmittedToUser).
+		Count(&submittedToUserQuotes)
+
+	var missingPriceRequiredCount int64
+	repository.DB.Model(&model.QuoteSubmissionItem{}).
+		Joins("JOIN quote_submissions ON quote_submissions.id = quote_submission_items.quote_submission_id").
+		Where("quote_submissions.provider_id = ? AND quote_submission_items.missing_price_flag = ?", providerID, true).
+		Count(&missingPriceRequiredCount)
+
+	var pendingChangeOrders int64
+	repository.DB.Model(&model.ChangeOrder{}).
+		Joins("JOIN projects ON projects.id = change_orders.project_id").
+		Where("change_orders.status IN ?", []string{
+			model.ChangeOrderStatusPendingUserConfirm,
+			model.ChangeOrderStatusAdminSettlementRequired,
+		}).
+		Where("(projects.provider_id = ? OR projects.construction_provider_id = ? OR projects.foreman_id = ?)", providerID, providerID, providerID).
+		Count(&pendingChangeOrders)
+
+	var pendingSettlementAmount float64
+	repository.DB.Model(&model.SettlementOrder{}).
+		Where("provider_id = ? AND status IN ?", providerID, []string{
+			model.SettlementStatusScheduled,
+			model.SettlementStatusPayoutProcessing,
+			model.SettlementStatusPayoutFailed,
+			model.SettlementStatusException,
+		}).
+		Select("COALESCE(SUM(merchant_net_amount), 0)").
+		Scan(&pendingSettlementAmount)
+
+	var failedPayoutCount int64
+	repository.DB.Model(&model.PayoutOrder{}).
+		Where("provider_id = ? AND status = ?", providerID, model.PayoutStatusFailed).
+		Count(&failedPayoutCount)
+
 	activeProjects := int64(0)
 	var provider model.Provider
 	if err := repository.DB.Select("provider_type").First(&provider, providerID).Error; err == nil {
@@ -1425,12 +1481,30 @@ func MerchantDashboardStats(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"pendingLeads":     pendingLeads,
-		"todayBookings":    todayBookings,
-		"pendingProposals": pendingProposals,
-		"activeProjects":   activeProjects,
-		"totalRevenue":     totalRevenue,
-		"monthRevenue":     monthRevenue,
+		"pendingLeads":              pendingLeads,
+		"todayBookings":             todayBookings,
+		"pendingProposals":          pendingProposals,
+		"pendingQuoteInvitations":   pendingQuoteInvitations,
+		"draftQuoteSubmissions":     draftQuoteSubmissions,
+		"rejectedQuoteSubmissions":  rejectedQuoteSubmissions,
+		"submittedToUserQuotes":     submittedToUserQuotes,
+		"missingPriceRequiredCount": missingPriceRequiredCount,
+		"pendingChangeOrders":       pendingChangeOrders,
+		"pendingSettlementAmount":   pendingSettlementAmount,
+		"failedPayoutCount":         failedPayoutCount,
+		"quoteErp": gin.H{
+			"pendingQuoteInvitations":   pendingQuoteInvitations,
+			"draftQuoteSubmissions":     draftQuoteSubmissions,
+			"rejectedQuoteSubmissions":  rejectedQuoteSubmissions,
+			"submittedToUserQuotes":     submittedToUserQuotes,
+			"missingPriceRequiredCount": missingPriceRequiredCount,
+			"pendingChangeOrders":       pendingChangeOrders,
+			"pendingSettlementAmount":   pendingSettlementAmount,
+			"failedPayoutCount":         failedPayoutCount,
+		},
+		"activeProjects": activeProjects,
+		"totalRevenue":   totalRevenue,
+		"monthRevenue":   monthRevenue,
 		"bookings": gin.H{
 			"pending":   pendingBookings,
 			"confirmed": confirmedBookings,

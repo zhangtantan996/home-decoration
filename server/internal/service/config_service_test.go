@@ -108,7 +108,7 @@ func TestSetConfigMiniHomePopupNormalizesPayloadAndAssignsCampaignVersion(t *tes
 		"title": "30 秒生成装修报价",
 		"subtitle": "填写几项信息，快速拿到装修预算参考。",
 		"primaryAction": {"text": "立即生成", "path": "/pages/quote-inquiry/create/index"},
-		"secondaryAction": {"enabled": true, "text": "先看看服务商", "path": "/pages/providers/list/index?type=designer"},
+		"secondaryAction": {"enabled": true, "text": "先看看服务商", "path": "/pages/home/index"},
 		"frequency": "daily_once"
 	}`
 
@@ -135,7 +135,7 @@ func TestSetConfigMiniHomePopupNormalizesPayloadAndAssignsCampaignVersion(t *tes
 	if popup.PrimaryAction.Path != "/pages/quote-inquiry/create/index" {
 		t.Fatalf("unexpected primary path: %s", popup.PrimaryAction.Path)
 	}
-	if popup.SecondaryAction.Path != "/pages/providers/list/index?type=designer" {
+	if popup.SecondaryAction.Path != "/pages/home/index" {
 		t.Fatalf("unexpected secondary path: %s", popup.SecondaryAction.Path)
 	}
 }
@@ -199,7 +199,7 @@ func TestGetActiveMiniHomePopupHonorsEnabledAndTimeWindow(t *testing.T) {
 		"title": "30 秒生成装修报价",
 		"subtitle": "填写几项信息，快速拿到装修预算参考。",
 		"primaryAction": {"text": "立即生成", "path": "/pages/quote-inquiry/create/index"},
-		"secondaryAction": {"enabled": true, "text": "先看看服务商", "path": "/pages/providers/list/index?type=designer"},
+		"secondaryAction": {"enabled": true, "text": "先看看服务商", "path": "/pages/home/index"},
 		"frequency": "daily_once",
 		"startAt": "2026-04-20T09:00:00Z",
 		"endAt": "2026-04-20T12:00:00Z"

@@ -94,7 +94,7 @@ func TestRefreshCommerceRuntimeSchemaHealthReportsMissingTables(t *testing.T) {
 			t.Fatalf("expected missing to contain %s, got %+v", required, snapshot.Missing)
 		}
 	}
-	expectedMigration := CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath
+	expectedMigration := CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath + "," + FinancialRuntimeMigrationPath
 	if snapshot.RequiredMigration != expectedMigration {
 		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
 	}
@@ -110,8 +110,27 @@ func TestResolveCommerceRuntimeMigrationPath(t *testing.T) {
 	if got := resolveCommerceRuntimeMigrationPath([]string{"payment_plans.change_order_id"}); got != ChangeOrderLinkMigrationPath {
 		t.Fatalf("expected change-order link migration path, got %s", got)
 	}
-	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled", "quote_lists.quantity_base_id", "payment_plans.change_order_id"}); got != CommerceRuntimeMigrationPath {
-		t.Fatalf("expected combined runtime migration path, got %s", got)
+	expectedCombined := CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath + "," + ChangeOrderLinkMigrationPath
+	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled", "quote_lists.quantity_base_id", "payment_plans.change_order_id"}); got != expectedCombined {
+		t.Fatalf("expected base quote change-order runtime migration path, got %s", got)
+	}
+	if got := resolveCommerceRuntimeMigrationPath([]string{"settlement_orders.status", "payout_orders.status"}); got != FinancialRuntimeMigrationPath {
+		t.Fatalf("expected financial runtime migration path, got %s", got)
+	}
+}
+
+func TestQuotePKTablesRemainLegacyOutsideCommerceRuntimeTruth(t *testing.T) {
+	if _, ok := quoteRuntimeTables["quote_tasks"]; ok {
+		t.Fatalf("quote_tasks should remain legacy and stay outside quote runtime truth tables")
+	}
+	if _, ok := quoteRuntimeTables["quote_pk_submissions"]; ok {
+		t.Fatalf("quote_pk_submissions should remain legacy and stay outside quote runtime truth tables")
+	}
+	if _, ok := commerceRuntimeRequirements["quote_tasks"]; ok {
+		t.Fatalf("quote_tasks should not be part of current commerce runtime requirements")
+	}
+	if _, ok := commerceRuntimeRequirements["quote_pk_submissions"]; ok {
+		t.Fatalf("quote_pk_submissions should not be part of current commerce runtime requirements")
 	}
 }
 

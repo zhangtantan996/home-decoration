@@ -14,6 +14,7 @@ var quoteInquiryService = &service.QuoteInquiryService{}
 // CreateQuoteInquiryRequest 创建询价请求
 type CreateQuoteInquiryRequest struct {
 	Address        string  `json:"address" binding:"required"`
+	CityCode       string  `json:"cityCode"`
 	Area           float64 `json:"area" binding:"required,min=10,max=2000"`
 	HouseLayout    string  `json:"houseLayout"`
 	RenovationType string  `json:"renovationType" binding:"required"`
@@ -53,6 +54,7 @@ func CreateQuoteInquiry(c *gin.Context) {
 		OpenID:         openID,
 		Phone:          req.Phone,
 		Address:        req.Address,
+		CityCode:       req.CityCode,
 		Area:           req.Area,
 		HouseLayout:    req.HouseLayout,
 		RenovationType: req.RenovationType,

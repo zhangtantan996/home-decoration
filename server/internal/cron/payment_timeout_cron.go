@@ -14,6 +14,10 @@ import (
 // PaymentTimeoutJob 超时支付单自动关闭定时任务
 type PaymentTimeoutJob struct{}
 
+var syncPaymentStateForTimeout = func(paymentID uint64) (*model.PaymentOrder, error) {
+	return (&service.PaymentService{}).SyncPaymentState(paymentID)
+}
+
 // NewPaymentTimeoutJob 创建超时支付单关闭任务实例
 func NewPaymentTimeoutJob() *PaymentTimeoutJob {
 	return &PaymentTimeoutJob{}
@@ -151,8 +155,8 @@ func (j *PaymentTimeoutJob) handleQueryResult(payment *model.PaymentOrder, resul
 	if newStatus == model.PaymentStatusPaid {
 		log.Printf("[Cron] Payment %d is actually paid, trigger compensation (out_trade_no=%s)",
 			payment.ID, payment.OutTradeNo)
-		// 这里可以触发支付补偿逻辑，暂时仅记录日志
-		return nil
+		_, err := syncPaymentStateForTimeout(payment.ID)
+		return err
 	}
 
 	// 更新为真实状态

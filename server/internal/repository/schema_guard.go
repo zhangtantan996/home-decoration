@@ -29,6 +29,14 @@ var HighRiskTables = map[string][]string{
 	"material_shop_application_products": {"unit"},
 	"material_shop_products":             {"unit", "description"},
 	"sms_audit_logs":                     {"risk_tier", "template_key", "template_code"},
+	"quote_lists":                        {"quantity_base_id", "quantity_base_version", "source_type", "source_id", "active_submission_id"},
+	"payment_orders":                     {"fund_scene", "amount_cent", "refunded_amount", "refunded_amount_cent", "refund_status"},
+	"refund_orders":                      {"fund_scene", "amount_cent"},
+	"payment_plans":                      {"change_order_id", "amount_cent", "refunded_amount", "refunded_amount_cent", "refund_status"},
+	"settlement_orders":                  {"gross_amount_cent", "platform_fee_cent", "merchant_net_amount_cent", "recovery_amount_cent"},
+	"payout_orders":                      {"amount_cent"},
+	"merchant_incomes":                   {"amount_cent", "platform_fee_cent", "net_amount_cent"},
+	"merchant_withdraws":                 {"amount_cent"},
 }
 
 type SchemaGuardCheckResult struct {

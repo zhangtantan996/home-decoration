@@ -25,22 +25,26 @@ const (
 
 type SettlementOrder struct {
 	Base
-	BizType           string     `json:"bizType" gorm:"size:50;index:idx_settlement_orders_biz"`
-	BizID             uint64     `json:"bizId" gorm:"index:idx_settlement_orders_biz"`
-	ProjectID         uint64     `json:"projectId" gorm:"index"`
-	ProviderID        uint64     `json:"providerId" gorm:"index"`
-	FundScene         string     `json:"fundScene" gorm:"size:40;index"`
-	GrossAmount       float64    `json:"grossAmount"`
-	PlatformFee       float64    `json:"platformFee"`
-	MerchantNetAmount float64    `json:"merchantNetAmount"`
-	AcceptedAt        *time.Time `json:"acceptedAt" gorm:"index"`
-	DueAt             *time.Time `json:"dueAt" gorm:"index"`
-	PayoutOrderID     uint64     `json:"payoutOrderId" gorm:"index"`
-	Status            string     `json:"status" gorm:"size:30;index"`
-	FailureReason     string     `json:"failureReason" gorm:"size:500"`
-	RecoveryStatus    string     `json:"recoveryStatus" gorm:"size:30;default:'none'"`
-	RecoveryAmount    float64    `json:"recoveryAmount" gorm:"default:0"`
-	MetadataJSON      string     `json:"metadataJson" gorm:"type:jsonb;default:'{}'"`
+	BizType               string     `json:"bizType" gorm:"size:50;index:idx_settlement_orders_biz"`
+	BizID                 uint64     `json:"bizId" gorm:"index:idx_settlement_orders_biz"`
+	ProjectID             uint64     `json:"projectId" gorm:"index"`
+	ProviderID            uint64     `json:"providerId" gorm:"index"`
+	FundScene             string     `json:"fundScene" gorm:"size:40;index"`
+	GrossAmount           float64    `json:"grossAmount"`
+	GrossAmountCent       int64      `json:"grossAmountCent" gorm:"default:0"`
+	PlatformFee           float64    `json:"platformFee"`
+	PlatformFeeCent       int64      `json:"platformFeeCent" gorm:"default:0"`
+	MerchantNetAmount     float64    `json:"merchantNetAmount"`
+	MerchantNetAmountCent int64      `json:"merchantNetAmountCent" gorm:"default:0"`
+	AcceptedAt            *time.Time `json:"acceptedAt" gorm:"index"`
+	DueAt                 *time.Time `json:"dueAt" gorm:"index"`
+	PayoutOrderID         uint64     `json:"payoutOrderId" gorm:"index"`
+	Status                string     `json:"status" gorm:"size:30;index"`
+	FailureReason         string     `json:"failureReason" gorm:"size:500"`
+	RecoveryStatus        string     `json:"recoveryStatus" gorm:"size:30;default:'none'"`
+	RecoveryAmount        float64    `json:"recoveryAmount" gorm:"default:0"`
+	RecoveryAmountCent    int64      `json:"recoveryAmountCent" gorm:"default:0"`
+	MetadataJSON          string     `json:"metadataJson" gorm:"type:jsonb;default:'{}'"`
 }
 
 func (SettlementOrder) TableName() string {

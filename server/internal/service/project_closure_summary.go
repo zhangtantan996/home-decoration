@@ -7,6 +7,8 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 type ProjectClosureSummary struct {
@@ -20,8 +22,15 @@ type ProjectClosureSummary struct {
 }
 
 func BuildProjectClosureSummary(project *model.Project) *ProjectClosureSummary {
+	return buildProjectClosureSummaryFromProjectWithDB(repository.DB, project)
+}
+
+func buildProjectClosureSummaryFromProjectWithDB(db *gorm.DB, project *model.Project) *ProjectClosureSummary {
 	if project == nil {
 		return nil
+	}
+	if db == nil {
+		db = repository.DB
 	}
 	summary := &ProjectClosureSummary{
 		CompletionStatus:       resolveCompletionStatus(project),
@@ -36,13 +45,13 @@ func BuildProjectClosureSummary(project *model.Project) *ProjectClosureSummary {
 	var settlementRows []struct {
 		Status string
 	}
-	_ = repository.DB.Table("settlement_orders").Select("status").Where("project_id = ?", project.ID).Order("id DESC").Limit(1).Scan(&settlementRows).Error
+	_ = db.Table("settlement_orders").Select("status").Where("project_id = ?", project.ID).Order("id DESC").Limit(1).Scan(&settlementRows).Error
 	if len(settlementRows) > 0 {
 		summary.SettlementStatus = strings.TrimSpace(settlementRows[0].Status)
 	}
 
 	var incomeRows []model.MerchantIncome
-	_ = repository.DB.Where("order_id IN (?)", repository.DB.Model(&model.Order{}).Select("id").Where("project_id = ?", project.ID)).Find(&incomeRows).Error
+	_ = db.Where("order_id IN (?)", db.Model(&model.Order{}).Select("id").Where("project_id = ?", project.ID)).Find(&incomeRows).Error
 	payoutStatus := "not_started"
 	settlableCount := 0
 	payoutDoneCount := 0

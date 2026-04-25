@@ -160,9 +160,39 @@ func TestHighRiskTablesCount(t *testing.T) {
 		"material_shop_application_products",
 		"material_shop_products",
 		"sms_audit_logs",
+		"quote_lists",
+		"payment_orders",
+		"refund_orders",
+		"payment_plans",
+		"settlement_orders",
+		"payout_orders",
+		"merchant_incomes",
+		"merchant_withdraws",
 	}
 	if len(HighRiskTables) != len(expectedTables) {
 		t.Fatalf("expected %d high risk tables, got %d", len(expectedTables), len(HighRiskTables))
+	}
+}
+
+func TestCheckHighRiskTableColumnsIncludesERPTruthGuard(t *testing.T) {
+	setupSchemaHealthDB(t)
+	if err := DB.Exec(`CREATE TABLE payment_plans (id INTEGER PRIMARY KEY, order_id INTEGER)`).Error; err != nil {
+		t.Fatalf("create payment_plans table: %v", err)
+	}
+	if err := DB.Exec(`CREATE TABLE quote_lists (id INTEGER PRIMARY KEY, title TEXT)`).Error; err != nil {
+		t.Fatalf("create quote_lists table: %v", err)
+	}
+
+	paymentPlanResult := CheckHighRiskTableColumns("payment_plans")
+	if !strings.Contains(strings.Join(paymentPlanResult.Missing, ","), "change_order_id") {
+		t.Fatalf("expected payment_plans.change_order_id in missing columns, got %+v", paymentPlanResult.Missing)
+	}
+
+	quoteListResult := CheckHighRiskTableColumns("quote_lists")
+	for _, required := range []string{"quote_lists.quantity_base_id", "quote_lists.source_type", "quote_lists.source_id", "quote_lists.active_submission_id"} {
+		if !strings.Contains(strings.Join(quoteListResult.Missing, ","), required) {
+			t.Fatalf("expected %s in missing columns, got %+v", required, quoteListResult.Missing)
+		}
 	}
 }
 

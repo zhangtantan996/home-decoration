@@ -452,7 +452,9 @@ func resolveNotificationSpec(notification *model.Notification) NotificationSpec 
 		Priority:           NotificationPriorityNormal,
 		CanonicalActionURL: strings.TrimSpace(notification.ActionURL),
 		SupportsWeb:        true,
-		SupportsMini:       notificationRouteSupportedInMini(notification.ActionURL),
+		// Unknown notification types must not claim Mini support by URL prefix alone.
+		// Mini route support is contract-based and should be explicitly registered.
+		SupportsMini: false,
 	}
 
 	switch {

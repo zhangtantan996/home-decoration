@@ -25,8 +25,9 @@ const (
 	AuditLogMigrationPath            = "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
 	CommerceRuntimeBaseMigrationPath = "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
 	QuoteRuntimeMigrationPath        = "server/migrations/v1.13.6_reconcile_quote_runtime_schema.sql"
+	FinancialRuntimeMigrationPath    = "server/migrations/v1.12.12_add_payment_central_runtime.sql,server/migrations/v1.12.13_add_settlement_and_bond_domains.sql,server/migrations/v1.14.2_payment_refund_projection_and_money_cents.sql"
 	ChangeOrderLinkMigrationPath     = "server/migrations/v1.13.7_link_change_orders_to_payment_plans.sql"
-	CommerceRuntimeMigrationPath     = CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath + "," + ChangeOrderLinkMigrationPath
+	CommerceRuntimeMigrationPath     = CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath + "," + FinancialRuntimeMigrationPath + "," + ChangeOrderLinkMigrationPath
 )
 
 var claimedCompletionSchemaFields = map[string]struct{}{
@@ -216,9 +217,15 @@ var commerceRuntimeRequirements = map[string][]string{
 	"bookings":                   {"survey_deposit_source", "survey_refund_notice", "survey_deposit", "survey_deposit_paid", "survey_deposit_paid_at", "survey_deposit_converted", "survey_deposit_refunded", "survey_deposit_refund_amt", "survey_deposit_refund_at"},
 	"proposals":                  {"internal_draft_json", "preview_package_json", "delivery_package_json"},
 	"milestones":                 {"release_scheduled_at", "released_at"},
-	"projects":                   {"construction_payment_mode", "payment_paused", "payment_paused_at", "payment_paused_reason"},
+	"projects":                   {"construction_payment_mode", "construction_quote_snapshot", "selected_quote_submission_id", "payment_paused", "payment_paused_at", "payment_paused_reason"},
 	"merchant_service_settings":  {"survey_deposit_amount", "design_payment_mode"},
-	"payment_plans":              {"milestone_id", "change_order_id"},
+	"payment_orders":             {"fund_scene", "amount_cent", "refunded_amount", "refunded_amount_cent", "refund_status"},
+	"refund_orders":              {"fund_scene", "amount_cent"},
+	"payment_plans":              {"milestone_id", "change_order_id", "amount_cent", "refunded_amount", "refunded_amount_cent", "refund_status"},
+	"settlement_orders":          {"biz_type", "biz_id", "project_id", "provider_id", "gross_amount", "merchant_net_amount", "payout_order_id", "status", "failure_reason", "gross_amount_cent", "platform_fee_cent", "merchant_net_amount_cent", "recovery_amount_cent"},
+	"payout_orders":              {"biz_type", "biz_id", "provider_id", "amount", "channel", "status", "scheduled_at", "paid_at", "failure_reason", "amount_cent"},
+	"merchant_incomes":           {"amount_cent", "platform_fee_cent", "net_amount_cent"},
+	"merchant_withdraws":         {"amount_cent"},
 	"design_working_docs":        {"booking_id", "provider_id", "doc_type", "title", "description", "files", "submitted_at"},
 	"design_fee_quotes":          {"booking_id", "provider_id", "total_fee", "deposit_deduction", "net_amount", "payment_mode", "stages_json", "status", "expire_at", "confirmed_at", "rejected_at", "rejection_reason", "order_id"},
 	"design_deliverables":        {"booking_id", "project_id", "order_id", "provider_id", "color_floor_plan", "renderings", "rendering_link", "text_description", "cad_drawings", "attachments", "status", "submitted_at", "accepted_at", "rejected_at", "rejection_reason"},
@@ -226,8 +233,8 @@ var commerceRuntimeRequirements = map[string][]string{
 	"quantity_base_items":        {"quantity_base_id", "source_item_name", "unit", "quantity", "category_l1", "category_l2", "sort_order"},
 	"quote_categories":           {"code", "name", "parent_id", "sort_order", "status"},
 	"quote_library_items":        {"category_id", "standard_code", "name", "unit", "category_l1", "category_l2", "category_l3", "erp_seq_no", "reference_price_cent", "status", "keywords_json", "erp_mapping_json", "quantity_formula_json"},
-	"quote_price_books":          {"provider_id", "status", "version"},
-	"quote_price_book_items":     {"price_book_id", "standard_item_id", "price_tier_id", "unit", "unit_price_cent", "min_charge_cent", "status"},
+	"quote_price_books":          {"provider_id", "status", "version", "effective_from", "effective_to", "remark"},
+	"quote_price_book_items":     {"price_book_id", "standard_item_id", "price_tier_id", "unit", "unit_price_cent", "min_charge_cent", "remark", "status"},
 	"quote_price_tiers":          {"library_item_id", "tier_key", "condition_json", "sort_order"},
 	"quote_category_rules":       {"category_id", "keywords", "priority"},
 	"quote_templates":            {"name", "room_type", "renovation_type", "status"},
@@ -236,7 +243,7 @@ var commerceRuntimeRequirements = map[string][]string{
 	"quote_list_items":           {"quote_list_id", "standard_item_id", "matched_standard_item_id", "quantity_base_item_id", "selected_tier_id", "source_type", "source_stage", "name", "unit", "quantity", "quantity_adjustable_flag", "category_l1", "category_l2", "missing_mapping_flag"},
 	"quote_invitations":          {"quote_list_id", "provider_id", "status", "invited_by_user_id"},
 	"quote_submissions":          {"quote_list_id", "provider_id", "status", "task_status", "generation_status", "generated_from_price_book_id", "submitted_to_user", "review_status", "reviewed_by", "superseded_by"},
-	"quote_submission_items":     {"quote_submission_id", "quote_list_item_id", "price_tier_id", "generated_unit_price_cent", "unit_price_cent", "quoted_quantity", "adjusted_flag", "missing_price_flag", "quantity_change_reason", "requires_user_confirmation", "platform_review_flag"},
+	"quote_submission_items":     {"quote_submission_id", "quote_list_item_id", "price_tier_id", "generated_unit_price_cent", "unit_price_cent", "quoted_quantity", "amount_cent", "adjusted_flag", "missing_price_flag", "quantity_change_reason", "deviation_flag", "requires_user_confirmation", "platform_review_flag", "remark"},
 	"quote_submission_revisions": {"quote_submission_id", "quote_list_id", "provider_id", "revision_no", "action", "previous_items_json", "next_items_json", "change_reason"},
 }
 
@@ -444,6 +451,7 @@ func resolveCommerceRuntimeMigrationPath(missing []string) string {
 
 	hasBaseRuntimeGap := false
 	hasQuoteRuntimeGap := false
+	hasFinancialRuntimeGap := false
 	hasChangeOrderLinkGap := false
 	for _, item := range missing {
 		column := strings.TrimSpace(item)
@@ -453,6 +461,14 @@ func resolveCommerceRuntimeMigrationPath(missing []string) string {
 		}
 		if column == "payment_plans.change_order_id" {
 			hasChangeOrderLinkGap = true
+			continue
+		}
+		if column == "projects.construction_quote_snapshot" || column == "projects.selected_quote_submission_id" {
+			hasQuoteRuntimeGap = true
+			continue
+		}
+		if table == "settlement_orders" || table == "payout_orders" {
+			hasFinancialRuntimeGap = true
 			continue
 		}
 		if _, ok := quoteRuntimeTables[table]; ok {
@@ -468,6 +484,9 @@ func resolveCommerceRuntimeMigrationPath(missing []string) string {
 	}
 	if hasQuoteRuntimeGap {
 		paths = append(paths, QuoteRuntimeMigrationPath)
+	}
+	if hasFinancialRuntimeGap {
+		paths = append(paths, FinancialRuntimeMigrationPath)
 	}
 	if hasChangeOrderLinkGap {
 		paths = append(paths, ChangeOrderLinkMigrationPath)

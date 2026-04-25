@@ -79,6 +79,10 @@ type PaymentChannelService interface {
 	QueryRefundOrder(ctx context.Context, order *model.PaymentOrder, refund *model.RefundOrder) (*PaymentChannelRefundResult, error)
 }
 
+type PaymentChannelRefundNotifyParser interface {
+	ParseRefundNotifyRequest(ctx context.Context, request *http.Request) (*PaymentChannelRefundResult, error)
+}
+
 type AlipayPaymentChannelService struct {
 	gateway paymentGateway
 }
@@ -213,6 +217,13 @@ func (s *WechatPaymentChannelService) ParseNotifyRequest(ctx context.Context, re
 		return nil, errors.New("微信支付网关未初始化")
 	}
 	return s.gateway.ParseNotifyRequest(ctx, request)
+}
+
+func (s *WechatPaymentChannelService) ParseRefundNotifyRequest(ctx context.Context, request *http.Request) (*PaymentChannelRefundResult, error) {
+	if s.gateway == nil {
+		return nil, errors.New("微信支付网关未初始化")
+	}
+	return s.gateway.ParseRefundNotifyRequest(ctx, request)
 }
 
 func (s *WechatPaymentChannelService) QueryCollectOrder(ctx context.Context, order *model.PaymentOrder) (*PaymentChannelTradeResult, error) {

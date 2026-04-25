@@ -60,62 +60,19 @@ func (h *MilestonePaymentHandler) CreateMilestonePaymentPlan(c *gin.Context) {
 	})
 }
 
-// PayMilestoneRequest 支付节点款项请求
-type PayMilestoneRequest struct {
-	PaymentType string `json:"paymentType" binding:"required,oneof=wechat alipay balance"`
-}
-
 // PayMilestone 支付节点款项
 // POST /api/v1/milestones/:id/pay
 func (h *MilestonePaymentHandler) PayMilestone(c *gin.Context) {
 	milestoneIDStr := c.Param("id")
-	milestoneID, err := strconv.ParseUint(milestoneIDStr, 10, 64)
-	if err != nil {
+	if _, err := strconv.ParseUint(milestoneIDStr, 10, 64); err != nil {
 		response.Error(c, http.StatusBadRequest, "无效的节点ID")
 		return
 	}
 
-	var req PayMilestoneRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
-		return
-	}
-
-	// 从JWT获取用户ID
-	userID, exists := c.Get("userID")
-	if !exists {
-		response.Error(c, http.StatusUnauthorized, "未授权")
-		return
-	}
-
-	// 从查询参数获取项目ID
-	projectIDStr := c.Query("projectId")
-	projectID, err := strconv.ParseUint(projectIDStr, 10, 64)
-	if err != nil {
-		response.Error(c, http.StatusBadRequest, "无效的项目ID")
-		return
-	}
-
-	input := &service.PayMilestoneInput{
-		ProjectID:   projectID,
-		MilestoneID: milestoneID,
-		UserID:      userID.(uint64),
-		PaymentType: req.PaymentType,
-	}
-
-	transaction, err := h.service.PayMilestone(input)
-	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
-		return
-	}
-
-	response.Success(c, gin.H{
-		"transaction": transaction,
-		"message":     "节点款项支付成功",
-	})
+	response.Error(c, http.StatusConflict, "节点直付入口已停用，请通过订单中心发起支付")
 }
 
-// ReleaseMilestonePayment 确认节点完成并放款
+// ReleaseMilestonePayment 确认节点完成并提交结算
 // POST /api/v1/milestones/:id/release-payment
 func (h *MilestonePaymentHandler) ReleaseMilestonePayment(c *gin.Context) {
 	milestoneIDStr := c.Param("id")
@@ -148,7 +105,7 @@ func (h *MilestonePaymentHandler) ReleaseMilestonePayment(c *gin.Context) {
 
 	response.Success(c, gin.H{
 		"result":  result,
-		"message": "节点款项已放款给商家",
+		"message": "节点结算已生成，等待线下打款确认",
 	})
 }
 

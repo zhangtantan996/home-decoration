@@ -43,11 +43,22 @@ func MerchantIncomeSummary(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
 	var summary struct {
-		TotalIncome     float64 `json:"totalIncome"`     // 累计收入
-		PendingSettle   float64 `json:"pendingSettle"`   // 待结算
-		SettledAmount   float64 `json:"settledAmount"`   // 已结算 (总额)
-		WithdrawnAmount float64 `json:"withdrawnAmount"` // 已提现 (总额)
-		AvailableAmount float64 `json:"availableAmount"` // 可提现
+		TotalIncome            float64 `json:"totalIncome"`            // 累计收入
+		PendingSettle          float64 `json:"pendingSettle"`          // 待结算
+		SettledAmount          float64 `json:"settledAmount"`          // 已结算 (总额)
+		WithdrawnAmount        float64 `json:"withdrawnAmount"`        // 已提现 (总额)
+		AvailableAmount        float64 `json:"availableAmount"`        // 可提现
+		FrozenAmount           float64 `json:"frozenAmount"`           // 提现审核/待打款冻结
+		AbnormalAmount         float64 `json:"abnormalAmount"`         // 异常/追偿/出款失败
+		PendingPayoutAmount    float64 `json:"pendingPayoutAmount"`    // 已申请未完成提现
+		RejectedWithdrawAmount float64 `json:"rejectedWithdrawAmount"` // 被驳回提现
+		LatestRejectReason     string  `json:"latestRejectReason"`
+	}
+	abnormalSettlementStatuses := []string{
+		model.SettlementStatusRefundFrozen,
+		model.SettlementStatusRefunded,
+		model.SettlementStatusPayoutFailed,
+		model.SettlementStatusException,
 	}
 
 	// 1. 累计收入 (所有状态)
@@ -79,10 +90,42 @@ func MerchantIncomeSummary(c *gin.Context) {
 	// 5. 待出款 = status=1
 	repository.DB.Model(&model.MerchantIncome{}).
 		Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') = ''", providerID).
+		Where("COALESCE(settlement_status, '') NOT IN ? AND COALESCE(payout_status, '') <> ?", abnormalSettlementStatuses, model.PayoutStatusFailed).
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&summary.AvailableAmount)
 	if summary.AvailableAmount < 0 {
 		summary.AvailableAmount = 0
+	}
+
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') <> ''", providerID).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&summary.FrozenAmount)
+
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ?", providerID).
+		Where("COALESCE(settlement_status, '') IN ? OR COALESCE(payout_status, '') = ?", abnormalSettlementStatuses, model.PayoutStatusFailed).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&summary.AbnormalAmount)
+
+	repository.DB.Model(&model.MerchantWithdraw{}).
+		Where("provider_id = ? AND status IN ?", providerID, []int8{
+			model.MerchantWithdrawStatusPendingReview,
+			model.MerchantWithdrawStatusApprovedPendingTransfer,
+		}).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&summary.PendingPayoutAmount)
+
+	repository.DB.Model(&model.MerchantWithdraw{}).
+		Where("provider_id = ? AND status = ?", providerID, model.MerchantWithdrawStatusRejected).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&summary.RejectedWithdrawAmount)
+	var latestRejected model.MerchantWithdraw
+	if err := repository.DB.
+		Where("provider_id = ? AND status = ?", providerID, model.MerchantWithdrawStatusRejected).
+		Order("created_at DESC, id DESC").
+		First(&latestRejected).Error; err == nil {
+		summary.LatestRejectReason = latestRejected.FailReason
 	}
 
 	response.Success(c, summary)

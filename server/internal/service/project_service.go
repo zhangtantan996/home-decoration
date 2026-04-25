@@ -66,6 +66,14 @@ type ProjectDetail struct {
 	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
 	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
 	ClosureSummary                 *ProjectClosureSummary   `json:"closureSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation   `json:"commercialExplanation,omitempty"`
+	SubmissionHealth               *SubmissionHealthSummary `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary      `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary       `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary           `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                   `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                   `json:"nextPendingAction,omitempty"`
 	SelectedQuoteTaskID            uint64                   `json:"selectedQuoteTaskId"`
 	SelectedForemanProviderID      uint64                   `json:"selectedForemanProviderId"`
 	SelectedQuoteSubmissionID      uint64                   `json:"selectedQuoteSubmissionId"`
@@ -496,6 +504,10 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 	bridgeSummary := BuildBridgeReadModelByProject(project)
 	conversionSummary := BuildBridgeConversionSummaryByProject(project)
 	closureSummary := BuildProjectClosureSummary(project)
+	runtimeSummary, err := loadProjectQuoteRuntimeSummaryWithDB(repository.DB, project)
+	if err != nil {
+		return nil, err
+	}
 
 	return &ProjectDetail{
 		Project:                        *project,
@@ -525,6 +537,14 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
 		BridgeConversionSummary:        conversionSummary,
 		ClosureSummary:                 closureSummary,
+		QuoteTruthSummary:              runtimeSummary.QuoteTruthSummary,
+		CommercialExplanation:          runtimeSummary.CommercialExplanation,
+		SubmissionHealth:               runtimeSummary.SubmissionHealth,
+		ChangeOrderSummary:             runtimeSummary.ChangeOrderSummary,
+		SettlementSummary:              runtimeSummary.SettlementSummary,
+		PayoutSummary:                  runtimeSummary.PayoutSummary,
+		FinancialClosureStatus:         firstNonBlank(runtimeSummary.FinancialClosureStatus, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.FinancialClosureStatus })),
+		NextPendingAction:              firstNonBlank(runtimeSummary.NextPendingAction, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.NextPendingAction })),
 		SelectedQuoteTaskID:            flowSummary.SelectedQuoteTaskID,
 		SelectedForemanProviderID:      flowSummary.SelectedForemanProviderID,
 		SelectedQuoteSubmissionID:      flowSummary.SelectedQuoteSubmissionID,
@@ -647,7 +667,26 @@ func (s *ProjectService) GetProjectDetailForProvider(projectID, providerID uint6
 }
 
 func (s *ProjectService) GetMerchantProjectDetail(projectID, providerID uint64) (*ProjectDetail, error) {
-	return s.GetProjectDetailForProvider(projectID, providerID)
+	detail, err := s.GetProjectDetailForProvider(projectID, providerID)
+	if err != nil {
+		return nil, err
+	}
+	detail.AvailableActions = filterMerchantProjectActions(detail.AvailableActions)
+	return detail, nil
+}
+
+func filterMerchantProjectActions(actions []string) []string {
+	if len(actions) == 0 {
+		return actions
+	}
+	filtered := make([]string, 0, len(actions))
+	for _, action := range actions {
+		if strings.TrimSpace(action) == "start_project" {
+			continue
+		}
+		filtered = append(filtered, action)
+	}
+	return filtered
 }
 
 func (s *ProjectService) ListMerchantProjects(providerID uint64, query *MerchantProjectListQuery) ([]MerchantProjectListItem, int64, error) {
@@ -1466,74 +1505,12 @@ func (s *ProjectService) StartProject(projectID, userID uint64, req *StartProjec
 
 func (s *ProjectService) MerchantStartProject(projectID, providerID uint64, req *StartProjectRequest) (*model.Project, error) {
 	if providerID == 0 {
-		return nil, errors.New("无权发起开工")
+		return nil, errors.New("无权查看当前项目")
 	}
-
-	var updated model.Project
-	err := repository.DB.Transaction(func(tx *gorm.DB) error {
-		project, err := s.getProjectForUpdate(tx, projectID)
-		if err != nil {
-			return err
-		}
-		if !canProjectProviderOperate(project, providerID) {
-			return errors.New("无权发起开工")
-		}
-		if project.BusinessStatus != model.ProjectBusinessStatusConstructionQuoteConfirmed {
-			return errors.New("当前项目状态不允许开工")
-		}
-		if !hasConfirmedConstructionParty(project) || project.ConstructionQuote <= 0 {
-			return errors.New("施工条件未确认完成，不能开工")
-		}
-		if project.EntryStartDate == nil {
-			return errors.New("请先登记计划进场时间，再发起开工")
-		}
-
-		startedAt := time.Now()
-		if req != nil && req.StartDate != "" {
-			parsed, err := parseProjectDate(req.StartDate)
-			if err != nil {
-				return errors.New("开工日期格式错误")
-			}
-			startedAt = *parsed
-		} else if project.EntryStartDate != nil {
-			startedAt = *project.EntryStartDate
-		}
-
-		currentMilestoneName, err := s.activateCurrentMilestone(tx, projectID)
-		if err != nil {
-			return err
-		}
-		if err := s.activateFirstProjectPhase(tx, projectID, startedAt); err != nil {
-			return err
-		}
-
-		currentPhase := "施工中"
-		if currentMilestoneName != "" {
-			currentPhase = currentMilestoneName + "施工中"
-		}
-		updates := map[string]interface{}{
-			"status":          model.ProjectStatusActive,
-			"business_status": model.ProjectBusinessStatusInProgress,
-			"started_at":      startedAt,
-			"start_date":      startedAt,
-			"current_phase":   currentPhase,
-		}
-		if err := tx.Model(project).Updates(updates).Error; err != nil {
-			return err
-		}
-		if err := businessFlowSvc.AdvanceByProject(tx, projectID, map[string]interface{}{
-			"current_stage": model.BusinessFlowStageInProgress,
-		}); err != nil {
-			return err
-		}
-
-		return tx.First(&updated, projectID).Error
-	})
-	if err != nil {
+	if _, err := s.getProviderProject(projectID, providerID); err != nil {
 		return nil, err
 	}
-
-	return &updated, nil
+	return nil, errors.New("当前阶段开工由监理发起")
 }
 
 func (s *ProjectService) SubmitMilestone(projectID, providerID, milestoneID uint64) (*model.Milestone, error) {
@@ -2728,8 +2705,8 @@ func (s *ProjectService) SelectConstructionParty(bookingID uint64, userID uint64
 	now := time.Now()
 	updates := map[string]interface{}{
 		"selected_foreman_provider_id": req.ProviderID,
-		"current_stage":                 model.BusinessFlowStageConstructionPartyPending,
-		"stage_changed_at":              now,
+		"current_stage":                model.BusinessFlowStageConstructionPartyPending,
+		"stage_changed_at":             now,
 	}
 
 	if err := tx.Model(&flow).Updates(updates).Error; err != nil {
@@ -2833,8 +2810,8 @@ func (s *ProjectService) ConfirmConstructionParty(bookingID uint64, providerID u
 		// 工长拒绝，回退到设计确认状态
 		updates = map[string]interface{}{
 			"selected_foreman_provider_id": 0,
-			"current_stage":                 model.BusinessFlowStageDesignConfirmed,
-			"stage_changed_at":              now,
+			"current_stage":                model.BusinessFlowStageDesignConfirmed,
+			"stage_changed_at":             now,
 		}
 	}
 

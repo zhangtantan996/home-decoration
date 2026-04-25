@@ -127,6 +127,13 @@ type QuoteListSummary struct {
 	BusinessStage            string     `json:"businessStage,omitempty"`
 	FlowSummary              string     `json:"flowSummary,omitempty"`
 	AvailableActions         []string   `json:"availableActions,omitempty"`
+	QuoteTruthSummary        *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
+	SubmissionHealth         *SubmissionHealthSummary `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary       *ChangeOrderSummary      `json:"changeOrderSummary,omitempty"`
+	SettlementSummary        *SettlementSummary       `json:"settlementSummary,omitempty"`
+	PayoutSummary            *PayoutSummary           `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus   string                   `json:"financialClosureStatus,omitempty"`
+	NextPendingAction        string                   `json:"nextPendingAction,omitempty"`
 }
 
 type QuoteListListResult struct {
@@ -155,12 +162,21 @@ type AdminQuoteListDetail struct {
 	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
 	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation   `json:"commercialExplanation,omitempty"`
+	SubmissionHealth               *SubmissionHealthSummary `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary      `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary       `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary           `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                   `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                   `json:"nextPendingAction,omitempty"`
 }
 
 type QuoteMerchantListItem struct {
 	ID                     uint64   `json:"id"`
 	Title                  string   `json:"title"`
 	Status                 string   `json:"status"`
+	ProjectID              uint64   `json:"projectId,omitempty"`
 	ProposalID             uint64   `json:"proposalId,omitempty"`
 	ProposalVersion        int      `json:"proposalVersion,omitempty"`
 	QuantityBaseID         uint64   `json:"quantityBaseId,omitempty"`
@@ -177,6 +193,10 @@ type QuoteMerchantListItem struct {
 	BusinessStage          string   `json:"businessStage,omitempty"`
 	FlowSummary            string   `json:"flowSummary,omitempty"`
 	AvailableActions       []string `json:"availableActions,omitempty"`
+	QuoteTruthSummary      *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
+	SubmissionHealth       *SubmissionHealthSummary `json:"submissionHealth,omitempty"`
+	FinancialClosureStatus string                   `json:"financialClosureStatus,omitempty"`
+	NextPendingAction      string                   `json:"nextPendingAction,omitempty"`
 }
 
 type QuoteSubmissionItemInput struct {
@@ -319,6 +339,14 @@ type MerchantQuoteListDetail struct {
 	PlannedStartDate               *time.Time                `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary  `json:"supervisorSummary,omitempty"`
 	BridgeConversionSummary        *BridgeConversionSummary  `json:"bridgeConversionSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary        `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation    `json:"commercialExplanation,omitempty"`
+	SubmissionHealth               *SubmissionHealthSummary  `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary       `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary        `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary            `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                    `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                    `json:"nextPendingAction,omitempty"`
 }
 
 type MerchantSubmission struct {
@@ -1101,6 +1129,10 @@ func (s *QuoteService) ListQuoteLists(page, pageSize int, status, keyword string
 		repository.DB.Model(&model.QuoteInvitation{}).Where("quote_list_id = ?", quoteList.ID).Count(&invitationCount)
 		repository.DB.Model(&model.QuoteSubmission{}).Where("quote_list_id = ?", quoteList.ID).Count(&submissionCount)
 		stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
+		runtimeSummary, err := buildQuoteRuntimeSummaryBundleWithDB(repository.DB, &quoteList, nil)
+		if err != nil {
+			return nil, err
+		}
 		summaries = append(summaries, QuoteListSummary{
 			ID:                       quoteList.ID,
 			ProjectID:                quoteList.ProjectID,
@@ -1131,6 +1163,13 @@ func (s *QuoteService) ListQuoteLists(page, pageSize int, status, keyword string
 			BusinessStage:            stageSummary.CurrentStage,
 			FlowSummary:              stageSummary.FlowSummary,
 			AvailableActions:         stageSummary.AvailableActions,
+			QuoteTruthSummary:        runtimeSummary.QuoteTruthSummary,
+			SubmissionHealth:         runtimeSummary.SubmissionHealth,
+			ChangeOrderSummary:       runtimeSummary.ChangeOrderSummary,
+			SettlementSummary:        runtimeSummary.SettlementSummary,
+			PayoutSummary:            runtimeSummary.PayoutSummary,
+			FinancialClosureStatus:   runtimeSummary.FinancialClosureStatus,
+			NextPendingAction:        runtimeSummary.NextPendingAction,
 		})
 	}
 
@@ -1177,6 +1216,10 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
 	conversionSummary := BuildBridgeConversionSummaryByQuoteList(&quoteList)
+	runtimeSummary, err := buildQuoteRuntimeSummaryBundleWithDB(repository.DB, &quoteList, nil)
+	if err != nil {
+		return nil, err
+	}
 
 	return &AdminQuoteListDetail{
 		QuoteList:                      quoteList,
@@ -1197,6 +1240,14 @@ func (s *QuoteService) GetAdminQuoteListDetail(quoteListID uint64) (*AdminQuoteL
 		PlannedStartDate:               bridgeSummary.PlannedStartDate,
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
 		BridgeConversionSummary:        conversionSummary,
+		QuoteTruthSummary:              runtimeSummary.QuoteTruthSummary,
+		CommercialExplanation:          runtimeSummary.CommercialExplanation,
+		SubmissionHealth:               runtimeSummary.SubmissionHealth,
+		ChangeOrderSummary:             runtimeSummary.ChangeOrderSummary,
+		SettlementSummary:              runtimeSummary.SettlementSummary,
+		PayoutSummary:                  runtimeSummary.PayoutSummary,
+		FinancialClosureStatus:         runtimeSummary.FinancialClosureStatus,
+		NextPendingAction:              runtimeSummary.NextPendingAction,
 	}, nil
 }
 
@@ -1571,6 +1622,7 @@ func (s *QuoteService) ListMerchantQuoteLists(providerID uint64) ([]QuoteMerchan
 			ID:                     quoteList.ID,
 			Title:                  quoteList.Title,
 			Status:                 quoteList.Status,
+			ProjectID:              quoteList.ProjectID,
 			ProposalID:             quoteList.ProposalID,
 			ProposalVersion:        quoteList.ProposalVersion,
 			QuantityBaseID:         quoteList.QuantityBaseID,
@@ -1591,6 +1643,23 @@ func (s *QuoteService) ListMerchantQuoteLists(providerID uint64) ([]QuoteMerchan
 		if submission, ok := submissionByList[quoteList.ID]; ok {
 			row.MySubmissionStatus = submission.Status
 			row.MyTotalCent = submission.TotalCent
+			runtimeSummary, err := buildQuoteRuntimeSummaryBundleWithDB(repository.DB, &quoteList, &submission)
+			if err != nil {
+				return nil, err
+			}
+			row.QuoteTruthSummary = runtimeSummary.QuoteTruthSummary
+			row.SubmissionHealth = runtimeSummary.SubmissionHealth
+			row.FinancialClosureStatus = runtimeSummary.FinancialClosureStatus
+			row.NextPendingAction = runtimeSummary.NextPendingAction
+		} else {
+			runtimeSummary, err := buildQuoteRuntimeSummaryBundleWithDB(repository.DB, &quoteList, nil)
+			if err != nil {
+				return nil, err
+			}
+			row.QuoteTruthSummary = runtimeSummary.QuoteTruthSummary
+			row.SubmissionHealth = runtimeSummary.SubmissionHealth
+			row.FinancialClosureStatus = runtimeSummary.FinancialClosureStatus
+			row.NextPendingAction = runtimeSummary.NextPendingAction
 		}
 		results = append(results, row)
 	}
@@ -1665,6 +1734,18 @@ func (s *QuoteService) GetMerchantQuoteListDetail(quoteListID, providerID uint64
 	resp.PlannedStartDate = bridgeSummary.PlannedStartDate
 	resp.SupervisorSummary = bridgeSummary.SupervisorSummary
 	resp.BridgeConversionSummary = conversionSummary
+	runtimeSummary, err := buildQuoteRuntimeSummaryBundleWithDB(repository.DB, quoteList, &submission)
+	if err != nil {
+		return nil, err
+	}
+	resp.QuoteTruthSummary = runtimeSummary.QuoteTruthSummary
+	resp.CommercialExplanation = runtimeSummary.CommercialExplanation
+	resp.SubmissionHealth = runtimeSummary.SubmissionHealth
+	resp.ChangeOrderSummary = runtimeSummary.ChangeOrderSummary
+	resp.SettlementSummary = runtimeSummary.SettlementSummary
+	resp.PayoutSummary = runtimeSummary.PayoutSummary
+	resp.FinancialClosureStatus = runtimeSummary.FinancialClosureStatus
+	resp.NextPendingAction = runtimeSummary.NextPendingAction
 	return resp, nil
 }
 

@@ -146,6 +146,14 @@ type QuoteTaskUserView struct {
 	PlannedStartDate               *time.Time                    `json:"plannedStartDate,omitempty"`
 	SupervisorSummary              *BridgeSupervisorSummary      `json:"supervisorSummary,omitempty"`
 	BridgeConversionSummary        *BridgeConversionSummary      `json:"bridgeConversionSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary            `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation        `json:"commercialExplanation,omitempty"`
+	SubmissionHealth               *SubmissionHealthSummary      `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary           `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary            `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary                `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                        `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                        `json:"nextPendingAction,omitempty"`
 }
 
 type UserQuoteTaskSummary struct {
@@ -877,7 +885,17 @@ func (s *QuoteService) validateQuoteTaskReadinessWithDB(db *gorm.DB, quoteList *
 	if err != nil {
 		return nil, err
 	}
-	if templateState.TemplateError != "" || len(templateState.MissingRequiredNames) > 0 || templateState.EffectiveItemCount == 0 {
+	if templateState.TemplateError != "" {
+		baselineCount, err := s.countQuoteTaskBaselineItemsWithDB(db, quoteList)
+		if err != nil {
+			return nil, err
+		}
+		if baselineCount == 0 {
+			missing = append(missing, "quantityItems")
+		}
+		return buildQuoteTaskValidationResult(missing), nil
+	}
+	if len(templateState.MissingRequiredNames) > 0 || templateState.EffectiveItemCount == 0 {
 		missing = append(missing, "quantityItems")
 	}
 	return buildQuoteTaskValidationResult(missing), nil
@@ -1731,6 +1749,10 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 	stageSummary := s.resolveQuoteListBusinessSummary(&quoteList)
 	bridgeSummary := BuildBridgeReadModelByQuoteList(&quoteList)
 	conversionSummary := BuildBridgeConversionSummaryByQuoteList(&quoteList)
+	runtimeSummary, err := buildQuoteRuntimeSummaryBundleWithDB(repository.DB, &quoteList, &submission)
+	if err != nil {
+		return nil, err
+	}
 	return &QuoteTaskUserView{
 		QuoteList:                      quoteList,
 		Submission:                     submission,
@@ -1751,6 +1773,14 @@ func (s *QuoteService) GetUserQuoteTask(quoteListID, userID uint64) (*QuoteTaskU
 		PlannedStartDate:               bridgeSummary.PlannedStartDate,
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
 		BridgeConversionSummary:        conversionSummary,
+		QuoteTruthSummary:              runtimeSummary.QuoteTruthSummary,
+		CommercialExplanation:          runtimeSummary.CommercialExplanation,
+		SubmissionHealth:               runtimeSummary.SubmissionHealth,
+		ChangeOrderSummary:             runtimeSummary.ChangeOrderSummary,
+		SettlementSummary:              runtimeSummary.SettlementSummary,
+		PayoutSummary:                  runtimeSummary.PayoutSummary,
+		FinancialClosureStatus:         runtimeSummary.FinancialClosureStatus,
+		NextPendingAction:              runtimeSummary.NextPendingAction,
 	}, nil
 }
 
@@ -1856,16 +1886,21 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 			return err
 		}
 
+		orderBundle, err = (&OrderService{}).EnsureConstructionOrderAndPaymentPlansTx(tx, projectID, &quoteList, &submission)
+		if err != nil {
+			return err
+		}
+		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
+			"payment_plan_generated_flag": orderBundle != nil && len(orderBundle.Plans) > 0,
+		}).Error; err != nil {
+			return err
+		}
+
 		if projectID > 0 {
-			snapshotBytes, _ := json.Marshal(map[string]interface{}{
-				"quoteListId":       quoteList.ID,
-				"quoteSubmissionId": submission.ID,
-				"providerId":        submission.ProviderID,
-				"totalCent":         submission.TotalCent,
-				"estimatedDays":     submission.EstimatedDays,
-				"confirmedAt":       now,
-				"quoteStatus":       model.QuoteListStatusUserConfirmed,
-			})
+			snapshotBytes, err := buildConfirmedQuoteSnapshotTx(tx, &quoteList, &submission, orderBundle, now)
+			if err != nil {
+				return err
+			}
 			projectUpdates := map[string]interface{}{
 				"provider_id":                  projectParticipantUpdates["provider_id"],
 				"construction_provider_id":     projectParticipantUpdates["construction_provider_id"],
@@ -1883,16 +1918,6 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 			if err := tx.Model(&model.Project{}).Where("id = ?", projectID).Updates(projectUpdates).Error; err != nil {
 				return err
 			}
-		}
-
-		orderBundle, err = (&OrderService{}).EnsureConstructionOrderAndPaymentPlansTx(tx, projectID, &quoteList, &submission)
-		if err != nil {
-			return err
-		}
-		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
-			"payment_plan_generated_flag": orderBundle != nil && len(orderBundle.Plans) > 0,
-		}).Error; err != nil {
-			return err
 		}
 
 		if err := businessFlowSvc.AdvanceBySource(tx, sourceType, sourceID, map[string]interface{}{
@@ -1945,14 +1970,148 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	quoteList.ActiveSubmissionID = submission.ID
 	quoteList.ProjectID = projectID
 	quoteList.PaymentPlanGeneratedFlag = orderBundle != nil && len(orderBundle.Plans) > 0
-	NewNotificationDispatcher().NotifyQuoteDecision(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, true, "")
 	if orderBundle != nil {
 		NewNotificationDispatcher().NotifyConstructionQuoteAwarded(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, orderBundle.Order.ID)
 		if len(orderBundle.Plans) > 0 {
 			NewNotificationDispatcher().NotifyConstructionPaymentPlanCreated(quoteList.OwnerUserID, quoteList.ID, projectID, orderBundle.Order.ID, orderBundle.Plans[0])
 		}
+	} else {
+		NewNotificationDispatcher().NotifyConstructionQuoteAwarded(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, 0)
 	}
 	return &quoteList, nil
+}
+
+func buildConfirmedQuoteSnapshotTx(tx *gorm.DB, quoteList *model.QuoteList, submission *model.QuoteSubmission, orderBundle *ConstructionOrderPlanBundle, confirmedAt time.Time) ([]byte, error) {
+	if tx == nil {
+		return nil, errors.New("事务不能为空")
+	}
+	if quoteList == nil || submission == nil {
+		return nil, errors.New("报价确认快照参数不能为空")
+	}
+	var listItems []model.QuoteListItem
+	if err := tx.Where("quote_list_id = ?", quoteList.ID).Order("sort_order ASC, line_no ASC, id ASC").Find(&listItems).Error; err != nil {
+		return nil, fmt.Errorf("查询报价清单项失败: %w", err)
+	}
+	var submissionItems []model.QuoteSubmissionItem
+	if err := tx.Where("quote_submission_id = ?", submission.ID).Find(&submissionItems).Error; err != nil {
+		return nil, fmt.Errorf("查询报价明细失败: %w", err)
+	}
+	submissionItemByListItemID := make(map[uint64]model.QuoteSubmissionItem, len(submissionItems))
+	for _, item := range submissionItems {
+		submissionItemByListItemID[item.QuoteListItemID] = item
+	}
+	snapshotItems := make([]map[string]interface{}, 0, len(listItems))
+	for _, listItem := range listItems {
+		submissionItem, ok := submissionItemByListItemID[listItem.ID]
+		row := map[string]interface{}{
+			"quoteListItemId":        listItem.ID,
+			"standardItemId":         listItem.StandardItemID,
+			"name":                   listItem.Name,
+			"unit":                   listItem.Unit,
+			"quantity":               listItem.Quantity,
+			"categoryL1":             listItem.CategoryL1,
+			"categoryL2":             listItem.CategoryL2,
+			"pricingNote":            listItem.PricingNote,
+			"required":               parseQuoteRequiredFlag(listItem.ExtensionsJSON),
+			"submitted":              ok,
+			"generatedUnitPriceCent": int64(0),
+			"unitPriceCent":          int64(0),
+			"quotedQuantity":         float64(0),
+			"amountCent":             int64(0),
+			"adjusted":               false,
+			"missingPrice":           true,
+			"deviation":              false,
+			"minChargeApplied":       false,
+			"remark":                 "",
+		}
+		if ok {
+			row["generatedUnitPriceCent"] = submissionItem.GeneratedUnitPriceCent
+			row["unitPriceCent"] = submissionItem.UnitPriceCent
+			row["quotedQuantity"] = submissionItem.QuotedQuantity
+			row["amountCent"] = submissionItem.AmountCent
+			row["adjusted"] = submissionItem.AdjustedFlag
+			row["missingPrice"] = submissionItem.MissingPriceFlag
+			row["deviation"] = submissionItem.DeviationFlag
+			row["minChargeApplied"] = submissionItem.MinChargeAppliedFlag
+			row["remark"] = strings.TrimSpace(submissionItem.Remark)
+		}
+		snapshotItems = append(snapshotItems, row)
+	}
+
+	paymentPlanSummary := make([]map[string]interface{}, 0)
+	if orderBundle != nil {
+		for _, plan := range orderBundle.Plans {
+			paymentPlanSummary = append(paymentPlanSummary, map[string]interface{}{
+				"id":          plan.ID,
+				"orderId":     plan.OrderID,
+				"milestoneId": plan.MilestoneID,
+				"type":        plan.Type,
+				"seq":         plan.Seq,
+				"name":        plan.Name,
+				"amount":      plan.Amount,
+				"percentage":  plan.Percentage,
+				"status":      plan.Status,
+				"dueAt":       plan.DueAt,
+				"paidAt":      plan.PaidAt,
+			})
+		}
+	}
+	totalAmount := normalizeAmount(float64(submission.TotalCent) / 100)
+	platformFee, merchantNetAmount := calculateConstructionSettlementTx(tx, totalAmount)
+	commissionRate, _ := (&ConfigService{}).GetConfigFloatTx(tx, model.ConfigKeyConstructionFeeRate)
+	releaseDelayDays, err := (&ConfigService{}).GetConfigIntTx(tx, model.ConfigKeyPaymentReleaseDelayDays)
+	if err != nil || releaseDelayDays < 0 {
+		releaseDelayDays = (&ConfigService{}).GetConstructionReleaseDelayDaysTx(tx)
+	}
+
+	return json.Marshal(map[string]interface{}{
+		"snapshotVersion":        2,
+		"snapshotKind":           "construction_quote_payment_terms",
+		"quoteListId":            quoteList.ID,
+		"quoteSubmissionId":      submission.ID,
+		"providerId":             submission.ProviderID,
+		"providerType":           submission.ProviderType,
+		"providerSubType":        submission.ProviderSubType,
+		"totalCent":              submission.TotalCent,
+		"estimatedDays":          submission.EstimatedDays,
+		"teamSize":               submission.TeamSize,
+		"workTypes":              parseDelimitedString(submission.WorkTypes),
+		"siteVisitRequired":      submission.SiteVisitRequired,
+		"constructionMethodNote": strings.TrimSpace(submission.ConstructionMethodNote),
+		"confirmedAt":            confirmedAt,
+		"quoteStatus":            model.QuoteListStatusUserConfirmed,
+		"reviewStatus":           submission.ReviewStatus,
+		"items":                  snapshotItems,
+		"paymentPlanSummary":     paymentPlanSummary,
+		"settlementRule": map[string]interface{}{
+			"userPayAmount":        totalAmount,
+			"platformCommission":   platformFee,
+			"merchantNetAmount":    merchantNetAmount,
+			"commissionRate":       commissionRate,
+			"commissionConfirmAt":  "milestone_acceptance_settlement",
+			"releaseDelayDays":     releaseDelayDays,
+			"payoutModePhase1":     "manual_offline_transfer",
+			"longTermChannelModel": "wechat_platform_split_settlement",
+		},
+		"refundRule": map[string]interface{}{
+			"unacceptedMilestone": "paid_unaccepted_amount_requires_refund_review_or_channel_refund",
+			"acceptedMilestone":   "accepted_or_settled_amount_requires_dispute_after_sales_review",
+			"commissionReversal":  "refund_success_reverses_merchant_income_and_platform_commission",
+		},
+		"confirmationRule": map[string]interface{}{
+			"confirmedByUserId": userIDFromQuoteList(quoteList),
+			"confirmedAt":       confirmedAt,
+			"esignRequired":     false,
+			"esignPhase":        "future",
+		},
+	})
+}
+
+func userIDFromQuoteList(quoteList *model.QuoteList) uint64 {
+	if quoteList == nil {
+		return 0
+	}
+	return quoteList.OwnerUserID
 }
 
 func buildQuoteConfirmationProjectParticipantUpdatesTx(tx *gorm.DB, submission model.QuoteSubmission) (map[string]interface{}, error) {

@@ -12,21 +12,7 @@ var quotePKService = &service.QuotePKService{}
 
 // CreateQuoteTask 用户发起报价需求
 func CreateQuoteTask(c *gin.Context) {
-	userID := c.GetUint64("userId")
-
-	var req service.CreateQuoteTaskRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误: "+err.Error())
-		return
-	}
-
-	task, err := quotePKService.CreateQuoteTask(userID, req)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-
-	response.Success(c, task)
+	respondLegacyConflict(c, "legacy quote-pk 主链已退役，请改用统一施工报价主链", legacyQuotePKRetiredCode)
 }
 
 // GetQuoteTask 获取报价任务详情
@@ -71,55 +57,12 @@ func GetQuoteComparison(c *gin.Context) {
 
 // SelectQuote 用户选择报价
 func SelectQuote(c *gin.Context) {
-	userID := c.GetUint64("userId")
-	taskIDStr := c.Param("id")
-
-	taskID, err := strconv.ParseUint(taskIDStr, 10, 64)
-	if err != nil {
-		response.BadRequest(c, "任务ID格式错误")
-		return
-	}
-
-	var req struct {
-		SubmissionID uint64 `json:"submissionId" binding:"required"`
-	}
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误: "+err.Error())
-		return
-	}
-
-	if err := quotePKService.SelectQuote(userID, taskID, req.SubmissionID); err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-
-	response.Success(c, gin.H{"message": "选择成功"})
+	respondLegacyConflict(c, "legacy quote-pk 主链已退役，请改用统一施工报价主链", legacyQuotePKRetiredCode)
 }
 
 // MerchantSubmitQuote 工长提交报价
 func MerchantSubmitQuote(c *gin.Context) {
-	providerID := c.GetUint64("providerId")
-	taskIDStr := c.Param("id")
-
-	taskID, err := strconv.ParseUint(taskIDStr, 10, 64)
-	if err != nil {
-		response.BadRequest(c, "任务ID格式错误")
-		return
-	}
-
-	var req service.SubmitQuoteRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误: "+err.Error())
-		return
-	}
-
-	submission, err := quotePKService.SubmitQuote(providerID, taskID, req)
-	if err != nil {
-		response.BadRequest(c, err.Error())
-		return
-	}
-
-	response.Success(c, submission)
+	respondLegacyConflict(c, "legacy quote-pk 主链已退役，请改用统一施工报价主链", legacyQuotePKRetiredCode)
 }
 
 // MerchantGetQuoteTasks 商家获取报价任务列表

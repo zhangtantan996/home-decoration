@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,6 +25,11 @@ type paymentServiceTestGateway struct {
 }
 
 type paymentServiceTestWechatGateway struct{}
+
+type paymentServiceTestWechatRefundGateway struct {
+	paymentServiceTestWechatGateway
+	refundNotify *PaymentChannelRefundResult
+}
 
 func (g paymentServiceTestGateway) Channel() string {
 	return model.PaymentChannelAlipay
@@ -153,6 +159,13 @@ func (paymentServiceTestWechatGateway) QueryRefundOrder(context.Context, *model.
 	return &PaymentChannelRefundResult{}, nil
 }
 
+func (g paymentServiceTestWechatRefundGateway) ParseRefundNotifyRequest(context.Context, *http.Request) (*PaymentChannelRefundResult, error) {
+	if g.refundNotify != nil {
+		return g.refundNotify, nil
+	}
+	return &PaymentChannelRefundResult{}, nil
+}
+
 func setupPaymentServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
@@ -167,6 +180,8 @@ func setupPaymentServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Provider{},
 		&model.Booking{},
 		&model.Project{},
+		&model.Milestone{},
+		&model.EscrowAccount{},
 		&model.Proposal{},
 		&model.Order{},
 		&model.PaymentPlan{},
@@ -178,6 +193,8 @@ func setupPaymentServiceTestDB(t *testing.T) *gorm.DB {
 		&model.PaymentOrder{},
 		&model.PaymentCallback{},
 		&model.RefundOrder{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
 		&model.LedgerAccount{},
 		&model.LedgerEntry{},
 		&model.MerchantBondRule{},
@@ -1487,6 +1504,254 @@ func TestPaymentServiceSyncPendingRefundOrdersFinalizesSurveyDeposit(t *testing.
 	}
 }
 
+func TestPaymentServiceExecuteRefundOrderUpdatesPaymentPlanRefundProjection(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	now := time.Now()
+
+	order := model.Order{
+		Base:        model.Base{ID: 8101},
+		OrderNo:     "CON-8101",
+		OrderType:   model.OrderTypeConstruction,
+		TotalAmount: 1000,
+		PaidAmount:  1000,
+		Status:      model.OrderStatusPaid,
+	}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+	plan := model.PaymentPlan{
+		Base:    model.Base{ID: 8201},
+		OrderID: order.ID,
+		Name:    "开工款",
+		Amount:  1000,
+		Status:  model.PaymentPlanStatusPaid,
+		PaidAt:  &now,
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	payment := model.PaymentOrder{
+		Base:        model.Base{ID: 8301},
+		BizType:     model.PaymentBizTypePaymentPlan,
+		BizID:       plan.ID,
+		PayerUserID: 9001,
+		Channel:     model.PaymentChannelAlipay,
+		FundScene:   model.FundSceneConstructionStage,
+		Subject:     "施工节点款",
+		Amount:      1000,
+		OutTradeNo:  "PAY-PLAN-8301",
+		Status:      model.PaymentStatusPaid,
+		PaidAt:      &now,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	existingRefund := model.RefundOrder{
+		PaymentOrderID: payment.ID,
+		BizType:        model.PaymentBizTypePaymentPlan,
+		BizID:          plan.ID,
+		FundScene:      model.FundSceneConstructionStage,
+		OutRefundNo:    "RF-EXISTING-8301",
+		Amount:         400,
+		Status:         model.RefundOrderStatusSucceeded,
+		SucceededAt:    &now,
+	}
+	if err := db.Create(&existingRefund).Error; err != nil {
+		t.Fatalf("create existing refund: %v", err)
+	}
+	refund := model.RefundOrder{
+		PaymentOrderID: payment.ID,
+		BizType:        model.PaymentBizTypePaymentPlan,
+		BizID:          plan.ID,
+		FundScene:      model.FundSceneConstructionStage,
+		OutRefundNo:    "RF-CURRENT-8301",
+		Amount:         600,
+		Status:         model.RefundOrderStatusCreated,
+	}
+	if err := db.Create(&refund).Error; err != nil {
+		t.Fatalf("create refund: %v", err)
+	}
+
+	previousGatewayFactory := paymentChannelServiceFactory
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelAlipay: paymentServiceTestGateway{},
+		}
+	}
+	t.Cleanup(func() {
+		paymentChannelServiceFactory = previousGatewayFactory
+	})
+
+	updated, err := NewPaymentService(nil).ExecuteRefundOrder(refund.ID)
+	if err != nil {
+		t.Fatalf("ExecuteRefundOrder: %v", err)
+	}
+	if updated == nil || updated.Status != model.RefundOrderStatusSucceeded {
+		t.Fatalf("expected succeeded refund order, got %+v", updated)
+	}
+
+	if err := db.First(&payment, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if payment.RefundedAmount != 1000 || payment.RefundedAmountCent != 100000 || payment.RefundStatus != model.PaymentRefundStatusRefunded {
+		t.Fatalf("expected full payment refund projection, got %+v", payment)
+	}
+	if err := db.First(&plan, plan.ID).Error; err != nil {
+		t.Fatalf("reload plan: %v", err)
+	}
+	if plan.RefundedAmount != 1000 || plan.RefundedAmountCent != 100000 || plan.RefundStatus != model.PaymentRefundStatusRefunded {
+		t.Fatalf("expected full plan refund projection, got %+v", plan)
+	}
+}
+
+func TestPaymentServiceHandleWechatRefundNotifySyncsRefundOrderProjection(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableWechatForPaymentTests(t)
+	now := time.Now()
+
+	plan := model.PaymentPlan{
+		Base:   model.Base{ID: 8401},
+		Name:   "阶段款",
+		Amount: 800,
+		Status: model.PaymentPlanStatusPaid,
+		PaidAt: &now,
+	}
+	if err := db.Create(&plan).Error; err != nil {
+		t.Fatalf("create plan: %v", err)
+	}
+	payment := model.PaymentOrder{
+		Base:        model.Base{ID: 8501},
+		BizType:     model.PaymentBizTypePaymentPlan,
+		BizID:       plan.ID,
+		PayerUserID: 9002,
+		Channel:     model.PaymentChannelWechat,
+		FundScene:   model.FundSceneConstructionStage,
+		Subject:     "微信节点款",
+		Amount:      800,
+		OutTradeNo:  "WX-PAY-8501",
+		Status:      model.PaymentStatusPaid,
+		PaidAt:      &now,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment: %v", err)
+	}
+	refund := model.RefundOrder{
+		PaymentOrderID: payment.ID,
+		BizType:        model.PaymentBizTypePaymentPlan,
+		BizID:          plan.ID,
+		FundScene:      model.FundSceneConstructionStage,
+		OutRefundNo:    "WX-RF-8501",
+		Amount:         300,
+		Status:         model.RefundOrderStatusProcessing,
+	}
+	if err := db.Create(&refund).Error; err != nil {
+		t.Fatalf("create refund: %v", err)
+	}
+
+	previousGatewayFactory := paymentChannelServiceFactory
+	paymentChannelServiceFactory = func() map[string]PaymentChannelService {
+		return map[string]PaymentChannelService{
+			model.PaymentChannelWechat: paymentServiceTestWechatRefundGateway{
+				refundNotify: &PaymentChannelRefundResult{
+					ProviderTradeNo: "WX-TXN-8501",
+					OutTradeNo:      payment.OutTradeNo,
+					OutRefundNo:     refund.OutRefundNo,
+					Success:         true,
+					RawJSON:         `{"out_refund_no":"WX-RF-8501","status":"SUCCESS"}`,
+				},
+			},
+		}
+	}
+	t.Cleanup(func() {
+		paymentChannelServiceFactory = previousGatewayFactory
+	})
+
+	request, err := http.NewRequest(http.MethodPost, "/api/v1/payments/wechat/refund/notify", strings.NewReader("{}"))
+	if err != nil {
+		t.Fatalf("new request: %v", err)
+	}
+	if err := NewPaymentService(nil).HandleWechatRefundNotify(request); err != nil {
+		t.Fatalf("HandleWechatRefundNotify: %v", err)
+	}
+	if err := NewPaymentService(nil).HandleWechatRefundNotify(request); err != nil {
+		t.Fatalf("HandleWechatRefundNotify idempotent: %v", err)
+	}
+
+	if err := db.First(&refund, refund.ID).Error; err != nil {
+		t.Fatalf("reload refund: %v", err)
+	}
+	if refund.Status != model.RefundOrderStatusSucceeded || refund.SucceededAt == nil {
+		t.Fatalf("expected succeeded refund from notify, got %+v", refund)
+	}
+	if err := db.First(&payment, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if payment.RefundedAmount != 300 || payment.RefundStatus != model.PaymentRefundStatusPartialRefunded {
+		t.Fatalf("expected partial payment projection, got %+v", payment)
+	}
+	if err := db.First(&plan, plan.ID).Error; err != nil {
+		t.Fatalf("reload plan: %v", err)
+	}
+	if plan.RefundedAmount != 300 || plan.RefundStatus != model.PaymentRefundStatusPartialRefunded {
+		t.Fatalf("expected partial plan projection, got %+v", plan)
+	}
+}
+
+func TestApplyConstructionRefundUsesAvailableEscrowBeforeFrozen(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+
+	project := model.Project{
+		Base:    model.Base{ID: 8601},
+		OwnerID: 9601,
+		Name:    "可退施工项目",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	order := model.Order{
+		Base:      model.Base{ID: 8602},
+		OrderNo:   "CON-8602",
+		ProjectID: project.ID,
+		OrderType: model.OrderTypeConstruction,
+		Status:    model.OrderStatusPaid,
+	}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatalf("create order: %v", err)
+	}
+	escrow := model.EscrowAccount{
+		Base:            model.Base{ID: 8603},
+		ProjectID:       project.ID,
+		UserID:          project.OwnerID,
+		ProjectName:     project.Name,
+		TotalAmount:     1000,
+		AvailableAmount: 1000,
+		FrozenAmount:    0,
+		ReleasedAmount:  0,
+		Status:          1,
+	}
+	if err := db.Create(&escrow).Error; err != nil {
+		t.Fatalf("create escrow: %v", err)
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		return applyConstructionRefundTx(tx, project.ID, project.OwnerID, order.ID, 8701, 300)
+	}); err != nil {
+		t.Fatalf("applyConstructionRefundTx: %v", err)
+	}
+
+	if err := db.First(&escrow, escrow.ID).Error; err != nil {
+		t.Fatalf("reload escrow: %v", err)
+	}
+	if escrow.TotalAmount != 700 || escrow.AvailableAmount != 700 || escrow.FrozenAmount != 0 {
+		t.Fatalf("expected refund from available escrow, got %+v", escrow)
+	}
+	var refundTxn model.Transaction
+	if err := db.Where("type = ? AND amount = ?", "refund", 300).First(&refundTxn).Error; err != nil {
+		t.Fatalf("expected refund transaction: %v", err)
+	}
+}
+
 func TestPaymentServiceStartOrderPaymentSupportsMiniWechatJSAPI(t *testing.T) {
 	db := setupPaymentServiceTestDB(t)
 	enableWechatForPaymentTests(t)
@@ -1537,6 +1802,122 @@ func TestPaymentServiceStartOrderPaymentSupportsBookingLinkedDesignOrder(t *test
 	}
 	if launch.LaunchMode != "qr_code" {
 		t.Fatalf("expected qr_code launch for web qr payment, got %+v", launch)
+	}
+}
+
+func TestPaymentServiceStartOrderPaymentRejectsActivePaymentAmountDrift(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	seedPaymentChannelConfigs(t, db, true)
+	userID, orderID := seedPendingOrderFixture(t, db)
+
+	existing := model.PaymentOrder{
+		Base:           model.Base{ID: 1901},
+		BizType:        model.PaymentBizTypeOrder,
+		BizID:          orderID,
+		PayerUserID:    userID,
+		Channel:        model.PaymentChannelAlipay,
+		Scene:          model.PaymentBizTypeOrder,
+		FundScene:      model.FundSceneDesignFee,
+		TerminalType:   model.PaymentTerminalMiniQR,
+		Subject:        "原支付单",
+		Amount:         1888,
+		OutTradeNo:     "OUT-ACTIVE-1901",
+		Status:         model.PaymentStatusPending,
+		ReturnContext:  "{}",
+		RefundStatus:   model.PaymentRefundStatusNone,
+		AmountCent:     188800,
+		RefundedAmount: 0,
+	}
+	if err := db.Create(&existing).Error; err != nil {
+		t.Fatalf("create active payment: %v", err)
+	}
+	if err := db.Model(&model.Order{}).Where("id = ?", orderID).Update("total_amount", 2888).Error; err != nil {
+		t.Fatalf("change order amount: %v", err)
+	}
+
+	_, err := NewPaymentService(paymentServiceTestGateway{}).StartOrderPayment(userID, orderID, model.PaymentChannelAlipay, model.PaymentTerminalMiniQR)
+	if err == nil || !strings.Contains(err.Error(), "金额") {
+		t.Fatalf("expected amount drift rejection, got %v", err)
+	}
+
+	var refreshed model.PaymentOrder
+	if err := db.First(&refreshed, existing.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if refreshed.Amount != 1888 || refreshed.AmountCent != 188800 {
+		t.Fatalf("active payment amount was mutated: %+v", refreshed)
+	}
+}
+
+func TestConfirmPaymentPlanPaidTxMarksMilestonePaymentOnly(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	user := model.User{Base: model.Base{ID: 5101}, Phone: "13800135101", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 5201}, UserID: user.ID, ProviderType: 2, Status: 1}
+	project := model.Project{
+		Base:                   model.Base{ID: 5301},
+		OwnerID:                user.ID,
+		ProviderID:             provider.ID,
+		ConstructionProviderID: provider.ID,
+		Name:                   "节点支付项目",
+		Status:                 model.ProjectStatusActive,
+		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
+	}
+	order := model.Order{
+		Base:        model.Base{ID: 5401},
+		ProjectID:   project.ID,
+		OrderNo:     "CO-PAY-PLAN",
+		OrderType:   model.OrderTypeConstruction,
+		TotalAmount: 3000,
+		Status:      model.OrderStatusPending,
+	}
+	milestone := model.Milestone{
+		Base:      model.Base{ID: 5501},
+		ProjectID: project.ID,
+		Name:      "开工节点",
+		Seq:       1,
+		Amount:    3000,
+		Status:    model.MilestoneStatusPending,
+	}
+	now := time.Now()
+	dueAt := now.Add(time.Hour)
+	plan := model.PaymentPlan{
+		Base:        model.Base{ID: 5601},
+		OrderID:     order.ID,
+		MilestoneID: milestone.ID,
+		Type:        "down_payment",
+		Seq:         1,
+		Name:        milestone.Name,
+		Amount:      milestone.Amount,
+		Status:      model.PaymentPlanStatusPending,
+		ActivatedAt: &now,
+		DueAt:       &dueAt,
+	}
+	for _, record := range []interface{}{&user, &provider, &project, &order, &milestone, &plan} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		_, err := confirmPaymentPlanPaidTx(tx, plan.ID)
+		return err
+	}); err != nil {
+		t.Fatalf("confirmPaymentPlanPaidTx: %v", err)
+	}
+
+	var refreshed model.Milestone
+	if err := db.First(&refreshed, milestone.ID).Error; err != nil {
+		t.Fatalf("reload milestone: %v", err)
+	}
+	if refreshed.Status != model.MilestoneStatusInProgress {
+		t.Fatalf("expected paid milestone to enter in-progress, got %+v", refreshed)
+	}
+	if refreshed.PaidAt == nil {
+		t.Fatalf("expected milestone paidAt to be set")
+	}
+	if refreshed.AcceptedAt != nil || refreshed.ReleasedAt != nil {
+		t.Fatalf("payment must not imply acceptance or payout, got %+v", refreshed)
 	}
 }
 

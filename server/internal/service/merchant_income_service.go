@@ -58,13 +58,14 @@ func (s *MerchantIncomeService) CreateIncome(input *CreateIncomeInput) (*model.M
 	}
 
 	// 2. 计算平台抽成和商家净收入
-	platformFee := input.Amount * feeRate
-	netAmount := input.Amount - platformFee
+	amount := normalizeAmount(input.Amount)
+	platformFee := SafeMoneyMultiply(amount, feeRate)
+	netAmount := SafeMoneySubtract(amount, platformFee)
 
 	// 确保不会出现负数
 	if netAmount < 0 {
 		netAmount = 0
-		platformFee = input.Amount
+		platformFee = amount
 	}
 
 	// 3. 创建收入记录
@@ -73,7 +74,7 @@ func (s *MerchantIncomeService) CreateIncome(input *CreateIncomeInput) (*model.M
 		OrderID:     input.OrderID,
 		BookingID:   input.BookingID,
 		Type:        input.Type,
-		Amount:      input.Amount,
+		Amount:      amount,
 		PlatformFee: platformFee,
 		NetAmount:   netAmount,
 		Status:      0, // 待结算
@@ -85,7 +86,7 @@ func (s *MerchantIncomeService) CreateIncome(input *CreateIncomeInput) (*model.M
 	}
 
 	log.Printf("[MerchantIncomeService] Created income %d for provider %d: %.2f元 (平台抽成 %.2f%%, 净收入 %.2f元)",
-		income.ID, input.ProviderID, input.Amount, feeRate*100, netAmount)
+		income.ID, input.ProviderID, amount, feeRate*100, netAmount)
 
 	return income, nil
 }

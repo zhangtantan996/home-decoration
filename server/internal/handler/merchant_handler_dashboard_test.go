@@ -27,6 +27,14 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 		&model.Project{},
 		&model.BusinessFlow{},
 		&model.MerchantIncome{},
+		&model.QuoteList{},
+		&model.QuoteListItem{},
+		&model.QuoteInvitation{},
+		&model.QuoteSubmission{},
+		&model.QuoteSubmissionItem{},
+		&model.ChangeOrder{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -113,6 +121,57 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 			t.Fatalf("seed income: %v", err)
 		}
 	}
+	quoteList := model.QuoteList{Base: model.Base{ID: 7001}, Title: "施工报价待办", Status: model.QuoteListStatusPricingInProgress, Currency: "CNY"}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("seed quote list: %v", err)
+	}
+	if err := db.Create(&model.QuoteInvitation{QuoteListID: quoteList.ID, ProviderID: providerID, Status: model.QuoteInvitationStatusInvited}).Error; err != nil {
+		t.Fatalf("seed quote invitation: %v", err)
+	}
+	submission := model.QuoteSubmission{
+		Base:        model.Base{ID: 7101},
+		QuoteListID: quoteList.ID,
+		ProviderID:  providerID,
+		Status:      model.QuoteSubmissionStatusDraft,
+		TaskStatus:  model.QuoteListStatusPricingInProgress,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("seed quote submission: %v", err)
+	}
+	quoteListItem := model.QuoteListItem{Base: model.Base{ID: 7201}, QuoteListID: quoteList.ID, Name: "水路改造", Unit: "m", Quantity: 10}
+	if err := db.Create(&quoteListItem).Error; err != nil {
+		t.Fatalf("seed quote list item: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmissionItem{
+		QuoteSubmissionID: submission.ID,
+		QuoteListItemID:   quoteListItem.ID,
+		MissingPriceFlag:  true,
+	}).Error; err != nil {
+		t.Fatalf("seed missing quote item: %v", err)
+	}
+	rejectedList := model.QuoteList{Base: model.Base{ID: 7002}, Title: "被驳回施工报价", Status: model.QuoteListStatusRejected, Currency: "CNY"}
+	if err := db.Create(&rejectedList).Error; err != nil {
+		t.Fatalf("seed rejected quote list: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmission{QuoteListID: rejectedList.ID, ProviderID: providerID, Status: model.QuoteSubmissionStatusSubmitted, TaskStatus: model.QuoteListStatusRejected}).Error; err != nil {
+		t.Fatalf("seed rejected quote submission: %v", err)
+	}
+	submittedToUserList := model.QuoteList{Base: model.Base{ID: 7003}, Title: "用户确认中报价", Status: model.QuoteListStatusSubmittedToUser, Currency: "CNY"}
+	if err := db.Create(&submittedToUserList).Error; err != nil {
+		t.Fatalf("seed submitted to user list: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmission{QuoteListID: submittedToUserList.ID, ProviderID: providerID, Status: model.QuoteSubmissionStatusSubmitted, TaskStatus: model.QuoteListStatusSubmittedToUser, SubmittedToUser: true}).Error; err != nil {
+		t.Fatalf("seed submitted to user quote submission: %v", err)
+	}
+	if err := db.Create(&model.ChangeOrder{ProjectID: project.ID, Status: model.ChangeOrderStatusPendingUserConfirm, AmountImpact: 350}).Error; err != nil {
+		t.Fatalf("seed change order: %v", err)
+	}
+	if err := db.Create(&model.SettlementOrder{ProjectID: project.ID, ProviderID: providerID, MerchantNetAmount: 1200, Status: model.SettlementStatusScheduled}).Error; err != nil {
+		t.Fatalf("seed settlement order: %v", err)
+	}
+	if err := db.Create(&model.PayoutOrder{ProviderID: providerID, Amount: 800, Status: model.PayoutStatusFailed}).Error; err != nil {
+		t.Fatalf("seed payout order: %v", err)
+	}
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
@@ -127,12 +186,20 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	}
 
 	var data struct {
-		TodayBookings    int64   `json:"todayBookings"`
-		PendingProposals int64   `json:"pendingProposals"`
-		ActiveProjects   int64   `json:"activeProjects"`
-		TotalRevenue     float64 `json:"totalRevenue"`
-		MonthRevenue     float64 `json:"monthRevenue"`
-		Bookings         struct {
+		TodayBookings             int64   `json:"todayBookings"`
+		PendingProposals          int64   `json:"pendingProposals"`
+		ActiveProjects            int64   `json:"activeProjects"`
+		TotalRevenue              float64 `json:"totalRevenue"`
+		MonthRevenue              float64 `json:"monthRevenue"`
+		PendingQuoteInvitations   int64   `json:"pendingQuoteInvitations"`
+		DraftQuoteSubmissions     int64   `json:"draftQuoteSubmissions"`
+		RejectedQuoteSubmissions  int64   `json:"rejectedQuoteSubmissions"`
+		SubmittedToUserQuotes     int64   `json:"submittedToUserQuotes"`
+		MissingPriceRequiredCount int64   `json:"missingPriceRequiredCount"`
+		PendingChangeOrders       int64   `json:"pendingChangeOrders"`
+		PendingSettlementAmount   float64 `json:"pendingSettlementAmount"`
+		FailedPayoutCount         int64   `json:"failedPayoutCount"`
+		Bookings                  struct {
 			Pending   int64 `json:"pending"`
 			Confirmed int64 `json:"confirmed"`
 		} `json:"bookings"`
@@ -163,6 +230,21 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	}
 	if data.MonthRevenue != 1000 {
 		t.Fatalf("monthRevenue mismatch: got=%v want=1000", data.MonthRevenue)
+	}
+	if data.PendingQuoteInvitations != 1 || data.DraftQuoteSubmissions != 1 || data.RejectedQuoteSubmissions != 1 || data.SubmittedToUserQuotes != 1 {
+		t.Fatalf("quote ERP counters mismatch: invitations=%d draft=%d rejected=%d submittedToUser=%d", data.PendingQuoteInvitations, data.DraftQuoteSubmissions, data.RejectedQuoteSubmissions, data.SubmittedToUserQuotes)
+	}
+	if data.MissingPriceRequiredCount != 1 {
+		t.Fatalf("missing price count mismatch: got=%d want=1", data.MissingPriceRequiredCount)
+	}
+	if data.PendingChangeOrders != 1 {
+		t.Fatalf("pending change orders mismatch: got=%d want=1", data.PendingChangeOrders)
+	}
+	if data.PendingSettlementAmount != 1200 {
+		t.Fatalf("pending settlement amount mismatch: got=%v want=1200", data.PendingSettlementAmount)
+	}
+	if data.FailedPayoutCount != 1 {
+		t.Fatalf("failed payout count mismatch: got=%d want=1", data.FailedPayoutCount)
 	}
 
 	if data.Bookings.Pending != 2 || data.Bookings.Confirmed != 1 {
