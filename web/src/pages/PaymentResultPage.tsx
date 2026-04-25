@@ -133,7 +133,7 @@ function resolveRefreshHint(status: string) {
   if (status === 'scan_pending') {
     return '已扫码但尚未完成付款，完成后页面会自动同步。';
   }
-  return '页面会自动轮询最新状态，你也可以手动刷新。';
+  return '支付结果正在确认，你也可以手动刷新。';
 }
 
 export function PaymentResultPage() {

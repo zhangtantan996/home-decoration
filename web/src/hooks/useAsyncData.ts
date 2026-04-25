@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { readSafeErrorMessage } from '../utils/userFacingText';
 
 interface AsyncState<T> {
   data: T | null;
@@ -19,7 +20,7 @@ export function useAsyncData<T>(loader: () => Promise<T>, deps: readonly unknown
       const nextData = await loader();
       setData(nextData);
     } catch (err) {
-      setError(err instanceof Error ? err.message : '请求失败');
+      setError(readSafeErrorMessage(err, '请求失败'));
     } finally {
       setLoading(false);
     }

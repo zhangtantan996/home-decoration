@@ -108,6 +108,13 @@ interface UnifiedOrderDetail {
   paymentPlans: PaymentPlanItem[];
   records: RecordItem[];
   businessNote?: string;
+  quoteTruthSummary?: OrderDetailVM['quoteTruthSummary'];
+  commercialExplanation?: OrderDetailVM['commercialExplanation'];
+  changeOrderSummary?: OrderDetailVM['changeOrderSummary'];
+  settlementSummary?: OrderDetailVM['settlementSummary'];
+  payoutSummary?: OrderDetailVM['payoutSummary'];
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
 }
 
 function pickPrimaryAssociation(items: RelatedItem[]) {
@@ -748,6 +755,13 @@ function buildLegacyView(detail: OrderDetailVM): UnifiedOrderDetail {
     paymentPlans: paymentSection.paymentPlans,
     records: buildLegacyRecords(detail),
     businessNote: buildBusinessNote(detail.orderTypeText),
+    quoteTruthSummary: detail.quoteTruthSummary,
+    commercialExplanation: detail.commercialExplanation,
+    changeOrderSummary: detail.changeOrderSummary,
+    settlementSummary: detail.settlementSummary,
+    payoutSummary: detail.payoutSummary,
+    financialClosureStatus: detail.financialClosureStatus,
+    nextPendingAction: detail.nextPendingAction,
   };
 }
 
@@ -841,6 +855,13 @@ function buildEntryView(detail: OrderCenterEntryDetail): UnifiedOrderDetail {
     paymentPlans: paymentSection.paymentPlans,
     records: buildEntryRecords(detail),
     businessNote: buildBusinessNote(orderTypeLabel),
+    quoteTruthSummary: detail.quoteTruthSummary,
+    commercialExplanation: detail.commercialExplanation,
+    changeOrderSummary: detail.changeOrderSummary,
+    settlementSummary: detail.settlementSummary,
+    payoutSummary: detail.payoutSummary,
+    financialClosureStatus: detail.financialClosureStatus,
+    nextPendingAction: detail.nextPendingAction,
   };
 }
 
@@ -1235,6 +1256,41 @@ export function OrderDetailPage() {
                 </div>
               ) : null}
             </article>
+
+            {(view.quoteTruthSummary || view.changeOrderSummary || view.settlementSummary || view.payoutSummary) ? (
+              <article className={styles.infoCard}>
+                <div className={styles.cardHeader}>
+                  <span className={styles.cardMarker}></span>
+                  <span>统一报价与资金摘要</span>
+                </div>
+                <div className={styles.cardBody}>
+                  <div className={styles.infoRow}>
+                    <div className={styles.infoLabel}>成交报价</div>
+                    <div className={styles.infoValue}>{view.quoteTruthSummary?.totalAmountText || '待同步'}</div>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <div className={styles.infoLabel}>预计工期</div>
+                    <div className={styles.infoValue}>{view.quoteTruthSummary?.estimatedDays ? `${view.quoteTruthSummary.estimatedDays} 天` : '待同步'}</div>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <div className={styles.infoLabel}>变更待结算</div>
+                    <div className={styles.infoValue}>{view.changeOrderSummary?.pendingSettlementCount || 0}</div>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <div className={styles.infoLabel}>结算状态</div>
+                    <div className={styles.infoValue}>{view.settlementSummary?.status || '待同步'}</div>
+                  </div>
+                  <div className={styles.infoRow}>
+                    <div className={styles.infoLabel}>出款状态</div>
+                    <div className={styles.infoValue}>{view.payoutSummary?.status || '待同步'}</div>
+                  </div>
+                  <div className={styles.infoNote}>
+                    <span>后续动作</span>
+                    <p>{view.nextPendingAction || view.financialClosureStatus || '当前订单暂无新的后续动作。'}</p>
+                  </div>
+                </div>
+              </article>
+            ) : null}
           </div>
 
           <aside className={styles.sidePanel}>

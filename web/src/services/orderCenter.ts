@@ -1,3 +1,17 @@
+import type {
+  ChangeOrderSummaryVM,
+  CommercialExplanationVM,
+  PayoutSummaryVM,
+  QuoteTruthSummaryVM,
+  SettlementSummaryVM,
+} from '../types/viewModels';
+import {
+  adaptChangeOrderSummary,
+  adaptCommercialExplanation,
+  adaptPayoutSummary,
+  adaptQuoteTruthSummary,
+  adaptSettlementSummary,
+} from './bridgeSummary';
 import type { PaymentLaunchPayload, PaymentLaunchRequest } from './payments';
 import { requestJson } from './http';
 
@@ -119,6 +133,13 @@ export interface OrderCenterEntrySummary {
 export interface OrderCenterEntryDetail extends OrderCenterEntrySummary {
   businessStage?: string;
   flowSummary?: string;
+  quoteTruthSummary?: QuoteTruthSummaryVM;
+  commercialExplanation?: CommercialExplanationVM;
+  changeOrderSummary?: ChangeOrderSummaryVM;
+  settlementSummary?: SettlementSummaryVM;
+  payoutSummary?: PayoutSummaryVM;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   descriptionSections?: OrderCenterDescriptionSection[];
   paymentPlans?: OrderCenterPaymentPlanItem[];
   nextPayablePlan?: OrderCenterPaymentPlanItem;
@@ -128,8 +149,26 @@ export interface OrderCenterEntryDetail extends OrderCenterEntrySummary {
   order?: OrderCenterOrderRecord;
 }
 
+interface OrderCenterEntryDetailDTO extends Omit<OrderCenterEntryDetail, 'quoteTruthSummary' | 'commercialExplanation' | 'changeOrderSummary' | 'settlementSummary' | 'payoutSummary'> {
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+}
+
 export async function getOrderCenterEntryDetail(entryKey: string) {
-  return requestJson<OrderCenterEntryDetail>(`/order-center/entries/${encodeURIComponent(entryKey)}`);
+  const detail = await requestJson<OrderCenterEntryDetailDTO>(`/order-center/entries/${encodeURIComponent(entryKey)}`);
+  return {
+    ...detail,
+    quoteTruthSummary: adaptQuoteTruthSummary(detail.quoteTruthSummary),
+    commercialExplanation: adaptCommercialExplanation(detail.commercialExplanation),
+    changeOrderSummary: adaptChangeOrderSummary(detail.changeOrderSummary),
+    settlementSummary: adaptSettlementSummary(detail.settlementSummary),
+    payoutSummary: adaptPayoutSummary(detail.payoutSummary),
+    financialClosureStatus: detail.financialClosureStatus || undefined,
+    nextPendingAction: detail.nextPendingAction || undefined,
+  };
 }
 
 export async function startOrderCenterEntryPayment(entryKey: string, request: PaymentLaunchRequest) {

@@ -22,7 +22,15 @@ import {
   TRANSACTION_STATUS_LABELS,
 } from '../constants/statuses';
 import { compactPhone, formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
-import { adaptBridgeConversionSummary, adaptProjectClosureSummary } from './bridgeSummary';
+import {
+  adaptBridgeConversionSummary,
+  adaptChangeOrderSummary,
+  adaptCommercialExplanation,
+  adaptPayoutSummary,
+  adaptProjectClosureSummary,
+  adaptQuoteTruthSummary,
+  adaptSettlementSummary,
+} from './bridgeSummary';
 import { requestJson } from './http';
 import { readThroughCache } from './runtimeCache';
 
@@ -69,6 +77,13 @@ interface ProjectDetailResponse {
   supervisorSummary?: BridgeSupervisorSummaryDTO | null;
   bridgeConversionSummary?: unknown;
   closureSummary?: unknown;
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   area?: number;
   budget?: number;
   ownerName?: string;
@@ -152,6 +167,13 @@ interface ProjectCompletionResponse {
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
   closureSummary?: unknown;
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   projectReview?: {
     id: number;
     projectId: number;
@@ -454,6 +476,13 @@ export async function getProjectDetail(id: number) {
           : undefined,
         bridgeConversionSummary: adaptBridgeConversionSummary(detail.bridgeConversionSummary),
         closureSummary: adaptProjectClosureSummary(detail.closureSummary),
+        quoteTruthSummary: adaptQuoteTruthSummary(detail.quoteTruthSummary),
+        commercialExplanation: adaptCommercialExplanation(detail.commercialExplanation),
+        changeOrderSummary: adaptChangeOrderSummary(detail.changeOrderSummary),
+        settlementSummary: adaptSettlementSummary(detail.settlementSummary),
+        payoutSummary: adaptPayoutSummary(detail.payoutSummary),
+        financialClosureStatus: detail.financialClosureStatus || undefined,
+        nextPendingAction: detail.nextPendingAction || undefined,
         selectedQuoteTaskId: detail.selectedQuoteTaskId || undefined,
         areaText: formatArea(detail.area),
         budgetText: formatCurrency(detail.budget),
@@ -598,6 +627,13 @@ function adaptProjectCompletion(data: ProjectCompletionResponse): ProjectComplet
     completionRejectionReason: data.completionRejectionReason || undefined,
     inspirationCaseDraftId: data.inspirationCaseDraftId || undefined,
     closureSummary: adaptProjectClosureSummary(data.closureSummary),
+    quoteTruthSummary: adaptQuoteTruthSummary(data.quoteTruthSummary),
+    commercialExplanation: adaptCommercialExplanation(data.commercialExplanation),
+    changeOrderSummary: adaptChangeOrderSummary(data.changeOrderSummary),
+    settlementSummary: adaptSettlementSummary(data.settlementSummary),
+    payoutSummary: adaptPayoutSummary(data.payoutSummary),
+    financialClosureStatus: data.financialClosureStatus || undefined,
+    nextPendingAction: data.nextPendingAction || undefined,
     projectReview: data.projectReview
       ? {
           id: data.projectReview.id,

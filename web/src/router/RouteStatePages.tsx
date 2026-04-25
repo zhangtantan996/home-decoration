@@ -2,6 +2,7 @@ import { Link, Navigate, isRouteErrorResponse, useLocation, useParams, useRouteE
 
 import { EmptyBlock, ErrorBlock } from '../components/AsyncState';
 import type { ProviderRole } from '../types/viewModels';
+import { readSafeErrorMessage } from '../utils/userFacingText';
 
 const pageActions = (
   <div className="inline-actions state-actions">
@@ -33,9 +34,7 @@ export function RouteErrorPage() {
     return <RouteNotFoundPage />;
   }
 
-  const description = error instanceof Error && error.message
-    ? error.message
-    : '页面加载失败，请稍后重试。';
+  const description = readSafeErrorMessage(error, '页面加载失败，请稍后重试。');
 
   return (
     <main className="container page-stack">

@@ -262,6 +262,49 @@ export function BookingDetailPage() {
         </aside>
       </section>
 
+      {(data.quoteTruthSummary || data.commercialExplanation || data.changeOrderSummary || data.settlementSummary || data.payoutSummary) ? (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionCopy}>
+              <h2>施工报价与后链摘要</h2>
+              <p>汇总施工报价、变更和资金进展，方便判断当前履约状态。</p>
+            </div>
+          </div>
+          <div className={styles.summaryGrid}>
+            <article className={styles.summaryItem}>
+              <span>成交报价</span>
+              <strong>{data.quoteTruthSummary?.totalAmountText || '待同步'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>预计工期</span>
+              <strong>{data.quoteTruthSummary?.estimatedDays ? `${data.quoteTruthSummary.estimatedDays} 天` : '待同步'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>资金闭环</span>
+              <strong>{data.financialClosureStatus || '待同步'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>下一步</span>
+              <strong>{data.nextPendingAction || '待同步'}</strong>
+            </article>
+          </div>
+          <div className={styles.providerStats} style={{ marginTop: 20 }}>
+            <article className={styles.providerStat}>
+              <span>施工范围内</span>
+              <strong>{data.commercialExplanation?.scopeIncluded?.join('、') || '待同步'}</strong>
+            </article>
+            <article className={styles.providerStat}>
+              <span>施工范围外</span>
+              <strong>{data.commercialExplanation?.scopeExcluded?.join('、') || '待同步'}</strong>
+            </article>
+            <article className={styles.providerStat}>
+              <span>变更待结算</span>
+              <strong>{data.changeOrderSummary?.pendingSettlementCount || 0}</strong>
+            </article>
+          </div>
+        </section>
+      ) : null}
+
       <section className={styles.section}>
         <div className={styles.sectionHead}>
           <div className={styles.sectionCopy}>

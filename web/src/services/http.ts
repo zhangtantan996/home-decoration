@@ -1,5 +1,6 @@
 import type { ApiEnvelope } from '../types/api';
 import { isSessionExpired, useSessionStore } from '../modules/session/sessionStore';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -138,7 +139,7 @@ function normalizeRequestError(error: unknown): Error {
       return new WebApiError('请求超时，请稍后重试');
     }
     if (error.message === 'Failed to fetch' || error.message === 'Load failed') {
-      return new WebApiError('服务连接失败，请检查接口地址或确认后端服务已启动');
+      return new WebApiError('服务连接失败，请稍后重试');
     }
     return error;
   }
@@ -192,7 +193,7 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
     const errorCode = payload && typeof payload.data === 'object' && payload.data !== null && 'errorCode' in payload.data
       ? String((payload.data as Record<string, unknown>).errorCode || '')
       : undefined;
-    throw new WebApiError(payload?.message || `请求失败(${response.status})`, {
+    throw new WebApiError(toSafeUserFacingText(payload?.message, '请求失败，请稍后重试'), {
       status: response.status,
       code: payload?.code,
       errorCode,
@@ -206,7 +207,7 @@ export async function requestJson<T>(path: string, options: RequestOptions = {})
     const errorCode = payload && typeof payload.data === 'object' && payload.data !== null && 'errorCode' in payload.data
       ? String((payload.data as Record<string, unknown>).errorCode || '')
       : undefined;
-    throw new WebApiError(payload.message || `业务请求失败(code=${payload.code})`, {
+    throw new WebApiError(toSafeUserFacingText(payload.message, '请求失败，请稍后重试'), {
       status: response.status,
       code: payload.code,
       errorCode,
@@ -243,7 +244,7 @@ export async function uploadFile(path: string, file: File, fieldName = 'file') {
     const errorCode = payload && typeof payload.data === 'object' && payload.data !== null && 'errorCode' in payload.data
       ? String((payload.data as Record<string, unknown>).errorCode || '')
       : undefined;
-    throw new WebApiError(payload?.message || `上传失败(${response.status})`, {
+    throw new WebApiError(toSafeUserFacingText(payload?.message, '上传失败，请稍后重试'), {
       status: response.status,
       code: payload?.code,
       errorCode,
@@ -255,7 +256,7 @@ export async function uploadFile(path: string, file: File, fieldName = 'file') {
 }
 
 export function getWebApiErrorMessage(error: unknown, fallback: string) {
-  return error instanceof Error && error.message ? error.message : fallback;
+  return toSafeUserFacingText(error instanceof Error ? error.message : '', fallback);
 }
 
 export function isWebApiConflict(error: unknown) {

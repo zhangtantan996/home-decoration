@@ -81,9 +81,24 @@ export function ProjectCompletionPage() {
             <article className="detail-stat"><span>资料归档</span><strong>{closureSummary.archiveStatus || '待同步'}</strong></article>
             <article className="detail-stat"><span>结算状态</span><strong>{closureSummary.settlementStatus || '待同步'}</strong></article>
             <article className="detail-stat"><span>出款状态</span><strong>{closureSummary.payoutStatus || '待同步'}</strong></article>
-            <article className="detail-stat"><span>资金闭环</span><strong>{closureSummary.financialClosureStatus || '待同步'}</strong></article>
+            <article className="detail-stat"><span>资金闭环</span><strong>{data.financialClosureStatus || closureSummary.financialClosureStatus || '待同步'}</strong></article>
           </div>
-          {closureSummary.nextPendingAction ? <p className="detail-note" style={{ marginTop: 16 }}>{closureSummary.nextPendingAction}</p> : null}
+          {(data.nextPendingAction || closureSummary.nextPendingAction) ? <p className="detail-note" style={{ marginTop: 16 }}>{data.nextPendingAction || closureSummary.nextPendingAction}</p> : null}
+        </section>
+      ) : null}
+
+      {(data.quoteTruthSummary || data.changeOrderSummary || data.settlementSummary || data.payoutSummary) ? (
+        <section className="card section-card">
+          <div className="section-head"><h2>成交报价与后链摘要</h2></div>
+          <div className="detail-stat-grid">
+            <article className="detail-stat"><span>成交报价</span><strong>{data.quoteTruthSummary?.totalAmountText || '待同步'}</strong></article>
+            <article className="detail-stat"><span>预计工期</span><strong>{data.quoteTruthSummary?.estimatedDays ? `${data.quoteTruthSummary.estimatedDays} 天` : '待同步'}</strong></article>
+            <article className="detail-stat"><span>变更待结算</span><strong>{data.changeOrderSummary?.pendingSettlementCount || 0}</strong></article>
+            <article className="detail-stat"><span>结算净额</span><strong>{data.settlementSummary?.netAmountText || '待同步'}</strong></article>
+          </div>
+          <p className="detail-note" style={{ marginTop: 16 }}>
+            {data.commercialExplanation?.constructionMethodNote || data.commercialExplanation?.scopeIncluded?.join('、') || '完工后的报价、变更和结算进展会在这里同步。'}
+          </p>
         </section>
       ) : null}
 

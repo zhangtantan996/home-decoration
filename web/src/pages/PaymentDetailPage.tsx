@@ -126,7 +126,7 @@ export function PaymentDetailPage() {
       ? '二维码已被扫描，请在支付宝内完成付款确认。'
     : data.status === 'closed' || data.status === 'failed'
       ? '当前二维码已失效，请返回业务页重新发起支付。'
-      : '请使用支付宝 App 扫描下方二维码完成支付，页面会自动刷新支付状态。';
+      : '请使用支付宝 App 扫描下方二维码完成支付，支付结果确认后会同步更新。';
 
   const handleGoBack = () => {
     if (window.history.length > 1) {

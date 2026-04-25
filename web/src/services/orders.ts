@@ -3,7 +3,15 @@ import type { OrderDetailPlanVM, OrderDetailVM, OrderListItemVM } from '../types
 import { ORDER_STATUS_LABELS } from '../constants/statuses';
 import { formatCurrency, formatDateTime } from '../utils/format';
 import { detectTerminalType } from '../utils/terminal';
-import { adaptBridgeConversionSummary, adaptProjectClosureSummary } from './bridgeSummary';
+import {
+  adaptBridgeConversionSummary,
+  adaptChangeOrderSummary,
+  adaptCommercialExplanation,
+  adaptPayoutSummary,
+  adaptProjectClosureSummary,
+  adaptQuoteTruthSummary,
+  adaptSettlementSummary,
+} from './bridgeSummary';
 import { requestJson } from './http';
 import type { PaymentLaunchPayload, PaymentLaunchRequest } from './payments';
 
@@ -41,6 +49,13 @@ interface OrderDetailDTO {
   createdAt?: string;
   bridgeConversionSummary?: unknown;
   closureSummary?: unknown;
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   businessStage?: string;
   flowSummary?: string;
 }
@@ -176,6 +191,13 @@ function toOrderDetail(dto: OrderDetailDTO, plans: OrderPlanDTO[]): OrderDetailV
     planItems: plans.map(toOrderPlanItem),
     bridgeConversionSummary: adaptBridgeConversionSummary(dto.bridgeConversionSummary),
     closureSummary: adaptProjectClosureSummary(dto.closureSummary),
+    quoteTruthSummary: adaptQuoteTruthSummary(dto.quoteTruthSummary),
+    commercialExplanation: adaptCommercialExplanation(dto.commercialExplanation),
+    changeOrderSummary: adaptChangeOrderSummary(dto.changeOrderSummary),
+    settlementSummary: adaptSettlementSummary(dto.settlementSummary),
+    payoutSummary: adaptPayoutSummary(dto.payoutSummary),
+    financialClosureStatus: dto.financialClosureStatus || undefined,
+    nextPendingAction: dto.nextPendingAction || undefined,
     businessStage: dto.businessStage || undefined,
     flowSummary: dto.flowSummary || undefined,
   };

@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { usePaymentDialogStore } from '../modules/payment/paymentDialogStore';
 import { getPaymentDetail, getPaymentStatus, type PaymentDetailPayload, type PaymentStatusPayload } from '../services/payments';
 import { formatCurrency, formatDateTime } from '../utils/format';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 import styles from './PaymentQRCodeDialog.module.scss';
 
 const FINAL_PAYMENT_STATUSES = new Set(['paid', 'closed', 'failed']);
@@ -33,7 +34,7 @@ function resolveDialogError(rawError: string) {
   if (message.includes('登录已过期')) {
     return '登录已失效，请重新登录后再次发起支付。';
   }
-  return message;
+  return toSafeUserFacingText(message, '支付信息暂时加载失败，请稍后重试。');
 }
 
 function stripReferenceFromTitle(title: string, referenceNo: string) {

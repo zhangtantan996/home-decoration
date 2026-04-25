@@ -280,6 +280,78 @@ export interface ProjectClosureSummaryVM {
   nextPendingAction?: string;
 }
 
+export interface QuoteTruthSummaryVM {
+  quoteListId: number;
+  sourceType?: string;
+  sourceId?: number;
+  quantityBaseId?: number;
+  quantityBaseVersion?: number;
+  activeSubmissionId?: number;
+  awardedProviderId?: number;
+  confirmedAt?: string;
+  totalAmountText?: string;
+  estimatedDays?: number;
+  revisionCount?: number;
+}
+
+export interface CommercialExplanationVM {
+  baselineSummary?: BridgeQuoteBaselineSummaryVM;
+  scopeIncluded?: string[];
+  scopeExcluded?: string[];
+  teamSize?: number;
+  workTypes?: string[];
+  constructionMethodNote?: string;
+  siteVisitRequired?: boolean;
+  paymentPlanSummary?: Array<{
+    id: number;
+    orderId: number;
+    milestoneId?: number;
+    type: string;
+    seq: number;
+    name: string;
+    amountText: string;
+    status: number;
+    dueAt?: string;
+    paidAt?: string;
+  }>;
+}
+
+export interface ChangeOrderSummaryVM {
+  totalCount: number;
+  pendingUserConfirmCount: number;
+  pendingSettlementCount: number;
+  settledCount: number;
+  netAmountText?: string;
+  latestChangeOrderId?: number;
+}
+
+export interface SettlementSummaryVM {
+  latestSettlementId?: number;
+  status?: string;
+  grossAmountText?: string;
+  netAmountText?: string;
+  totalGrossAmountText?: string;
+  totalNetAmountText?: string;
+  settledAmountText?: string;
+  pendingAmountText?: string;
+  failedAmountText?: string;
+  scheduledAt?: string;
+  paidAt?: string;
+}
+
+export interface PayoutSummaryVM {
+  latestPayoutId?: number;
+  status?: string;
+  channel?: string;
+  totalAmountText?: string;
+  paidAmountText?: string;
+  pendingAmountText?: string;
+  failedAmountText?: string;
+  scheduledAt?: string;
+  paidAt?: string;
+  failureReason?: string;
+}
+
 export interface BookingDetailVM {
   id: number;
   statusCode: number;
@@ -315,6 +387,13 @@ export interface BookingDetailVM {
   plannedStartDate?: string;
   supervisorSummary?: BridgeSupervisorSummaryVM;
   bridgeConversionSummary?: BridgeConversionSummaryVM;
+  quoteTruthSummary?: QuoteTruthSummaryVM;
+  commercialExplanation?: CommercialExplanationVM;
+  changeOrderSummary?: ChangeOrderSummaryVM;
+  settlementSummary?: SettlementSummaryVM;
+  payoutSummary?: PayoutSummaryVM;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   surveyDepositSource?: string;
   surveyRefundNotice?: string;
   surveyDepositPaymentId?: number;
@@ -663,6 +742,13 @@ export interface ProjectDetailVM {
   supervisorSummary?: BridgeSupervisorSummaryVM;
   bridgeConversionSummary?: BridgeConversionSummaryVM;
   closureSummary?: ProjectClosureSummaryVM;
+  quoteTruthSummary?: QuoteTruthSummaryVM;
+  commercialExplanation?: CommercialExplanationVM;
+  changeOrderSummary?: ChangeOrderSummaryVM;
+  settlementSummary?: SettlementSummaryVM;
+  payoutSummary?: PayoutSummaryVM;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   selectedQuoteTaskId?: number;
   areaText: string;
   budgetText: string;
@@ -699,6 +785,13 @@ export interface ProjectCompletionVM {
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
   closureSummary?: ProjectClosureSummaryVM;
+  quoteTruthSummary?: QuoteTruthSummaryVM;
+  commercialExplanation?: CommercialExplanationVM;
+  changeOrderSummary?: ChangeOrderSummaryVM;
+  settlementSummary?: SettlementSummaryVM;
+  payoutSummary?: PayoutSummaryVM;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   projectReview?: {
     id: number;
     projectId: number;
@@ -814,6 +907,13 @@ export interface OrderDetailVM {
   planItems: OrderDetailPlanVM[];
   bridgeConversionSummary?: BridgeConversionSummaryVM;
   closureSummary?: ProjectClosureSummaryVM;
+  quoteTruthSummary?: QuoteTruthSummaryVM;
+  commercialExplanation?: CommercialExplanationVM;
+  changeOrderSummary?: ChangeOrderSummaryVM;
+  settlementSummary?: SettlementSummaryVM;
+  payoutSummary?: PayoutSummaryVM;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   businessStage?: string;
   flowSummary?: string;
 }

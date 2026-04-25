@@ -18,7 +18,14 @@ import {
 import { formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
 import { buildProviderAvatarPlaceholder, getProviderRatingMeta, parseTextArray } from '../utils/provider';
 import { detectTerminalType } from '../utils/terminal';
-import { adaptBridgeConversionSummary } from './bridgeSummary';
+import {
+  adaptBridgeConversionSummary,
+  adaptChangeOrderSummary,
+  adaptCommercialExplanation,
+  adaptPayoutSummary,
+  adaptQuoteTruthSummary,
+  adaptSettlementSummary,
+} from './bridgeSummary';
 import { requestJson } from './http';
 import type { PaymentLaunchPayload, PaymentLaunchRequest } from './payments';
 
@@ -94,6 +101,13 @@ interface BookingDetailResponse {
   plannedStartDate?: string;
   supervisorSummary?: BridgeSupervisorSummaryDTO | null;
   bridgeConversionSummary?: unknown;
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
 }
 
 interface BridgeSupervisorSummaryDTO {
@@ -420,9 +434,9 @@ function buildStageOverview(response: BookingDetailResponse): BookingStageOvervi
   if (bridgeStarted) {
     if (response.currentStage === 'construction_party_pending') {
       return {
-        title: '施工报价准备中',
+        title: '施工桥接中',
         description: readConstructionBridgeDescription(response.currentStage, response.flowSummary, response.baselineStatus),
-        helperText: '设计师会先整理施工报价基础，再推进施工主体匹配与正式报价。',
+        helperText: '当前会依次推进报价基线整理、施工主体匹配与正式报价确认。',
       };
     }
     if (response.currentStage === 'construction_quote_pending') {
@@ -666,6 +680,13 @@ function adaptBookingDetail(response: BookingDetailResponse): BookingDetailVM {
         }
       : undefined,
     bridgeConversionSummary: adaptBridgeConversionSummary(response.bridgeConversionSummary),
+    quoteTruthSummary: adaptQuoteTruthSummary(response.quoteTruthSummary),
+    commercialExplanation: adaptCommercialExplanation(response.commercialExplanation),
+    changeOrderSummary: adaptChangeOrderSummary(response.changeOrderSummary),
+    settlementSummary: adaptSettlementSummary(response.settlementSummary),
+    payoutSummary: adaptPayoutSummary(response.payoutSummary),
+    financialClosureStatus: response.financialClosureStatus || undefined,
+    nextPendingAction: response.nextPendingAction || undefined,
     surveyDepositSource: response.booking.surveyDepositSource || undefined,
     surveyRefundNotice: response.booking.surveyRefundNotice || undefined,
     surveyDepositPaymentId: response.surveyDepositPaymentId ? Number(response.surveyDepositPaymentId) : undefined,

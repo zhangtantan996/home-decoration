@@ -4,6 +4,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import companyLogo from '../assets/company-logo.png';
 import { useSessionStore } from '../modules/session/sessionStore';
 import { loginByCode, sendLoginCode } from '../services/auth';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 import styles from './LoginPage.module.scss';
 
 const phonePattern = /^1\d{10}$/;
@@ -108,12 +109,15 @@ export function LoginPage() {
     setStatusMessage('');
     try {
       const result = await sendLoginCode({ phone: phone.trim(), purpose: 'login' });
+      if (import.meta.env.DEV && result.debugCode) {
+        console.debug(`[DEV] 登录验证码: ${result.debugCode}`);
+      }
       setStatusTone('success');
-      setStatusMessage(result.debugCode ? `验证码已发送，开发环境验证码：${result.debugCode}` : `验证码已发送至 ${phone.slice(0, 3)}****${phone.slice(-4)}`);
+      setStatusMessage(`验证码已发送至 ${phone.slice(0, 3)}****${phone.slice(-4)}`);
       startCountdown();
     } catch (error) {
       setStatusTone('error');
-      setStatusMessage(error instanceof Error ? error.message : '获取验证码失败，请稍后重试');
+      setStatusMessage(toSafeUserFacingText(error instanceof Error ? error.message : '', '获取验证码失败，请稍后重试'));
     } finally {
       setSending(false);
     }
@@ -144,7 +148,7 @@ export function LoginPage() {
       navigate(safeRedirect, { replace: true });
     } catch (error) {
       setStatusTone('error');
-      setStatusMessage(error instanceof Error ? error.message : '登录失败，请稍后重试');
+      setStatusMessage(toSafeUserFacingText(error instanceof Error ? error.message : '', '登录失败，请稍后重试'));
     } finally {
       setLoggingIn(false);
     }
