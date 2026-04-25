@@ -6,8 +6,7 @@ USER_PHONE=${PHASE1_USER_PHONE:-19999100001}
 MERCHANT_PHONE=${PHASE1_MERCHANT_PHONE:-19999100002}
 ADMIN_USER=${PHASE1_ADMIN_USER:-admin}
 ADMIN_PASS=${PHASE1_ADMIN_PASS:-admin123}
-REDIS_CONTAINER=${PHASE1_REDIS_CONTAINER:-home_decor_redis_local}
-REDIS_PASSWORD=${PHASE1_REDIS_PASSWORD:-local_dev_redis_password_change_me}
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 json_field() {
   node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s); const path=process.argv[1].split('.'); let cur=j; for (const k of path){cur=cur?.[k]} process.stdout.write(String(cur ?? ''))})" "$1"
@@ -25,21 +24,21 @@ assert_code_zero() {
 }
 
 clear_rate_limits() {
-  if ! command -v docker >/dev/null 2>&1; then
-    return
-  fi
-  if ! docker ps --format '{{.Names}}' | grep -qx "$REDIS_CONTAINER"; then
-    return
-  fi
-  local keys
-  keys=$(docker exec "$REDIS_CONTAINER" redis-cli -a "$REDIS_PASSWORD" --raw KEYS 'rate_limit:*' || true)
-  if [[ -z "$keys" ]]; then
-    return
-  fi
-  while IFS= read -r key; do
-    [[ -z "$key" ]] && continue
-    docker exec "$REDIS_CONTAINER" redis-cli -a "$REDIS_PASSWORD" DEL "$key" >/dev/null
-  done <<<"$keys"
+  (
+    if [[ -n "${PHASE1_REDIS_CONTAINER+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_CONTAINER="$PHASE1_REDIS_CONTAINER"
+    fi
+    if [[ -n "${PHASE1_REDIS_HOST+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_HOST="$PHASE1_REDIS_HOST"
+    fi
+    if [[ -n "${PHASE1_REDIS_PORT+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_PORT="$PHASE1_REDIS_PORT"
+    fi
+    if [[ -n "${PHASE1_REDIS_PASSWORD+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_PASSWORD="$PHASE1_REDIS_PASSWORD"
+    fi
+    "$ROOT_DIR/scripts/user-web-clear-rate-limit.sh"
+  ) >/dev/null 2>&1 || true
 }
 
 send_login_code() {

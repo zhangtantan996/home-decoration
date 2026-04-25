@@ -121,14 +121,29 @@ psql_exec_file "server/migrations/v1.6.7_extend_sms_audit_context.sql"
 psql_query "UPDATE sys_admins SET password = '${ADMIN_PASSWORD_HASH}', status = 1, is_super_admin = true WHERE username = 'admin';" >/dev/null
 
 read -r merchant_provider_id merchant_phone <<<"$(psql_query "SELECT p.id, u.phone FROM providers p JOIN users u ON u.id = p.user_id WHERE p.provider_type = 3 ORDER BY p.id LIMIT 1;")"
-read -r owner_user_id owner_phone <<<"$(psql_query "SELECT id, phone FROM users WHERE user_type = 1 ORDER BY id LIMIT 1;")"
+read -r quote_project_id proposal_id proposal_version designer_provider_id owner_user_id owner_phone house_id <<<"$(psql_query "
+SELECT
+  COALESCE(pr.id, 0) AS project_id,
+  p.id AS proposal_id,
+  COALESCE(NULLIF(p.version, 0), 1) AS proposal_version,
+  COALESCE(NULLIF(p.designer_id, 0), NULLIF(pr.provider_id, 0), 0) AS designer_provider_id,
+  COALESCE(NULLIF(b.user_id, 0), NULLIF(pr.owner_id, 0), 0) AS owner_user_id,
+  COALESCE(u.phone, '') AS owner_phone,
+  0 AS house_id
+FROM proposals p
+LEFT JOIN bookings b ON b.id = p.booking_id
+LEFT JOIN projects pr ON pr.proposal_id = p.id
+LEFT JOIN users u ON u.id = COALESCE(NULLIF(b.user_id, 0), NULLIF(pr.owner_id, 0))
+ORDER BY (pr.id IS NULL), p.id DESC
+LIMIT 1;
+")"
 
 if [[ -z "${merchant_provider_id:-}" || -z "${merchant_phone:-}" ]]; then
   echo "unable to locate a foreman account for workflow smoke" >&2
   exit 1
 fi
-if [[ -z "${owner_user_id:-}" || -z "${owner_phone:-}" ]]; then
-  echo "unable to locate an owner user account for workflow smoke" >&2
+if [[ -z "${proposal_id:-}" || -z "${owner_user_id:-}" || -z "${owner_phone:-}" ]]; then
+  echo "unable to locate a proposal-backed owner account for workflow smoke" >&2
   exit 1
 fi
 
@@ -197,7 +212,7 @@ PY
 request_json PUT "${API_BASE_URL}/merchant/price-book" "${price_book_save_json}" "{\"remark\":\"工长日常价格库\",\"items\":[{\"standardItemId\":${library_item_id},\"unit\":\"㎡\",\"unitPriceCent\":1800,\"minChargeCent\":12000,\"remark\":\"基础防水单价\",\"status\":1}]}" "${merchant_token}"
 request_json POST "${API_BASE_URL}/merchant/price-book/publish" "${price_book_publish_json}" '{}' "${merchant_token}"
 
-request_json POST "${API_BASE_URL}/admin/quote-tasks" "${task_create_json}" "{\"projectId\":101,\"proposalId\":501,\"proposalVersion\":1,\"designerProviderId\":601,\"customerId\":201,\"houseId\":301,\"ownerUserId\":${owner_user_id},\"scenarioType\":\"plan_a\",\"title\":\"报价工作流联调任务\",\"currency\":\"CNY\"}" "${admin_token}"
+request_json POST "${API_BASE_URL}/admin/quote-tasks" "${task_create_json}" "{\"projectId\":${quote_project_id},\"proposalId\":${proposal_id},\"proposalVersion\":${proposal_version},\"designerProviderId\":${designer_provider_id},\"customerId\":${owner_user_id},\"houseId\":${house_id},\"ownerUserId\":${owner_user_id},\"scenarioType\":\"plan_a\",\"title\":\"报价工作流联调任务\",\"currency\":\"CNY\"}" "${admin_token}"
 task_id="$(python3 - <<'PY' "${task_create_json}"
 import json,sys
 payload=json.load(open(sys.argv[1]))
