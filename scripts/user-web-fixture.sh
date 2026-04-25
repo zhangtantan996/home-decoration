@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 SQL_FILE="$ROOT_DIR/server/scripts/testdata/user_web_fixture.sql"
 MIGRATIONS=(
+  "$ROOT_DIR/server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
   "$ROOT_DIR/server/migrations/v1.9.7_add_business_flows.sql"
   "$ROOT_DIR/server/migrations/v1.9.8_case_audit_source_trace.sql"
   "$ROOT_DIR/server/migrations/v1.10.4_add_project_business_closure_fields.sql"

@@ -40,7 +40,7 @@ function buildDesignerPayload(phone: string, options?: { entityType?: 'personal'
     legalPersonIdCardFront: entityType === 'company' ? 'https://example.com/id-front.jpg' : undefined,
     legalPersonIdCardBack: entityType === 'company' ? 'https://example.com/id-back.jpg' : undefined,
     companyName: entityType === 'company' ? '西安设计工作室有限公司' : undefined,
-    licenseNo: entityType === 'company' ? '91510100MA6C12345X' : undefined,
+    licenseNo: entityType === 'company' ? '110105000000123' : undefined,
     licenseImage: entityType === 'company' ? 'https://example.com/license.jpg' : undefined,
     yearsExperience: 6,
     officeAddress: '西安市雁塔区高新路 12 号',
