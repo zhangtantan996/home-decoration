@@ -83,6 +83,15 @@ cd server && make swagger  # swag init -g cmd/api/main.go -o docs
 ### Frontend apps
 All frontends require `--legacy-peer-deps` for npm install.
 
+**shared frontend guardrails:**
+```
+npm run gen:tokens
+npm run check:frontend-style
+npm run check:frontend-style -- --scope admin|merchant|web|website|mini|mobile
+node scripts/frontend-style-guard.mjs --scope <scope> --update-baseline
+```
+Visual values must come from `shared/design-tokens/tokens.json` and generated outputs. Do not edit generated token files directly.
+
 **admin:**
 ```
 cd admin && npm run dev
@@ -145,6 +154,10 @@ router/ → handler/ → service/ → repository/
 - UI framework: `admin/` and `merchant/` use **Ant Design 5.x** — do not introduce another UI framework.
 - State management: **Zustand** everywhere — do not introduce Redux, MobX, or Recoil.
 - Backend: `handler → service → repository` is strict. Do not skip layers.
+- Frontend design tokens: do not add new hardcoded Hex/RGB/HSL colors, ad hoc spacing scales, ad hoc radii, or local shadow systems in business code. Add tokens in `shared/design-tokens/tokens.json`, run `npm run gen:tokens`, then consume generated variables/exports.
+- Component usage: do not hand-roll business buttons, inputs, switches, checkboxes, dialogs, cards, or status primitives with raw platform controls. Use Ant Design in `admin/` and `merchant`, `mini/src/components` in `mini/`, generated CSS/token primitives in `web/` and `website/`, and `mobile/src/components/primitives` in `mobile/`.
+- Mobile visual baseline: `mini/` and `mobile/` default to an iOS-like simple style across Android and iOS: white/soft-gray hierarchy, low-saturation state colors, light borders, restrained shadows, clear safe-area-aware bottom actions, and no Android Material-specific large color blocks or FAB-heavy patterns.
+- UI state coverage: every user-visible frontend change must account for loading, empty, error, disabled, narrow-width, long-text, and multi-item states.
 - Secrets: use env/config. Never hardcode JWT secrets, DB passwords, API keys, or tokens.
 - User-facing UI copy must not expose implementation details. Do not show API URLs, SQL/schema/database errors, token/JWT, WebSocket, polling/auto-refresh internals, fallback/debug/mock/test-code text, npm/Docker/localhost instructions, stack traces, or raw backend error strings in `admin/`, `merchant/`, `web/`, `mini/`, or `mobile/`. Put technical detail in logs/audit records; show business-readable fallback text in the UI.
 - Artifact directories are off-limits unless the task explicitly requires it: `**/node_modules/**`, `**/dist/**`, `output/`, `playwright-report/`, `test-results/`, `db_data_local/`, `server/tmp/`, `server/uploads/`.
@@ -159,6 +172,7 @@ router/ → handler/ → service/ → repository/
 - Before running Playwright, verify the right app is actually serving on the target URL.
 - Server: prefer targeted `go test ./internal/<pkg>/...` before `make test`.
 - Frontend: prefer build + lint for quick validation; add/update tests when the module already has a test pattern.
+- Frontend style guard: run the scoped `npm run check:frontend-style:*` command for touched frontend surfaces. The guard uses `scripts/frontend-style-baseline.json` to block new style debt while tolerating existing debt.
 
 ## CI
 
@@ -169,6 +183,8 @@ All CI workflows trigger on the **`dev` branch** (not `main`). Paths are filtere
 - `mini/**` → ci-mini
 - `mobile/**` → ci-mobile
 - `web/**` + `tests/**` → ci-user-web
+- `website/**` → ci-website
+- `shared/design-tokens/**`, `scripts/frontend-style-guard.mjs`, `scripts/frontend-style-baseline.json`, `stylelint.config.cjs` → relevant frontend CIs
 - `deploy/**` → deployment workflows (`deploy-test` / `release-prod` / `rollback-*`)
 
 CI uses `npm ci --legacy-peer-deps` for all frontends and `go test -v -race ./...` for backend.

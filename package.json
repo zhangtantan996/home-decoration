@@ -18,7 +18,14 @@
     "db:cleanup:testdata:local": "bash ./scripts/db-cleanup-tagged-test-data.sh local",
     "db:cleanup:testdata:test": "bash ./scripts/db-cleanup-tagged-test-data.sh test",
     "db:cleanup:testdata:staging": "bash ./scripts/db-cleanup-tagged-test-data.sh staging",
-    "gen:tokens": "node shared/design-tokens/scripts/generate-rn.js",
+    "gen:tokens": "node shared/design-tokens/scripts/generate-platforms.mjs",
+    "check:frontend-style": "node scripts/frontend-style-guard.mjs",
+    "check:frontend-style:admin": "node scripts/frontend-style-guard.mjs --scope admin",
+    "check:frontend-style:merchant": "node scripts/frontend-style-guard.mjs --scope merchant",
+    "check:frontend-style:web": "node scripts/frontend-style-guard.mjs --scope web",
+    "check:frontend-style:website": "node scripts/frontend-style-guard.mjs --scope website",
+    "check:frontend-style:mini": "node scripts/frontend-style-guard.mjs --scope mini",
+    "check:frontend-style:mobile": "node scripts/frontend-style-guard.mjs --scope mobile",
     "fixture:user-web": "./scripts/user-web-fixture.sh",
     "reset:user-web:rate-limit": "./scripts/user-web-clear-rate-limit.sh",
     "smoke:user-web:api": "npm run reset:user-web:rate-limit && ./scripts/user-web-real-api-smoke.sh",
@@ -86,11 +93,17 @@
     "@playwright/test": "^1.57.0",
     "@types/node": "^25.0.3",
     "concurrently": "^9.2.1",
+    "postcss-scss": "4.0.9",
+    "stylelint": "15.10.3",
+    "stylelint-config-standard-scss": "11.1.0",
     "ts-node": "^10.9.2",
     "typescript": "^5.9.3"
   },
   "overrides": {
+    "brace-expansion": "1.1.13",
     "diff": "4.0.4",
-    "minimatch": "3.1.5"
+    "minimatch": "3.1.5",
+    "picomatch": "2.3.2",
+    "yaml": "2.8.3"
   }
 }

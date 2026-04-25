@@ -2,8 +2,6 @@
 // 保留此文件仅用于历史深链诊断，不应再作为现行业务入口。
 import api from './api';
 
-const request = api;
-
 export interface QuoteTask {
   id: number;
   bookingId: number;
@@ -30,10 +28,21 @@ export interface SubmitQuoteRequest {
 
 export const merchantQuotePKApi = {
   getQuoteTasks: (): Promise<QuoteTask[]> => {
-    return request.get('/merchant/quote-pk/tasks');
+    return api.get('/merchant/quote-pk/tasks').then((payload) => {
+      if (Array.isArray(payload)) {
+        return payload as QuoteTask[];
+      }
+
+      if (payload && typeof payload === 'object' && 'data' in payload) {
+        const data = (payload as { data?: unknown }).data;
+        return Array.isArray(data) ? data as QuoteTask[] : [];
+      }
+
+      return [];
+    });
   },
 
   submitQuote: (taskId: number, data: SubmitQuoteRequest): Promise<void> => {
-    return request.post(`/merchant/quote-pk/tasks/${taskId}/submit`, data);
+    return api.post(`/merchant/quote-pk/tasks/${taskId}/submit`, data).then(() => undefined);
   },
 };

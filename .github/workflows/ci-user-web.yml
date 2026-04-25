@@ -13,6 +13,8 @@ on:
       - 'server/scripts/testdata/user_web_fixture.sql'
       - 'playwright.user-web*.ts'
       - 'package.json'
+      - 'package-lock.json'
+      - 'stylelint.config.cjs'
       - '.github/workflows/ci-user-web.yml'
   pull_request:
     branches: ["dev"]
@@ -26,6 +28,8 @@ on:
       - 'server/scripts/testdata/user_web_fixture.sql'
       - 'playwright.user-web*.ts'
       - 'package.json'
+      - 'package-lock.json'
+      - 'stylelint.config.cjs'
       - '.github/workflows/ci-user-web.yml'
 
 jobs:

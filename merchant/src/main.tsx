@@ -5,10 +5,11 @@ import { App, ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import router from './router';
 import './index.css';
+import { merchantTheme } from './styles/theme';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <ConfigProvider locale={zhCN}>
+    <ConfigProvider locale={zhCN} theme={merchantTheme}>
       <App>
         <RouterProvider router={router} />
       </App>

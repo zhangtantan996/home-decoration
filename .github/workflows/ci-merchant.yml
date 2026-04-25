@@ -5,25 +5,31 @@ on:
     branches: ["dev"]
     paths:
       - 'merchant/**'
+      - 'shared/design-tokens/**'
       - 'server/**'
       - 'tests/e2e/merchant-*.ts'
       - 'tests/e2e/material-shop-*.ts'
       - 'tests/e2e/helpers/merchant.ts'
       - 'playwright*.ts'
       - 'scripts/**'
+      - 'stylelint.config.cjs'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/ci-merchant.yml'
   pull_request:
     branches: ["dev"]
     paths:
       - 'merchant/**'
+      - 'shared/design-tokens/**'
       - 'server/**'
       - 'tests/e2e/merchant-*.ts'
       - 'tests/e2e/material-shop-*.ts'
       - 'tests/e2e/helpers/merchant.ts'
       - 'playwright*.ts'
       - 'scripts/**'
+      - 'stylelint.config.cjs'
       - 'package.json'
+      - 'package-lock.json'
       - '.github/workflows/ci-merchant.yml'
 
 jobs:

@@ -146,6 +146,8 @@
 
 ## 8. 前端 UI / 布局要求
 
+工程约束先看 `docs/FRONTEND_ENGINEERING_GUIDE.md`，默认必须使用 design tokens、既有组件入口和 `check:frontend-style` 门禁。
+
 所有用户可见页面都必须注意：
 - 信息层级清楚
 - 移动端优先，兼容桌面

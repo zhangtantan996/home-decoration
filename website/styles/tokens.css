@@ -1,0 +1,29 @@
+/**
+ * Website CSS design tokens
+ * Auto-generated from shared/design-tokens/tokens.json.
+ * Do not edit manually.
+ */
+
+:root {
+  --bg-base: #050505;
+  --bg-surface: #0a0a0a;
+  --bg-card: rgba(255, 255, 255, 0.02);
+  --bg-card-hover: rgba(255, 255, 255, 0.04);
+  --primary: #F59E0B;
+  --primary-glow: rgba(245, 158, 11, 0.4);
+  --secondary: #E11D48;
+  --secondary-glow: rgba(225, 29, 72, 0.4);
+  --text-main: #FAFAFA;
+  --text-muted: #A1A1AA;
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.12);
+  --bg-overlay: rgba(10, 10, 10, 0.75);
+  --radius-sm: 12px;
+  --radius-md: 24px;
+  --radius-lg: 32px;
+  --radius-full: 999px;
+  --nav-height: 80px;
+  --max-w: 1280px;
+  --font: 'Outfit', system-ui, -apple-system, sans-serif;
+  --easing: cubic-bezier(0.22, 1, 0.36, 1);
+}
