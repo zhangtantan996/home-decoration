@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { expect, test } from '@playwright/test';
-import { buildMerchantAppUrl, loginMerchantByApi, merchantApiGet, merchantApiPost } from './helpers/merchant';
+import { buildMerchantAppUrl, merchantApiGet, merchantApiPost, type MerchantLoginApiData } from './helpers/merchant';
 
 type AdminLoginData = {
   token: string;
@@ -21,14 +21,55 @@ function clearRateLimit() {
 }
 
 async function loginAdminByApiWithPayload(request: Parameters<typeof test>[0]['request']): Promise<AdminLoginData> {
-  const response = await request.post(`${apiBaseUrl}/admin/login`, {
-    data: { username: process.env.E2E_ADMIN_USER || 'admin', password: process.env.E2E_ADMIN_PASS || 'admin123' },
-  });
-  expect(response.status(), 'admin login http status').toBe(200);
-  const payload = await response.json();
-  expect(payload.code, `admin login business code, message=${payload.message}`).toBe(0);
-  expect(payload.data?.token, 'admin token').toBeTruthy();
-  return payload.data as AdminLoginData;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const response = await request.post(`${apiBaseUrl}/admin/login`, {
+      data: { username: process.env.E2E_ADMIN_USER || 'admin', password: process.env.E2E_ADMIN_PASS || 'admin123' },
+    });
+    expect(response.status(), 'admin login http status').toBe(200);
+    const payload = await response.json();
+    if (payload.code === 0) {
+      expect(payload.data?.token, 'admin token').toBeTruthy();
+      return payload.data as AdminLoginData;
+    }
+    if (payload.code === 429) {
+      clearRateLimit();
+      continue;
+    }
+    expect(payload.code, `admin login business code, message=${payload.message}`).toBe(0);
+  }
+
+  throw new Error('admin login exceeded retry budget after rate-limit reset');
+}
+
+async function loginMerchantByApiWithRetry(request: Parameters<typeof test>[0]['request']): Promise<MerchantLoginApiData> {
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const result = await merchantApiPost<MerchantLoginApiData>(
+      request,
+      apiBaseUrl,
+      '/merchant/login',
+      {
+        phone: process.env.MERCHANT_PHONE || '13800000001',
+        code: process.env.MERCHANT_CODE || '123456',
+      },
+    );
+
+    expect(result.status, 'merchant login should not return 5xx').toBeLessThan(500);
+    expect(result.status, 'merchant login http status should be 200').toBe(200);
+
+    if (result.body.code === 0) {
+      expect(result.body.data?.token, 'merchant token').toBeTruthy();
+      return result.body.data;
+    }
+
+    if (result.body.code === 429) {
+      clearRateLimit();
+      continue;
+    }
+
+    expect(result.body.code, `merchant login business code should be 0, message=${result.body.message}`).toBe(0);
+  }
+
+  throw new Error('merchant login exceeded retry budget after rate-limit reset');
 }
 
 async function adminApiPost<T = any>(request: Parameters<typeof test>[0]['request'], path: string, token: string, payload?: unknown) {
@@ -108,12 +149,7 @@ test.describe('quote system v1 smoke', () => {
   test('admin -> merchant -> admin minimal quote flow works', async ({ request, browser }) => {
     clearRateLimit();
     const adminLogin = await loginAdminByApiWithPayload(request);
-    const merchantLogin = await loginMerchantByApi(
-      request,
-      apiBaseUrl,
-      process.env.MERCHANT_PHONE || '13800000001',
-      process.env.MERCHANT_CODE || '123456',
-    );
+    const merchantLogin = await loginMerchantByApiWithRetry(request);
 
     const library = await adminApiGet<{ list: Array<{ id: number; name: string }> }>(
       request,

@@ -1,4 +1,5 @@
-import { Link, useParams } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
 import { useAsyncData } from '../hooks/useAsyncData';
@@ -16,6 +17,9 @@ const STATUS_META: Record<string, { tone: 'success' | 'warning' | 'danger' | 'br
   failed: {
     tone: 'danger',
   },
+  scan_pending: {
+    tone: 'warning',
+  },
   pending: {
     tone: 'warning',
   },
@@ -27,26 +31,57 @@ const STATUS_META: Record<string, { tone: 'success' | 'warning' | 'danger' | 'br
   },
 };
 
-function resolvePrimaryActionLabel(actionPath: string | undefined, hasBooking: boolean) {
-  if (hasBooking) {
-    return '查看预约详情';
+const FINAL_PAYMENT_STATUSES = new Set(['paid', 'closed', 'failed']);
+
+function resolvePaymentErrorDescription(rawError: string, mode: string | null) {
+  const message = String(rawError || '').trim();
+  if (!message) {
+    return '支付详情暂时不可用，请稍后重试。';
   }
-  if (actionPath?.startsWith('/projects/')) {
-    return '查看项目进度';
+
+  if (mode === 'qr_code' && message.includes('(404)')) {
+    return '当前支付详情暂时不可用，可能是支付单未正确创建或测试环境支付链路未完全就绪。请返回订单页重新发起支付；若仍失败，请联系平台处理。';
   }
-  if (actionPath?.startsWith('/proposals/')) {
-    return '查看方案详情';
+
+  if (mode === 'qr_code' && message.includes('登录已过期')) {
+    return '登录状态已失效，请重新登录后再次发起支付。';
   }
-  return '查看关联业务';
+
+  if (mode === 'qr_code' && message.includes('无权查看')) {
+    return '当前账号无法查看这笔支付单，可能是登录账号与下单账号不一致。请返回订单页核对当前账号后重新发起支付。';
+  }
+
+  if (message.includes('(404)')) {
+    return '未找到这笔支付记录，可能已失效、已被关闭，或当前环境未生成对应支付详情。请返回订单页重新发起。';
+  }
+
+  if (message.includes('无权查看')) {
+    return '当前账号无法查看这笔支付记录，请确认你使用的是下单账号；若你正是从当前订单页进入仍失败，请联系平台处理支付单归属异常。';
+  }
+
+  return message;
 }
 
 export function PaymentDetailPage() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const paymentId = Number(id || 0);
+  const paymentMode = searchParams.get('mode');
   const { data, loading, error, reload } = useAsyncData(
     () => (paymentId ? getPaymentDetail(paymentId) : Promise.reject(new Error('缺少支付单编号，请返回订单列表重新查看。'))),
     [paymentId],
   );
+
+  useEffect(() => {
+    if (!data || FINAL_PAYMENT_STATUSES.has(data.status)) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      void reload();
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [data, reload]);
 
   if (!paymentId) {
     return (
@@ -67,7 +102,7 @@ export function PaymentDetailPage() {
   if (error && !data) {
     return (
       <main className="container page-stack">
-        <ErrorBlock description={error} onRetry={() => void reload()} />
+        <ErrorBlock description={resolvePaymentErrorDescription(error, paymentMode)} onRetry={() => void reload()} />
       </main>
     );
   }
@@ -78,10 +113,28 @@ export function PaymentDetailPage() {
 
   const statusMeta = STATUS_META[data.status] || STATUS_META.created;
   const providerInitial = (data.provider?.name || '商').trim().slice(0, 1).toUpperCase();
-  const primaryActionPath = data.actionPath || '/me/orders';
-  const primaryActionLabel = resolvePrimaryActionLabel(data.actionPath, Boolean(data.booking?.id));
-  const canViewSiteSurvey = data.bizType === 'booking_survey_deposit' && Boolean(data.booking?.id);
-  const showExpiresAt = ['created', 'launching', 'pending'].includes(data.status) && Boolean(data.expiresAt);
+  const fallbackBackPath = data.actionPath || '/me/orders';
+  const showExpiresAt = ['created', 'launching', 'pending', 'scan_pending'].includes(data.status) && Boolean(data.expiresAt);
+  const terminalLabel = data.terminalType === 'mini_qr' && data.channel === 'alipay'
+    ? '支付宝扫码'
+    : data.terminalTypeText || '待补充';
+  const qrCodeImageUrl = String(searchParams.get('qrCodeImageUrl') || '').trim();
+  const showQRCode = paymentMode === 'qr_code' && qrCodeImageUrl !== '';
+  const qrHelperText = data.status === 'paid'
+    ? '支付宝已确认支付成功，可继续处理后续业务。'
+    : data.status === 'scan_pending'
+      ? '二维码已被扫描，请在支付宝内完成付款确认。'
+    : data.status === 'closed' || data.status === 'failed'
+      ? '当前二维码已失效，请返回业务页重新发起支付。'
+      : '请使用支付宝 App 扫描下方二维码完成支付，支付结果确认后会同步更新。';
+
+  const handleGoBack = () => {
+    if (window.history.length > 1) {
+      navigate(-1);
+      return;
+    }
+    navigate(fallbackBackPath);
+  };
 
   return (
     <main className={styles.page}>
@@ -105,6 +158,53 @@ export function PaymentDetailPage() {
 
       <section className={styles.grid}>
         <div className={styles.mainStack}>
+          {showQRCode ? (
+            <section className={`card ${styles.panel}`}>
+              <div className={styles.panelHead}>
+                <h2>支付宝扫码支付</h2>
+                <p>{qrHelperText}</p>
+              </div>
+
+              <div className={styles.qrPanel}>
+                <div className={styles.qrPreview} data-tone={statusMeta.tone}>
+                  {FINAL_PAYMENT_STATUSES.has(data.status) ? (
+                    <div className={styles.qrStateText}>{data.statusText || '支付状态已更新'}</div>
+                  ) : (
+                    <img alt="支付宝支付二维码" className={styles.qrImage} src={qrCodeImageUrl} />
+                  )}
+                </div>
+
+                <div className={styles.qrMeta}>
+                  <article className={styles.qrMetaCard}>
+                    <span>支付方式</span>
+                    <strong>{data.channelText || '支付宝'}</strong>
+                  </article>
+                  <article className={styles.qrMetaCard}>
+                    <span>当前状态</span>
+                    <strong>{data.statusText || '处理中'}</strong>
+                  </article>
+                  <article className={styles.qrMetaCard}>
+                    <span>支付金额</span>
+                    <strong>{formatCurrency(data.amount)}</strong>
+                  </article>
+                  <article className={styles.qrMetaCard}>
+                    <span>支付截止</span>
+                    <strong>{data.expiresAt ? formatDateTime(data.expiresAt) : '待补充'}</strong>
+                  </article>
+                </div>
+              </div>
+
+              <div className={styles.qrActionRow}>
+                <button className="button-secondary" onClick={() => void reload()} type="button">
+                  刷新支付状态
+                </button>
+                <Link className="button-ghost" to={fallbackBackPath}>
+                  稍后继续处理
+                </Link>
+              </div>
+            </section>
+          ) : null}
+
           <section className={`card ${styles.panel}`}>
             <div className={styles.panelHead}>
               <h2>订单信息</h2>
@@ -140,7 +240,7 @@ export function PaymentDetailPage() {
               </div>
               <div>
                 <dt>支付终端</dt>
-                <dd>{data.terminalTypeText || '待补充'}</dd>
+                <dd>{terminalLabel}</dd>
               </div>
               <div>
                 <dt>支付时间</dt>
@@ -206,21 +306,13 @@ export function PaymentDetailPage() {
         <aside className={styles.sideStack}>
           <section className={`card ${styles.panel}`}>
             <div className={styles.panelHead}>
-              <h2>下一步</h2>
+              <h2>返回</h2>
             </div>
 
             <div className={styles.actionStack}>
-              <Link className="button-secondary" to={primaryActionPath}>
-                {primaryActionLabel}
-              </Link>
-              {canViewSiteSurvey && data.booking ? (
-                <Link className="button-ghost" to={`/bookings/${data.booking.id}/site-survey`}>
-                  查看量房记录
-                </Link>
-              ) : null}
-              <Link className="button-ghost" to="/me/orders">
-                返回我的订单
-              </Link>
+              <button className="button-secondary" onClick={handleGoBack} type="button">
+                返回上一页
+              </button>
             </div>
           </section>
         </aside>

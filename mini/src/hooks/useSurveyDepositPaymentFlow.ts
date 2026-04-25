@@ -465,6 +465,15 @@ export const useSurveyDepositPaymentFlow = ({
     }
   }, [channelOptions, launchPaymentByAction]);
 
+  const launchPreferredChannel = useCallback(async (channel: 'wechat' | 'alipay') => {
+    const selectedAction = channelOptions.find((option) => option.channel === channel);
+    if (!selectedAction) {
+      Taro.showToast({ title: '当前支付方式不可用', icon: 'none' });
+      return false;
+    }
+    return launchPaymentByAction(selectedAction);
+  }, [channelOptions, launchPaymentByAction]);
+
   const confirmQrPayment = useCallback(async () => {
     if (!qrPayment || qrConfirmLoading) {
       return false;
@@ -528,6 +537,7 @@ export const useSurveyDepositPaymentFlow = ({
     confirmQrPayment,
     retryQrPayment,
     launchPaymentByAction,
+    launchPreferredChannel,
     chooseAndLaunch,
     canPay: !isPaid && channelOptions.length > 0,
     canPayWithWechat: channelOptions.some((option) => option.channel === 'wechat'),

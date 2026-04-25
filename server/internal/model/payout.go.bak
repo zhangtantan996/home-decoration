@@ -1,0 +1,37 @@
+package model
+
+import "time"
+
+const (
+	PayoutStatusCreated    = "created"
+	PayoutStatusProcessing = "processing"
+	PayoutStatusSucceeded  = "succeeded"
+	PayoutStatusFailed     = "failed"
+)
+
+const (
+	PayoutChannelWechatBalance = "wechat_balance" // 微信企业付款（<2万）
+	PayoutChannelWechatBank    = "wechat_bank"    // 微信商家转账（2-10万）
+	PayoutChannelBankTransfer  = "bank_transfer"  // 银行转账（>10万）
+)
+
+type PayoutOrder struct {
+	Base
+	BizType         string     `json:"bizType" gorm:"size:50;index"`
+	BizID           uint64     `json:"bizId" gorm:"index"`
+	ProviderID      uint64     `json:"providerId" gorm:"index"`
+	Channel         string     `json:"channel" gorm:"size:30;index"`
+	Amount          float64    `json:"amount"`
+	OutTradeNo      string     `json:"outTradeNo" gorm:"size:64;uniqueIndex"`
+	ProviderTradeNo string     `json:"providerTradeNo" gorm:"size:64;index"`
+	Status          string     `json:"status" gorm:"size:20;index"`
+	PayeeInfo       string     `json:"payeeInfo" gorm:"type:jsonb;default:'{}'"`
+	FailureReason   string     `json:"failureReason" gorm:"size:500"`
+	SucceededAt     *time.Time `json:"succeededAt"`
+	RetryCount      int        `json:"retryCount" gorm:"default:0"`
+	LastRetryAt     *time.Time `json:"lastRetryAt"`
+}
+
+func (PayoutOrder) TableName() string {
+	return "payout_orders"
+}

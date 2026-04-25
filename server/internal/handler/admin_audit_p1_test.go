@@ -11,28 +11,19 @@ import (
 	"home-decoration-server/internal/repository"
 
 	"github.com/gin-gonic/gin"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
 
 func newAdminAuditTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	dsn := "file:" + t.Name() + "?mode=memory&cache=shared"
-	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
-	if err != nil {
-		t.Fatalf("open sqlite: %v", err)
-	}
+	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(
 		&model.SysRole{},
 		&model.SysMenu{},
 		&model.SysRoleMenu{},
-		&model.SysAdmin{},
 		&model.SysAdminRole{},
-		&model.Provider{},
 		&model.MerchantWithdraw{},
 		&model.MerchantIncome{},
-		&model.Notification{},
-		&model.AuditLog{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}

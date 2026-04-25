@@ -16,6 +16,15 @@ interface NotificationDTO {
   createdAt?: string;
   isRead?: boolean;
   type?: string;
+  typeLabel?: string;
+  category?: 'system' | 'project' | 'payment';
+  kind?: 'info' | 'todo' | 'risk' | 'result' | 'governance';
+  priority?: 'normal' | 'high' | 'urgent';
+  actionRequired?: boolean;
+  actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+  actionLabel?: string;
+  supportsWeb?: boolean;
+  supportsMini?: boolean;
 }
 
 export interface NotificationListResult {
@@ -25,7 +34,26 @@ export interface NotificationListResult {
   pageSize: number;
 }
 
+function inferNotificationCategory(type: string): 'system' | 'project' | 'payment' {
+  if (type.startsWith('order') || type.startsWith('refund') || type.startsWith('payment.')) {
+    return 'payment';
+  }
+  if (
+    type.startsWith('booking')
+    || type.startsWith('proposal')
+    || type.startsWith('quote')
+    || type.startsWith('project')
+    || type.startsWith('audit')
+    || type.startsWith('complaint')
+    || type.startsWith('change_order')
+  ) {
+    return 'project';
+  }
+  return 'system';
+}
+
 function toNotification(dto: NotificationDTO): MessageListItemVM {
+  const type = dto.type || 'system';
   return {
     id: dto.id,
     title: dto.title || '系统通知',
@@ -33,7 +61,16 @@ function toNotification(dto: NotificationDTO): MessageListItemVM {
     actionUrl: dto.actionUrl || '',
     createdAt: formatDateTime(dto.createdAt),
     isRead: Boolean(dto.isRead),
-    type: dto.type || 'system',
+    type,
+    typeLabel: String(dto.typeLabel || '').trim(),
+    category: dto.category || inferNotificationCategory(type),
+    kind: dto.kind || 'info',
+    priority: dto.priority || 'normal',
+    actionRequired: Boolean(dto.actionRequired),
+    actionStatus: dto.actionStatus || 'none',
+    actionLabel: dto.actionLabel || '',
+    supportsWeb: dto.supportsWeb !== false,
+    supportsMini: Boolean(dto.supportsMini),
   };
 }
 

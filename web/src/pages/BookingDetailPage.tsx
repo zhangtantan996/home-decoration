@@ -1,12 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { ErrorBlock, LoadingBlock } from '../components/AsyncState';
-import { ConfirmDialog } from '../components/ConfirmDialog';
+import { BUDGET_INCLUDE_LABELS } from '../constants/statuses';
 import { useAsyncData } from '../hooks/useAsyncData';
 import { getBookingDetail, paySurveyDeposit } from '../services/bookings';
 import type { BookingTimelineItemVM } from '../types/viewModels';
 import { formatCurrency } from '../utils/format';
+import { startAlipayWebPayment } from '../utils/paymentLaunch';
+import styles from './BookingDetailPage.module.scss';
 
 function readTimelineStateText(state: BookingTimelineItemVM['state']) {
   if (state === 'done') return '已完成';
@@ -22,404 +24,468 @@ function readTimelineStateTone(state: BookingTimelineItemVM['state']) {
   return 'warning';
 }
 
-function renderRefundNotice(text: string) {
-  return text
-    .split(/(\d+%|¥\d+(?:\.\d+)?|转为设计费[^，。；]*)/g)
-    .filter(Boolean)
-    .map((segment, index) => {
-      if (/^\d+%$/.test(segment) || /^¥\d+(?:\.\d+)?$/.test(segment)) {
-        return <strong className="booking-detail-refund-strong booking-detail-refund-strong--danger" key={`${segment}-${index}`}>{segment}</strong>;
-      }
-      if (segment.includes('转为设计费')) {
-        return <strong className="booking-detail-refund-strong" key={`${segment}-${index}`}>{segment}</strong>;
-      }
-      return <span key={`${segment}-${index}`}>{segment}</span>;
-    });
+function readBudgetConfirmTone(status: string | undefined) {
+  if (status === 'accepted') return 'success';
+  if (status === 'rejected') return 'danger';
+  return 'warning';
+}
+
+type StepAction = {
+  key: string;
+  label: string;
+  to?: string;
+  onClick?: () => void;
+  tone?: 'secondary' | 'outline';
+};
+
+function readButtonClassName(tone: StepAction['tone']) {
+  if (tone === 'outline') return 'button-outline';
+  return 'button-secondary';
+}
+
+function canViewConstructionProgress(stage?: string) {
+  return [
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'archived',
+    'disputed',
+    'payment_paused',
+  ].includes(String(stage || '').trim());
 }
 
 export function BookingDetailPage() {
   const params = useParams();
   const bookingId = Number(params.id || 0);
   const { data, loading, error, reload } = useAsyncData(() => getBookingDetail(bookingId), [bookingId]);
-  const [paymentDialogOpen, setPaymentDialogOpen] = useState(false);
   const [paymentSubmitting, setPaymentSubmitting] = useState(false);
   const [paymentError, setPaymentError] = useState<string | null>(null);
+  const [budgetDialogOpen, setBudgetDialogOpen] = useState(false);
+
+  useEffect(() => {
+    if (!budgetDialogOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setBudgetDialogOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [budgetDialogOpen]);
 
   if (loading) return <div className="top-detail"><LoadingBlock title="加载预约详情" /></div>;
   if (error || !data) return <div className="top-detail"><ErrorBlock description={error || '预约详情不存在'} onRetry={() => void reload()} /></div>;
 
-  const refundNotice = data.surveyRefundNotice || '量房完成后若不继续设计，默认退回 60% 给用户；后续确认设计方案后，量房定金转为设计费抵扣。';
   const providerTypeText = data.providerFacts.find((item) => item.label === '身份')?.value || '服务商';
+  const providerReputation = data.providerFacts.find((item) => item.label === '口碑参考')?.value || '待补充';
+  const providerExperience = data.providerFacts.find((item) => item.label === '从业经验')?.value || '待补充';
+  const providerCompleted = data.providerFacts.find((item) => item.label === '完成项目')?.value || '待补充';
   const stageTitle = data.stageOverview.title;
-  const stageTone = data.statusCode === 4 ? 'danger' : data.depositPaid ? 'brand' : 'warning';
+  const bookingStatusText = data.statusText || (data.statusCode === 4 ? '已关闭' : '进行中');
   const canPayDeposit = data.statusCode >= 2 && !data.depositPaid && data.statusCode !== 4;
-  const hasMerchantConfirmed =
-    data.statusCode >= 2 ||
-    Boolean(data.siteSurveySummary?.status) ||
-    Boolean(data.budgetConfirmSummary?.status) ||
-    Boolean(data.proposalId);
-  const surveyStatus = data.siteSurveySummary?.status;
-  const budgetStatus = data.budgetConfirmSummary?.status;
-  const supportActions: Array<{ label: string; to: string }> = [];
-  const bookingFacts = [
+  const designFeeQuoteStatus = String(data.designFeeQuoteSummary?.status || '').trim();
+  const designFeeOrderStatus = typeof data.designFeeQuoteSummary?.orderStatus === 'number'
+    ? Number(data.designFeeQuoteSummary.orderStatus)
+    : null;
+  const designDeliverableStatus = String(data.designDeliverableSummary?.status || '').trim();
+  const constructionBridgeStarted = [
+    'construction_party_pending',
+    'construction_quote_pending',
+    'ready_to_start',
+    'in_construction',
+    'node_acceptance_in_progress',
+    'completed',
+    'archived',
+    'disputed',
+    'payment_paused',
+  ].includes(String(data.currentStage || '').trim());
+  const bookingNote = data.notes && data.notes !== '无补充说明' ? data.notes : '';
+  const budgetIncludes = Object.entries(data.budgetConfirmSummary?.includes || {})
+    .filter(([, checked]) => checked)
+    .map(([key]) => BUDGET_INCLUDE_LABELS[key] || key);
+  const budgetRejectProgress = data.budgetConfirmSummary
+    ? (data.budgetConfirmSummary.rejectLimit > 0
+      ? `${data.budgetConfirmSummary.rejectCount}/${data.budgetConfirmSummary.rejectLimit}`
+      : `${data.budgetConfirmSummary.rejectCount}`)
+    : '0';
+  const summaryFacts = [
+    { label: '当前阶段', value: stageTitle },
+    { label: '预约状态', value: bookingStatusText },
     { label: '建筑面积', value: data.areaText || '待确认' },
     { label: '预算范围', value: data.budgetRange || '待确认' },
+    { label: '装修类型', value: data.renovationType || '待确认' },
     { label: '期望时间', value: data.preferredDate || '待确认' },
-    { label: '最近更新', value: data.updatedAt || '刚刚更新' },
   ];
-
-  type BookingAction =
-    | { kind: 'pay'; label: string; hint: string }
-    | { kind: 'link'; label: string; to: string; hint: string }
-    | { kind: 'status'; label: string; hint: string };
-
-  let primaryAction: BookingAction;
-
-  if (data.statusCode === 4) {
-    primaryAction = data.providerId > 0
-      ? {
-          kind: 'link',
-          label: '重新发起预约',
-          to: `/providers/${data.providerType}/${data.providerId}/booking`,
-          hint: '本次预约已关闭，如仍有需求可直接重新填写并再次发起预约。',
-        }
-      : {
-          kind: 'status',
-          label: '预约已关闭',
-          hint: '本次预约不会继续推进，如仍有需求可重新发起预约。',
-        };
-  } else if (!hasMerchantConfirmed) {
-    primaryAction = {
-      kind: 'status',
-      label: `等待${providerTypeText}确认`,
-      hint: `${providerTypeText}会先确认档期与需求匹配度，确认后才进入支付与量房安排。`,
-    };
-  } else if (canPayDeposit) {
-    primaryAction = {
-      kind: 'pay',
-      label: '支付量房定金',
-      hint: `${providerTypeText}已确认预约，完成支付后会继续安排量房。`,
-    };
-  } else if (surveyStatus === 'submitted' || surveyStatus === 'revision_requested') {
-    primaryAction = {
-      kind: 'link',
-      label: '查看量房记录',
-      to: `/bookings/${data.id}/site-survey`,
-      hint: '量房记录已更新，等待你确认或提出调整。',
-    };
-  } else if (budgetStatus === 'submitted' || budgetStatus === 'rejected') {
-    primaryAction = {
-      kind: 'link',
-      label: '预算确认',
-      to: `/bookings/${data.id}/budget-confirm`,
-      hint: '预算区间与设计方向已提交，确认后继续推进正式方案。',
-    };
-  } else if (data.proposalId) {
-    primaryAction = {
-      kind: 'link',
-      label: '查看报价详情',
-      to: `/proposals/${data.proposalId}`,
-      hint: `${providerTypeText}已提交方案或报价，你可以查看细节并决定是否继续。`,
-    };
-  } else if (surveyStatus === 'confirmed' && !budgetStatus) {
-    primaryAction = {
-      kind: 'status',
-      label: `等待${providerTypeText}提交预算`,
-      hint: '量房记录已确认，下一步会进入预算与设计方向确认。',
-    };
-  } else if (budgetStatus === 'accepted' && !data.proposalId) {
-    primaryAction = {
-      kind: 'status',
-      label: `等待${providerTypeText}提交方案`,
-      hint: '预算与设计方向已确认，正式方案提交后会出现在这里。',
-    };
-  } else {
-    primaryAction = {
-      kind: 'status',
-      label: '当前无需操作',
-      hint: data.stageOverview.helperText,
-    };
-  }
-
-  const detailActions: Array<{ label: string; to: string }> = [
-    data.siteSurveySummary ? { label: '量房记录', to: `/bookings/${data.id}/site-survey` } : null,
-    data.budgetConfirmSummary ? { label: '预算确认', to: `/bookings/${data.id}/budget-confirm` } : null,
-    data.proposalId ? { label: '查看报价详情', to: `/proposals/${data.proposalId}` } : null,
-  ]
-    .filter((item): item is { label: string; to: string } => Boolean(item))
-    .filter((item) => (primaryAction.kind === 'link' ? item.to !== primaryAction.to : true))
-    .slice(0, 2);
-
-  if (data.depositPaid) {
-    supportActions.push({ label: '申请退款', to: `/bookings/${data.id}/refund` });
-  }
-  if (data.depositPaid || Boolean(data.siteSurveySummary) || Boolean(data.budgetConfirmSummary) || Boolean(data.proposalId)) {
-    supportActions.push({ label: '发起投诉/争议', to: `/after-sales/new?bookingId=${data.id}&type=complaint` });
-  }
-
-  const openPaymentDialog = () => {
-    setPaymentError(null);
-    setPaymentDialogOpen(true);
-  };
-
-  const closePaymentDialog = () => {
-    if (paymentSubmitting) return;
-    setPaymentError(null);
-    setPaymentDialogOpen(false);
-  };
 
   const handlePaySurveyDeposit = async () => {
     setPaymentSubmitting(true);
     setPaymentError(null);
 
     try {
-      const payment = await paySurveyDeposit(data.id);
-      window.location.assign(payment.launchUrl);
+      await startAlipayWebPayment((request) => paySurveyDeposit(data.id, request), { onPaid: reload });
     } catch (paymentRequestError) {
       setPaymentError(paymentRequestError instanceof Error ? paymentRequestError.message : '发起支付失败，请稍后重试。');
+    } finally {
       setPaymentSubmitting(false);
     }
   };
 
-  return (
-    <div className="top-detail booking-detail-page">
-      <section className="card booking-detail-hero">
-        <div className="booking-detail-hero-media">
-          <div className="booking-detail-hero-avatar-wrap">
-            <img alt={data.providerName} className="booking-detail-hero-avatar" src={data.providerAvatar} />
-          </div>
-        </div>
+  const timelineActions = data.timeline.map<StepAction[]>((_, index) => {
+    switch (index) {
+      case 2:
+        if (data.surveyDepositPaymentId) {
+          return [{ key: 'view-survey-payment', label: '查看记录', to: `/payments/${data.surveyDepositPaymentId}`, tone: 'outline' }];
+        }
+        if (canPayDeposit) {
+          return [{ key: 'pay-survey-deposit', label: paymentSubmitting ? '拉起支付中…' : '去支付', onClick: () => { void handlePaySurveyDeposit(); } }];
+        }
+        return [];
+      case 3:
+      {
+        const actions: StepAction[] = [];
+        if (data.siteSurveySummary) {
+          actions.push({ key: 'view-site-survey', label: '量房资料', to: `/bookings/${data.id}/site-survey`, tone: 'outline' });
+        }
+        if (data.budgetConfirmSummary) {
+          actions.push({ key: 'view-budget-confirm', label: '沟通确认', onClick: () => setBudgetDialogOpen(true), tone: 'outline' });
+        }
+        return actions;
+      }
+      case 4:
+        if (designFeeQuoteStatus === 'pending') {
+          return [{ key: 'pay-design-quote', label: '确认并支付', to: `/bookings/${data.id}/design-quote` }];
+        }
+        if (designFeeQuoteStatus === 'confirmed' && designFeeOrderStatus === 0) {
+          const actions: StepAction[] = [{ key: 'view-design-quote', label: '查看报价', to: `/bookings/${data.id}/design-quote`, tone: 'outline' }];
+          if (data.designFeeQuoteSummary?.orderId) {
+            actions.push({ key: 'pay-design-order', label: '去支付', to: `/orders/${data.designFeeQuoteSummary.orderId}` });
+          }
+          return actions;
+        }
+        if (designFeeQuoteStatus === 'confirmed' && designFeeOrderStatus === 1 && data.designFeeQuoteSummary?.orderId) {
+          return [{ key: 'view-design-order', label: '查看订单', to: `/orders/${data.designFeeQuoteSummary.orderId}`, tone: 'outline' }];
+        }
+        return [];
+      case 5:
+        if (!data.designDeliverableSummary) return [];
+        if (
+          designDeliverableStatus === 'submitted'
+          || designDeliverableStatus === 'rejected'
+          || designDeliverableStatus === 'accepted'
+        ) {
+          return [{
+            key: 'view-design-deliverable',
+            label: designDeliverableStatus === 'accepted' ? '查看详情' : '查看交付',
+            to: `/bookings/${data.id}/design-deliverable`,
+            tone: 'outline',
+          }];
+        }
+        return [];
+      case 6:
+        if (constructionBridgeStarted) return [];
+        if (!data.proposalId) return [];
+        return [{ key: 'view-proposal', label: '查看方案', to: `/proposals/${data.proposalId}` }];
+      case 7:
+        if (!constructionBridgeStarted || !canViewConstructionProgress(data.currentStage)) return [];
+        return [{ key: 'view-construction-bridge', label: '项目进度', to: '/progress' }];
+      default:
+        return [];
+    }
+  });
 
-        <div className="booking-detail-hero-copy">
-          <div className="booking-detail-hero-head">
-            <div>
-              <p className="detail-kicker">预约单号 #{data.id}</p>
+  return (
+    <div className={styles.page}>
+      <section className={styles.topGrid}>
+        <article className={styles.summaryCard}>
+          <div className={styles.summaryHeader}>
+            <div className={styles.summaryIntro}>
+              <p className={styles.kicker}>预约单号 #{data.id}</p>
               <h1>{data.address}</h1>
             </div>
-            <div className="inline-actions booking-detail-hero-statuses">
-              <span className="status-chip" data-tone={data.depositPaid ? 'success' : data.statusCode === 4 ? 'danger' : data.statusCode >= 2 ? 'warning' : 'brand'}>
-                {data.depositPaid ? '量房定金已支付' : stageTitle}
-              </span>
-              <span className="status-chip">{data.statusText}</span>
-            </div>
           </div>
 
-          <div className="booking-detail-provider-facts">
-            {data.providerFacts.map((item) => (
-              <article className="booking-detail-provider-fact" key={item.label}>
+          <div className={styles.summaryGrid}>
+            {summaryFacts.map((item) => (
+              <article className={styles.summaryItem} key={item.label}>
                 <span>{item.label}</span>
-                <strong>{item.value}</strong>
+                <strong title={item.value}>{item.value}</strong>
               </article>
             ))}
           </div>
 
-          <div className="booking-detail-hero-facts">
-            {bookingFacts.map((item) => (
-              <article className="booking-detail-hero-fact" key={item.label}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-              </article>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      <section className="detail-layout booking-detail-layout">
-        <div className="detail-main booking-detail-main">
-          <section className="card section-card booking-detail-section">
-            <div className="section-head booking-detail-section-head">
-              <h2>流程进度</h2>
-              <span className="status-chip" data-tone={stageTone}>{stageTitle}</span>
-            </div>
-
-            <div className="booking-detail-stepper">
-              {data.timeline.map((item) => (
-                <article className="booking-detail-step" data-state={item.state} key={item.title}>
-                  <div className="booking-detail-step-line">
-                    <span className="booking-detail-step-dot" data-state={item.state} />
-                  </div>
-                  <div className="booking-detail-step-content">
-                    <div className="booking-detail-step-head">
-                      <h3>{item.title}</h3>
-                      <span className="status-chip" data-tone={readTimelineStateTone(item.state)}>{readTimelineStateText(item.state)}</span>
-                    </div>
-                    <p>{item.description}</p>
-                  </div>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="card section-card booking-detail-section">
-            <div className="section-head booking-detail-section-head">
-              <h2>预约信息</h2>
-              <span className="booking-detail-meta">更新于 {data.updatedAt || '刚刚'}</span>
-            </div>
-
-            <div className="booking-detail-info-grid">
-              <article className="booking-detail-info-card">
-                <span>装修类型</span>
-                <strong>{data.renovationType}</strong>
-              </article>
-              <article className="booking-detail-info-card">
-                <span>建筑面积</span>
-                <strong>{data.areaText}</strong>
-              </article>
-              <article className="booking-detail-info-card">
-                <span>预算范围</span>
-                <strong>{data.budgetRange}</strong>
-              </article>
-              <article className="booking-detail-info-card">
-                <span>期望时间</span>
-                <strong>{data.preferredDate}</strong>
-              </article>
-            </div>
-
-            <div className="booking-detail-note-panel">
+          {bookingNote ? (
+            <div className={styles.summaryNote}>
               <span>补充说明</span>
-              <p>{data.notes}</p>
+              <p>{bookingNote}</p>
             </div>
-          </section>
-
-          {data.siteSurveySummary || data.budgetConfirmSummary ? (
-            <section className="card section-card booking-detail-section">
-              <div className="section-head booking-detail-section-head">
-                <h2>阶段记录</h2>
-              </div>
-
-              <div className="booking-detail-record-grid">
-                {data.siteSurveySummary ? (
-                  <article className="booking-detail-record-card">
-                    <div className="booking-detail-record-head">
-                      <div>
-                        <span>量房记录</span>
-                        <strong>{data.siteSurveySummary.statusText}</strong>
-                      </div>
-                    </div>
-                    <div className="booking-detail-record-meta">
-                      <p><span>提交时间</span><strong>{data.siteSurveySummary.submittedAt || '待服务商提交'}</strong></p>
-                      <p><span>确认时间</span><strong>{data.siteSurveySummary.confirmedAt || '待你确认'}</strong></p>
-                    </div>
-                    {data.siteSurveySummary.revisionRequestReason ? <div className="booking-detail-record-note">退回原因：{data.siteSurveySummary.revisionRequestReason}</div> : null}
-                  </article>
-                ) : null}
-
-                {data.budgetConfirmSummary ? (
-                  <article className="booking-detail-record-card">
-                    <div className="booking-detail-record-head">
-                      <div>
-                        <span>预算确认</span>
-                        <strong>{data.budgetConfirmSummary.statusText}</strong>
-                      </div>
-                    </div>
-                    <div className="booking-detail-record-meta">
-                      <p>
-                        <span>预算区间</span>
-                        <strong>{formatCurrency(data.budgetConfirmSummary.budgetMin)} - {formatCurrency(data.budgetConfirmSummary.budgetMax)}</strong>
-                      </p>
-                      <p><span>设计意向</span><strong>{data.budgetConfirmSummary.designIntent || '待服务商补充'}</strong></p>
-                    </div>
-                    {data.budgetConfirmSummary.rejectionReason ? <div className="booking-detail-record-note">退回原因：{data.budgetConfirmSummary.rejectionReason}</div> : null}
-                  </article>
-                ) : null}
-              </div>
-            </section>
           ) : null}
-        </div>
+        </article>
 
-        <aside className="detail-aside booking-detail-side">
-          <section className="card section-card booking-detail-action-card">
-            <div className="section-head booking-detail-section-head">
-              <h2>当前动作</h2>
-            </div>
-
-            <div className="booking-detail-provider-card">
-              <img alt={data.providerName} className="booking-detail-provider-avatar" src={data.providerAvatar} />
-              <div className="booking-detail-provider-copy">
+        <aside className={styles.providerCard}>
+          <div className={styles.providerHead}>
+            <img alt={data.providerName} className={styles.providerAvatar} src={data.providerAvatar} />
+            <div className={styles.providerBody}>
+              <div className={styles.providerTitleRow}>
                 <strong>{data.providerName}</strong>
+                <span className="status-chip">{providerTypeText}</span>
               </div>
-            </div>
-
-            <div className="booking-detail-fee-card" data-paid={data.depositPaid}>
-              <span>量房定金</span>
-              <strong>{data.depositAmountText}</strong>
-              <small>
-                {data.depositPaid
-                  ? `已支付，等待${providerTypeText}继续安排量房与沟通。`
-                  : canPayDeposit
-                    ? `${providerTypeText}已确认预约，完成支付后会继续安排量房。`
-                    : `需先等待${providerTypeText}确认预约，再进入量房定金支付。`}
-              </small>
-            </div>
-
-            <div className="status-note booking-detail-refund-note">
-              <p>{renderRefundNotice(refundNotice)}</p>
-            </div>
-
-            <div className="detail-actions booking-detail-action-list">
-              {primaryAction.kind === 'pay' ? (
-                <button
-                  className="button-secondary booking-detail-pay-button"
-                  disabled={paymentSubmitting}
-                  onClick={() => {
-                    openPaymentDialog();
-                  }}
-                  type="button"
-                >
-                  {paymentSubmitting ? '跳转支付中…' : primaryAction.label}
-                </button>
-              ) : null}
-
-              {primaryAction.kind === 'link' ? (
-                <Link className="button-secondary" to={primaryAction.to}>{primaryAction.label}</Link>
-              ) : null}
-
-              {primaryAction.kind === 'status' ? (
-                <div className="booking-detail-action-placeholder">
-                  <strong>{primaryAction.label}</strong>
-                  <span>{primaryAction.hint}</span>
-                </div>
+              {data.providerTags.length ? (
+                <p className={styles.providerTagline}>{data.providerTags.join(' · ')}</p>
               ) : null}
             </div>
+          </div>
 
-            {detailActions.length ? (
-              <div className="booking-detail-action-section">
-                <span className="booking-detail-action-section-title">过程记录</span>
-                <div className="detail-actions booking-detail-action-list booking-detail-action-list--compact">
-                  {detailActions.map((action) => (
-                    <Link className="button-outline" key={action.to} to={action.to}>{action.label}</Link>
-                  ))}
-                </div>
-              </div>
-            ) : null}
-
-            {supportActions.length ? (
-              <div className="booking-detail-support-links">
-                {supportActions.map((action) => (
-                  <Link className="button-link" key={action.to} to={action.to}>{action.label}</Link>
-                ))}
-              </div>
-            ) : null}
-          </section>
+          <div className={styles.providerStats}>
+            <article className={styles.providerStat}>
+              <span>口碑参考</span>
+              <strong>{providerReputation}</strong>
+            </article>
+            <article className={styles.providerStat}>
+              <span>从业经验</span>
+              <strong>{providerExperience}</strong>
+            </article>
+            <article className={styles.providerStat}>
+              <span>完成项目</span>
+              <strong>{providerCompleted}</strong>
+            </article>
+          </div>
         </aside>
       </section>
 
-      <ConfirmDialog
-        amount={data.depositAmountText}
-        cancelText="暂不支付"
-        confirmDisabled={paymentSubmitting}
-        confirmText={paymentSubmitting ? '跳转中…' : '确认支付'}
-        description={`确认后将为 ${data.providerName} 支付量房定金，并继续进入量房安排与后续沟通。`}
-        error={paymentError}
-        notice={refundNotice}
-        noticeTitle="退款与抵扣说明"
-        onCancel={closePaymentDialog}
-        onConfirm={() => {
-          void handlePaySurveyDeposit();
-        }}
-        open={paymentDialogOpen}
-        title="确认支付量房定金"
-      />
+      {(data.quoteTruthSummary || data.commercialExplanation || data.changeOrderSummary || data.settlementSummary || data.payoutSummary) ? (
+        <section className={styles.section}>
+          <div className={styles.sectionHead}>
+            <div className={styles.sectionCopy}>
+              <h2>施工报价与后链摘要</h2>
+              <p>汇总施工报价、变更和资金进展，方便判断当前履约状态。</p>
+            </div>
+          </div>
+          <div className={styles.summaryGrid}>
+            <article className={styles.summaryItem}>
+              <span>成交报价</span>
+              <strong>{data.quoteTruthSummary?.totalAmountText || '待同步'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>预计工期</span>
+              <strong>{data.quoteTruthSummary?.estimatedDays ? `${data.quoteTruthSummary.estimatedDays} 天` : '待同步'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>资金闭环</span>
+              <strong>{data.financialClosureStatus || '待同步'}</strong>
+            </article>
+            <article className={styles.summaryItem}>
+              <span>下一步</span>
+              <strong>{data.nextPendingAction || '待同步'}</strong>
+            </article>
+          </div>
+          <div className={styles.providerStats} style={{ marginTop: 20 }}>
+            <article className={styles.providerStat}>
+              <span>施工范围内</span>
+              <strong>{data.commercialExplanation?.scopeIncluded?.join('、') || '待同步'}</strong>
+            </article>
+            <article className={styles.providerStat}>
+              <span>施工范围外</span>
+              <strong>{data.commercialExplanation?.scopeExcluded?.join('、') || '待同步'}</strong>
+            </article>
+            <article className={styles.providerStat}>
+              <span>变更待结算</span>
+              <strong>{data.changeOrderSummary?.pendingSettlementCount || 0}</strong>
+            </article>
+          </div>
+        </section>
+      ) : null}
+
+      <section className={styles.section}>
+        <div className={styles.sectionHead}>
+          <div className={styles.sectionCopy}>
+            <h2>流程进度</h2>
+          </div>
+        </div>
+        <div className={styles.stepper}>
+          {data.timeline.map((item, index) => {
+            const actions = timelineActions[index] || [];
+            const isDepositStep = index === 2;
+
+            return (
+              <article className={styles.step} data-state={item.state} key={item.title}>
+                <div className={styles.stepIndicator} />
+                <div className={styles.stepContent}>
+                  <div className={styles.stepTitleRow}>
+                    <h3>{item.title}</h3>
+                    <span className="status-chip" data-tone={readTimelineStateTone(item.state)}>{readTimelineStateText(item.state)}</span>
+                  </div>
+                  <div className={`${styles.stepBodyRow} ${!actions.length ? styles.stepBodyRowFull : ''}`}>
+                    <p className={styles.stepDescription}>{item.description}</p>
+                    {actions.length ? (
+                      <div className={styles.stepActionGroup}>
+                        {actions.map((action) => (
+                          action.to ? (
+                            <Link className={`${readButtonClassName(action.tone)} ${styles.stepActionButton}`} key={action.key} to={action.to}>
+                              {action.label}
+                            </Link>
+                          ) : (
+                            <button
+                              className={`${readButtonClassName(action.tone)} ${styles.stepActionButton}`}
+                              disabled={paymentSubmitting && isDepositStep}
+                              key={action.key}
+                              onClick={action.onClick}
+                              type="button"
+                            >
+                              {action.label}
+                            </button>
+                          )
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  {isDepositStep && paymentError ? <div className="status-note" data-tone="danger">{paymentError}</div> : null}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      </section>
+
+      {budgetDialogOpen && data.budgetConfirmSummary ? (
+        <div
+          aria-hidden="true"
+          className={`modal-backdrop ${styles.budgetDialogBackdrop}`}
+          onClick={() => setBudgetDialogOpen(false)}
+          role="presentation"
+        >
+          <div
+            aria-modal="true"
+            className={`modal-card ${styles.budgetDialog}`}
+            onClick={(event) => event.stopPropagation()}
+            role="dialog"
+          >
+            <div className={styles.budgetDialogHead}>
+              <div className={styles.budgetDialogIntro}>
+                <p className={styles.budgetDialogKicker}>沟通确认详情</p>
+                <div className={styles.budgetDialogTitleRow}>
+                  <h3>预约 #{data.id} 沟通确认记录</h3>
+                  <span className="status-chip" data-tone={readBudgetConfirmTone(data.budgetConfirmSummary.status)}>
+                    {data.budgetConfirmSummary.statusText}
+                  </span>
+                </div>
+              </div>
+              <button className={styles.dialogClose} onClick={() => setBudgetDialogOpen(false)} type="button">
+                关闭
+              </button>
+            </div>
+
+            <div className={styles.budgetDialogMeta}>
+              <article className={styles.budgetDialogMetric}>
+                <span>状态</span>
+                <strong>{data.budgetConfirmSummary.statusText}</strong>
+              </article>
+              <article className={styles.budgetDialogMetric}>
+                <span>预算区间</span>
+                <strong>{formatCurrency(data.budgetConfirmSummary.budgetMin)} - {formatCurrency(data.budgetConfirmSummary.budgetMax)}</strong>
+              </article>
+              <article className={styles.budgetDialogMetric}>
+                <span>提交时间</span>
+                <strong>{data.budgetConfirmSummary.submittedAt || '待补充'}</strong>
+              </article>
+              <article className={styles.budgetDialogMetric}>
+                <span>处理时间</span>
+                <strong>{data.budgetConfirmSummary.acceptedAt || data.budgetConfirmSummary.rejectedAt || '待处理'}</strong>
+              </article>
+              <article className={styles.budgetDialogMetric}>
+                <span>驳回次数</span>
+                <strong>{budgetRejectProgress}</strong>
+              </article>
+              <article className={styles.budgetDialogMetric}>
+                <span>最近驳回</span>
+                <strong>{data.budgetConfirmSummary.lastRejectedAt || '暂无'}</strong>
+              </article>
+            </div>
+
+            <div className={styles.budgetDialogBody}>
+              {budgetIncludes.length ? (
+                <section className={`${styles.budgetDialogPanel} ${styles.budgetDialogPanelWide}`}>
+                  <span className={styles.budgetDialogLabel}>沟通包含项</span>
+                  <div className={styles.budgetChipRow}>
+                    {budgetIncludes.map((item) => (
+                      <span className="status-chip" key={item}>{item}</span>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
+
+              <section className={styles.budgetDialogPanel}>
+                <span className={styles.budgetDialogLabel}>设计诉求</span>
+                <div className={styles.budgetDialogRows}>
+                  <div className={styles.budgetDialogRow}>
+                    <span>设计方向</span>
+                    <p>{data.budgetConfirmSummary.designIntent || '暂未填写'}</p>
+                  </div>
+                  <div className={styles.budgetDialogRow}>
+                    <span>风格方向</span>
+                    <p>{data.budgetConfirmSummary.styleDirection || '暂未填写'}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className={styles.budgetDialogPanel}>
+                <span className={styles.budgetDialogLabel}>空间与工期</span>
+                <div className={styles.budgetDialogRows}>
+                  <div className={styles.budgetDialogRow}>
+                    <span>空间需求</span>
+                    <p>{data.budgetConfirmSummary.spaceRequirements || '暂未填写'}</p>
+                  </div>
+                  <div className={styles.budgetDialogRow}>
+                    <span>可接受工期</span>
+                    <p>{data.budgetConfirmSummary.expectedDurationDays ? `${data.budgetConfirmSummary.expectedDurationDays} 天` : '暂未填写'}</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className={`${styles.budgetDialogPanel} ${styles.budgetDialogPanelWide}`}>
+                <span className={styles.budgetDialogLabel}>补充说明</span>
+                <div className={styles.budgetDialogRows}>
+                  <div className={styles.budgetDialogRow}>
+                    <span>特殊要求</span>
+                    <p>{data.budgetConfirmSummary.specialRequirements || '暂无特殊要求'}</p>
+                  </div>
+                  <div className={styles.budgetDialogRow}>
+                    <span>设计师备注</span>
+                    <p>{data.budgetConfirmSummary.notes || '暂无补充说明'}</p>
+                  </div>
+                </div>
+              </section>
+            </div>
+
+            {data.budgetConfirmSummary.rejectionReason ? (
+              <section className={styles.budgetDialogAlert}>
+                <span className={styles.budgetDialogLabel}>最近一次退回原因</span>
+                <div className="status-note" data-tone="danger">{data.budgetConfirmSummary.rejectionReason}</div>
+                <div className="status-note" style={{ marginTop: 12 }}>
+                  {data.budgetConfirmSummary.canResubmit
+                    ? '当前沟通确认仍可由商家在同一条记录上重提。'
+                    : '当前沟通确认已达到驳回上限，后续会进入关闭/退款链。'}
+                </div>
+              </section>
+            ) : null}
+
+            <div className={styles.budgetDialogActions}>
+              <button className="button-secondary" onClick={() => setBudgetDialogOpen(false)} type="button">
+                我知道了
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

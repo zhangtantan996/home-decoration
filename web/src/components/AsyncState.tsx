@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 interface StateProps {
   title: string;
@@ -37,7 +38,7 @@ export function ErrorBlock({ title = '加载失败', description, onRetry }: { t
           <button className="button-secondary" onClick={onRetry} type="button">重试</button>
         </div>
       ) : null}
-      description={description}
+      description={toSafeUserFacingText(description, '页面暂时加载失败，请稍后重试。')}
       title={title}
       tone="error"
     />

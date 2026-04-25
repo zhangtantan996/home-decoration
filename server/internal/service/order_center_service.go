@@ -51,12 +51,29 @@ type OrderCenterProviderSummary struct {
 }
 
 type OrderCenterProjectSummary struct {
-	ID            uint64              `json:"id"`
-	Name          string              `json:"name"`
-	Address       string              `json:"address,omitempty"`
-	BusinessStage string              `json:"businessStage,omitempty"`
-	FlowSummary   string              `json:"flowSummary,omitempty"`
-	RiskSummary   *ProjectRiskSummary `json:"riskSummary,omitempty"`
+	ID                             uint64                   `json:"id"`
+	Name                           string                   `json:"name"`
+	Address                        string                   `json:"address,omitempty"`
+	BusinessStage                  string                   `json:"businessStage,omitempty"`
+	FlowSummary                    string                   `json:"flowSummary,omitempty"`
+	BaselineStatus                 string                   `json:"baselineStatus,omitempty"`
+	BaselineSubmittedAt            *time.Time               `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                   `json:"constructionSubjectType,omitempty"`
+	ConstructionSubjectID          uint64                   `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                   `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                   `json:"kickoffStatus,omitempty"`
+	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
+	ClosureSummary                 *ProjectClosureSummary   `json:"closureSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation   `json:"commercialExplanation,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary      `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary       `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary           `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                   `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                   `json:"nextPendingAction,omitempty"`
+	RiskSummary                    *ProjectRiskSummary      `json:"riskSummary,omitempty"`
 }
 
 type OrderCenterBookingSummary struct {
@@ -76,14 +93,19 @@ type OrderCenterBookingSummary struct {
 }
 
 type OrderCenterPaymentPlanItem struct {
-	ID      uint64     `json:"id"`
-	OrderID uint64     `json:"orderId"`
-	Seq     int        `json:"seq"`
-	Name    string     `json:"name"`
-	Amount  float64    `json:"amount"`
-	DueAt   *time.Time `json:"dueAt,omitempty"`
-	Status  string     `json:"status"`
-	PaidAt  *time.Time `json:"paidAt,omitempty"`
+	ID            uint64     `json:"id"`
+	OrderID       uint64     `json:"orderId"`
+	Seq           int        `json:"seq"`
+	Name          string     `json:"name"`
+	Amount        float64    `json:"amount"`
+	DueAt         *time.Time `json:"dueAt,omitempty"`
+	ActivatedAt   *time.Time `json:"activatedAt,omitempty"`
+	ExpiresAt     *time.Time `json:"expiresAt,omitempty"`
+	Status        string     `json:"status"`
+	PaidAt        *time.Time `json:"paidAt,omitempty"`
+	PlanType      string     `json:"planType,omitempty"`
+	Payable       bool       `json:"payable"`
+	PayableReason string     `json:"payableReason,omitempty"`
 }
 
 type OrderCenterTimelineItem struct {
@@ -142,15 +164,32 @@ type OrderCenterEntrySummary struct {
 
 type OrderCenterEntryDetail struct {
 	OrderCenterEntrySummary
-	BusinessStage       string                          `json:"businessStage,omitempty"`
-	FlowSummary         string                          `json:"flowSummary,omitempty"`
-	DescriptionSections []OrderCenterDescriptionSection `json:"descriptionSections,omitempty"`
-	PaymentPlans        []OrderCenterPaymentPlanItem    `json:"paymentPlans,omitempty"`
-	NextPayablePlan     *OrderCenterPaymentPlanItem     `json:"nextPayablePlan,omitempty"`
-	RefundSummary       *BookingRefundSummary           `json:"refundSummary,omitempty"`
-	Timeline            []OrderCenterTimelineItem       `json:"timeline,omitempty"`
-	LegacyActionPath    string                          `json:"legacyActionPath,omitempty"`
-	Order               *OrderCenterOrderRecord         `json:"order,omitempty"`
+	BusinessStage                  string                          `json:"businessStage,omitempty"`
+	FlowSummary                    string                          `json:"flowSummary,omitempty"`
+	BaselineStatus                 string                          `json:"baselineStatus,omitempty"`
+	BaselineSubmittedAt            *time.Time                      `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                          `json:"constructionSubjectType,omitempty"`
+	ConstructionSubjectID          uint64                          `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                          `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                          `json:"kickoffStatus,omitempty"`
+	PlannedStartDate               *time.Time                      `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary        `json:"supervisorSummary,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary        `json:"bridgeConversionSummary,omitempty"`
+	ClosureSummary                 *ProjectClosureSummary          `json:"closureSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary              `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation          `json:"commercialExplanation,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary             `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary              `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary                  `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                          `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                          `json:"nextPendingAction,omitempty"`
+	DescriptionSections            []OrderCenterDescriptionSection `json:"descriptionSections,omitempty"`
+	PaymentPlans                   []OrderCenterPaymentPlanItem    `json:"paymentPlans,omitempty"`
+	NextPayablePlan                *OrderCenterPaymentPlanItem     `json:"nextPayablePlan,omitempty"`
+	RefundSummary                  *BookingRefundSummary           `json:"refundSummary,omitempty"`
+	Timeline                       []OrderCenterTimelineItem       `json:"timeline,omitempty"`
+	LegacyActionPath               string                          `json:"legacyActionPath,omitempty"`
+	Order                          *OrderCenterOrderRecord         `json:"order,omitempty"`
 }
 
 type orderCenterSource interface {
@@ -345,12 +384,29 @@ func (b baseOrderCenterSource) projectSummary(project *ProjectDetail) *OrderCent
 		return nil
 	}
 	return &OrderCenterProjectSummary{
-		ID:            project.ID,
-		Name:          project.Name,
-		Address:       project.Address,
-		BusinessStage: project.BusinessStage,
-		FlowSummary:   project.FlowSummary,
-		RiskSummary:   project.RiskSummary,
+		ID:                             project.ID,
+		Name:                           project.Name,
+		Address:                        project.Address,
+		BusinessStage:                  project.BusinessStage,
+		FlowSummary:                    project.FlowSummary,
+		BaselineStatus:                 project.BaselineStatus,
+		BaselineSubmittedAt:            project.BaselineSubmittedAt,
+		ConstructionSubjectType:        project.ConstructionSubjectType,
+		ConstructionSubjectID:          project.ConstructionSubjectID,
+		ConstructionSubjectDisplayName: project.ConstructionSubjectDisplayName,
+		KickoffStatus:                  project.KickoffStatus,
+		PlannedStartDate:               project.PlannedStartDate,
+		SupervisorSummary:              project.SupervisorSummary,
+		BridgeConversionSummary:        project.BridgeConversionSummary,
+		ClosureSummary:                 project.ClosureSummary,
+		QuoteTruthSummary:              project.QuoteTruthSummary,
+		CommercialExplanation:          project.CommercialExplanation,
+		ChangeOrderSummary:             project.ChangeOrderSummary,
+		SettlementSummary:              project.SettlementSummary,
+		PayoutSummary:                  project.PayoutSummary,
+		FinancialClosureStatus:         project.FinancialClosureStatus,
+		NextPendingAction:              project.NextPendingAction,
+		RiskSummary:                    project.RiskSummary,
 	}
 }
 
@@ -388,7 +444,7 @@ func (b baseOrderCenterSource) nextPayablePlan(orderID uint64) (*OrderCenterPaym
 	for _, plan := range plans {
 		item := mapPaymentPlanItem(plan)
 		items = append(items, item)
-		if nextPlan == nil && item.Status == OrderCenterStatusPendingPayment {
+		if nextPlan == nil && item.Payable {
 			copyItem := item
 			nextPlan = &copyItem
 		}
@@ -473,13 +529,22 @@ func (s *surveyDepositOrderCenterSource) GetEntryDetailForUser(userID, primaryID
 	refundSummary, _ := s.svc.refundService.BuildBookingRefundSummary(booking.ID)
 	businessStage, flowSummary, _ := s.flowForBooking(booking.ID)
 	project := s.loadProjectByBooking(userID, booking.ID)
+	bridgeSummary := BuildBridgeReadModelByBookingID(booking.ID)
 	proposalID := s.bookingProposalID(booking.ID)
 	detail := &OrderCenterEntryDetail{
-		OrderCenterEntrySummary: summary,
-		BusinessStage:           businessStage,
-		FlowSummary:             flowSummary,
-		RefundSummary:           refundSummary,
-		LegacyActionPath:        fmt.Sprintf("/bookings/%d", booking.ID),
+		OrderCenterEntrySummary:        summary,
+		BusinessStage:                  businessStage,
+		FlowSummary:                    flowSummary,
+		BaselineStatus:                 bridgeSummary.BaselineStatus,
+		BaselineSubmittedAt:            bridgeSummary.BaselineSubmittedAt,
+		ConstructionSubjectType:        bridgeSummary.ConstructionSubjectType,
+		ConstructionSubjectID:          bridgeSummary.ConstructionSubjectID,
+		ConstructionSubjectDisplayName: bridgeSummary.ConstructionSubjectDisplayName,
+		KickoffStatus:                  bridgeSummary.KickoffStatus,
+		PlannedStartDate:               bridgeSummary.PlannedStartDate,
+		SupervisorSummary:              bridgeSummary.SupervisorSummary,
+		RefundSummary:                  refundSummary,
+		LegacyActionPath:               fmt.Sprintf("/bookings/%d", booking.ID),
 	}
 	detail.Project = s.projectSummary(project)
 	detail.Booking = s.bookingSummary(&booking, proposalID)
@@ -649,6 +714,23 @@ func (s *businessOrderCenterSource) GetEntryDetailForUser(userID, primaryID uint
 	if projectDetail != nil {
 		detail.BusinessStage = projectDetail.BusinessStage
 		detail.FlowSummary = projectDetail.FlowSummary
+		detail.BaselineStatus = projectDetail.BaselineStatus
+		detail.BaselineSubmittedAt = projectDetail.BaselineSubmittedAt
+		detail.ConstructionSubjectType = projectDetail.ConstructionSubjectType
+		detail.ConstructionSubjectID = projectDetail.ConstructionSubjectID
+		detail.ConstructionSubjectDisplayName = projectDetail.ConstructionSubjectDisplayName
+		detail.KickoffStatus = projectDetail.KickoffStatus
+		detail.PlannedStartDate = projectDetail.PlannedStartDate
+		detail.SupervisorSummary = projectDetail.SupervisorSummary
+		detail.BridgeConversionSummary = projectDetail.BridgeConversionSummary
+		detail.ClosureSummary = projectDetail.ClosureSummary
+		detail.QuoteTruthSummary = projectDetail.QuoteTruthSummary
+		detail.CommercialExplanation = projectDetail.CommercialExplanation
+		detail.ChangeOrderSummary = projectDetail.ChangeOrderSummary
+		detail.SettlementSummary = projectDetail.SettlementSummary
+		detail.PayoutSummary = projectDetail.PayoutSummary
+		detail.FinancialClosureStatus = projectDetail.FinancialClosureStatus
+		detail.NextPendingAction = projectDetail.NextPendingAction
 	}
 	detail.DescriptionSections = buildBusinessOrderSections(order, detail, nextPlan)
 	detail.Timeline = buildBusinessOrderTimeline(order, nextPlan)
@@ -776,23 +858,23 @@ func (s *businessOrderCenterSource) buildSummaryForOrder(userID uint64, order *m
 	}
 	createdAt := order.CreatedAt
 	return OrderCenterEntrySummary{
-		EntryKey:      s.svc.entryKey(s.Kind(), order.ID),
-		EntryKind:     OrderCenterEntryKindPayable,
-		SourceKind:    s.Kind(),
-		StatusGroup:   entryStatusGroup,
-		StatusText:    statusText,
-		Title:         orderCenterOrderTitle(order.OrderType),
-		Subtitle:      order.OrderNo,
-		ReferenceNo:   order.OrderNo,
-		Amount:        normalizeAmount(order.TotalAmount - order.Discount),
-		PayableAmount: payableAmount,
-		CreatedAt:     &createdAt,
-		ExpireAt:      expireAt,
-		Provider:      provider,
-		Project:       s.projectSummary(project),
-		Booking:       s.bookingSummary(booking, proposalID),
+		EntryKey:                s.svc.entryKey(s.Kind(), order.ID),
+		EntryKind:               OrderCenterEntryKindPayable,
+		SourceKind:              s.Kind(),
+		StatusGroup:             entryStatusGroup,
+		StatusText:              statusText,
+		Title:                   orderCenterOrderTitle(order.OrderType),
+		Subtitle:                order.OrderNo,
+		ReferenceNo:             order.OrderNo,
+		Amount:                  normalizeAmount(order.TotalAmount - order.Discount),
+		PayableAmount:           payableAmount,
+		CreatedAt:               &createdAt,
+		ExpireAt:                expireAt,
+		Provider:                provider,
+		Project:                 s.projectSummary(project),
+		Booking:                 s.bookingSummary(booking, proposalID),
 		AvailablePaymentOptions: availablePaymentOptions,
-		CanCancel:              canCancel,
+		CanCancel:               canCancel,
 	}, true, nil
 }
 
@@ -912,18 +994,23 @@ func mapPaymentPlanItem(plan model.PaymentPlan) OrderCenterPaymentPlanItem {
 	status := OrderCenterStatusPendingPayment
 	if plan.Status == 1 {
 		status = OrderCenterStatusPaid
-	} else if plan.DueAt != nil && plan.DueAt.Before(time.Now()) {
-		status = OrderCenterStatusPendingPayment
+	} else if plan.Status == model.PaymentPlanStatusExpired || (plan.DueAt != nil && plan.DueAt.Before(time.Now())) {
+		status = "expired"
 	}
 	return OrderCenterPaymentPlanItem{
-		ID:      plan.ID,
-		OrderID: plan.OrderID,
-		Seq:     plan.Seq,
-		Name:    plan.Name,
-		Amount:  plan.Amount,
-		DueAt:   plan.DueAt,
-		Status:  status,
-		PaidAt:  plan.PaidAt,
+		ID:            plan.ID,
+		OrderID:       plan.OrderID,
+		Seq:           plan.Seq,
+		Name:          plan.Name,
+		Amount:        plan.Amount,
+		DueAt:         plan.DueAt,
+		ActivatedAt:   plan.ActivatedAt,
+		ExpiresAt:     plan.ExpiresAt,
+		Status:        status,
+		PaidAt:        plan.PaidAt,
+		PlanType:      plan.Type,
+		Payable:       plan.Payable,
+		PayableReason: plan.PayableReason,
 	}
 }
 
@@ -1092,14 +1179,22 @@ func buildBusinessOrderSections(order *model.Order, detail *OrderCenterEntryDeta
 		},
 	}
 	if nextPlan != nil {
+		nextItems := []OrderCenterDescriptionSectionItem{
+			{Label: "应付期数", Value: fmt.Sprintf("第 %d 期", nextPlan.Seq)},
+			{Label: "应付名称", Value: safeStringOrDash(nextPlan.Name)},
+			{Label: "应付金额", Value: formatCurrencyValue(nextPlan.Amount)},
+			{Label: "当前状态", Value: safeStringOrDash(nextPlan.Status)},
+		}
+		if nextPlan.ExpiresAt != nil {
+			nextItems = append(nextItems, OrderCenterDescriptionSectionItem{Label: "到期时间", Value: formatTimePointer(nextPlan.ExpiresAt)})
+		}
+		if strings.TrimSpace(nextPlan.PayableReason) != "" {
+			nextItems = append(nextItems, OrderCenterDescriptionSectionItem{Label: "不可支付原因", Value: nextPlan.PayableReason})
+		}
 		sections = append(sections, OrderCenterDescriptionSection{
 			Key:   "next_payment",
 			Title: "当前应付",
-			Items: []OrderCenterDescriptionSectionItem{
-				{Label: "应付期数", Value: fmt.Sprintf("第 %d 期", nextPlan.Seq)},
-				{Label: "应付名称", Value: safeStringOrDash(nextPlan.Name)},
-				{Label: "应付金额", Value: formatCurrencyValue(nextPlan.Amount)},
-			},
+			Items: nextItems,
 		})
 	}
 	if detail != nil && detail.Project != nil {

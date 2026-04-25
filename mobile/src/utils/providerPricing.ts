@@ -200,7 +200,7 @@ const buildNaturalFallback = (role: ProviderPricingRole): ProviderPricingResult 
   buildResult({
     role,
     summary: '报价面议',
-    detail: role === 'designer' ? '按需求报价' : '报价面议',
+    detail: role === 'designer' ? '按需求报价' : '按需求沟通',
     primary: '报价面议',
     secondary: '按需求沟通',
     status: 'negotiable',

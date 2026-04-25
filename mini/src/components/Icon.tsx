@@ -33,7 +33,11 @@ export type IconName =
   | 'nearby'
   | 'arrow-left'
   | 'share'
-  | 'plus';
+  | 'plus'
+  | 'calendar'
+  | 'phone'
+  | 'more-horizontal'
+  | 'trash';
 
 export interface IconProps {
   name: IconName;
@@ -103,6 +107,14 @@ const iconSvgMap: Record<IconName, (color: string) => string> = {
   share: (color) =>
     wrapSvg('<circle cx="18" cy="5" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="18" cy="19" r="2"/><path d="M8 12l8-6"/><path d="M8 12l8 6"/>', color),
   plus: (color) => wrapSvg('<path d="M12 5v14"/><path d="M5 12h14"/>', color),
+  calendar: (color) =>
+    wrapSvg('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/>', color),
+  phone: (color) =>
+    wrapSvg('<path d="M5 4h4l2 5-2.5 1.5a13 13 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z"/>', color),
+  'more-horizontal': (color) =>
+    wrapFilledSvg('<circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/>', color),
+  trash: (color) =>
+    wrapSvg('<path d="M4 7h16"/><path d="M9 7V4h6v3"/><path d="M7 7l1 13h8l1-13"/><path d="M10 11v6"/><path d="M14 11v6"/>', color),
 };
 
 const fallbackGlyphMap: Record<IconName, string> = {
@@ -136,6 +148,10 @@ const fallbackGlyphMap: Record<IconName, string> = {
   'arrow-left': '‹',
   share: '↗',
   plus: '+',
+  calendar: '◫',
+  phone: '◌',
+  'more-horizontal': '…',
+  trash: '⌫',
 };
 
 const buildClassName = (base: string, className?: string) => {

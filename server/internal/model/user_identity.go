@@ -8,12 +8,12 @@ import (
 type UserIdentity struct {
 	Base
 	UserID        uint64     `json:"userId" gorm:"index;not null"`
-	IdentityType  string     `json:"identityType" gorm:"size:32;not null"`                                // owner, designer, worker, company, supplier
-	IdentityRefID *uint64    `json:"identityRefId" gorm:"index"`                                          // 关联 providers.id 或 workers.id
-	Status        int8       `json:"status" gorm:"default:0"`                                             // 0=pending, 1=approved, 2=rejected, 3=suspended
-	Verified      bool       `json:"verified" gorm:"default:false"`                                       // 是否已验证
-	VerifiedAt    *time.Time `json:"verifiedAt"`                                                          // 验证时间
-	VerifiedBy    *uint64    `json:"verifiedBy" gorm:"index"`                                             // 验证人（管理员ID）
+	IdentityType  string     `json:"identityType" gorm:"size:32;not null"` // owner, designer, worker, company, supplier
+	IdentityRefID *uint64    `json:"identityRefId" gorm:"index"`           // 关联 providers.id 或 workers.id
+	Status        int8       `json:"status" gorm:"default:0"`              // 0=pending, 1=approved, 2=rejected, 3=suspended
+	Verified      bool       `json:"verified" gorm:"default:false"`        // 是否已验证
+	VerifiedAt    *time.Time `json:"verifiedAt"`                           // 验证时间
+	VerifiedBy    *uint64    `json:"verifiedBy" gorm:"index"`              // 验证人（管理员ID）
 
 	// 关联关系
 	User     User      `json:"-" gorm:"foreignKey:UserID"`

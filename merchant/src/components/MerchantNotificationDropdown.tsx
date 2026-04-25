@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
-import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Dropdown, Badge, Button, Empty, Spin, Tag, message } from 'antd';
+import { BellOutlined, CheckOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
 import { merchantNotificationApi } from '../services/merchantApi';
+import { getMerchantNotificationTagColor, MERCHANT_NOTIFICATION_TYPE_LABELS } from '../constants/statuses';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 import { withRouterBasename } from '../utils/env';
 import {
@@ -10,17 +11,22 @@ import {
     NotificationWebSocket,
 } from '../utils/notificationWebSocket';
 import { formatServerDate } from '../utils/serverTime';
+import { toSafeNotificationContent } from '../utils/userFacingText';
 
 interface Notification {
     id: number;
     title: string;
     content: string;
     type: string;
+    typeLabel?: string;
     relatedId: number;
     relatedType: string;
     isRead: boolean;
     actionUrl: string;
     createdAt: string;
+    actionRequired?: boolean;
+    actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+    actionLabel?: string;
 }
 
 type NotificationListResponse = { data?: { list?: Notification[] } };
@@ -33,6 +39,27 @@ const POLL_POLICY: AutoRetryPolicy = {
     pauseOnConsecutiveFailures: 3,
     baseDelayMs: 1000,
     maxDelayMs: 30000,
+};
+
+const resolveNotificationLabel = (type: string) => MERCHANT_NOTIFICATION_TYPE_LABELS[type] || '系统通知';
+
+const resolveNotificationTypeLabel = (item: Notification) =>
+    String(item.typeLabel || '').trim() || resolveNotificationLabel(item.type);
+
+const resolveNotificationActionTag = (item: Notification) => {
+    if (item.actionStatus === 'processed') {
+        return { label: '已处理', color: 'default' as const };
+    }
+    if (item.actionStatus === 'expired') {
+        return { label: '已过期', color: 'orange' as const };
+    }
+    if (item.actionRequired && item.actionLabel) {
+        return { label: item.actionLabel, color: 'blue' as const };
+    }
+    if (item.actionLabel) {
+        return { label: item.actionLabel, color: 'default' as const };
+    }
+    return null;
 };
 
 const getErrorStatus = (error: unknown): number | undefined => {
@@ -52,7 +79,6 @@ const MerchantNotificationDropdown: React.FC = () => {
     const [notificationAvailable, setNotificationAvailable] = useState(true);
     const [pollingPaused, setPollingPaused] = useState(false);
     const authErrorNotifiedRef = useRef(false);
-    const pollPauseNotifiedRef = useRef(false);
     const unreadPollGuardRef = useRef(new AutoRetryGuard(POLL_POLICY));
     const websocketRef = useRef<NotificationWebSocket | null>(null);
     const openRef = useRef(false);
@@ -64,7 +90,7 @@ const MerchantNotificationDropdown: React.FC = () => {
 
     const handleAuthError = useCallback(() => {
         if (!authErrorNotifiedRef.current) {
-            message.warning('通知权限不可用，已暂停刷新');
+            message.warning('通知暂不可用，请重新登录后查看');
             authErrorNotifiedRef.current = true;
         }
 
@@ -101,14 +127,9 @@ const MerchantNotificationDropdown: React.FC = () => {
         if (trigger === 'manual') {
             unreadPollGuardRef.current.resetByManual();
             setPollingPaused(false);
-            pollPauseNotifiedRef.current = false;
         } else {
             if (!unreadPollGuardRef.current.shouldAttempt('auto')) {
                 setPollingPaused(true);
-                if (!pollPauseNotifiedRef.current) {
-                    pollPauseNotifiedRef.current = true;
-                    message.warning('通知自动刷新已暂停，请手动刷新恢复');
-                }
                 const state = unreadPollGuardRef.current.getState();
                 console.warn('[AutoRetry]', {
                     businessKey: POLL_BUSINESS_KEY,
@@ -136,7 +157,6 @@ const MerchantNotificationDropdown: React.FC = () => {
             unreadPollGuardRef.current.recordSuccess();
             if (pollingPaused) {
                 setPollingPaused(false);
-                pollPauseNotifiedRef.current = false;
                 console.info('[AutoRetry]', {
                     businessKey: POLL_BUSINESS_KEY,
                     trigger,
@@ -164,10 +184,6 @@ const MerchantNotificationDropdown: React.FC = () => {
 
             if (state.paused) {
                 setPollingPaused(true);
-                if (!pollPauseNotifiedRef.current) {
-                    pollPauseNotifiedRef.current = true;
-                    message.warning('通知自动刷新已暂停，请点击“重试刷新”恢复');
-                }
             }
 
             console.error('Failed to load unread count', error);
@@ -179,7 +195,6 @@ const MerchantNotificationDropdown: React.FC = () => {
 
         unreadPollGuardRef.current.resetByManual();
         setPollingPaused(false);
-        pollPauseNotifiedRef.current = false;
 
         console.info('[AutoRetry]', {
             businessKey: POLL_BUSINESS_KEY,
@@ -362,19 +377,16 @@ const MerchantNotificationDropdown: React.FC = () => {
             <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <span style={{ fontSize: 16, fontWeight: 600, color: '#262626' }}>通知</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {pollingPaused && (
-                        <span style={{ fontSize: 12, color: '#fa8c16' }}>自动刷新已暂停</span>
-                    )}
-                    {pollingPaused && (
-                        <Button
-                            type="link"
-                            size="small"
-                            onClick={() => void handleManualRefresh()}
-                            style={{ fontSize: 12 }}
-                        >
-                            重试刷新
-                        </Button>
-                    )}
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={loading}
+                        onClick={() => void handleManualRefresh()}
+                        title="刷新通知"
+                        aria-label="刷新通知"
+                        style={{ padding: '0 4px' }}
+                    />
                     {unreadCount > 0 && (
                         <Button
                             type="link"
@@ -386,6 +398,17 @@ const MerchantNotificationDropdown: React.FC = () => {
                             全部已读
                         </Button>
                     )}
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                            setOpen(false);
+                            window.location.href = withRouterBasename('/notifications');
+                        }}
+                        style={{ fontSize: 12 }}
+                    >
+                        查看全部
+                    </Button>
                 </div>
             </div>
 
@@ -403,6 +426,9 @@ const MerchantNotificationDropdown: React.FC = () => {
                     />
                 ) : (
                     notifications.map(item => (
+                        (() => {
+                            const actionTag = resolveNotificationActionTag(item);
+                            return (
                         <div
                             key={item.id}
                             onClick={() => handleNotificationClick(item)}
@@ -426,6 +452,17 @@ const MerchantNotificationDropdown: React.FC = () => {
                                         }}>
                                             {item.title}
                                         </span>
+                                        <Tag
+                                            color={getMerchantNotificationTagColor(item.type)}
+                                            style={{ marginInlineStart: 8, marginInlineEnd: 0 }}
+                                        >
+                                            {resolveNotificationTypeLabel(item)}
+                                        </Tag>
+                                        {actionTag ? (
+                                            <Tag color={actionTag.color} style={{ marginInlineStart: 8, marginInlineEnd: 0 }}>
+                                                {actionTag.label}
+                                            </Tag>
+                                        ) : null}
                                         {!item.isRead && (
                                             <span style={{
                                                 display: 'inline-block',
@@ -447,7 +484,7 @@ const MerchantNotificationDropdown: React.FC = () => {
                                         WebkitLineClamp: 2,
                                         WebkitBoxOrient: 'vertical',
                                     }}>
-                                        {item.content}
+                                        {toSafeNotificationContent(item.content)}
                                     </div>
                                     <div style={{ fontSize: 12, color: '#bfbfbf' }}>
                                         {formatTime(item.createdAt)}
@@ -474,6 +511,8 @@ const MerchantNotificationDropdown: React.FC = () => {
                                 </div>
                             </div>
                         </div>
+                            );
+                        })()
                     ))
                 )}
             </div>

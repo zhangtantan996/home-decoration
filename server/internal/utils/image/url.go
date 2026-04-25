@@ -13,20 +13,34 @@ var localAssetPrefixes = []string{
 	"/static/",
 }
 
+func normalizeConfiguredURLValue(raw string) string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return ""
+	}
+	if (strings.HasPrefix(trimmed, "${") && strings.HasSuffix(trimmed, "}")) || (strings.HasPrefix(trimmed, "$") && !strings.Contains(trimmed, "://")) {
+		return ""
+	}
+	return trimmed
+}
+
 // GetFullImageURL 将相对路径转换为完整的 URL
 func GetFullImageURL(path string) string {
+	path = strings.TrimSpace(path)
 	if path == "" {
 		return ""
 	}
 
-	// 如果已经是绝对路径（http开头），直接返回
-	if strings.HasPrefix(path, "http://") || strings.HasPrefix(path, "https://") {
-		return path
+	cfg := config.GetConfig()
+	if parsed, ok := parseAbsoluteURL(path); ok {
+		if isLocalAssetPath(parsed.Path) && matchesConfiguredPublicAssetHost(parsed.Hostname(), cfg) {
+			path = parsed.Path
+		} else {
+			return normalizeConfiguredHTTPS(path, cfg)
+		}
 	}
 
-	// 获取配置中的 PublicURL
-	cfg := config.GetConfig()
-	baseURL := cfg.Server.PublicURL
+	baseURL := normalizeConfiguredHTTPS(resolvePublicAssetBaseURL(path, cfg), cfg)
 
 	// 确保 baseURL 不以 / 结尾
 	baseURL = strings.TrimRight(baseURL, "/")
@@ -34,6 +48,10 @@ func GetFullImageURL(path string) string {
 	// 确保 path 以 / 开头
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
+	}
+
+	if baseURL == "" {
+		return path
 	}
 
 	return baseURL + path
@@ -201,4 +219,68 @@ func NormalizeImageURLsJSON(imagesJSON string) string {
 	}
 
 	return string(b)
+}
+
+func resolvePublicAssetBaseURL(path string, cfg *config.Config) string {
+	if cfg == nil {
+		return ""
+	}
+
+	baseURL := normalizeConfiguredURLValue(cfg.Server.PublicURL)
+	storageBaseURL := normalizeConfiguredURLValue(cfg.Storage.PublicBaseURL)
+	if isLocalAssetPath(path) && storageBaseURL != "" {
+		baseURL = storageBaseURL
+	}
+
+	return baseURL
+}
+
+func parseAbsoluteURL(raw string) (*url.URL, bool) {
+	if !strings.HasPrefix(raw, "http://") && !strings.HasPrefix(raw, "https://") {
+		return nil, false
+	}
+
+	parsed, err := url.Parse(raw)
+	if err != nil || strings.TrimSpace(parsed.Host) == "" {
+		return nil, false
+	}
+
+	return parsed, true
+}
+
+func normalizeConfiguredHTTPS(raw string, cfg *config.Config) string {
+	parsed, ok := parseAbsoluteURL(strings.TrimSpace(raw))
+	if !ok || !shouldForceConfiguredHTTPS(parsed.Hostname(), cfg) || !strings.EqualFold(parsed.Scheme, "http") {
+		return raw
+	}
+
+	parsed.Scheme = "https"
+	return parsed.String()
+}
+
+func shouldForceConfiguredHTTPS(host string, cfg *config.Config) bool {
+	if config.GetAppEnv() != config.AppEnvProduction {
+		return false
+	}
+
+	return matchesConfiguredPublicAssetHost(host, cfg)
+}
+
+func matchesConfiguredPublicAssetHost(host string, cfg *config.Config) bool {
+	normalizedHost := strings.ToLower(strings.TrimSpace(host))
+	if normalizedHost == "" || cfg == nil {
+		return false
+	}
+
+	for _, raw := range []string{cfg.Server.PublicURL, cfg.Storage.PublicBaseURL} {
+		parsed, ok := parseAbsoluteURL(normalizeConfiguredURLValue(raw))
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(parsed.Hostname(), normalizedHost) {
+			return true
+		}
+	}
+
+	return false
 }

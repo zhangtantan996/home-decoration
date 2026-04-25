@@ -19,7 +19,7 @@ jobs:
         image: postgres:15-alpine
         env:
           POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: "IXwUBjxFia33XltiY0wFch8n3N68hptI"
+          POSTGRES_PASSWORD: "postgres"
           POSTGRES_DB: home_decoration
         ports:
           - 5432:5432
@@ -30,8 +30,6 @@ jobs:
           --health-retries 5
       redis:
         image: redis:6.2-alpine
-        env:
-          REDIS_PASSWORD: "kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf"
         ports:
           - 6379:6379
         options: >-
@@ -72,11 +70,11 @@ jobs:
         DATABASE_HOST: localhost
         DATABASE_PORT: 5432
         DATABASE_USER: postgres
-        DATABASE_PASSWORD: "IXwUBjxFia33XltiY0wFch8n3N68hptI"
+        DATABASE_PASSWORD: "postgres"
         DATABASE_DBNAME: home_decoration
         DATABASE_SSLMODE: disable
         REDIS_HOST: localhost
         REDIS_PORT: 6379
-        REDIS_PASSWORD: "kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf"
-        JWT_SECRET: "jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI="
+        REDIS_PASSWORD: ""
+        JWT_SECRET: "backend_ci_jwt_secret_for_tests_only"
       run: go test -v -race ./...

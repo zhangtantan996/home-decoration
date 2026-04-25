@@ -1277,6 +1277,92 @@ func TestProviderServiceRecommendSortPrioritizesSettledProviders(t *testing.T) {
 	}
 }
 
+func TestProviderServicePublicListOmitsSensitiveIdentityFields(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138166", Nickname: "公开服务商", PublicID: "provider_public_identity"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		CompanyName:  "公开设计工作室",
+		Verified:     true,
+		Status:       1,
+		IsSettled:    true,
+		Latitude:     34.2234,
+		Longitude:    108.9512,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	list, total, err := service.ListProviders(&ProviderQuery{Type: "designer", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list providers: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("unexpected list result: total=%d len=%d", total, len(list))
+	}
+
+	body, err := json.Marshal(list[0])
+	if err != nil {
+		t.Fatalf("marshal provider list item: %v", err)
+	}
+	text := string(body)
+	for _, forbidden := range []string{"userId", "userPublicId", "latitude", "longitude", "phone", "publicId"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("expected provider list payload to omit %s, got %s", forbidden, text)
+		}
+	}
+}
+
+func TestProviderServicePublicDetailOmitsSensitiveIdentityFields(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	user := model.User{Phone: "13800138167", Nickname: "详情服务商", PublicID: "provider_detail_public_id"}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	provider := model.Provider{
+		UserID:                    user.ID,
+		ProviderType:              2,
+		CompanyName:               "详情装修公司",
+		DisplayName:               "详情装修公司",
+		Verified:                  true,
+		Status:                    1,
+		IsSettled:                 true,
+		Latitude:                  34.2211,
+		Longitude:                 108.9333,
+		OfficeAddress:             "西安市高新区锦业路",
+		SourceApplicationID:       9988,
+		CollectedSource:           "招商线索库",
+		NeedsOnboardingCompletion: true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	detail, err := service.GetProviderDetail(provider.ID)
+	if err != nil {
+		t.Fatalf("get provider detail: %v", err)
+	}
+
+	body, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatalf("marshal provider detail: %v", err)
+	}
+	text := string(body)
+	for _, forbidden := range []string{"phone", "publicId", "userId", "latitude", "longitude", "officeAddress", "sourceApplicationId", "collectedSource", "needsOnboardingCompletion"} {
+		if strings.Contains(text, forbidden) {
+			t.Fatalf("expected provider detail payload to omit %s, got %s", forbidden, text)
+		}
+	}
+}
+
 func TestBuildProviderPriceDisplayUsesSingleValueForEqualRange(t *testing.T) {
 	display := buildProviderPriceDisplay(1, "", 330, 330, model.ProviderPriceUnitPerSquareMeter)
 	if display.Mode != ProviderPriceDisplayModeSingle {

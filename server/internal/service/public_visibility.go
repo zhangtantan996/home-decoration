@@ -132,7 +132,7 @@ func IsMaterialShopPublicVisible(shop *model.MaterialShop, activeProductCount in
 		return shop.IsVerified
 	}
 	if !materialShopSettlementValue(shop) {
-		return true // 未入驻：平台收录商家直接可见
+		return false
 	}
 	return shop.IsVerified
 }
@@ -148,12 +148,12 @@ func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
 		if !supportsMaterialShopSettlementVisibility() {
 			return db.Where("is_verified = ?", true)
 		}
-		return db.Where("(is_settled = false) OR (is_settled = true AND is_verified = ?)", true)
+		return db.Where("is_settled = ? AND is_verified = ?", true, true)
 	}
 	if !supportsMaterialShopSettlementVisibility() {
 		return db.Where("is_verified = ? AND status = ?", true, 1)
 	}
-	return db.Where("(is_settled = false AND status = ?) OR (is_settled = true AND is_verified = ? AND status = ?)", 1, true, 1)
+	return db.Where("is_settled = ? AND is_verified = ? AND status = ?", true, true, 1)
 }
 
 func ApplyPublicMaterialShopFilter(db *gorm.DB) *gorm.DB {
@@ -179,6 +179,9 @@ func EvaluateMaterialShopPublicVisibility(shop *model.MaterialShop, activeProduc
 	}
 	if materialShopStatusEnabled(shop) && !IsMaterialShopActive(shop) {
 		result = addPublicVisibilityBlocker(result, "shop_frozen", "主材门店已被封禁，公开列表不可见")
+	}
+	if supportsMaterialShopSettlementVisibility() && !materialShopSettlementValue(shop) {
+		result = addPublicVisibilityBlocker(result, "shop_unsettled", "未正式入驻的主材线索不进入公开交易视图")
 	}
 	if supportsMaterialShopSettlementVisibility() && materialShopSettlementValue(shop) && !shop.IsVerified {
 		result = addPublicVisibilityBlocker(result, "shop_unverified", "主材商未完成认证，公开列表不可见")

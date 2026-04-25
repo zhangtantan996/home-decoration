@@ -5,8 +5,13 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
+	"gorm.io/driver/sqlite"
+	"gorm.io/gorm"
 )
 
 func buildSignedHMACToken(t *testing.T, claims jwt.MapClaims, secret string) string {
@@ -51,6 +56,32 @@ func performAuthRequest(t *testing.T, middleware gin.HandlerFunc, token string) 
 	rec := httptest.NewRecorder()
 	r.ServeHTTP(rec, req)
 	return rec
+}
+
+func withMiddlewareTestDB(t *testing.T) {
+	t.Helper()
+
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.SysAdmin{}); err != nil {
+		t.Fatalf("auto migrate sys_admins: %v", err)
+	}
+	if err := db.Create(&model.SysAdmin{
+		ID:       1,
+		Username: "admin",
+		Password: "test-password",
+		Status:   1,
+	}).Error; err != nil {
+		t.Fatalf("seed sys_admins: %v", err)
+	}
+
+	oldDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = oldDB
+	})
 }
 
 func TestJWTMiddleware_RejectsRefreshToken(t *testing.T) {
@@ -128,6 +159,8 @@ func TestAdminJWT_RejectsUserToken(t *testing.T) {
 }
 
 func TestAdminJWT_AllowsAdminAccessToken(t *testing.T) {
+	withMiddlewareTestDB(t)
+
 	secret := "test-secret"
 	token := buildSignedHMACToken(t, jwt.MapClaims{
 		"admin_id":   float64(1),

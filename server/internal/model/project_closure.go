@@ -24,12 +24,12 @@ func (MilestoneSubmission) TableName() string {
 
 type MilestoneAcceptance struct {
 	Base
-	ProjectID         uint64     `json:"projectId" gorm:"index"`
-	MilestoneID       uint64     `json:"milestoneId" gorm:"index"`
-	ReviewedByUserID  uint64     `json:"reviewedByUserId" gorm:"index"`
-	Decision          string     `json:"decision" gorm:"size:20;index"`
-	Comment           string     `json:"comment" gorm:"type:text"`
-	ReviewedAt        *time.Time `json:"reviewedAt"`
+	ProjectID        uint64     `json:"projectId" gorm:"index"`
+	MilestoneID      uint64     `json:"milestoneId" gorm:"index"`
+	ReviewedByUserID uint64     `json:"reviewedByUserId" gorm:"index"`
+	Decision         string     `json:"decision" gorm:"size:20;index"`
+	Comment          string     `json:"comment" gorm:"type:text"`
+	ReviewedAt       *time.Time `json:"reviewedAt"`
 }
 
 func (MilestoneAcceptance) TableName() string {

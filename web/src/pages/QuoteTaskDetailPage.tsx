@@ -8,6 +8,12 @@ import { getBusinessStageLabel } from '../constants/statuses';
 import { getWebApiErrorMessage, isWebApiConflict } from '../services/http';
 import { confirmQuoteTaskSubmission, getQuoteTaskDetail, rejectQuoteTaskSubmission } from '../services/quoteTasks';
 
+function readConstructionSubjectLabel(type?: string) {
+  if (type === 'company') return '公司施工主体';
+  if (type === 'foreman') return '独立工长主体';
+  return '施工主体';
+}
+
 export function QuoteTaskDetailPage() {
   const params = useParams();
   const navigate = useNavigate();
@@ -19,6 +25,7 @@ export function QuoteTaskDetailPage() {
 
   if (loading) return <div className="container page-stack"><LoadingBlock title="加载施工报价确认页" /></div>;
   if (error || !data) return <div className="container page-stack"><ErrorBlock description={error || '施工报价任务不存在'} onRetry={() => void reload()} /></div>;
+  const bridgeSummary = data.bridgeConversionSummary;
 
   return (
     <div className="container page-stack">
@@ -48,10 +55,84 @@ export function QuoteTaskDetailPage() {
             <div className="data-grid detail-grid-two">
               <article><span>预计工期</span><strong>{data.estimatedDays > 0 ? `${data.estimatedDays} 天` : '待补充'}</strong></article>
               <article><span>施工总价</span><strong>{data.totalFeeText}</strong></article>
+              <article><span>首笔支付</span><strong>{data.paymentPlanSummary[0] ? `${data.paymentPlanSummary[0].name} · ${data.paymentPlanSummary[0].amountText}` : '确认后生成'}</strong></article>
               <article><span>面积</span><strong>{data.taskSummary.area > 0 ? `${data.taskSummary.area}㎡` : '待补充'}</strong></article>
               <article><span>户型</span><strong>{data.taskSummary.layout || '待补充'}</strong></article>
             </div>
           </section>
+
+          {bridgeSummary ? (
+            <section className="card section-card">
+              <div className="panel-head">
+                <div>
+                  <p className="kicker eyebrow-accent">为什么这个报价成立</p>
+                  <h2 className="section-title">桥接解释与平台保障</h2>
+                </div>
+              </div>
+              {bridgeSummary.bridgeNextStep?.reason ? <div className="status-note" style={{ marginBottom: 16 }}>{bridgeSummary.bridgeNextStep.reason}</div> : null}
+              <div className="data-grid detail-grid-two">
+                <article><span>报价基线</span><strong>{bridgeSummary.quoteBaselineSummary?.title || '待同步'}</strong></article>
+                <article><span>下一责任人</span><strong>{bridgeSummary.bridgeNextStep?.owner || '待平台继续推进'}</strong></article>
+                <article><span>平台保障</span><strong>{bridgeSummary.trustSignals?.officialReviewHint || '平台留痕、争议处理与评价沉淀'}</strong></article>
+                <article><span>可对比主体</span><strong>{bridgeSummary.constructionSubjectComparison?.length || 0} 个</strong></article>
+              </div>
+              {bridgeSummary.bridgeNextStep?.actionHint ? (
+                <div className="status-note" style={{ marginTop: 16 }}>{bridgeSummary.bridgeNextStep.actionHint}</div>
+              ) : null}
+              {bridgeSummary.quoteBaselineSummary?.highlights?.length ? (
+                <div className="surface-card" style={{ marginTop: 16 }}>
+                  <strong>报价基线说明</strong>
+                  <p>{bridgeSummary.quoteBaselineSummary.highlights.join('；')}</p>
+                </div>
+              ) : null}
+              {bridgeSummary.constructionSubjectComparison?.length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.constructionSubjectComparison.slice(0, 3).map((item) => (
+                    <div className="list-card" key={`${item.providerId}-${item.displayName}`}>
+                      <div>
+                        <h3>{item.displayName}</h3>
+                        <p>{readConstructionSubjectLabel(item.subjectType)} · {item.deliveryHint || item.trustSummary || '待补充施工主体说明'}</p>
+                        {item.highlightTags?.length ? <p>{item.highlightTags.slice(0, 3).join(' · ')}</p> : null}
+                      </div>
+                      <div className="list-meta">
+                        <strong>{item.priceHint || '待补充报价特点'}</strong>
+                        <span>{`${item.completedCnt || 0} 完工 · ${item.reviewCount || 0} 评价`}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {(bridgeSummary.responsibilityBoundarySummary?.items || []).length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.responsibilityBoundarySummary?.items?.map((item) => (
+                    <div className="surface-card" key={item}><p>{item}</p></div>
+                  ))}
+                </div>
+              ) : null}
+              {(bridgeSummary.scheduleAndAcceptanceSummary?.items || []).length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.scheduleAndAcceptanceSummary?.items?.map((item) => (
+                    <div className="surface-card" key={item}><p>{item}</p></div>
+                  ))}
+                </div>
+              ) : null}
+              {(bridgeSummary.platformGuaranteeSummary?.items || []).length ? (
+                <div className="list-stack" style={{ marginTop: 16 }}>
+                  {bridgeSummary.platformGuaranteeSummary?.items?.map((item) => (
+                    <div className="surface-card" key={item}><p>{item}</p></div>
+                  ))}
+                </div>
+              ) : null}
+              {bridgeSummary.trustSignals ? (
+                <div className="data-grid detail-grid-two" style={{ marginTop: 16 }}>
+                  <article><span>案例沉淀</span><strong>{bridgeSummary.trustSignals.caseCount || 0} 个</strong></article>
+                  <article><span>完工项目</span><strong>{bridgeSummary.trustSignals.completedCnt || 0} 个</strong></article>
+                  <article><span>真实评价</span><strong>{bridgeSummary.trustSignals.reviewCount || 0} 条</strong></article>
+                  <article><span>口碑评分</span><strong>{bridgeSummary.trustSignals.rating || 0}</strong></article>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="card section-card">
             <div className="panel-head">
@@ -67,8 +148,14 @@ export function QuoteTaskDetailPage() {
                 {data.items.map((item) => (
                   <div className="list-card" key={item.id}>
                     <div>
-                      <h3>清单项 #{item.quoteListItemId}</h3>
-                      <p>{item.remark || '无备注'}</p>
+                      <h3>{item.itemName}</h3>
+                      <p>
+                        基准量 {item.baselineQuantity ?? '-'}{item.unit}
+                        {' · '}
+                        报价量 {item.quotedQuantity ?? item.baselineQuantity ?? '-'}{item.unit}
+                      </p>
+                      {item.quantityChangeReason ? <p>偏差说明：{item.quantityChangeReason}</p> : null}
+                      {item.remark ? <p>备注：{item.remark}</p> : null}
                     </div>
                     <div className="list-meta">
                       <strong>{item.amountText}</strong>
@@ -85,7 +172,7 @@ export function QuoteTaskDetailPage() {
           <div className="panel-head">
             <div>
               <p className="kicker eyebrow-accent">确认动作</p>
-              <h2 className="section-title">确认后项目进入待开工状态</h2>
+                <h2 className="section-title">确认后进入待支付与待监理协调开工</h2>
             </div>
           </div>
           {message ? <div className="status-note">{message}</div> : null}
@@ -102,7 +189,7 @@ export function QuoteTaskDetailPage() {
                 setMessage('');
                 try {
                   await confirmQuoteTaskSubmission(data.submissionId);
-                  setMessage('施工报价已确认，项目已进入待开工阶段。');
+                  setMessage('施工报价已确认，项目已进入待监理协调开工阶段。');
                   navigate('/progress');
                 } catch (submitError) {
                   if (isWebApiConflict(submitError)) {

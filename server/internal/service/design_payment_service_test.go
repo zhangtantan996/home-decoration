@@ -22,6 +22,7 @@ func setupDesignPaymentDB(t *testing.T) *gorm.DB {
 		&model.User{},
 		&model.Provider{},
 		&model.Booking{},
+		&model.Project{},
 		&model.EscrowAccount{},
 		&model.Transaction{},
 		&model.Order{},
@@ -146,6 +147,14 @@ func TestCreateDesignFeeQuote(t *testing.T) {
 	if quote.Status != model.DesignFeeQuoteStatusPending {
 		t.Errorf("expected status=pending, got %s", quote.Status)
 	}
+
+	var notification model.Notification
+	if err := db.Where("user_id = ? AND related_id = ? AND type = ?", uint64(1), quote.ID, "proposal.design_fee_quote_created").First(&notification).Error; err != nil {
+		t.Fatalf("expected design fee quote notification: %v", err)
+	}
+	if notification.ActionURL != "/bookings/100/design-quote" {
+		t.Fatalf("unexpected notification action url: %s", notification.ActionURL)
+	}
 }
 
 func TestConfirmDesignFeeQuote(t *testing.T) {
@@ -166,11 +175,25 @@ func TestConfirmDesignFeeQuote(t *testing.T) {
 	if order.ID == 0 {
 		t.Error("expected order ID > 0 after confirmation")
 	}
+	if order.BookingID != bookingID {
+		t.Fatalf("expected order linked by booking_id=%d, got %d", bookingID, order.BookingID)
+	}
+	if order.ProposalID != 0 {
+		t.Fatalf("expected quote order not to depend on proposal_id, got %d", order.ProposalID)
+	}
 	// verify quote status in DB
 	var updatedQuote model.DesignFeeQuote
 	db.First(&updatedQuote, quote.ID)
 	if updatedQuote.Status != model.DesignFeeQuoteStatusConfirmed {
 		t.Errorf("expected quote status=confirmed, got %s", updatedQuote.Status)
+	}
+
+	var notification model.Notification
+	if err := db.Where("user_id = ? AND related_id = ? AND type = ?", uint64(1), order.ID, model.NotificationTypeOrderCreated).First(&notification).Error; err != nil {
+		t.Fatalf("expected design fee order notification: %v", err)
+	}
+	if notification.ActionURL != "/bookings/100/design-quote" {
+		t.Fatalf("unexpected order notification action url: %s", notification.ActionURL)
 	}
 }
 
@@ -202,12 +225,17 @@ func TestRejectDesignFeeQuote(t *testing.T) {
 
 func TestSubmitDesignDeliverable(t *testing.T) {
 	db := setupDesignPaymentDB(t)
-	_, providerID, bookingID := seedDesignPaymentFixtures(t, db)
+	userID, providerID, bookingID := seedDesignPaymentFixtures(t, db)
+	project := model.Project{Base: model.Base{ID: 200}, OwnerID: userID, ProviderID: providerID, Name: "设计交付项目"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
 
 	svc := &DesignPaymentService{}
 
 	deliverable, err := svc.SubmitDesignDeliverable(providerID, &SubmitDeliverableInput{
 		BookingID:       bookingID,
+		ProjectID:       project.ID,
 		ColorFloorPlan:  `["https://example.com/plan.jpg"]`,
 		Renderings:      `["https://example.com/render.jpg"]`,
 		TextDescription: "设计方案说明",
@@ -221,6 +249,41 @@ func TestSubmitDesignDeliverable(t *testing.T) {
 	}
 	if deliverable.Status != model.DesignDeliverableStatusSubmitted {
 		t.Errorf("expected status=submitted, got %s", deliverable.Status)
+	}
+	var notification model.Notification
+	if err := db.Where("user_id = ? AND type = ?", userID, NotificationTypeDeliverableSubmitted).Order("id DESC").First(&notification).Error; err != nil {
+		t.Fatalf("expected deliverable notification: %v", err)
+	}
+	if notification.ActionURL != "/bookings/100/design-deliverable" {
+		t.Fatalf("unexpected deliverable action url: %+v", notification)
+	}
+}
+
+func TestGetDesignDeliverableByBookingForUser(t *testing.T) {
+	db := setupDesignPaymentDB(t)
+	userID, providerID, bookingID := seedDesignPaymentFixtures(t, db)
+
+	deliverable := model.DesignDeliverable{
+		Base:            model.Base{ID: 501},
+		BookingID:       bookingID,
+		ProviderID:      providerID,
+		Status:          model.DesignDeliverableStatusSubmitted,
+		ColorFloorPlan:  `["/uploads/design/floor-plan.jpg"]`,
+		TextDescription: "交付说明",
+	}
+	if err := db.Create(&deliverable).Error; err != nil {
+		t.Fatalf("create deliverable: %v", err)
+	}
+
+	result, err := (&DesignPaymentService{}).GetDesignDeliverableByBookingForUser(userID, bookingID)
+	if err != nil {
+		t.Fatalf("GetDesignDeliverableByBookingForUser: %v", err)
+	}
+	if result.ID != deliverable.ID {
+		t.Fatalf("expected deliverable id=%d, got %d", deliverable.ID, result.ID)
+	}
+	if result.ColorFloorPlan == deliverable.ColorFloorPlan {
+		t.Fatalf("expected deliverable assets to be hydrated, got raw value %s", result.ColorFloorPlan)
 	}
 }
 

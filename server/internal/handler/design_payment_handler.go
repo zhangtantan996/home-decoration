@@ -60,7 +60,7 @@ func GetDesignFeeQuoteForUser(c *gin.Context) {
 		return
 	}
 
-	result, err := designPaymentService.GetDesignFeeQuote(bookingID)
+	result, err := designPaymentService.GetDesignFeeQuoteView(bookingID)
 	if err != nil {
 		response.ServerError(c, err.Error())
 		return
@@ -115,13 +115,32 @@ func RejectDesignFeeQuote(c *gin.Context) {
 
 // GetDesignDeliverable 获取设计交付物
 func GetDesignDeliverable(c *gin.Context) {
+	userID := getCurrentUserID(c)
 	projectID := parseUint64(c.Param("id"))
 	if projectID == 0 {
 		response.BadRequest(c, "无效项目ID")
 		return
 	}
 
-	deliverable, err := designPaymentService.GetDesignDeliverableByProject(projectID)
+	deliverable, err := designPaymentService.GetDesignDeliverableByProjectForUser(userID, projectID)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	response.Success(c, deliverable)
+}
+
+// GetBookingDesignDeliverable 获取预约主链下的设计交付物
+func GetBookingDesignDeliverable(c *gin.Context) {
+	userID := getCurrentUserID(c)
+	bookingID := parseUint64(c.Param("id"))
+	if bookingID == 0 {
+		response.BadRequest(c, "无效预约ID")
+		return
+	}
+
+	deliverable, err := designPaymentService.GetDesignDeliverableByBookingForUser(userID, bookingID)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return

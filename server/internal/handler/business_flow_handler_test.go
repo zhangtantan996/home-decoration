@@ -79,8 +79,8 @@ func TestGetProposalSanitizesSensitivePackagesBeforeUnlock(t *testing.T) {
 	if data.Proposal.InternalDraftJSON != "{}" {
 		t.Fatalf("expected internal draft hidden, got %s", data.Proposal.InternalDraftJSON)
 	}
-	if data.Proposal.DeliveryPackageJSON != "{}" {
-		t.Fatalf("expected delivery package hidden, got %s", data.Proposal.DeliveryPackageJSON)
+	if data.Proposal.DeliveryPackageJSON == "{}" || data.Proposal.DeliveryPackageJSON == "" {
+		t.Fatalf("expected delivery package preserved for proposal review, got %s", data.Proposal.DeliveryPackageJSON)
 	}
 	if data.Proposal.Attachments != "[]" {
 		t.Fatalf("expected legacy attachments hidden, got %s", data.Proposal.Attachments)
@@ -157,7 +157,7 @@ func TestGetProposalRespectsDesignFeeUnlockConfig(t *testing.T) {
 	if data.DeliveryUnlocked {
 		t.Fatalf("expected delivery to remain locked when config=false")
 	}
-	if data.Proposal.DeliveryPackageJSON != "{}" {
-		t.Fatalf("expected delivery package hidden when config=false, got %s", data.Proposal.DeliveryPackageJSON)
+	if data.Proposal.DeliveryPackageJSON == "{}" || data.Proposal.DeliveryPackageJSON == "" {
+		t.Fatalf("expected delivery package preserved even when download remains locked, got %s", data.Proposal.DeliveryPackageJSON)
 	}
 }

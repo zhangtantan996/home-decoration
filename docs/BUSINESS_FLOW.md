@@ -33,13 +33,13 @@
 │     ↓                                                                   │
 │  2. 用户需求进入线索/预约                                                 │
 │     ↓                                                                   │
-│  3. 设计师与用户对接、量房谈单、确认预算和设计方案                           │
+│  3. 设计师与用户对接、上传量房资料、完成沟通确认                             │
 │     ↓                                                                   │
-│  4. 设计师提交方案/报价，用户确认或拒绝 【成交点A：设计确认】                │
+│  4. 设计师提交设计费报价、设计交付、正式方案，用户确认或拒绝 【成交点A】      │
 │     ↓                                                                   │
-│  5. 选择要施工的工长，用户确认或拒绝 【成交点B：工长确认】                   │
+│  5. 报价基线数据 → 施工主体选择 → 施工报价确认 【成交点B：工长确认】          │
 │     ↓                                                                   │
-│  6. 确认后生成订单/业务闭环并创建项目                                      │
+│  6. 确认后生成订单/业务闭环并创建项目，进入待监理协调开工                    │
 │     ↓                                                                   │
 │  7. 项目按阶段/里程碑执行，伴随托管或账款流转                               │
 │     ↓                                                                   │
@@ -58,11 +58,14 @@
 |---------|---------|------|
 | `lead_pending` | 线索待分发 | 用户需求进入，待分发给商家 |
 | `consulting` | 沟通中 | 设计师与用户沟通、量房、预算确认 |
-| `proposal_pending` | 待设计方案 | 设计师准备设计方案 |
-| `proposal_confirmed` | 设计方案已确认 | 用户确认设计方案（成交点A） |
+| `design_quote_pending` | 待设计费报价 | 沟通确认完成后，等待设计师发起设计费报价 |
+| `design_fee_paying` | 设计费待支付 | 用户确认并支付设计费 |
+| `design_delivery_pending` | 待设计交付 | 设计费已支付，等待设计师提交正式方案 |
+| `design_acceptance_pending` | 待确认正式方案 | 正式方案已提交，等待用户确认/驳回 |
+| `construction_party_pending` | 施工桥接中 | 用户确认正式方案后进入施工桥接，总阶段内包含报价基线、施工主体选择与施工报价准备 |
 | `constructor_pending` | 待选择工长 | 用户选择施工工长 |
 | `construction_quote_pending` | 待施工报价 | 工长准备施工报价 |
-| `ready_to_start` | 待开工 | 用户确认施工报价（成交点B），项目待开工 |
+| `ready_to_start` | 待监理协调开工 | 用户确认施工报价（成交点B）后，项目已创建，待监理协调进场时间与开工准备 |
 | `in_progress` | 施工中 | 项目执行中 |
 | `milestone_review` | 阶段验收中 | 某阶段提交验收 |
 | `completed` | 已完成 | 项目完工，待整体验收或已验收 |
@@ -74,60 +77,71 @@
 
 ## 2. 两个独立成交点
 
-### 2.1 成交点 A：设计确认成交
+### 2.1 成交点 A：设计费成交 + 方案确认桥接
 
-**定义**：用户确认设计方案/报价，进入施工方选择阶段。
+**定义**：设计阶段固定收口为一条主链：
+
+`沟通确认完成` → `设计费报价` → `用户确认并支付设计费` → `设计师提交正式方案` → `用户确认方案` → `进入施工方选择`
 
 **输入**：
-- 设计方案（效果图、平面图、材料清单）
+- 设计费报价
 - 设计费
-- 预算范围
+- 正式设计方案（效果图、平面图、材料清单）
 
 **用户决策**：
-- 确认：进入工长选择（`proposal_confirmed`）
-- 拒绝：设计师可重新提交（最多 3 次）
+- 先确认并支付设计费：业务流进入 `design_delivery_pending`
+- 看到正式方案后再确认：进入施工方选择（`construction_party_pending`）
+- 若驳回正式方案：设计师可重新提交（最多 3 次）
 
 **输出**：
-- 设计确认后，用户仍可选择不施工或更换施工方
-- 设计确认**不等于**施工成交
+- 设计费支付只代表进入正式交付，不代表施工成交
+- 正式方案确认后，用户仍可选择不施工或更换施工方
 
 **关键约束**：
-- 设计确认与工长确认是两个独立成交点，不能合并
-- 设计确认后，业务流进入 `proposal_confirmed`，但项目尚未创建
+- `booking + design_fee_quote` 是设计费唯一成交主链
+- `proposal` 只承载正式方案查看/确认，不再生成设计费订单
+- 正式方案确认与工长确认是两个独立成交点，不能合并
+- 正式方案确认后，业务流进入 `construction_party_pending`，但项目尚未创建
 
 **对应接口**：
+- `POST /api/v1/design-quotes/:id/confirm` - 用户确认报价并生成设计费订单
+- `POST /api/v1/orders/:id/pay` - 用户支付设计费订单
 - `POST /api/v1/proposals/:id/confirm` - 用户确认设计方案
 - `POST /api/v1/proposals/:id/reject` - 用户拒绝设计方案
 
 **对应状态流转**：
-- `proposal_pending` → `proposal_confirmed`（确认）
-- `proposal_pending` → `proposal_pending`（拒绝后重提）
-- `proposal_pending` → `cancelled`（拒绝 3 次后退款）
+- `design_quote_pending` → `design_fee_paying`（报价确认，待支付）
+- `design_fee_paying` → `design_delivery_pending`（支付完成）
+- `design_delivery_pending` → `construction_party_pending`（确认正式方案）
+- `design_delivery_pending` → `design_delivery_pending`（驳回后重提）
+- `design_delivery_pending` → `cancelled`（拒绝 3 次后退款）
 
 ---
 
 ### 2.2 成交点 B：工长确认成交
 
-**定义**：用户确认工长/施工报价，生成订单并创建项目。
+**定义**：用户确认施工主体与施工报价，生成订单并创建项目。
 
 **输入**：
-- 工长信息
+- 施工主体信息（装修公司或独立工长）
+- 报价基线数据
 - 施工报价
 - 施工范围
 
 **用户决策**：
 - 确认：生成订单并创建项目（`ready_to_start`）
-- 拒绝：重新选择工长或终止项目
+- 拒绝：重新选择施工主体或终止项目
 
 **输出**：
 - 生成订单
 - 创建项目
-- 进入项目执行阶段
+- 进入监理协调待开工阶段
 
 **关键约束**：
 - 工长确认成交是项目创建的**唯一触发条件**
 - 工长确认前，所有状态均为"商机阶段"，不是"履约阶段"
-- 工长确认后，项目进入正式履约，资金流转开始绑定阶段/里程碑
+- 工长确认对象允许是 `company` 或 `foreman`
+- 工长确认后，项目先进入 `ready_to_start`，由监理协调进场时间，再进入正式履约
 
 **对应接口**：
 - `POST /api/v1/quote-tasks/:id/confirm` - 用户确认施工报价
@@ -135,7 +149,7 @@
 - `POST /api/v1/projects` - 创建项目
 
 **对应状态流转**：
-- `construction_quote_pending` → `ready_to_start`（确认）
+- `construction_quote_pending` → `ready_to_start`（确认，进入待监理协调开工）
 - `construction_quote_pending` → `constructor_pending`（拒绝后重新选择）
 - `construction_quote_pending` → `cancelled`（终止项目）
 
@@ -201,14 +215,34 @@
 
 ## 4. 主链路异常收口
 
+### 4.0 沟通确认驳回与关闭阈值
+
+**触发场景**：
+- 用户驳回预算/设计意向确认
+
+**处理流程**：
+- 驳回次数 `< 阈值`：业务流回到 `negotiating`，商家基于同一条沟通确认重提
+- 驳回次数 `>= 阈值`：预约进入退款/关闭链
+
+**状态流转**：
+- `negotiating` → `negotiating`（驳回后重提）
+- `negotiating` → `cancelled`（达到驳回阈值）
+
+**关键约束**：
+- 量房资料上传不是用户确认节点
+- 正式确认从预算/设计意向确认开始
+- 驳回阈值由后台配置，默认 `3`
+
+---
+
 ### 4.1 设计阶段拒绝/终止
 
 **触发场景**：
 - 用户拒绝设计方案
 
 **处理流程**：
-- 拒绝次数 < 3：设计师可重新提交
-- 拒绝次数 ≥ 3：自动触发退款，项目关闭
+- 驳回次数 < 阈值：设计师可重新提交沟通/方案
+- 驳回次数 ≥ 阈值：自动触发退款，项目关闭
 
 **状态流转**：
 - `proposal_pending` → `proposal_pending`（拒绝后重提）
@@ -420,13 +454,15 @@
 
 ---
 
-### 5.4 施工报价（quote_tasks / quote_submissions）
+### 5.4 施工报价（QuoteList / QuoteSubmission）
 
 **状态枚举**：
-- `pending` - 待工长报价
-- `submitted` - 已提交报价
-- `confirmed` - 已确认
-- `rejected` - 已拒绝
+- `pricing_in_progress` - 施工报价中
+- `submitted_to_user` - 待用户确认施工报价
+- `user_confirmed` - 用户已确认施工报价
+- `rejected` - 用户已拒绝，待商家按原因重提
+
+> `quote_tasks / quote_pk_submissions` 已退为 legacy 只读兼容，不再作为现行施工报价主链。
 
 **状态流转**：
 - 创建报价任务 → `pending`
@@ -455,7 +491,7 @@
 ### 5.6 项目（projects）
 
 **状态枚举**：
-- `pending` - 待开工
+- `pending` - 待监理协调开工
 - `in_progress` - 施工中
 - `completed` - 已完成
 - `closed` - 已关闭

@@ -11,7 +11,7 @@ const DB_USER = process.env.USER_WEB_FIXTURE_DB_USER || 'postgres';
 const DB_URL = process.env.USER_WEB_FIXTURE_DB_URL || '';
 const BOOKING_ID = 99210;
 const REDIS_CONTAINER = process.env.USER_WEB_FIXTURE_REDIS_CONTAINER || 'home_decor_redis_local';
-const REDIS_PASSWORD = process.env.USER_WEB_FIXTURE_REDIS_PASSWORD || 'kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf';
+const REDIS_PASSWORD = process.env.USER_WEB_FIXTURE_REDIS_PASSWORD || 'local_dev_redis_password_change_me';
 
 function clearRateLimit() {
   if (DB_URL) {
@@ -208,11 +208,12 @@ test.describe('merchant p0 flow', () => {
     const ownerToken = ownerJson?.data?.token as string;
     expect(ownerToken).toBeTruthy();
 
-    const confirmSurvey = await request.post(`${apiBaseUrl}/bookings/${BOOKING_ID}/site-survey/confirm`, {
-      headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+    const ownerSurvey = await request.get(`${apiBaseUrl}/bookings/${BOOKING_ID}/site-survey`, {
+      headers: { Authorization: `Bearer ${ownerToken}` },
     });
-    const confirmSurveyJson = await confirmSurvey.json();
-    expect(confirmSurveyJson.code).toBe(0);
+    const ownerSurveyJson = await ownerSurvey.json();
+    expect(ownerSurveyJson.code).toBe(0);
+    expect(ownerSurveyJson.data?.siteSurvey?.status).toBe('submitted');
 
     await page.goto(buildMerchantAppUrl(merchantOrigin, `/bookings/${BOOKING_ID}/budget-confirm`), { waitUntil: 'domcontentloaded' });
     await expect(page.getByRole('heading', { name: `预算确认 #${BOOKING_ID}` })).toBeVisible({ timeout: 20_000 });

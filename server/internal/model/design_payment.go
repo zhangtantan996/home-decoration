@@ -7,7 +7,7 @@ type DesignWorkingDoc struct {
 	Base
 	BookingID   uint64     `json:"bookingId" gorm:"index"`
 	ProviderID  uint64     `json:"providerId" gorm:"index"`
-	DocType     string     `json:"docType" gorm:"size:30"`      // sketch | budget_quote | site_photo | measurement
+	DocType     string     `json:"docType" gorm:"size:30"` // sketch | budget_quote | site_photo | measurement
 	Title       string     `json:"title" gorm:"size:100"`
 	Description string     `json:"description" gorm:"type:text"`
 	Files       string     `json:"files" gorm:"type:jsonb;default:'[]'"` // [{url, name, type, size}]
@@ -23,10 +23,10 @@ type DesignFeeQuote struct {
 	Base
 	BookingID        uint64     `json:"bookingId" gorm:"index"`
 	ProviderID       uint64     `json:"providerId" gorm:"index"`
-	TotalFee         float64    `json:"totalFee"`                              // 设计费总额
-	DepositDeduction float64    `json:"depositDeduction" gorm:"default:0"`     // 量房定金抵扣额
-	NetAmount        float64    `json:"netAmount"`                             // 用户实付
-	PaymentMode      string     `json:"paymentMode" gorm:"size:20"`           // onetime | staged
+	TotalFee         float64    `json:"totalFee"`                                  // 设计费总额
+	DepositDeduction float64    `json:"depositDeduction" gorm:"default:0"`         // 量房定金抵扣额
+	NetAmount        float64    `json:"netAmount"`                                 // 用户实付
+	PaymentMode      string     `json:"paymentMode" gorm:"size:20"`                // onetime | staged
 	StagesJSON       string     `json:"stagesJson" gorm:"type:jsonb;default:'[]'"` // [{seq, name, percentage, amount}]
 	Description      string     `json:"description" gorm:"type:text"`
 	Status           string     `json:"status" gorm:"size:20;default:'pending'"` // pending → confirmed | rejected | expired
@@ -56,13 +56,13 @@ type DesignDeliverable struct {
 	ProjectID       uint64     `json:"projectId" gorm:"index"`
 	OrderID         uint64     `json:"orderId" gorm:"index"`
 	ProviderID      uint64     `json:"providerId" gorm:"index"`
-	ColorFloorPlan  string     `json:"colorFloorPlan" gorm:"type:jsonb;default:'[]'"`  // 彩平图
-	Renderings      string     `json:"renderings" gorm:"type:jsonb;default:'[]'"`      // 效果图
-	RenderingLink   string     `json:"renderingLink" gorm:"size:500"`                  // 效果图外链
-	TextDescription string     `json:"textDescription" gorm:"type:text"`               // 文字描述
-	CADDrawings     string     `json:"cadDrawings" gorm:"type:jsonb;default:'[]'"`     // CAD施工图
-	Attachments     string     `json:"attachments" gorm:"type:jsonb;default:'[]'"`     // 其他附件
-	Status          string     `json:"status" gorm:"size:20;default:'draft'"` // draft → submitted → accepted | rejected
+	ColorFloorPlan  string     `json:"colorFloorPlan" gorm:"type:jsonb;default:'[]'"` // 彩平图
+	Renderings      string     `json:"renderings" gorm:"type:jsonb;default:'[]'"`     // 效果图
+	RenderingLink   string     `json:"renderingLink" gorm:"size:500"`                 // 效果图外链
+	TextDescription string     `json:"textDescription" gorm:"type:text"`              // 文字描述
+	CADDrawings     string     `json:"cadDrawings" gorm:"type:jsonb;default:'[]'"`    // CAD施工图
+	Attachments     string     `json:"attachments" gorm:"type:jsonb;default:'[]'"`    // 其他附件
+	Status          string     `json:"status" gorm:"size:20;default:'draft'"`         // draft → submitted → accepted | rejected
 	SubmittedAt     *time.Time `json:"submittedAt"`
 	AcceptedAt      *time.Time `json:"acceptedAt"`
 	RejectedAt      *time.Time `json:"rejectedAt"`

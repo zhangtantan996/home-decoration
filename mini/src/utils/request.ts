@@ -57,8 +57,11 @@ export interface RequestOptions {
 }
 
 const API_BASE = MINI_ENV.API_BASE_URL;
+const INTERNAL_API_BASE_CONFIG_ERROR = MINI_ENV.IS_PLACEHOLDER_API_BASE
+  ? "placeholder_api_base"
+  : "";
 const API_BASE_CONFIG_ERROR = MINI_ENV.IS_PLACEHOLDER_API_BASE
-  ? "当前接口地址仍是占位域名 api.yourdomain.com。请重新运行 npm run dev:weapp，或显式注入 TARO_APP_API_BASE 后再编译。"
+  ? "服务暂不可用，请稍后重试"
   : "";
 
 const AUTH_REFRESH_BUSINESS_KEY = "mini.auth.refresh";
@@ -71,11 +74,11 @@ const AUTH_REFRESH_POLICY: AutoRetryPolicy = {
 
 const authRefreshGuard = new AutoRetryGuard(AUTH_REFRESH_POLICY);
 
-if (API_BASE_CONFIG_ERROR) {
+if (INTERNAL_API_BASE_CONFIG_ERROR) {
   console.error("[mini][api-config]", {
     apiBase: API_BASE,
     appEnv: MINI_ENV.APP_ENV,
-    message: API_BASE_CONFIG_ERROR,
+    message: INTERNAL_API_BASE_CONFIG_ERROR,
     device: getMiniDeviceLogContext(),
   });
 } else {
@@ -90,14 +93,31 @@ const buildNetworkErrorMessage = (requestUrl: string, error: unknown) => {
   const rawMessage = error instanceof Error ? error.message : "";
 
   if (MINI_ENV.IS_PLACEHOLDER_API_BASE) {
-    return `${API_BASE_CONFIG_ERROR} 当前请求：${requestUrl}`;
+    console.error("[mini][api-config]", {
+      requestUrl,
+      message: INTERNAL_API_BASE_CONFIG_ERROR,
+      device: getMiniDeviceLogContext(),
+    });
+    return API_BASE_CONFIG_ERROR;
   }
 
   if (MINI_ENV.IS_LOCAL_API_BASE) {
-    return `无法连接本地接口：${requestUrl}。请确认 Docker 已暴露 8080 端口，并在微信开发者工具关闭“合法域名校验”后重新编译。`;
+    console.warn("[mini][network]", {
+      requestUrl,
+      rawMessage,
+      device: getMiniDeviceLogContext(),
+    });
+    return "服务连接失败，请稍后重试";
   }
 
-  return rawMessage ? `请求失败：${rawMessage}` : `请求失败：${requestUrl}`;
+  if (rawMessage) {
+    console.warn("[mini][network]", {
+      requestUrl,
+      rawMessage,
+      device: getMiniDeviceLogContext(),
+    });
+  }
+  return "请求失败，请稍后重试";
 };
 
 async function refreshAuth(refreshToken: string) {

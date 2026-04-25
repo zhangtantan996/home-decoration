@@ -5,6 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
 import { merchantPaymentApi, type MerchantPaymentStatusPayload } from '../../services/merchantApi';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const { Text } = Typography;
 
@@ -14,12 +15,7 @@ const readContextPath = (value: unknown) => (
     typeof value === 'string' && value.startsWith('/') ? value : ''
 );
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-    return fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const MerchantPaymentResult = () => {
     const navigate = useNavigate();

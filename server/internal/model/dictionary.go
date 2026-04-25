@@ -1,6 +1,5 @@
 package model
 
-
 // DictionaryCategory 字典分类
 type DictionaryCategory struct {
 	Base

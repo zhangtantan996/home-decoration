@@ -11,8 +11,12 @@ bin/
 *.so
 server/server_linux
 server/main
+server/api
 server/api.exe
 server/tmp/
+server/.gopath/
+server/coverage.out
+server/tmp_check_duplicate_items.go
 
 # Logs
 npm-debug.log*
@@ -26,6 +30,10 @@ backend.log
 .env
 .env.local
 .env.*.local
+admin/.env.production
+mini/.env.development
+mobile/.env.development
+mobile/.env.production
 
 # IDEs
 .vscode/*
@@ -46,17 +54,28 @@ NUL
 .codex/*
 !.codex/agents/
 !.codex/agents/**
+.openclaw/
+.sisyphus/
+.speckit/
+.myclaude/
+.factory/
+.hermes/
 .cursor/
 .kiro/
 .superdesign/
 .windsurfrules
 stitch/
 .playwright-cli/
+.shared/
+skills/
+memory/
+llmdoc/
 playwright-report/
 test-results/
 .workbuddy/
 
 # Project specific
+output/
 output/playwright/
 mobile/android/app/build/
 mobile/ios/build/
@@ -72,6 +91,16 @@ deploy/state/
 deploy/nginx/admin.htpasswd
 tmp/
 *.pid
+*.pre-openclaw-*
+*.bak
+BOOTSTRAP.md
+HEARTBEAT.md
+IDENTITY.md
+MEMORY.md
+SOUL.md
+TOOLS.md
+USER.md
+GEMINI.md
 # Unified env templates and generated env files
 env/*.env
 
@@ -87,3 +116,14 @@ server/scripts/restore_avatars.sql
 mini/.swc/
 1109819297_20260407_cert.zip
 pub_key.pem
+local_backup.sql
+error_report.txt
+output_report.txt
+mcp_config_cleaned.toml
+codex_model_catalog_right_full.json
+skill_seekers_config.json
+skill_seekers_config.yaml
+oh-my-opencode-atlas-official-docs.md
+test_escrow_flow.ps1
+test_login_verification.ps1
+test_project_flow.ps1

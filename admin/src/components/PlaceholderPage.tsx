@@ -26,7 +26,7 @@ const PlaceholderPage: React.FC<PlaceholderPageProps> = ({ title, description })
                         <div>
                             <Title level={3}>{title}</Title>
                             <Paragraph type="secondary">
-                                {description || '该功能正在开发中，敬请期待...'}
+                                {description || '该入口暂未开放，请联系管理员确认开放范围。'}
                             </Paragraph>
                         </div>
                     }

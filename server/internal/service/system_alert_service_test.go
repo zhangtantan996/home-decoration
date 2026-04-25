@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -156,5 +157,109 @@ func TestSystemAlertServiceHandleRiskWarning(t *testing.T) {
 		Result: "重复处理",
 	}); err == nil || err.Error() != "预警已处理" {
 		t.Fatalf("expected handled conflict, got %v", err)
+	}
+}
+
+func TestSystemAlertServiceActionURLsUseAdminFrontendRoutes(t *testing.T) {
+	if got := buildAdminPaymentTransactionActionURL(11); got != "/finance/transactions?paymentOrderId=11" {
+		t.Fatalf("expected payment transaction frontend route, got %s", got)
+	}
+	if got := buildAdminFinanceReconciliationActionURL(12); got != "/finance/reconciliations?reconciliationId=12" {
+		t.Fatalf("expected reconciliation frontend route, got %s", got)
+	}
+	if got := buildAdminRefundOrderActionURL(13); got != "/refunds?refundOrderId=13" {
+		t.Fatalf("expected refund list frontend route, got %s", got)
+	}
+	if got := buildAdminSettlementOrderActionURL(14); got != "/finance/settlements?settlementOrderId=14" {
+		t.Fatalf("expected settlement list frontend route, got %s", got)
+	}
+}
+
+func TestSystemAlertServiceGeneratedWarningsDoNotEmbedLegacyAdminRoutes(t *testing.T) {
+	db := setupSystemAlertTestDB(t)
+	svc := &SystemAlertService{}
+
+	checks := []struct {
+		name string
+		run  func() error
+	}{
+		{
+			name: "payment callback",
+			run:  func() error { return svc.AlertPaymentCallbackFailed(11, "验签失败") },
+		},
+		{
+			name: "payment reconciliation failed",
+			run:  func() error { return svc.AlertPaymentReconciliationFailed(12, "网络失败") },
+		},
+		{
+			name: "payment reconciliation difference",
+			run:  func() error { return svc.AlertPaymentReconciliationDifference(13, 2, 10.5) },
+		},
+		{
+			name: "refund failed",
+			run:  func() error { return svc.AlertRefundFailed(14, "退款失败") },
+		},
+		{
+			name: "refund reconciliation difference",
+			run:  func() error { return svc.AlertRefundReconciliationDifference(15, 1) },
+		},
+		{
+			name: "settlement failed",
+			run:  func() error { return svc.AlertSettlementFailed(16, "出款失败") },
+		},
+		{
+			name: "settlement reconciliation difference",
+			run:  func() error { return svc.AlertSettlementReconciliationDifference(17, 3, 20.5) },
+		},
+	}
+
+	for _, item := range checks {
+		if err := item.run(); err != nil {
+			t.Fatalf("%s: %v", item.name, err)
+		}
+	}
+
+	var warnings []model.RiskWarning
+	if err := db.Order("id ASC").Find(&warnings).Error; err != nil {
+		t.Fatalf("load warnings: %v", err)
+	}
+	if len(warnings) != len(checks) {
+		t.Fatalf("expected %d warnings, got %d", len(checks), len(warnings))
+	}
+
+	for idx, warning := range warnings {
+		if strings.Contains(warning.Description, "/admin") {
+			t.Fatalf("warning %d still embeds legacy admin route: %s", idx, warning.Description)
+		}
+		if strings.Contains(warning.Description, "action=") || strings.Contains(warning.Description, "/finance/") || strings.Contains(warning.Description, "/refunds") {
+			t.Fatalf("warning %d still embeds route metadata: %s", idx, warning.Description)
+		}
+	}
+}
+
+func TestSystemAlertServiceSanitizesTechnicalWarningDescriptions(t *testing.T) {
+	db := setupSystemAlertTestDB(t)
+	svc := &SystemAlertService{}
+
+	_, _, err := svc.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypeFinanceReconciliationFailed,
+		Level:       "critical",
+		Scope:       "财务对账任务",
+		Description: `ERROR: relation "finance_reconciliations" does not exist (SQLSTATE 42P01)`,
+		ActionURL:   "/risk/warnings",
+	})
+	if err != nil {
+		t.Fatalf("UpsertAlert: %v", err)
+	}
+
+	var warning model.RiskWarning
+	if err := db.First(&warning).Error; err != nil {
+		t.Fatalf("load warning: %v", err)
+	}
+	if warning.Description != "系统任务异常，请进入风险中心查看处理。" {
+		t.Fatalf("expected sanitized description, got %s", warning.Description)
+	}
+	if strings.Contains(strings.ToLower(warning.Description), "sqlstate") || strings.Contains(warning.Description, "finance_reconciliations") {
+		t.Fatalf("technical detail leaked into warning description: %s", warning.Description)
 	}
 }

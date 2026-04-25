@@ -139,8 +139,6 @@ export default function ChangePhonePage() {
     >
       <SettingsGroup title="当前号码">
         <View className="security-form-page__summary">
-          <Text className="security-form-page__summary-title">当前绑定手机号</Text>
-          <Text className="security-form-page__summary-copy">修改后，新手机号将作为登录和验证码接收号码。</Text>
           <View className="security-form-page__value-chip">{maskPhone(currentPhone)}</View>
         </View>
       </SettingsGroup>

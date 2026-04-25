@@ -1,117 +1,51 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Text, View } from '@tarojs/components';
 import Taro, { useDidHide, useDidShow, useLoad } from '@tarojs/taro';
 
-import { Button } from '@/components/Button';
 import { Empty } from '@/components/Empty';
+import { Icon } from '@/components/Icon';
+import MiniPageNav from '@/components/MiniPageNav';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
-import { Tag } from '@/components/Tag';
-import { getBusinessStageStatus } from '@/constants/status';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
-import {
-  cancelBooking,
-  getBookingDetail,
-  type BookingBudgetConfirmSummary,
-  type BookingDetailResponse,
-  type BookingSiteSurveySummary,
-} from '@/services/bookings';
+import { cancelBooking, getBookingDetail, type BookingDetailResponse } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
+import { normalizeProviderMediaUrl } from '@/utils/providerMedia';
 import { formatServerDateTime } from '@/utils/serverTime';
 import { navigateToSurveyDepositPaymentWithOptions } from '@/utils/surveyDepositPayment';
 
 import './index.scss';
 
-const formatCurrency = (amount: number) => `¥${amount.toLocaleString()}`;
+type BookingStepState = 'done' | 'current' | 'upcoming';
 
-const PanelTitle: React.FC<{ title: string }> = ({ title }) => (
-  <View className="booking-detail-page__panel-head">
-    <Text className="booking-detail-page__panel-title">{title}</Text>
-  </View>
-);
-
-const DetailTile: React.FC<{ label: string; value?: string; secondary?: string; full?: boolean }> = ({
-  label,
-  value = '-',
-  secondary,
-  full = false,
-}) => (
-  <View className={`booking-detail-page__tile ${full ? 'booking-detail-page__tile--full' : ''}`}>
-    <Text className="booking-detail-page__tile-label">{label}</Text>
-    <Text className="booking-detail-page__tile-value">{value || '-'}</Text>
-    {secondary ? <Text className="booking-detail-page__tile-secondary">{secondary}</Text> : null}
-  </View>
-);
-
-const ProgressItem: React.FC<{
-  title: string;
-  description: string;
-  tagLabel?: string;
-  tagVariant?: 'default' | 'primary' | 'secondary' | 'brand' | 'success' | 'warning' | 'error';
-}> = ({ title, description, tagLabel, tagVariant = 'default' }) => (
-  <View className="booking-detail-page__progress-item">
-    <View className="booking-detail-page__progress-rail">
-      <View className="booking-detail-page__progress-dot" />
-      <View className="booking-detail-page__progress-line" />
-    </View>
-    <View className="booking-detail-page__progress-main">
-      <View className="booking-detail-page__progress-top">
-        <Text className="booking-detail-page__progress-title">{title}</Text>
-        {tagLabel ? <Tag variant={tagVariant}>{tagLabel}</Tag> : null}
-      </View>
-      <Text className="booking-detail-page__progress-copy">{description}</Text>
-    </View>
-  </View>
-);
-
-const getStatusMeta = (detail: BookingDetailResponse) => {
-  switch (detail.statusGroup || detail.booking.statusGroup) {
-    case 'pending_confirmation':
-      return { label: detail.statusText || detail.booking.statusText || '待商家确认', variant: 'warning' as const };
-    case 'pending_payment':
-      return { label: detail.statusText || detail.booking.statusText || '待支付量房费', variant: 'primary' as const };
-    case 'in_service':
-      return { label: detail.statusText || detail.booking.statusText || '服务推进中', variant: 'primary' as const };
-    case 'completed':
-      return { label: detail.statusText || detail.booking.statusText || '已进入后续阶段', variant: 'success' as const };
-    case 'cancelled':
-      return { label: detail.statusText || detail.booking.statusText || '已取消', variant: 'default' as const };
-    default:
-      return { label: detail.statusText || detail.booking.statusText || '处理中', variant: 'default' as const };
-  }
+const normalizeText = (value?: string, fallback = '-') => {
+  const text = String(value || '').trim();
+  return text || fallback;
 };
 
-const getSurveyStatusMeta = (status?: string) => {
-  switch (status) {
-    case 'submitted':
-      return { label: '待确认', variant: 'warning' as const };
-    case 'confirmed':
-      return { label: '已确认', variant: 'success' as const };
-    case 'revision_requested':
-      return { label: '待重提', variant: 'default' as const };
-    default:
-      return { label: '待量房', variant: 'default' as const };
+const maskPhone = (value?: string) => {
+  const phone = String(value || '').replace(/\s+/g, '');
+  if (/^1\d{10}$/.test(phone)) {
+    return `${phone.slice(0, 3)}****${phone.slice(7)}`;
   }
+  return phone || '-';
 };
 
-const getBudgetStatusMeta = (status?: string) => {
-  switch (status) {
-    case 'submitted':
-      return { label: '待处理', variant: 'warning' as const };
-    case 'accepted':
-      return { label: '已确认', variant: 'success' as const };
-    case 'rejected':
-      return { label: '已退回', variant: 'default' as const };
-    default:
-      return { label: '待提交', variant: 'default' as const };
+const resolveStatusTone = (detail: BookingDetailResponse) => {
+  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
+  if (statusGroup === 'pending_confirmation' || statusGroup === 'pending_payment') {
+    return { label: '待处理', tone: 'pending' as const };
   }
+  if (statusGroup === 'completed') {
+    return { label: '已完成', tone: 'success' as const };
+  }
+  if (statusGroup === 'cancelled') {
+    return { label: '已取消', tone: 'muted' as const };
+  }
+  return { label: '服务中', tone: 'active' as const };
 };
-
-const getSurveyDepositAmount = (detail: BookingDetailResponse) => (
-  Number(detail.surveyDepositAmount || detail.booking.surveyDepositAmount || detail.booking.surveyDeposit || 0)
-);
 
 const canPromptSurveyDepositPayment = (detail: BookingDetailResponse) => (
   !detail.booking.surveyDepositPaid
@@ -119,300 +53,59 @@ const canPromptSurveyDepositPayment = (detail: BookingDetailResponse) => (
   && (detail.statusGroup || detail.booking.statusGroup) !== 'cancelled'
 );
 
-const getCurrentStageText = (detail: BookingDetailResponse) => {
-  if (canPromptSurveyDepositPayment(detail)) {
-    return '待支付量房费';
-  }
-  if (detail.currentStageText || detail.booking.currentStageText) {
-    return detail.currentStageText || detail.booking.currentStageText || '-';
-  }
-  const stageRaw = detail.businessStage || detail.currentStage || detail.booking.currentStage;
-  return stageRaw ? getBusinessStageStatus(stageRaw).label : '-';
-};
-
-const getSiteSurveyDescription = (siteSurveySummary?: BookingSiteSurveySummary) => {
-  if (!siteSurveySummary) {
-    return '量房费支付后，商家会安排量房并提交量房记录。';
-  }
-  if (siteSurveySummary.status === 'revision_requested') {
-    return siteSurveySummary.revisionRequestReason || '量房记录已退回，等待商家重新量房。';
-  }
-  if (siteSurveySummary.notes) {
-    return siteSurveySummary.notes;
-  }
-  return '量房记录已更新';
-};
-
-const getBudgetDescription = (budgetConfirmSummary?: BookingBudgetConfirmSummary) => {
-  if (!budgetConfirmSummary) {
-    return '量房记录确认后，商家会继续提交预算确认。';
-  }
-
-  const hasBudgetRange =
-    typeof budgetConfirmSummary.budgetMin === 'number'
-    && typeof budgetConfirmSummary.budgetMax === 'number'
-    && budgetConfirmSummary.budgetMax > 0;
-
-  if (budgetConfirmSummary.status === 'rejected' && budgetConfirmSummary.rejectionReason) {
-    return budgetConfirmSummary.rejectionReason;
-  }
-
-  if (hasBudgetRange) {
-    return `${formatCurrency(budgetConfirmSummary.budgetMin || 0)} - ${formatCurrency(budgetConfirmSummary.budgetMax || 0)}`;
-  }
-
-  return budgetConfirmSummary.notes || budgetConfirmSummary.designIntent || '预算确认信息已更新';
-};
-
-const getNextStep = (detail: BookingDetailResponse) => {
+const resolveSummaryTitle = (detail: BookingDetailResponse) => {
   const statusGroup = detail.statusGroup || detail.booking.statusGroup;
-  const flowSummary = detail.flowSummary || detail.booking.flowSummary;
-  const amount = getSurveyDepositAmount(detail);
-  const availableActions = detail.availableActions || detail.booking.availableActions || [];
-
-  if (canPromptSurveyDepositPayment(detail)) {
-    return {
-      title: '去支付',
-      description: amount > 0
-        ? `请先支付 ${formatCurrency(amount)}，支付完成后商家才会继续量房与预算。`
-        : '请先支付量房费，支付完成后商家才会继续量房与预算。',
-      amount,
-      amountLabel: '待支付量房费',
-      actionKey: 'pay_survey_deposit' as const,
-    };
-  }
-
-  switch (statusGroup) {
-    case 'pending_confirmation':
-      return {
-        title: '等待商家确认',
-        description: flowSummary || '预约已提交，商家确认后才会进入量房费支付。',
-      };
-    case 'pending_payment':
-      return {
-        title: '支付量房费',
-        description: flowSummary || '商家已确认预约，请先支付量房费后继续推进量房与预算。',
-        amount,
-        amountLabel: '待支付量房费',
-        actionKey: 'pay_survey_deposit' as const,
-      };
-    case 'cancelled':
-      return {
-        title: '预约已取消',
-        description: flowSummary || '当前预约流程已结束，如需继续服务请重新发起预约。',
-      };
-    case 'completed':
-      if (detail.proposalId) {
-        return {
-          title: '查看设计方案',
-          description: flowSummary || '预约前置服务已完成，当前已进入方案阶段。',
-          actionText: '查看设计方案',
-          actionKey: 'view_proposal' as const,
-        };
-      }
-      return {
-        title: '查看详情',
-        description: flowSummary || '预约已进入后续订单或项目阶段。',
-      };
-    default:
-      if (availableActions.includes('submit_budget')) {
-        return {
-          title: '等待预算确认',
-          description: flowSummary || '量房记录已确认，等待商家继续提交预算确认。',
-        };
-      }
-      if (availableActions.includes('create_proposal')) {
-        return {
-          title: '等待商家提交方案',
-          description: flowSummary || '预算确认已完成，待商家继续提交方案。',
-        };
-      }
-      return {
-        title: '查看服务进展',
-        description: flowSummary || '量房费已支付，预约前置服务正在推进中。',
-      };
-  }
-};
-
-const getSummaryCopy = (detail: BookingDetailResponse, nextStep: ReturnType<typeof getNextStep>) => {
-  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
-  if (canPromptSurveyDepositPayment(detail)) {
-    return '';
-  }
-  switch (statusGroup) {
-    case 'pending_confirmation':
-      return '预约已提交，等待商家确认承接。';
-    case 'pending_payment':
-      return '商家已确认，请先完成量房费支付。';
-    case 'completed':
-      return '预约前置流程已完成，已进入后续阶段。';
-    case 'cancelled':
-      return '当前预约流程已结束，如需继续服务请重新发起预约。';
-    default:
-      if (detail.siteSurveySummary?.status === 'submitted') {
-        return '量房记录已提交，等待你确认。';
-      }
-      if (detail.budgetConfirmSummary?.status === 'submitted') {
-        return '预算确认已提交，等待你确认。';
-      }
-      return nextStep.description;
-  }
-};
-
-const getMerchantConfirmMeta = (detail: BookingDetailResponse) => {
-  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
-  switch (statusGroup) {
-    case 'pending_confirmation':
-      return {
-        label: '待确认',
-        variant: 'warning' as const,
-        description: '预约已提交，平台正在等待商家确认是否承接本次量房服务。',
-      };
-    case 'cancelled':
-      return {
-        label: '已结束',
-        variant: 'default' as const,
-        description: '当前预约已取消，商家确认流程不再继续。',
-      };
-    default:
-      return {
-        label: '已确认',
-        variant: 'success' as const,
-        description: '商家已确认承接，用户现在可以继续支付量房费或查看后续推进。',
-      };
-  }
-};
-
-const getDepositProgressMeta = (detail: BookingDetailResponse) => {
-  const statusGroup = detail.statusGroup || detail.booking.statusGroup;
-  const amount = getSurveyDepositAmount(detail);
-  if (detail.booking.surveyDepositPaid) {
-    return {
-      label: '已支付',
-      variant: 'success' as const,
-      description: detail.booking.surveyDepositPaidAt
-        ? `量房费已支付，时间 ${formatServerDateTime(detail.booking.surveyDepositPaidAt)}。`
-        : '量房费已完成支付，商家可继续推进量房记录与预算确认。',
-    };
-  }
-
-  if (statusGroup === 'pending_payment') {
-    return {
-      label: '待支付',
-      variant: 'primary' as const,
-      description: amount > 0
-        ? `商家已确认预约，当前待支付量房费 ${formatCurrency(amount)}。`
-        : '商家已确认预约，等待支付量房费后继续推进。',
-    };
-  }
-
   if (statusGroup === 'pending_confirmation') {
-    return {
-      label: '未开启',
-      variant: 'default' as const,
-      description: '商家确认前不会展示量房费支付动作。',
-    };
+    return '量房服务待确认';
   }
-
+  if (statusGroup === 'pending_payment') {
+    return '量房费用待支付';
+  }
+  if (statusGroup === 'completed') {
+    return '量房服务已完成';
+  }
   if (statusGroup === 'cancelled') {
-    return {
-      label: '已结束',
-      variant: 'default' as const,
-      description: '预约已取消，量房费支付流程同步结束。',
-    };
+    return '预约服务已取消';
   }
-
-  return {
-    label: '处理中',
-    variant: 'default' as const,
-    description: amount > 0
-      ? `量房费 ${formatCurrency(amount)} 已进入后续服务流程。`
-      : '量房费流程已进入后续服务阶段。',
-  };
+  return '量房服务进行中';
 };
 
-const getDepositMetric = (detail: BookingDetailResponse) => {
-  const amount = getSurveyDepositAmount(detail);
+const resolveProgressStepIndex = (detail: BookingDetailResponse) => {
   const statusGroup = detail.statusGroup || detail.booking.statusGroup;
-
-  if (amount > 0) {
-    if (canPromptSurveyDepositPayment(detail)) {
-      return {
-        label: '当前状态',
-        value: '商家已确认',
-        copy: '',
-      };
-    }
-    return {
-      label: '量房费',
-      value: formatCurrency(amount),
-      copy: detail.booking.surveyDepositPaid
-        ? (detail.booking.surveyDepositPaidAt ? `支付于 ${formatServerDateTime(detail.booking.surveyDepositPaidAt)}` : '量房费已支付')
-        : '商家确认后即可支付',
-    };
+  if (statusGroup === 'completed') {
+    return 4;
   }
-
-  if (canPromptSurveyDepositPayment(detail)) {
-    return {
-      label: '当前状态',
-      value: '商家已确认',
-      copy: '',
-    };
+  if (statusGroup === 'pending_payment' || statusGroup === 'in_service') {
+    return 3;
   }
-
-  if (detail.booking.surveyDepositPaid) {
-    return {
-      label: '量房费状态',
-      value: '已支付',
-      copy: '金额未回填，不影响当前服务推进。',
-    };
-  }
-
   if (statusGroup === 'pending_confirmation') {
-    return {
-      label: '量房费状态',
-      value: '待确认',
-      copy: '商家确认承接后会展示支付金额。',
-    };
+    return 2;
   }
-
-  if (statusGroup === 'pending_payment') {
-    return {
-      label: '量房费状态',
-      value: '待支付',
-      copy: '支付金额待商家配置完成后展示。',
-    };
-  }
-
-  return {
-    label: '量房费状态',
-    value: '处理中',
-    copy: '当前流程正在推进，金额信息暂未同步。',
-  };
+  return 1;
 };
 
-const getPreferredDateDisplay = (preferredDate?: string) => {
-  const normalized = (preferredDate || '').replace(/\s+/g, ' ').trim();
-  if (!normalized) {
-    return { primary: '-', secondary: undefined as string | undefined };
+const resolvePrimaryAction = (detail: BookingDetailResponse) => {
+  if (canPromptSurveyDepositPayment(detail)) {
+    return { label: '去支付', action: 'pay' as const };
   }
-
-  const parts = normalized.split(' ');
-  if (parts.length >= 3 && /^\d{4}-\d{2}-\d{2}$/.test(parts[0])) {
-    return {
-      primary: [parts[0], parts[1]].filter(Boolean).join(' '),
-      secondary: parts.slice(2).join(' '),
-    };
+  if (detail.siteSurveySummary) {
+    return { label: '查看量房', action: 'site-survey' as const };
   }
-
-  if (parts.length >= 2) {
-    return {
-      primary: parts.slice(0, 2).join(' '),
-      secondary: parts.slice(2).join(' ') || undefined,
-    };
+  if (detail.provider?.id) {
+    return { label: '查看服务方', action: 'provider' as const };
   }
+  return null;
+};
 
-  return { primary: normalized, secondary: undefined as string | undefined };
+const resolveSecondaryAction = (detail: BookingDetailResponse) => {
+  const availableActions = detail.availableActions || detail.booking.availableActions || [];
+  if (availableActions.includes('cancel')) {
+    return { label: '取消预约', action: 'cancel' as const };
+  }
+  if (detail.provider?.id) {
+    return { label: '查看服务方', action: 'provider' as const };
+  }
+  return null;
 };
 
 const BookingDetailPage: React.FC = () => {
@@ -422,8 +115,7 @@ const BookingDetailPage: React.FC = () => {
   const [pageVisible, setPageVisible] = useState(false);
   const [detail, setDetail] = useState<BookingDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [paying, setPaying] = useState(false);
-  const [canceling, setCanceling] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
   const didFirstShowRef = useRef(true);
   const pollingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -513,59 +205,127 @@ const BookingDetailPage: React.FC = () => {
     };
   }, [auth.token, detail?.booking?.statusGroup, detail?.statusGroup, id, pageVisible, routeReady, runReload]);
 
-  const handlePaySurveyDeposit = async () => {
-    if (!detail?.booking) {
+  const handleBack = useCallback(() => {
+    if (Taro.getCurrentPages().length > 1) {
+      void Taro.navigateBack();
       return;
+    }
+    void Taro.switchTab({ url: '/pages/messages/index' });
+  }, []);
+
+  const handleOpenProvider = useCallback(() => {
+    if (!detail?.provider?.id) {
+      Taro.showToast({ title: '暂无服务方详情', icon: 'none' });
+      return;
+    }
+    void Taro.navigateTo({
+      url: `/pages/providers/detail/index?id=${detail.provider.id}&type=${detail.provider.providerType || 'designer'}`,
+    });
+  }, [detail?.provider?.id, detail?.provider?.providerType]);
+
+  const handleMoreAction = useCallback(async () => {
+    const items = ['刷新页面'];
+    if (detail?.provider?.id) {
+      items.push('查看服务方');
     }
     try {
-      setPaying(true);
-      await navigateToSurveyDepositPaymentWithOptions(
-        detail.booking.id,
-        detail.surveyDepositPaymentOptions,
-      );
-    } finally {
-      setPaying(false);
-    }
-  };
-
-  const handleViewProposal = () => {
-    if (!detail?.proposalId) {
+      const res = await Taro.showActionSheet({ itemList: items });
+      if (res.tapIndex === 0) {
+        await runReload();
+        return;
+      }
+      handleOpenProvider();
+    } catch {
       return;
     }
-    Taro.navigateTo({ url: `/pages/proposals/detail/index?id=${detail.proposalId}` });
-  };
+  }, [detail?.provider?.id, handleOpenProvider, runReload]);
 
-  const handleCancelBooking = async () => {
-    if (!detail?.booking?.id || canceling) {
+  const handleCancelBooking = useCallback(async () => {
+    if (!detail?.booking?.id || actionLoading) {
       return;
     }
-
     Taro.showModal({
       title: '取消预约',
-      content: '确定要取消当前预约吗？取消后流程会立即结束。',
+      content: '确定取消当前预约吗？',
       success: async (res) => {
         if (!res.confirm) {
           return;
         }
-
-        setCanceling(true);
         try {
+          setActionLoading(true);
           await cancelBooking(detail.booking.id);
           Taro.showToast({ title: '已取消', icon: 'success' });
           await fetchDetail();
         } catch (error) {
           showErrorToast(error, '取消失败');
         } finally {
-          setCanceling(false);
+          setActionLoading(false);
         }
       },
     });
-  };
+  }, [actionLoading, detail?.booking?.id, fetchDetail]);
+
+  const handleOpenSiteSurvey = useCallback(() => {
+    if (!detail?.booking?.id) {
+      return;
+    }
+    void Taro.navigateTo({ url: `/pages/booking/site-survey/index?id=${detail.booking.id}` });
+  }, [detail?.booking?.id]);
+
+  const handlePaySurveyDeposit = useCallback(async () => {
+    if (!detail?.booking?.id) {
+      return;
+    }
+    try {
+      setActionLoading(true);
+      await navigateToSurveyDepositPaymentWithOptions(
+        detail.booking.id,
+        detail.surveyDepositPaymentOptions,
+      );
+    } finally {
+      setActionLoading(false);
+    }
+  }, [detail?.booking?.id, detail?.surveyDepositPaymentOptions]);
+
+  const handlePrimaryAction = useCallback(async () => {
+    if (!detail) {
+      return;
+    }
+    const action = resolvePrimaryAction(detail);
+    if (!action) {
+      return;
+    }
+    if (action.action === 'pay') {
+      await handlePaySurveyDeposit();
+      return;
+    }
+    if (action.action === 'site-survey') {
+      handleOpenSiteSurvey();
+      return;
+    }
+    handleOpenProvider();
+  }, [detail, handleOpenProvider, handleOpenSiteSurvey, handlePaySurveyDeposit]);
+
+  const handleSecondaryAction = useCallback(async () => {
+    if (!detail) {
+      return;
+    }
+    const action = resolveSecondaryAction(detail);
+    if (!action) {
+      return;
+    }
+    if (action.action === 'cancel') {
+      await handleCancelBooking();
+      return;
+    }
+    handleOpenProvider();
+  }, [detail, handleCancelBooking, handleOpenProvider]);
 
   if (!auth.token) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <View className="page booking-detail-page" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
+        <MiniPageNav title="预约详情" onBack={handleBack} placeholder />
         <Empty
           description="登录后查看预约详情"
           action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }}
@@ -576,188 +336,186 @@ const BookingDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+      <View className="page booking-detail-page" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
+        <MiniPageNav title="预约详情" onBack={handleBack} placeholder />
+        <View className="booking-detail-page__loading">
+          <Skeleton height={220} className="booking-detail-page__section" />
+          <Skeleton height={150} className="booking-detail-page__section" />
+          <Skeleton height={120} className="booking-detail-page__section" />
+          <Skeleton height={220} className="booking-detail-page__section" />
+        </View>
       </View>
     );
   }
 
   if (!detail?.booking) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md text-center text-gray-500" {...bindPullToRefresh}>
+      <View className="page booking-detail-page" {...bindPullToRefresh}>
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-        未找到预约信息
+        <MiniPageNav title="预约详情" onBack={handleBack} placeholder />
+        <Empty
+          description="未找到预约信息"
+          action={{ text: '返回上一页', onClick: handleBack }}
+        />
       </View>
     );
   }
 
   const booking = detail.booking;
-  const status = getStatusMeta(detail);
-  const stageText = getCurrentStageText(detail);
-  const nextStep = getNextStep(detail);
-  const surveyStatus = getSurveyStatusMeta(detail.siteSurveySummary?.status);
-  const budgetStatus = getBudgetStatusMeta(detail.budgetConfirmSummary?.status);
-  const surveyDepositAmount = getSurveyDepositAmount(detail);
-  const showSurveyDepositAction = nextStep.actionKey === 'pay_survey_deposit';
-  const showProgressSection = (detail.statusGroup || booking.statusGroup) === 'in_service'
-    || (detail.statusGroup || booking.statusGroup) === 'completed'
-    || Boolean(detail.siteSurveySummary || detail.budgetConfirmSummary);
+  const status = resolveStatusTone(detail);
+  const progressStepIndex = resolveProgressStepIndex(detail);
+  const providerAvatar = normalizeProviderMediaUrl(detail.provider?.avatar || '', '');
+  const canRenderProviderAvatar = /^https:\/\//i.test(providerAvatar);
   const providerInitial = (detail.provider?.name || '服').slice(0, 1);
-  const summaryCopy = getSummaryCopy(detail, nextStep);
-  const depositMetric = getDepositMetric(detail);
-  const nextActionLabel = showSurveyDepositAction
-    ? '去支付'
-    : nextStep.actionKey === 'view_proposal'
-      ? (nextStep.actionText || '查看设计方案')
-      : '';
-  const merchantConfirmMeta = getMerchantConfirmMeta(detail);
-  const depositProgressMeta = getDepositProgressMeta(detail);
-  const preferredDateDisplay = getPreferredDateDisplay(booking.preferredDate);
-  const availableActions = detail.availableActions || booking.availableActions || [];
-  const canCancelBooking = availableActions.includes('cancel');
+  const providerSummary = [
+    detail.provider?.specialty || '',
+    detail.provider?.yearsExperience ? `从业${detail.provider.yearsExperience}年` : '',
+    detail.provider?.completedCnt ? `服务${detail.provider.completedCnt}+户` : '',
+  ].filter(Boolean).join(' · ') || '服务信息待补充';
+  const infoRows = [
+    { label: '预约单号', value: `#${booking.id}` },
+    { label: '服务类型', value: '量房服务' },
+    { label: '房屋信息', value: [normalizeText(booking.houseLayout, ''), booking.area ? `${booking.area}㎡` : ''].filter(Boolean).join(' ｜ ') || '-' },
+    { label: '联系电话', value: maskPhone(booking.phone) },
+    { label: '备注', value: normalizeText(booking.notes) },
+  ];
+  const primaryAction = resolvePrimaryAction(detail);
+  const secondaryActionRaw = resolveSecondaryAction(detail);
+  const secondaryAction = secondaryActionRaw && primaryAction && secondaryActionRaw.action === primaryAction.action
+    ? null
+    : secondaryActionRaw;
+  const showFooter = Boolean(primaryAction || secondaryAction);
 
   return (
-    <View className="page booking-detail-page bg-gray-50 min-h-screen p-md" {...bindPullToRefresh}>
+    <View className={`page booking-detail-page ${showFooter ? 'booking-detail-page--with-footer' : ''}`} {...bindPullToRefresh}>
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
-      <View className="booking-detail-page__stack">
-        <View className="booking-detail-page__hero">
-          <View className="booking-detail-page__hero-top">
-            <View className="booking-detail-page__hero-badge">预约流程</View>
-            <Tag variant={status.variant}>{status.label}</Tag>
-          </View>
-          <Text className="booking-detail-page__hero-title">{stageText}</Text>
-          {summaryCopy ? (
-            <Text className="booking-detail-page__hero-copy">{summaryCopy}</Text>
-          ) : null}
 
-          <View className="booking-detail-page__hero-metrics">
-            <View className="booking-detail-page__metric booking-detail-page__metric--accent">
-              <Text className="booking-detail-page__metric-label">{depositMetric.label}</Text>
-              <Text className="booking-detail-page__metric-value">
-                {depositMetric.value}
-              </Text>
-              {depositMetric.copy ? (
-                <Text className="booking-detail-page__metric-copy">{depositMetric.copy}</Text>
-              ) : null}
-            </View>
-            <View className="booking-detail-page__metric">
-              <Text className="booking-detail-page__metric-label">下一步</Text>
-              <Text className="booking-detail-page__metric-value booking-detail-page__metric-value--dark">
-                {nextStep.title}
-              </Text>
-              {!showSurveyDepositAction && nextStep.description ? (
-                <Text className="booking-detail-page__metric-copy">{nextStep.description}</Text>
-              ) : null}
+      <MiniPageNav
+        title="预约详情"
+        onBack={handleBack}
+        placeholder
+        rightSlot={(
+          <View className="booking-detail-page__nav-action" onClick={handleMoreAction}>
+            <Icon name="more-horizontal" size={22} color="#111111" />
+          </View>
+        )}
+      />
+
+      <View className="booking-detail-page__content">
+        <View className="booking-detail-page__card booking-detail-page__summary-card">
+          <View className="booking-detail-page__summary-head">
+            <Text className="booking-detail-page__summary-title">{resolveSummaryTitle(detail)}</Text>
+            <View className={`booking-detail-page__summary-badge booking-detail-page__summary-badge--${status.tone}`}>
+              <Text className={`booking-detail-page__summary-badge-text booking-detail-page__summary-badge-text--${status.tone}`}>{status.label}</Text>
             </View>
           </View>
 
-          {(canCancelBooking || nextActionLabel) ? (
-            <View className={`booking-detail-page__hero-actions${canCancelBooking && nextActionLabel ? '' : ' booking-detail-page__hero-actions--single'}`}>
-              {canCancelBooking ? (
-                <Button
-                  variant="outline"
-                  className="booking-detail-page__hero-secondary-button"
-                  loading={canceling}
-                  disabled={canceling || paying}
-                  onClick={handleCancelBooking}
-                >
-                  取消预约
-                </Button>
-              ) : null}
-              {showSurveyDepositAction ? (
-                <Button variant="primary" className="w-full" loading={paying} disabled={paying || canceling} onClick={handlePaySurveyDeposit}>
-                  {nextActionLabel}
-                </Button>
-              ) : nextActionLabel ? (
-                <Button variant="primary" className="w-full" disabled={canceling} onClick={handleViewProposal}>
-                  {nextActionLabel}
-                </Button>
-              ) : null}
+          <View className="booking-detail-page__summary-facts">
+            <View className="booking-detail-page__summary-fact">
+              <View className="booking-detail-page__summary-fact-icon">
+                <Icon name="calendar" size={20} color="#9CA3AF" />
+              </View>
+              <View className="booking-detail-page__summary-fact-main">
+                <Text className="booking-detail-page__summary-fact-label">预约时间</Text>
+                <Text className="booking-detail-page__summary-fact-value">{normalizeText(booking.preferredDate)}</Text>
+              </View>
             </View>
-          ) : null}
+            <View className="booking-detail-page__summary-fact">
+              <View className="booking-detail-page__summary-fact-icon">
+                <Icon name="location-pin" size={20} color="#9CA3AF" />
+              </View>
+              <View className="booking-detail-page__summary-fact-main">
+                <Text className="booking-detail-page__summary-fact-label">上门地址</Text>
+                <Text className="booking-detail-page__summary-fact-value">{normalizeText(booking.address)}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        <View className="booking-detail-page__card">
+          <Text className="booking-detail-page__card-title">预约进展</Text>
+          <View className="booking-detail-page__progress">
+            {[
+              { label: '提交预约', subLabel: formatServerDateTime(booking.createdAt, '--').replace(`${new Date().getFullYear()}-`, '') },
+              { label: '确认时间' },
+              { label: '上门量房' },
+              { label: '服务完成' },
+            ].map((step, index) => {
+              const stepNo = index + 1;
+              const state: BookingStepState =
+                progressStepIndex > stepNo ? 'done' : progressStepIndex === stepNo ? 'current' : 'upcoming';
+              return (
+                <View key={step.label} className="booking-detail-page__progress-item">
+                  <View className={`booking-detail-page__progress-node booking-detail-page__progress-node--${state}`}>
+                    <Text className={`booking-detail-page__progress-node-text booking-detail-page__progress-node-text--${state}`}>
+                      {state === 'done' ? '✓' : stepNo}
+                    </Text>
+                  </View>
+                  {stepNo < 4 ? (
+                    <View className={`booking-detail-page__progress-line booking-detail-page__progress-line--${progressStepIndex > stepNo ? 'done' : 'upcoming'}`} />
+                  ) : null}
+                  <Text className={`booking-detail-page__progress-label booking-detail-page__progress-label--${state}`}>{step.label}</Text>
+                  {step.subLabel ? <Text className="booking-detail-page__progress-sublabel">{step.subLabel}</Text> : null}
+                </View>
+              );
+            })}
+          </View>
         </View>
 
         {detail.provider ? (
-          <View className="booking-detail-page__panel">
-            <PanelTitle title="服务商信息" />
-            <View className="booking-detail-page__provider">
-              {detail.provider.avatar ? (
-                <Image
-                  className="booking-detail-page__provider-avatar"
-                  src={detail.provider.avatar}
-                  mode="aspectFill"
-                />
-              ) : (
-                <View className="booking-detail-page__provider-avatar booking-detail-page__provider-avatar--fallback">
-                  <Text className="booking-detail-page__provider-avatar-text">{providerInitial}</Text>
-                </View>
-              )}
+          <View className="booking-detail-page__card">
+            <Text className="booking-detail-page__card-title">服务方信息</Text>
+            <View className="booking-detail-page__provider-row" onClick={handleOpenProvider}>
               <View className="booking-detail-page__provider-main">
-                <View className="booking-detail-page__provider-head">
-                  <Text className="booking-detail-page__provider-name">
-                    {detail.provider.name || `服务商 #${detail.provider.id}`}
-                  </Text>
-                  <View className="booking-detail-page__provider-tags">
-                    {detail.provider.verified ? <Tag variant="success">已认证</Tag> : null}
-                    {detail.provider.rating ? <Tag variant="brand">{detail.provider.rating.toFixed(1)} 分</Tag> : null}
+                {canRenderProviderAvatar ? (
+                  <Image className="booking-detail-page__provider-avatar" src={providerAvatar} mode="aspectFill" />
+                ) : (
+                  <View className="booking-detail-page__provider-avatar booking-detail-page__provider-avatar--fallback">
+                    <Text className="booking-detail-page__provider-avatar-text">{providerInitial}</Text>
                   </View>
+                )}
+                <View className="booking-detail-page__provider-copy">
+                  <Text className="booking-detail-page__provider-name">{normalizeText(detail.provider.name)}</Text>
+                  <Text className="booking-detail-page__provider-meta">{providerSummary}</Text>
                 </View>
-                <Text className="booking-detail-page__provider-copy">
-                  {detail.provider.specialty || '平台已为你匹配对应服务商，后续会继续围绕量房与预算推进。'}
-                </Text>
+              </View>
+              <View className="booking-detail-page__provider-call">
+                <Icon name="phone" size={22} color="#111111" />
               </View>
             </View>
           </View>
         ) : null}
 
-        <View className="booking-detail-page__panel">
-          <PanelTitle title="预约信息" />
-          <View className="booking-detail-page__address-card">
-            <Text className="booking-detail-page__address-label">项目地址</Text>
-            <Text className="booking-detail-page__address-value">{booking.address || '-'}</Text>
+        <View className="booking-detail-page__card">
+          <Text className="booking-detail-page__card-title">预约信息</Text>
+          <View className="booking-detail-page__info-list">
+            {infoRows.map((row) => (
+              <View key={row.label} className="booking-detail-page__info-row">
+                <Text className="booking-detail-page__info-label">{row.label}</Text>
+                <Text className="booking-detail-page__info-value">{row.value}</Text>
+              </View>
+            ))}
           </View>
-          <View className="booking-detail-page__tile-grid">
-            <DetailTile label="房屋面积" value={booking.area ? `${booking.area} ㎡` : '-'} />
-            <DetailTile label="房屋户型" value={booking.houseLayout || '-'} />
-            <DetailTile label="装修类型" value={booking.renovationType || '-'} />
-            <DetailTile label="预算范围" value={booking.budgetRange || '-'} />
-            <DetailTile label="量房时间" value={preferredDateDisplay.primary} secondary={preferredDateDisplay.secondary} />
-            <DetailTile label="联系电话" value={booking.phone || '-'} />
-            {booking.notes ? <DetailTile label="备注需求" value={booking.notes} full /> : null}
-          </View>
-        </View>
-
-        <View className="booking-detail-page__panel booking-detail-page__panel--progress">
-          <PanelTitle title="预约进展" />
-          <ProgressItem
-            title="商家确认"
-            description={merchantConfirmMeta.description}
-            tagLabel={merchantConfirmMeta.label}
-            tagVariant={merchantConfirmMeta.variant}
-          />
-          <ProgressItem
-            title="量房费支付"
-            description={depositProgressMeta.description}
-            tagLabel={depositProgressMeta.label}
-            tagVariant={depositProgressMeta.variant}
-          />
-          <ProgressItem
-            title="量房记录"
-            description={showProgressSection ? getSiteSurveyDescription(detail.siteSurveySummary) : '支付量房费后，商家会安排量房并提交量房记录。'}
-            tagLabel={showProgressSection ? surveyStatus.label : '待推进'}
-            tagVariant={showProgressSection ? surveyStatus.variant : 'default'}
-          />
-          <ProgressItem
-            title="预算确认"
-            description={showProgressSection ? getBudgetDescription(detail.budgetConfirmSummary) : '量房记录确认后，商家会继续提交预算确认。'}
-            tagLabel={showProgressSection ? budgetStatus.label : '未开始'}
-            tagVariant={showProgressSection ? budgetStatus.variant : 'default'}
-          />
         </View>
       </View>
+
+      {showFooter ? (
+        <View className="booking-detail-page__footer">
+          {secondaryAction ? (
+            <View className="booking-detail-page__footer-button booking-detail-page__footer-button--secondary" onClick={handleSecondaryAction}>
+              <Text className="booking-detail-page__footer-button-text booking-detail-page__footer-button-text--secondary">{secondaryAction.label}</Text>
+            </View>
+          ) : null}
+          {primaryAction ? (
+            <View className="booking-detail-page__footer-button booking-detail-page__footer-button--primary" onClick={handlePrimaryAction}>
+              <Text className="booking-detail-page__footer-button-text booking-detail-page__footer-button-text--primary">
+                {actionLoading ? '处理中...' : primaryAction.label}
+              </Text>
+            </View>
+          ) : null}
+        </View>
+      ) : null}
     </View>
   );
 };

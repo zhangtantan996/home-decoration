@@ -24,7 +24,17 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 		&model.Booking{},
 		&model.Proposal{},
 		&model.Order{},
+		&model.Project{},
+		&model.BusinessFlow{},
 		&model.MerchantIncome{},
+		&model.QuoteList{},
+		&model.QuoteListItem{},
+		&model.QuoteInvitation{},
+		&model.QuoteSubmission{},
+		&model.QuoteSubmissionItem{},
+		&model.ChangeOrder{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -76,6 +86,32 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 		t.Fatalf("seed order2: %v", err)
 	}
 
+	project := model.Project{
+		Base:           model.Base{ID: 9001},
+		OwnerID:        userID,
+		ProposalID:     proposal2.ID,
+		ProviderID:     providerID,
+		Status:         model.ProjectStatusActive,
+		BusinessStatus: model.ProjectBusinessStatusConstructionQuoteConfirmed,
+		CurrentPhase:   "待监理协调开工",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+	flow := model.BusinessFlow{
+		Base:                      model.Base{ID: 9901},
+		SourceType:                model.BusinessFlowSourceBooking,
+		SourceID:                  2,
+		CustomerUserID:            userID,
+		DesignerProviderID:        providerID,
+		SelectedForemanProviderID: providerID,
+		ProjectID:                 project.ID,
+		CurrentStage:              model.BusinessFlowStageReadyToStart,
+	}
+	if err := db.Create(&flow).Error; err != nil {
+		t.Fatalf("seed business flow: %v", err)
+	}
+
 	incomes := []model.MerchantIncome{
 		{ProviderID: providerID, NetAmount: 1000, Status: 1},
 		{Base: model.Base{CreatedAt: oldDate, UpdatedAt: oldDate}, ProviderID: providerID, NetAmount: 500, Status: 1},
@@ -84,6 +120,57 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 		if err := db.Create(&income).Error; err != nil {
 			t.Fatalf("seed income: %v", err)
 		}
+	}
+	quoteList := model.QuoteList{Base: model.Base{ID: 7001}, Title: "施工报价待办", Status: model.QuoteListStatusPricingInProgress, Currency: "CNY"}
+	if err := db.Create(&quoteList).Error; err != nil {
+		t.Fatalf("seed quote list: %v", err)
+	}
+	if err := db.Create(&model.QuoteInvitation{QuoteListID: quoteList.ID, ProviderID: providerID, Status: model.QuoteInvitationStatusInvited}).Error; err != nil {
+		t.Fatalf("seed quote invitation: %v", err)
+	}
+	submission := model.QuoteSubmission{
+		Base:        model.Base{ID: 7101},
+		QuoteListID: quoteList.ID,
+		ProviderID:  providerID,
+		Status:      model.QuoteSubmissionStatusDraft,
+		TaskStatus:  model.QuoteListStatusPricingInProgress,
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("seed quote submission: %v", err)
+	}
+	quoteListItem := model.QuoteListItem{Base: model.Base{ID: 7201}, QuoteListID: quoteList.ID, Name: "水路改造", Unit: "m", Quantity: 10}
+	if err := db.Create(&quoteListItem).Error; err != nil {
+		t.Fatalf("seed quote list item: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmissionItem{
+		QuoteSubmissionID: submission.ID,
+		QuoteListItemID:   quoteListItem.ID,
+		MissingPriceFlag:  true,
+	}).Error; err != nil {
+		t.Fatalf("seed missing quote item: %v", err)
+	}
+	rejectedList := model.QuoteList{Base: model.Base{ID: 7002}, Title: "被驳回施工报价", Status: model.QuoteListStatusRejected, Currency: "CNY"}
+	if err := db.Create(&rejectedList).Error; err != nil {
+		t.Fatalf("seed rejected quote list: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmission{QuoteListID: rejectedList.ID, ProviderID: providerID, Status: model.QuoteSubmissionStatusSubmitted, TaskStatus: model.QuoteListStatusRejected}).Error; err != nil {
+		t.Fatalf("seed rejected quote submission: %v", err)
+	}
+	submittedToUserList := model.QuoteList{Base: model.Base{ID: 7003}, Title: "用户确认中报价", Status: model.QuoteListStatusSubmittedToUser, Currency: "CNY"}
+	if err := db.Create(&submittedToUserList).Error; err != nil {
+		t.Fatalf("seed submitted to user list: %v", err)
+	}
+	if err := db.Create(&model.QuoteSubmission{QuoteListID: submittedToUserList.ID, ProviderID: providerID, Status: model.QuoteSubmissionStatusSubmitted, TaskStatus: model.QuoteListStatusSubmittedToUser, SubmittedToUser: true}).Error; err != nil {
+		t.Fatalf("seed submitted to user quote submission: %v", err)
+	}
+	if err := db.Create(&model.ChangeOrder{ProjectID: project.ID, Status: model.ChangeOrderStatusPendingUserConfirm, AmountImpact: 350}).Error; err != nil {
+		t.Fatalf("seed change order: %v", err)
+	}
+	if err := db.Create(&model.SettlementOrder{ProjectID: project.ID, ProviderID: providerID, MerchantNetAmount: 1200, Status: model.SettlementStatusScheduled}).Error; err != nil {
+		t.Fatalf("seed settlement order: %v", err)
+	}
+	if err := db.Create(&model.PayoutOrder{ProviderID: providerID, Amount: 800, Status: model.PayoutStatusFailed}).Error; err != nil {
+		t.Fatalf("seed payout order: %v", err)
 	}
 
 	w := httptest.NewRecorder()
@@ -99,12 +186,20 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	}
 
 	var data struct {
-		TodayBookings    int64   `json:"todayBookings"`
-		PendingProposals int64   `json:"pendingProposals"`
-		ActiveProjects   int64   `json:"activeProjects"`
-		TotalRevenue     float64 `json:"totalRevenue"`
-		MonthRevenue     float64 `json:"monthRevenue"`
-		Bookings         struct {
+		TodayBookings             int64   `json:"todayBookings"`
+		PendingProposals          int64   `json:"pendingProposals"`
+		ActiveProjects            int64   `json:"activeProjects"`
+		TotalRevenue              float64 `json:"totalRevenue"`
+		MonthRevenue              float64 `json:"monthRevenue"`
+		PendingQuoteInvitations   int64   `json:"pendingQuoteInvitations"`
+		DraftQuoteSubmissions     int64   `json:"draftQuoteSubmissions"`
+		RejectedQuoteSubmissions  int64   `json:"rejectedQuoteSubmissions"`
+		SubmittedToUserQuotes     int64   `json:"submittedToUserQuotes"`
+		MissingPriceRequiredCount int64   `json:"missingPriceRequiredCount"`
+		PendingChangeOrders       int64   `json:"pendingChangeOrders"`
+		PendingSettlementAmount   float64 `json:"pendingSettlementAmount"`
+		FailedPayoutCount         int64   `json:"failedPayoutCount"`
+		Bookings                  struct {
 			Pending   int64 `json:"pending"`
 			Confirmed int64 `json:"confirmed"`
 		} `json:"bookings"`
@@ -136,6 +231,21 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	if data.MonthRevenue != 1000 {
 		t.Fatalf("monthRevenue mismatch: got=%v want=1000", data.MonthRevenue)
 	}
+	if data.PendingQuoteInvitations != 1 || data.DraftQuoteSubmissions != 1 || data.RejectedQuoteSubmissions != 1 || data.SubmittedToUserQuotes != 1 {
+		t.Fatalf("quote ERP counters mismatch: invitations=%d draft=%d rejected=%d submittedToUser=%d", data.PendingQuoteInvitations, data.DraftQuoteSubmissions, data.RejectedQuoteSubmissions, data.SubmittedToUserQuotes)
+	}
+	if data.MissingPriceRequiredCount != 1 {
+		t.Fatalf("missing price count mismatch: got=%d want=1", data.MissingPriceRequiredCount)
+	}
+	if data.PendingChangeOrders != 1 {
+		t.Fatalf("pending change orders mismatch: got=%d want=1", data.PendingChangeOrders)
+	}
+	if data.PendingSettlementAmount != 1200 {
+		t.Fatalf("pending settlement amount mismatch: got=%v want=1200", data.PendingSettlementAmount)
+	}
+	if data.FailedPayoutCount != 1 {
+		t.Fatalf("failed payout count mismatch: got=%d want=1", data.FailedPayoutCount)
+	}
 
 	if data.Bookings.Pending != 2 || data.Bookings.Confirmed != 1 {
 		t.Fatalf("bookings grouped mismatch: %+v", data.Bookings)
@@ -145,5 +255,161 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 	}
 	if data.Orders.Pending != 1 || data.Orders.Paid != 1 {
 		t.Fatalf("orders grouped mismatch: %+v", data.Orders)
+	}
+}
+
+func TestMerchantDashboardStats_ActiveProjectsIgnorePaidOrdersWithoutProject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Provider{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Order{},
+		&model.Project{},
+		&model.BusinessFlow{},
+		&model.MerchantIncome{},
+	); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	providerID := uint64(301)
+	userID := uint64(3001)
+
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000002", Nickname: "测试设计师"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{Base: model.Base{ID: providerID}, UserID: userID, ProviderType: 1, SubType: "designer", Status: 1}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	booking := model.Booking{Base: model.Base{ID: 11}, ProviderID: providerID, Status: 2}
+	if err := db.Create(&booking).Error; err != nil {
+		t.Fatalf("seed booking: %v", err)
+	}
+	proposal := model.Proposal{Base: model.Base{ID: 21}, BookingID: booking.ID, DesignerID: providerID, Status: 2}
+	if err := db.Create(&proposal).Error; err != nil {
+		t.Fatalf("seed proposal: %v", err)
+	}
+	order := model.Order{BookingID: booking.ID, OrderNo: "T-ORDER-3", Status: 1}
+	if err := db.Create(&order).Error; err != nil {
+		t.Fatalf("seed order: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/merchant/dashboard", bytes.NewReader(nil))
+	c.Set("providerId", providerID)
+
+	MerchantDashboardStats(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d, message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		ActiveProjects int64 `json:"activeProjects"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if data.ActiveProjects != 0 {
+		t.Fatalf("activeProjects mismatch: got=%d want=0", data.ActiveProjects)
+	}
+}
+
+func TestMerchantDashboardStats_CompanyConstructionProjectsCountSelectedSubject(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Provider{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Order{},
+		&model.Project{},
+		&model.BusinessFlow{},
+		&model.MerchantIncome{},
+	); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	designerProviderID := uint64(401)
+	companyProviderID := uint64(402)
+	userID := uint64(4001)
+
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800000003", Nickname: "测试装修公司"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{Base: model.Base{ID: designerProviderID}, ProviderType: 1, SubType: "designer", Status: 1, CompanyName: "设计师A"}).Error; err != nil {
+		t.Fatalf("seed designer provider: %v", err)
+	}
+	if err := db.Create(&model.Provider{Base: model.Base{ID: companyProviderID}, UserID: userID, ProviderType: 2, SubType: "company", Status: 1, CompanyName: "施工公司A"}).Error; err != nil {
+		t.Fatalf("seed company provider: %v", err)
+	}
+
+	project := model.Project{
+		Base:                   model.Base{ID: 9101},
+		OwnerID:                userID,
+		ProviderID:             companyProviderID,
+		ConstructionProviderID: companyProviderID,
+		Status:                 model.ProjectStatusActive,
+		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
+		CurrentPhase:           "待监理协调开工",
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	flow := model.BusinessFlow{
+		Base:                      model.Base{ID: 9902},
+		SourceType:                model.BusinessFlowSourceBooking,
+		SourceID:                  88,
+		CustomerUserID:            userID,
+		DesignerProviderID:        designerProviderID,
+		SelectedForemanProviderID: companyProviderID,
+		ProjectID:                 project.ID,
+		CurrentStage:              model.BusinessFlowStageReadyToStart,
+	}
+	if err := db.Create(&flow).Error; err != nil {
+		t.Fatalf("seed business flow: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/merchant/dashboard", bytes.NewReader(nil))
+	c.Set("providerId", companyProviderID)
+
+	MerchantDashboardStats(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d, message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		ActiveProjects int64 `json:"activeProjects"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if data.ActiveProjects != 1 {
+		t.Fatalf("activeProjects mismatch for company construction subject: got=%d want=1", data.ActiveProjects)
 	}
 }

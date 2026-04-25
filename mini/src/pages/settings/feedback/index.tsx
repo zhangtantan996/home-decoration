@@ -8,7 +8,7 @@ import SettingsLayout, { SettingsGroup } from '@/components/settings/SettingsLay
 import { useMountedRef } from '@/hooks/useMountedRef';
 import { submitUserFeedback } from '@/services/userSettings';
 import { uploadFile } from '@/services/uploads';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
 
 import './index.scss';
 
@@ -56,6 +56,9 @@ export default function FeedbackSettingsPage() {
         setImages((prev) => [...prev, ...uploaded].slice(0, 4));
       }
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       if (mountedRef.current) {
         showErrorToast(error, '图片上传失败');
       }

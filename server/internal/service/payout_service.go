@@ -2,6 +2,8 @@ package service
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -72,20 +74,29 @@ func (s *PayoutService) CreateSettlementPayoutTx(tx *gorm.DB, settlement *model.
 	if amount <= 0 {
 		return nil, errors.New("结算单金额无效")
 	}
+	outPayoutNo, err := generateOutPayoutNo(settlement.FundScene)
+	if err != nil {
+		return nil, err
+	}
 	scheduledAt := time.Now()
 	if settlement.DueAt != nil {
 		scheduledAt = *settlement.DueAt
 	}
+
+	// 生成幂等性键（防止重复出款）
+	idempotencyKey := generatePayoutIdempotencyKey(model.PayoutBizTypeSettlementOrder, settlement.ID, settlement.ProviderID)
+
 	payout, _, err := s.createOrReusePayoutOrderTx(tx, &model.PayoutOrder{
-		BizType:     model.PayoutBizTypeSettlementOrder,
-		BizID:       settlement.ID,
-		ProviderID:  settlement.ProviderID,
-		Amount:      amount,
-		Channel:     model.PayoutChannelCustody,
-		FundScene:   settlement.FundScene,
-		OutPayoutNo: generateOutPayoutNo(model.PayoutBizTypeSettlementOrder, settlement.ID),
-		Status:      model.PayoutStatusCreated,
-		ScheduledAt: &scheduledAt,
+		BizType:        model.PayoutBizTypeSettlementOrder,
+		BizID:          settlement.ID,
+		ProviderID:     settlement.ProviderID,
+		Amount:         amount,
+		Channel:        model.PayoutChannelCustody,
+		FundScene:      settlement.FundScene,
+		OutPayoutNo:    outPayoutNo,
+		Status:         model.PayoutStatusCreated,
+		ScheduledAt:    &scheduledAt,
+		IdempotencyKey: idempotencyKey,
 	})
 	return payout, err
 }
@@ -105,6 +116,10 @@ func (s *PayoutService) CreateMilestonePayoutScheduleTx(tx *gorm.DB, project *mo
 		return nil, nil, errors.New("项目未绑定施工服务方")
 	}
 
+	outPayoutNo, err := generateOutPayoutNo(model.FundSceneSettlementPayout)
+	if err != nil {
+		return nil, nil, err
+	}
 	payout, created, err := s.createOrReusePayoutOrderTx(tx, &model.PayoutOrder{
 		BizType:     model.PayoutBizTypeMilestoneRelease,
 		BizID:       milestone.ID,
@@ -112,7 +127,7 @@ func (s *PayoutService) CreateMilestonePayoutScheduleTx(tx *gorm.DB, project *mo
 		Amount:      normalizeAmount(milestone.Amount),
 		Channel:     model.PayoutChannelCustody,
 		FundScene:   model.FundSceneSettlementPayout,
-		OutPayoutNo: generateOutPayoutNo(model.PayoutBizTypeMilestoneRelease, milestone.ID),
+		OutPayoutNo: outPayoutNo,
 		Status:      model.PayoutStatusCreated,
 		ScheduledAt: &scheduledAt,
 	})
@@ -142,6 +157,10 @@ func (s *PayoutService) CreateDesignDeliverablePayoutScheduleTx(tx *gorm.DB, del
 	if amount <= 0 {
 		amount = normalizeAmount(order.TotalAmount - order.Discount)
 	}
+	outPayoutNo, err := generateOutPayoutNo(model.FundSceneSettlementPayout)
+	if err != nil {
+		return nil, nil, err
+	}
 	payout, created, err := s.createOrReusePayoutOrderTx(tx, &model.PayoutOrder{
 		BizType:     model.PayoutBizTypeDesignDeliverable,
 		BizID:       deliverable.ID,
@@ -149,7 +168,7 @@ func (s *PayoutService) CreateDesignDeliverablePayoutScheduleTx(tx *gorm.DB, del
 		Amount:      amount,
 		Channel:     model.PayoutChannelCustody,
 		FundScene:   model.FundSceneSettlementPayout,
-		OutPayoutNo: generateOutPayoutNo(model.PayoutBizTypeDesignDeliverable, deliverable.ID),
+		OutPayoutNo: outPayoutNo,
 		Status:      model.PayoutStatusCreated,
 		ScheduledAt: &scheduledAt,
 	})
@@ -172,6 +191,23 @@ func (s *PayoutService) createOrReusePayoutOrderTx(tx *gorm.DB, draft *model.Pay
 	if draft == nil {
 		return nil, false, errors.New("出款单不能为空")
 	}
+
+	// 优先使用幂等性键查询（防止重复出款）
+	if draft.IdempotencyKey != "" {
+		var existing model.PayoutOrder
+		err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("idempotency_key = ?", draft.IdempotencyKey).
+			First(&existing).Error
+		if err == nil {
+			// 幂等性键已存在，返回已有记录
+			return &existing, false, nil
+		}
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, false, err
+		}
+	}
+
+	// 降级到业务键查询
 	var existing model.PayoutOrder
 	err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
 		Where("biz_type = ? AND biz_id = ?", draft.BizType, draft.BizID).
@@ -193,7 +229,17 @@ func (s *PayoutService) createOrReusePayoutOrderTx(tx *gorm.DB, draft *model.Pay
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, false, err
 	}
+
+	// 创建新记录（数据库唯一约束会防止并发重复）
 	if err := tx.Create(draft).Error; err != nil {
+		// 检查是否是幂等性键冲突
+		if strings.Contains(err.Error(), "idempotency_key") || strings.Contains(err.Error(), "duplicate") {
+			// 重新查询已存在的记录
+			var retry model.PayoutOrder
+			if retryErr := tx.Where("idempotency_key = ?", draft.IdempotencyKey).First(&retry).Error; retryErr == nil {
+				return &retry, false, nil
+			}
+		}
 		return nil, false, err
 	}
 	return draft, true, nil
@@ -481,7 +527,7 @@ func (s *PayoutService) applySettlementPayoutTx(tx *gorm.DB, payout *model.Payou
 	if settlement.BizType == model.PayoutBizTypeMilestoneRelease {
 		if err := tx.Model(&model.Milestone{}).Where("id = ?", settlement.BizID).Updates(map[string]any{
 			"status":      model.MilestoneStatusPaid,
-			"paid_at":     payout.PaidAt,
+			"paid_at":     gorm.Expr("COALESCE(paid_at, ?)", payout.PaidAt),
 			"released_at": payout.PaidAt,
 		}).Error; err != nil {
 			return err
@@ -571,7 +617,7 @@ func (s *PayoutService) applyMilestonePayoutTx(tx *gorm.DB, payout *model.Payout
 	}
 	if err := tx.Model(&milestone).Updates(map[string]any{
 		"status":      model.MilestoneStatusPaid,
-		"paid_at":     payout.PaidAt,
+		"paid_at":     gorm.Expr("COALESCE(paid_at, ?)", payout.PaidAt),
 		"released_at": payout.PaidAt,
 	}).Error; err != nil {
 		return err
@@ -772,6 +818,10 @@ func calculateProjectedIncomeByTypeTx(tx *gorm.DB, incomeType string, amount flo
 	return platformFee, netAmount
 }
 
-func generateOutPayoutNo(bizType string, bizID uint64) string {
-	return fmt.Sprintf("PO-%s-%d-%d", strings.ToUpper(bizType), bizID, time.Now().UnixNano())
+// generatePayoutIdempotencyKey 生成出款幂等性键（防止重复出款）
+// 格式: SHA256(bizType:bizID:providerID)
+func generatePayoutIdempotencyKey(bizType string, bizID, providerID uint64) string {
+	data := fmt.Sprintf("%s:%d:%d", bizType, bizID, providerID)
+	hash := sha256.Sum256([]byte(data))
+	return hex.EncodeToString(hash[:])
 }

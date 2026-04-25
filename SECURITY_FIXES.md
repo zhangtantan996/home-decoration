@@ -24,7 +24,7 @@
 **使用方法**：
 ```bash
 # 设置环境变量
-export JWT_SECRET="TE5zufBZn5hgu6vryJs8ROC0Y9jm49HotZPFmN+qv1X/aUYK2TEkj61E+1rRTUtwehbOD1ZHLqpRxpbEXrtjbw=="
+export JWT_SECRET="REPLACE_WITH_YOUR_GENERATED_SECRET_HERE"
 
 # 或者创建 .env 文件
 cp server/.env.example server/.env
@@ -172,11 +172,11 @@ admin.DELETE("/users/:id",
 **开发环境**：
 ```bash
 # Linux/Mac
-export JWT_SECRET="TE5zufBZn5hgu6vryJs8ROC0Y9jm49HotZPFmN+qv1X/aUYK2TEkj61E+1rRTUtwehbOD1ZHLqpRxpbEXrtjbw=="
+export JWT_SECRET="REPLACE_WITH_YOUR_GENERATED_SECRET_HERE"
 export APP_ENV=local
 
 # Windows PowerShell
-$env:JWT_SECRET="TE5zufBZn5hgu6vryJs8ROC0Y9jm49HotZPFmN+qv1X/aUYK2TEkj61E+1rRTUtwehbOD1ZHLqpRxpbEXrtjbw=="
+$env:JWT_SECRET="REPLACE_WITH_YOUR_GENERATED_SECRET_HERE"
 $env:APP_ENV=local
 ```
 

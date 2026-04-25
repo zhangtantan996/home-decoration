@@ -39,10 +39,9 @@ export default function WechatBindPhonePage() {
     try {
       const res = await sendLoginCode(phone.trim());
       if (res.debugCode) {
-        Taro.showToast({ title: `测试验证码: ${res.debugCode}`, icon: 'none' });
-      } else {
-        Taro.showToast({ title: '验证码已发送', icon: 'success' });
+        console.debug(`[DEV] 绑定手机号验证码: ${res.debugCode}`);
       }
+      Taro.showToast({ title: '验证码已发送', icon: 'success' });
     } catch (err) {
       showErrorToast(err, '发送失败');
     } finally {

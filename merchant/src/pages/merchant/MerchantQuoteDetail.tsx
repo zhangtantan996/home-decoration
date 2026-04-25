@@ -1,8 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ArrowLeftOutlined, ExclamationCircleOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ArrowLeftOutlined, ExclamationCircleOutlined, InfoCircleOutlined, EditOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import {
     Button,
-    Card,
     Descriptions,
     Input,
     InputNumber,
@@ -13,6 +12,8 @@ import {
     Tag,
     Typography,
     Alert,
+    Drawer,
+    Tooltip,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -26,7 +27,12 @@ import {
 import { BUSINESS_ACTION_LABELS, BUSINESS_STAGE_META, QUOTE_LIST_STATUS_META } from '../../constants/statuses';
 import { normalizePriceCent, normalizePriceYuan, sharedForemanPriceInputProps } from '../../utils/priceInput';
 
-const { Title, Text } = Typography;
+import MerchantPageShell from '../../components/MerchantPageShell';
+import MerchantPageHeader from '../../components/MerchantPageHeader';
+import MerchantContentPanel from '../../components/MerchantContentPanel';
+import MerchantSectionCard from '../../components/MerchantSectionCard';
+
+const { Text } = Typography;
 
 type EditableRow = QuoteListItem & {
     generatedUnitPriceCent?: number;
@@ -34,9 +40,18 @@ type EditableRow = QuoteListItem & {
     amountCent?: number;
     adjustedFlag?: boolean;
     missingPriceFlag?: boolean;
-    minChargeAppliedFlag?: boolean;
     missingMappingFlag?: boolean;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
     remark?: string;
+};
+
+type QuoteReviewGroup = {
+    key: 'auto' | 'missing' | 'deviation';
+    title: string;
+    tone: 'success' | 'warning' | 'info';
+    description: string;
+    rows: EditableRow[];
 };
 
 const statusLabel = (status: string): { text: string; color: string } => {
@@ -61,9 +76,67 @@ const computeAmountCent = (quantity: number, unitPriceCent?: number): number => 
     return Math.round(q * up);
 };
 
+const getQuotedQuantity = (row: EditableRow): number => (
+    Number(row.baselineQuantity ?? row.quantity ?? 0) // Locked to baseline in this design
+);
+
+const requiresDeviationReason = (row: EditableRow): boolean => {
+    const generatedUnitPriceCent = row.generatedUnitPriceCent || 0;
+    const currentUnitPriceCent = row.unitPriceCent || 0;
+    const unitPriceAdjusted = generatedUnitPriceCent > 0
+        && currentUnitPriceCent > 0
+        && generatedUnitPriceCent !== currentUnitPriceCent;
+    const filledMissingPrice = Boolean(row.missingPriceFlag) && currentUnitPriceCent > 0;
+    return unitPriceAdjusted || filledMissingPrice;
+};
+
 const formatCentToYuanText = (cent?: number): string => {
     if (!cent || cent <= 0) return '-';
     return `¥${(cent / 100).toFixed(2)}`;
+};
+
+const renderDiffPrice = (diffCent: number) => {
+    if (diffCent === 0) return <Text type="secondary">-</Text>;
+    const sign = diffCent > 0 ? '+' : '';
+    const color = diffCent > 0 ? '#cf1322' : '#389e0d';
+    return (
+        <span style={{ color, fontWeight: 500 }}>
+            {sign}¥{(diffCent / 100).toFixed(2)}
+        </span>
+    );
+};
+
+const sourceTypeLabel = (value?: string): string => {
+    switch (String(value || '').toLowerCase()) {
+        case 'proposal':
+            return '正式方案';
+        case 'proposal_internal_draft':
+            return '方案内部草稿';
+        case 'admin_imported':
+            return 'Admin 导入';
+        case 'legacy_quote_pk_rebuild':
+            return 'legacy quote-pk 重建';
+        default:
+            return value || '未标记';
+    }
+};
+
+const financeStatusLabel = (value?: string) => {
+    switch (String(value || '').toLowerCase()) {
+        case 'scheduled':
+            return '已排期';
+        case 'processing':
+            return '处理中';
+        case 'paid':
+        case 'completed':
+            return '已完成';
+        case 'failed':
+            return '失败待处理';
+        case 'pending':
+            return '待处理';
+        default:
+            return value || '待同步';
+    }
 };
 
 const isRequiredItem = (item: QuoteListItem): boolean => {
@@ -81,6 +154,50 @@ const isRequiredItem = (item: QuoteListItem): boolean => {
     }
 };
 
+const groupQuoteReviewRows = (rows: EditableRow[]): QuoteReviewGroup[] => {
+    const missing = rows.filter((row) =>
+        row.missingMappingFlag
+        || row.missingPriceFlag
+        || (row.unitPriceCent || 0) <= 0,
+    );
+    const deviation = rows.filter((row) =>
+        !missing.some((missingRow) => missingRow.id === row.id)
+        && (
+            row.deviationFlag
+            || row.adjustedFlag
+            || requiresDeviationReason(row)
+        ),
+    );
+    const auto = rows.filter((row) =>
+        !missing.some((missingRow) => missingRow.id === row.id)
+        && !deviation.some((deviationRow) => deviationRow.id === row.id),
+    );
+
+    return [
+        {
+            key: 'missing',
+            title: '缺价待补项',
+            tone: 'warning',
+            description: '这些条目还不能形成正式报价，需要先补单价或补标准映射。',
+            rows: missing,
+        },
+        {
+            key: 'deviation',
+            title: '调价偏离项',
+            tone: 'info',
+            description: '这些条目被调整了价格库原价，提交前需要写清原因。',
+            rows: deviation,
+        },
+        {
+            key: 'auto',
+            title: '价格库指导项',
+            tone: 'success',
+            description: '系统已按您的价格库生成原始底价，如无现场特殊情况确认无误后可直接提交。',
+            rows: auto,
+        },
+    ];
+};
+
 const MerchantQuoteDetail: React.FC = () => {
     const navigate = useNavigate();
     const params = useParams();
@@ -90,12 +207,17 @@ const MerchantQuoteDetail: React.FC = () => {
     const [saving, setSaving] = useState(false);
     const [detail, setDetail] = useState<MerchantQuoteListDetail | null>(null);
     const [rows, setRows] = useState<EditableRow[]>([]);
+    
+    // UI State for Reference Drawer
+    const [drawerVisible, setDrawerVisible] = useState(false);
 
     const canEdit = useMemo(() => {
         const status = detail?.quoteList?.status || '';
+        const submissionStatus = detail?.submission?.status || '';
         const canSubmitQuote = (detail?.availableActions || []).includes('submit_construction_quote');
-        return canSubmitQuote && ['quoting', 'pricing_in_progress'].includes(String(status).toLowerCase());
-    }, [detail?.availableActions, detail?.quoteList?.status]);
+        const isNotSubmitted = String(submissionStatus).toLowerCase() !== 'submitted';
+        return canSubmitQuote && ['quoting', 'pricing_in_progress'].includes(String(status).toLowerCase()) && isNotSubmitted;
+    }, [detail?.availableActions, detail?.quoteList?.status, detail?.submission?.status]);
 
     const load = async () => {
         if (!Number.isFinite(quoteListId) || quoteListId <= 0) {
@@ -116,17 +238,22 @@ const MerchantQuoteDetail: React.FC = () => {
 
             const nextRows: EditableRow[] = (data.items || []).map((item) => {
                 const matched = submissionItems.get(item.id);
+                const baselineQuantity = item.baselineQuantity ?? item.quantity;
+                const quotedQuantity = baselineQuantity;
                 const unitPriceCent = matched?.unitPriceCent;
-                const amountCent = matched?.amountCent ?? computeAmountCent(item.quantity, unitPriceCent);
+                const amountCent = matched?.amountCent ?? computeAmountCent(quotedQuantity, unitPriceCent);
                 return {
                     ...item,
-                    generatedUnitPriceCent: matched?.generatedUnitPriceCent,
+                    baselineQuantity,
+                    quotedQuantity: baselineQuantity,
+                    generatedUnitPriceCent: matched?.generatedUnitPriceCent ?? matched?.unitPriceCent,
                     unitPriceCent,
                     amountCent,
                     adjustedFlag: matched?.adjustedFlag,
                     missingPriceFlag: matched?.missingPriceFlag,
-                    minChargeAppliedFlag: matched?.minChargeAppliedFlag,
                     missingMappingFlag: matched?.missingMappingFlag ?? item.missingMappingFlag,
+                    quantityChangeReason: matched?.quantityChangeReason || '',
+                    deviationFlag: matched?.deviationFlag,
                     remark: matched?.remark || '',
                 };
             });
@@ -143,17 +270,38 @@ const MerchantQuoteDetail: React.FC = () => {
     }, [quoteListId]);
 
     const totalCent = useMemo(() => rows.reduce((sum, row) => sum + (row.amountCent || 0), 0), [rows]);
+    const totalGeneratedCent = useMemo(() => rows.reduce((sum, row) => sum + computeAmountCent(getQuotedQuantity(row), row.generatedUnitPriceCent), 0), [rows]);
+    const overallDiffCent = totalCent - totalGeneratedCent;
+    
+    // Grouping should re-calculate dynamic deviation based on the user's on-the-fly local edits.
+    const reviewGroups = useMemo(() => groupQuoteReviewRows(rows), [rows]);
 
     const buildPayloadItems = (): QuoteSubmissionItem[] => rows
         .map((row) => ({
             quoteListItemId: row.id,
             unitPriceCent: row.unitPriceCent,
+            quotedQuantity: getQuotedQuantity(row),
+            quantityChangeReason: row.quantityChangeReason?.trim() || undefined,
             remark: row.remark?.trim() || undefined,
         }))
-        .filter((item) => (item.unitPriceCent || 0) > 0 || !!item.remark);
+        .filter((item) => {
+            return (item.unitPriceCent || 0) > 0
+                || !!item.remark
+                || !!item.quantityChangeReason;
+        });
+
+    const validateSubmissionRows = (): boolean => {
+        const invalidRows = rows.filter((row) => requiresDeviationReason(row) && !row.quantityChangeReason?.trim());
+        if (invalidRows.length === 0) {
+            return true;
+        }
+        message.error(`以下条目存在单价调整但未填写调整原因：${invalidRows.map((row) => row.name).join('、')}`);
+        return false;
+    };
 
     const saveDraft = async () => {
         if (!detail) return;
+        if (!validateSubmissionRows()) return;
         try {
             setSaving(true);
             const items = buildPayloadItems();
@@ -174,6 +322,7 @@ const MerchantQuoteDetail: React.FC = () => {
 
     const submit = async () => {
         if (!detail) return;
+        if (!validateSubmissionRows()) return;
         Modal.confirm({
             title: '确认提交报价',
             icon: <ExclamationCircleOutlined />,
@@ -204,51 +353,57 @@ const MerchantQuoteDetail: React.FC = () => {
 
     const columns: ColumnsType<EditableRow> = useMemo(() => [
         {
-            title: '类目',
-            dataIndex: 'categoryL1',
-            key: 'categoryL1',
-            width: 110,
-            render: (value?: string) => value || '-',
-        },
-        {
-            title: '项目名称',
+            title: '项目与结算算量',
             dataIndex: 'name',
             key: 'name',
-            render: (value: string, record) => (
-                <Space direction="vertical" size={2}>
-                    <Space size={8} wrap>
+            render: (value: string, record) => {
+                const quantityStr = Number.isFinite(record.baselineQuantity) ? `${record.baselineQuantity}${record.unit || ''}` : '-';
+                return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <Text strong>{value}</Text>
-                        {isRequiredItem(record) && <Tag color="red">必填</Tag>}
-                    </Space>
-                    <Text type="secondary" style={{ fontSize: 12 }}>
-                        {record.pricingNote || ''}
-                    </Text>
-                </Space>
+                        <Text type="secondary" style={{ whiteSpace: 'nowrap', fontSize: 13 }}>
+                            ({quantityStr}{record.categoryL1 ? ` / ${record.categoryL1}` : ''})
+                        </Text>
+                        {isRequiredItem(record) && <Tag color="red" style={{ margin: 0 }}>必填</Tag>}
+                    </div>
+                );
+            },
+        },
+        {
+            title: '价格库原价',
+            dataIndex: 'generatedUnitPriceCent',
+            key: 'generatedUnitPriceCent',
+            width: 100,
+            render: (value?: number) => (
+                <Text type="secondary">{formatCentToYuanText(value)}</Text>
             ),
         },
         {
-            title: '单位',
-            dataIndex: 'unit',
-            key: 'unit',
-            width: 70,
-            render: (value: string) => value || '-',
+            title: '原基准小计',
+            key: 'generatedAmountCent',
+            width: 100,
+            render: (_: unknown, record) => {
+                const baseAmount = computeAmountCent(getQuotedQuantity(record), record.generatedUnitPriceCent);
+                return <Text type="secondary">{formatCentToYuanText(baseAmount)}</Text>;
+            },
         },
         {
-            title: '数量',
-            dataIndex: 'quantity',
-            key: 'quantity',
-            width: 90,
-            render: (value: number) => Number.isFinite(value) ? value : '-',
-        },
-        {
-            title: '单价(元)',
+            title: (
+                <Space size={4}>
+                    <span>手动调价</span>
+                    <Tooltip title="基于您的价格库基础算出的指导价。若因现场情况或工艺变更需要修改价格，请在此重新输入单据成本，然后填写右侧改价调偏原因。">
+                        <EditOutlined style={{ color: '#0958d9' }} />
+                    </Tooltip>
+                </Space>
+            ),
             dataIndex: 'unitPriceCent',
             key: 'unitPriceCent',
-            width: 120,
+            width: 130,
             render: (_: unknown, record) => (
                 <InputNumber
                     {...sharedForemanPriceInputProps}
-                    style={{ width: '100%' }}
+                    placeholder={canEdit ? "调整价格" : "-"}
+                    style={{ width: '100%', backgroundColor: canEdit ? '#f8fbfc' : undefined, borderColor: canEdit ? '#bae0ff' : undefined, fontWeight: 500 }}
                     disabled={!canEdit}
                     value={centToYuan(record.unitPriceCent)}
                     onChange={(value) => {
@@ -256,7 +411,7 @@ const MerchantQuoteDetail: React.FC = () => {
                         setRows((prev) => prev.map((row) => {
                             if (row.id !== record.id) return row;
                             const unitPriceCent = nextCent;
-                            const amountCent = computeAmountCent(row.quantity, unitPriceCent);
+                            const amountCent = computeAmountCent(getQuotedQuantity(row), unitPriceCent);
                             return { ...row, unitPriceCent, amountCent };
                         }));
                     }}
@@ -266,7 +421,7 @@ const MerchantQuoteDetail: React.FC = () => {
                         setRows((prev) => prev.map((row) => {
                             if (row.id !== record.id) return row;
                             const unitPriceCent = nextCent;
-                            const amountCent = computeAmountCent(row.quantity, unitPriceCent);
+                            const amountCent = computeAmountCent(getQuotedQuantity(row), unitPriceCent);
                             return { ...row, unitPriceCent, amountCent };
                         }));
                     }}
@@ -274,74 +429,165 @@ const MerchantQuoteDetail: React.FC = () => {
             ),
         },
         {
-            title: '小计(元)',
+            title: '调整后小计',
             dataIndex: 'amountCent',
             key: 'amountCent',
-            width: 120,
-            render: (value?: number) => formatCentToYuanText(value),
+            width: 110,
+            render: (value: number | undefined) => <Text strong>{formatCentToYuanText(value)}</Text>,
         },
         {
-            title: '备注',
-            dataIndex: 'remark',
-            key: 'remark',
-            width: 220,
+            title: '调价差额',
+            key: 'diffCent',
+            width: 100,
+            render: (_: unknown, record) => {
+                const baseAmount = computeAmountCent(getQuotedQuantity(record), record.generatedUnitPriceCent);
+                const currentAmount = record.amountCent || 0;
+                return renderDiffPrice(currentAmount - baseAmount);
+            },
+        },
+        {
+            title: '改价调偏原因',
+            dataIndex: 'quantityChangeReason',
+            key: 'quantityChangeReason',
+            width: 180,
             render: (_: unknown, record) => (
                 <Input
-                    placeholder={canEdit ? '可选' : '-'}
+                    placeholder={canEdit ? '如有调价请填原因' : '-'}
                     disabled={!canEdit}
-                    value={record.remark}
+                    value={record.quantityChangeReason}
+                    style={{ 
+                        borderColor: requiresDeviationReason(record) && !record.quantityChangeReason?.trim() && canEdit ? '#ff4d4f' : undefined 
+                    }}
                     onChange={(e) => {
                         const next = e.target.value;
-                        setRows((prev) => prev.map((row) => row.id === record.id ? { ...row, remark: next } : row));
+                        setRows((prev) => prev.map((row) => row.id === record.id ? { ...row, quantityChangeReason: next } : row));
                     }}
                 />
             ),
         },
         {
-            title: '系统标记',
-            key: 'flags',
-            width: 180,
+            title: '备注(可选)',
+            dataIndex: 'remark',
+            key: 'remark',
+            width: 140,
             render: (_: unknown, record) => (
-                <Space wrap>
-                    {record.missingMappingFlag && <Tag color="red">缺标准映射</Tag>}
-                    {record.missingPriceFlag && <Tag color="orange">缺工长价格</Tag>}
-                    {record.minChargeAppliedFlag && <Tag color="blue">启用起步价</Tag>}
-                    {record.adjustedFlag && <Tag color="green">已人工调整</Tag>}
-                </Space>
+                canEdit ? (
+                    <Input
+                        placeholder="补充备注"
+                        value={record.remark}
+                        style={{ width: '100%' }}
+                        onChange={(e) => {
+                            const next = e.target.value;
+                            setRows((prev) => prev.map((row) => row.id === record.id ? { ...row, remark: next } : row));
+                        }}
+                    />
+                ) : record.remark ? <Text type="secondary">{record.remark}</Text> : <Text type="secondary">-</Text>
             ),
         },
-    ], [canEdit]);
+        {
+            title: '状态标记',
+            key: 'flags',
+            width: 120,
+            render: (_: unknown, record) => {
+                const hasTags = record.missingMappingFlag || record.missingPriceFlag || requiresDeviationReason(record);
+                if (!hasTags) return <Text type="secondary">-</Text>;
+                return (
+                    <Space size={4} wrap>
+                        {record.missingMappingFlag && <Tag color="red" style={{ margin: 0 }}>无映射</Tag>}
+                        {record.missingPriceFlag && <Tag color="orange" style={{ margin: 0 }}>缺底价</Tag>}
+                        {requiresDeviationReason(record) && <Tag color="blue" style={{ margin: 0 }}>已改价</Tag>}
+                    </Space>
+                );
+            },
+        },
+    ], [canEdit, rows]);
 
     const quoteListStatus = detail?.quoteList?.status || '';
     const quoteStatusTag = statusLabel(quoteListStatus);
     const businessStageTag = businessStageLabel(detail?.businessStage);
-    const submissionStatus = statusLabel(detail?.submission?.status || '-').text;
-    const generationStatus = detail?.submission?.generationStatus || '-';
-    const invitationStatus = detail?.invitation?.status || '-';
-    const showResubmitHint = canEdit && String(detail?.submission?.status || '').toLowerCase() === 'submitted';
+
+    const hasMissingOrRequired = rows.some((row) => row.missingMappingFlag || row.missingPriceFlag || isRequiredItem(row));
+    
+    // Aggregated Notices
+    const renderNotices = () => {
+        if (!detail) return null;
+        const notices = [];
+
+        if (detail.flowSummary) {
+            notices.push(
+                <Alert
+                    key="flow-summary"
+                    type={detail.businessStage === 'completed' || detail.businessStage === 'archived' ? 'success' : 'info'}
+                    showIcon
+                    message={detail.availableActions?.length
+                        ? `${detail.flowSummary}（当前待处理事件：${detail.availableActions.map((action) => actionLabel(action)).join('、')}）`
+                        : detail.flowSummary}
+                    style={{ padding: '6px 12px' }}
+                />
+            );
+        }
+
+        if (!canEdit) {
+            const isSubmitted = String(detail?.submission?.status || '').toLowerCase() === 'submitted';
+            const whyText = isSubmitted
+                ? '您已提交报价款项，系统正在等待用户进行最终确认，当前不可修改。'
+                : quoteListStatus === 'submitted_to_user'
+                    ? '该报价已发送给用户，如需改价请联系平台发起重报价。'
+                    : quoteListStatus === 'user_confirmed' || quoteListStatus === 'awarded' || quoteListStatus === 'locked'
+                        ? '该报价已锁定，后续金额变化只能走项目变更单。'
+                        : `当前清单状态为 ${quoteListStatus || '-'}，不可编辑。`;
+            notices.push(<Alert key="readonly" type="warning" showIcon message={`当前为只读状态：${whyText}`} style={{ padding: '6px 12px' }} />);
+        }
+
+        if (hasMissingOrRequired) {
+            notices.push(<Alert key="missing" type="warning" showIcon message="必须补充信息：存在缺失映射、缺价格的条目或必填项，请完善后提交" style={{ padding: '6px 12px' }} />);
+        }
+
+        if (detail.submissionHealth) {
+            notices.push(
+                <Alert
+                    key="submission-health"
+                    type={detail.submissionHealth.canSubmit ? 'success' : 'warning'}
+                    showIcon
+                    message={`作业健康：缺价 ${detail.submissionHealth.missingPriceCount || 0} 项，偏差 ${detail.submissionHealth.deviationItemCount || 0} 项，平台复核 ${detail.submissionHealth.platformReviewStatus || '待同步'}`}
+                    description={detail.submissionHealth.blockingReasons?.length ? detail.submissionHealth.blockingReasons.join('；') : detail.submissionHealth.lastChangeReason || '当前无额外阻塞'}
+                    style={{ padding: '6px 12px' }}
+                />,
+            );
+        }
+
+        if (detail.paymentPlanSummary?.length) {
+            notices.push(<Alert key="payment" type="success" showIcon message={`将生成 ${detail.paymentPlanSummary.length} 笔支付计划，首笔为 ${detail.paymentPlanSummary[0]?.name || '首付款'}`} style={{ padding: '6px 12px' }} />);
+        }
+        
+        if (notices.length === 0) return null;
+
+        return (
+            <div style={{ display: 'grid', gap: 8, marginBottom: 16 }}>
+                {notices}
+            </div>
+        );
+    };
 
     return (
-        <div style={{ maxWidth: 1280, margin: '0 auto' }}>
-            <Card style={{ marginBottom: 16 }}>
-                <Space align="center" style={{ width: '100%', justifyContent: 'space-between' }}>
-                    <Space>
-                        <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/quote-lists')}>
-                            返回
-                        </Button>
-                        <div>
-                            <Title level={4} style={{ margin: 0 }}>
-                                {detail?.quoteList?.title || `报价清单 #${quoteListId}`}
-                            </Title>
-                            <Space size={8} style={{ marginTop: 4 }}>
-                                <Tag color={quoteStatusTag.color}>{quoteStatusTag.text}</Tag>
-                                {detail?.businessStage ? <Tag color={businessStageTag.color}>{businessStageTag.text}</Tag> : null}
-                                <Text type="secondary">合计: {formatCentToYuanText(totalCent)}</Text>
-                            </Space>
-                        </div>
+        <MerchantPageShell fullWidth>
+            <MerchantPageHeader
+                title={
+                    <Space size={12}>
+                        <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/quote-lists')} style={{ padding: 0 }} />
+                        <span>{detail?.quoteList?.title || `报价要求 #${quoteListId}`}</span>
                     </Space>
+                }
+                meta={
                     <Space>
-                        <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-                            刷新
+                        <Tag color={quoteStatusTag.color} key="status">{quoteStatusTag.text}</Tag>
+                        {detail?.businessStage ? <Tag color={businessStageTag.color} key="stage">{businessStageTag.text}</Tag> : null}
+                    </Space>
+                }
+                extra={(
+                    <Space>
+                        <Button icon={<InfoCircleOutlined />} onClick={() => setDrawerVisible(true)}>
+                            基线详情
                         </Button>
                         {detail?.quoteList?.projectId ? (
                             <Button onClick={() => navigate(`/projects/${detail.quoteList.projectId}`)}>
@@ -349,94 +595,294 @@ const MerchantQuoteDetail: React.FC = () => {
                             </Button>
                         ) : null}
                         <Button onClick={saveDraft} loading={saving} disabled={!canEdit}>
-                            保存草稿
+                            保存进度
                         </Button>
                         <Button type="primary" onClick={submit} loading={saving} disabled={!canEdit}>
                             提交报价
                         </Button>
                     </Space>
-                </Space>
-            </Card>
-
-            <Card style={{ marginBottom: 16 }} loading={loading}>
-                {detail?.flowSummary ? (
-                    <Alert
-                        type={detail.businessStage === 'completed' || detail.businessStage === 'archived' ? 'success' : 'info'}
-                        showIcon
-                        style={{ marginBottom: 16 }}
-                        message={detail.flowSummary}
-                        description={detail.availableActions?.length
-                            ? `当前推进动作：${detail.availableActions.map((action) => actionLabel(action)).join('、')}`
-                            : '当前没有待推进动作'}
-                    />
-                ) : null}
-                <Descriptions column={3} size="small">
-                    <Descriptions.Item label="清单状态">{quoteStatusTag.text}</Descriptions.Item>
-                    <Descriptions.Item label="闭环阶段">{businessStageTag.text}</Descriptions.Item>
-                    <Descriptions.Item label="我的报价状态">{submissionStatus}</Descriptions.Item>
-                    <Descriptions.Item label="草稿生成状态">{generationStatus}</Descriptions.Item>
-                    <Descriptions.Item label="邀请状态">{invitationStatus}</Descriptions.Item>
-                    <Descriptions.Item label="截止时间">
-                        {detail?.quoteList?.deadlineAt ? detail.quoteList.deadlineAt.replace('T', ' ').replace('Z', '') : '-'}
-                    </Descriptions.Item>
-                    <Descriptions.Item label="币种">{detail?.quoteList?.currency || 'CNY'}</Descriptions.Item>
-                    <Descriptions.Item label="当前合计">{formatCentToYuanText(totalCent)}</Descriptions.Item>
-                </Descriptions>
-                {!canEdit && (
-                    <div style={{ marginTop: 12 }}>
-                        <Text type="secondary">
-                            {quoteListStatus === 'submitted_to_user'
-                                ? '该报价已发送给用户，如需改价请联系平台发起重报价。'
-                                : quoteListStatus === 'user_confirmed' || quoteListStatus === 'awarded' || quoteListStatus === 'locked'
-                                    ? '该报价已锁定，如需调整请联系平台发起变更单或重报价。'
-                                    : `当前清单状态为 ${quoteListStatus || '-'}，不可编辑报价。`}
-                        </Text>
+                )}
+            >
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '32px 48px', marginTop: 16, background: '#f8fafc', padding: '16px 24px', borderRadius: 12, border: '1px solid #e2e8f0' }}>
+                    <div>
+                        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>价格库原始总计</div>
+                        <div style={{ fontSize: 20, fontWeight: 500, color: '#94a3b8', textDecoration: 'line-through' }}>{formatCentToYuanText(totalGeneratedCent)}</div>
                     </div>
-                )}
-                {showResubmitHint && (
-                    <Alert
-                        type="info"
-                        showIcon
-                        style={{ marginTop: 16 }}
-                        message="你已正式提交过一次报价"
-                        description="在平台将报价发送给用户前，你仍可继续修改并重新提交。系统会保留每次改价的版本留痕。"
-                    />
-                )}
-                {rows.some((row) => row.missingMappingFlag || row.missingPriceFlag) && (
-                    <Alert
-                        type="warning"
-                        showIcon
-                        style={{ marginTop: 16 }}
-                        message="存在缺失映射或缺失价格的条目"
-                        description="这类条目不会静默吞掉；请补充价格或联系平台整理标准项映射后再提交正式报价。"
-                    />
-                )}
-                {rows.some((row) => isRequiredItem(row)) && (
-                    <Alert
-                        type="info"
-                        showIcon
-                        style={{ marginTop: 16 }}
-                        message="存在必填报价项"
-                        description="标记为“必填”的施工项必须填写单价后才能提交报价。"
-                    />
-                )}
-            </Card>
+                    <div>
+                        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>本次提交总报价</div>
+                        <div style={{ fontSize: 28, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>{formatCentToYuanText(totalCent)}</div>
+                    </div>
+                    <div>
+                        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>合计总涨跌差额</div>
+                        <div style={{ fontSize: 24, fontWeight: 600, lineHeight: 1 }}>{overallDiffCent !== 0 ? renderDiffPrice(overallDiffCent) : <Text type="secondary">-</Text>}</div>
+                    </div>
+                    <div style={{ marginLeft: 'auto', textAlign: 'right' }}>
+                        <div style={{ fontSize: 13, color: '#64748b', marginBottom: 4 }}>报价截止时间提醒</div>
+                        <div style={{ fontSize: 16, fontWeight: 500, color: '#ef4444' }}>{detail?.quoteList?.deadlineAt ? detail.quoteList.deadlineAt.replace('T', ' ').replace('Z', '') : '-'}</div>
+                    </div>
+                </div>
+            </MerchantPageHeader>
 
-            <Card>
-                <Table
-                    rowKey="id"
-                    loading={loading}
-                    columns={columns}
-                    dataSource={rows}
-                    pagination={{ pageSize: 20, showSizeChanger: false }}
-                    rowClassName={(record) => {
-                        if (record.missingMappingFlag || record.missingPriceFlag) return 'quote-row-warning';
-                        if (record.adjustedFlag) return 'quote-row-adjusted';
-                        return '';
-                    }}
-                />
-            </Card>
-        </div>
+            <MerchantContentPanel>
+                {renderNotices()}
+                
+                <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+                    <MerchantSectionCard title="统一报价真相">
+                        <Descriptions bordered column={3} size="small">
+                            <Descriptions.Item label="成交快照总额">
+                                {formatCentToYuanText(detail?.quoteTruthSummary?.totalCent)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="预计工期">
+                                {detail?.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="报价版本链">
+                                第 {detail?.submissionHealth?.lastRevisionNo || detail?.quoteTruthSummary?.revisionCount || 0} 版
+                            </Descriptions.Item>
+                            <Descriptions.Item label="来源类型">
+                                {sourceTypeLabel(detail?.quoteTruthSummary?.sourceType || detail?.quoteList?.sourceType)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="来源记录">
+                                {detail?.quoteTruthSummary?.sourceId || detail?.quoteList?.sourceId || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工程量基线">
+                                {detail?.quoteTruthSummary?.quantityBaseId || detail?.quoteList?.quantityBaseId || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="成交确认时间">
+                                {detail?.quoteTruthSummary?.confirmedAt ? detail.quoteTruthSummary.confirmedAt.replace('T', ' ').replace('Z', '') : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="资金闭环">
+                                {detail?.financialClosureStatus || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="下一步动作">
+                                {detail?.nextPendingAction || '待同步'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                    </MerchantSectionCard>
+
+                    <MerchantSectionCard title="用户解释与责任边界">
+                        <Descriptions bordered column={2} size="small" style={{ marginBottom: 16 }}>
+                            <Descriptions.Item label="施工范围内">
+                                {(detail?.commercialExplanation?.scopeIncluded || []).join('、') || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="施工范围外">
+                                {(detail?.commercialExplanation?.scopeExcluded || []).join('、') || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="班组规模">
+                                {detail?.commercialExplanation?.teamSize || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="工种">
+                                {(detail?.commercialExplanation?.workTypes || []).join('、') || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="施工方法" span={2}>
+                                {detail?.commercialExplanation?.constructionMethodNote || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="是否需上门复核">
+                                {detail?.commercialExplanation?.siteVisitRequired ? '需要' : '无需或待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="基线摘要">
+                                {detail?.commercialExplanation?.baselineSummary?.title || detail?.bridgeConversionSummary?.quoteBaselineSummary?.title || '待同步'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                        {detail?.bridgeConversionSummary?.bridgeNextStep?.reason ? (
+                            <Alert
+                                type="info"
+                                showIcon
+                                message="用户侧解释摘要"
+                                description={detail.bridgeConversionSummary.bridgeNextStep.reason}
+                            />
+                        ) : null}
+                    </MerchantSectionCard>
+
+                    <MerchantSectionCard title="变更、结算与出款">
+                        <Descriptions bordered column={3} size="small">
+                            <Descriptions.Item label="变更单总数">
+                                {detail?.changeOrderSummary?.totalCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="待业主确认">
+                                {detail?.changeOrderSummary?.pendingUserConfirmCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="待结算">
+                                {detail?.changeOrderSummary?.pendingSettlementCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="已结算">
+                                {detail?.changeOrderSummary?.settledCount || 0}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="变更净额">
+                                {formatCentToYuanText(detail?.changeOrderSummary?.netAmountCent)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="最新变更单">
+                                {detail?.changeOrderSummary?.latestChangeOrderId || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="结算状态">
+                                {financeStatusLabel(detail?.settlementSummary?.status)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="待结算净额">
+                                {typeof detail?.settlementSummary?.netAmount === 'number' ? `¥${detail.settlementSummary.netAmount.toFixed(2)}` : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="结算排期">
+                                {detail?.settlementSummary?.scheduledAt ? detail.settlementSummary.scheduledAt.replace('T', ' ').replace('Z', '') : '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="出款状态">
+                                {financeStatusLabel(detail?.payoutSummary?.status)}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="出款渠道">
+                                {detail?.payoutSummary?.channel || '-'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="异常原因">
+                                {detail?.payoutSummary?.failureReason || '无'}
+                            </Descriptions.Item>
+                        </Descriptions>
+                    </MerchantSectionCard>
+
+                    {reviewGroups
+                        .filter((group) => group.rows.length > 0)
+                        .map((group) => (
+                            <MerchantSectionCard
+                                key={group.key}
+                                title={
+                                    <Space>
+                                        <span>{group.title}</span>
+                                        <Tooltip title={group.description}>
+                                            <QuestionCircleOutlined style={{ fontSize: 14, color: '#94a3b8', cursor: 'help' }} />
+                                        </Tooltip>
+                                    </Space>
+                                }
+                                extra={<Tag color={group.tone === 'warning' ? 'orange' : group.tone === 'info' ? 'blue' : 'green'}>{group.rows.length} 项</Tag>}
+                            >
+                                <Table
+                                    rowKey="id"
+                                    loading={loading}
+                                    columns={columns}
+                                    dataSource={group.rows}
+                                    pagination={false}
+                                    size="small"
+                                    rowClassName={(record) => {
+                                        if (record.missingMappingFlag || record.missingPriceFlag) return 'quote-row-warning';
+                                        if (requiresDeviationReason(record)) return 'quote-row-adjusted';
+                                        return '';
+                                    }}
+                                />
+                            </MerchantSectionCard>
+                        ))}
+                    {reviewGroups.every((group) => group.rows.length === 0) ? (
+                        <MerchantSectionCard>
+                            <Alert type="info" showIcon message="当前暂无可复核条目" />
+                        </MerchantSectionCard>
+                    ) : null}
+                </Space>
+            </MerchantContentPanel>
+
+            <Drawer
+                title="项目履约基线详情"
+                placement="right"
+                width={700}
+                onClose={() => setDrawerVisible(false)}
+                open={drawerVisible}
+            >
+                {detail?.bridgeConversionSummary ? (
+                    <div style={{ marginBottom: 32 }}>
+                        <Typography.Title level={5}>桥接解释与履约纪要</Typography.Title>
+                        <Descriptions column={1} size="small" bordered style={{ marginBottom: 16 }}>
+                            <Descriptions.Item label="履约定向">
+                                {detail.bridgeConversionSummary.quoteBaselineSummary?.title || '待同步'}
+                            </Descriptions.Item>
+                            <Descriptions.Item label="流向说明">
+                                <Text type="secondary">
+                                    此单据由 {detail.bridgeConversionSummary.bridgeNextStep?.owner || '平台方'} 推进，由于：{detail.bridgeConversionSummary.bridgeNextStep?.reason || '无明确要求'}
+                                </Text>
+                            </Descriptions.Item>
+                        </Descriptions>
+                        
+                        <Space direction="vertical" size={16} style={{ display: 'flex' }}>
+                            {(detail.bridgeConversionSummary.responsibilityBoundarySummary?.items || []).length ? (
+                                <div>
+                                    <Space>
+                                        <Text strong>{detail.bridgeConversionSummary.responsibilityBoundarySummary?.title || '责任边界'}</Text>
+                                        <Tooltip title="责任界定细节，请确保知悉"><InfoCircleOutlined style={{ color: '#1677ff' }} /></Tooltip>
+                                    </Space>
+                                    <ul style={{ paddingLeft: 20, color: '#475569', fontSize: 13, marginTop: 8 }}>
+                                        {(detail.bridgeConversionSummary.responsibilityBoundarySummary?.items || []).map((txt, i) => <li key={i}>{txt}</li>)}
+                                    </ul>
+                                </div>
+                            ) : null}
+                            {(detail.bridgeConversionSummary.scheduleAndAcceptanceSummary?.items || []).length ? (
+                                <div>
+                                    <Space>
+                                        <Text strong>{detail.bridgeConversionSummary.scheduleAndAcceptanceSummary?.title || '工期与验收'}</Text>
+                                        <Tooltip title="验收标准与阶段付款挂钩"><InfoCircleOutlined style={{ color: '#52c41a' }} /></Tooltip>
+                                    </Space>
+                                    <ul style={{ paddingLeft: 20, color: '#475569', fontSize: 13, marginTop: 8 }}>
+                                        {(detail.bridgeConversionSummary.scheduleAndAcceptanceSummary?.items || []).map((txt, i) => <li key={i}>{txt}</li>)}
+                                    </ul>
+                                </div>
+                            ) : null}
+                            {(detail.bridgeConversionSummary.platformGuaranteeSummary?.items || []).length ? (
+                                <div>
+                                    <Space>
+                                        <Text strong>{detail.bridgeConversionSummary.platformGuaranteeSummary?.title || '平台保障'}</Text>
+                                        <Tooltip title="纠纷与异常处理"><InfoCircleOutlined style={{ color: '#faad14' }} /></Tooltip>
+                                    </Space>
+                                    <ul style={{ paddingLeft: 20, color: '#475569', fontSize: 13, marginTop: 8 }}>
+                                        {(detail.bridgeConversionSummary.platformGuaranteeSummary?.items || []).map((txt, i) => <li key={i}>{txt}</li>)}
+                                    </ul>
+                                </div>
+                            ) : null}
+                        </Space>
+                    </div>
+                ) : null}
+
+                <div>
+                    <Typography.Title level={5}>来源数据引索</Typography.Title>
+                    <Descriptions column={2} size="small" bordered style={{ marginBottom: 16 }}>
+                        <Descriptions.Item label="单据来源">{sourceTypeLabel(detail?.quoteList?.sourceType)}</Descriptions.Item>
+                        <Descriptions.Item label="工程量版本">正式方案转化</Descriptions.Item>
+                    </Descriptions>
+
+                    {detail?.quantityItems?.length ? (
+                        <Table
+                            rowKey="id"
+                            size="small"
+                            pagination={{ pageSize: 15 }}
+                            dataSource={detail.quantityItems}
+                            columns={[
+                                {
+                                    title: '基准项',
+                                    dataIndex: 'sourceItemName',
+                                    key: 'sourceItemName',
+                                    render: (value: string, record) => (
+                                        <Space direction="vertical" size={0}>
+                                            <Text strong>{value || `基线项 #${record.id}`}</Text>
+                                            <Text type="secondary" style={{ fontSize: 12 }}>
+                                                {record.categoryL1 || '未分类'}{record.categoryL2 ? ` / ${record.categoryL2}` : ''}
+                                            </Text>
+                                        </Space>
+                                    ),
+                                },
+                                {
+                                    title: '算量',
+                                    key: 'baselineQuantity',
+                                    width: 80,
+                                    render: (_: unknown, record) => `${record.quantity}${record.unit || '项'}`,
+                                },
+                                {
+                                    title: '偏差说明约定',
+                                    dataIndex: 'baselineNote',
+                                    key: 'baselineNote',
+                                    render: (value?: string) => <Text type="secondary" style={{ fontSize: 12 }}>{value || '如有偏差需声明'}</Text>,
+                                },
+                            ]}
+                        />
+                    ) : (
+                        <Alert
+                            type="warning"
+                            showIcon
+                            message="未返回工程量明细"
+                            description="请联系运营或平台方核对原始项目结构。"
+                        />
+                    )}
+                </div>
+            </Drawer>
+        </MerchantPageShell>
     );
 };
 

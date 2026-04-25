@@ -1,13 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, List, Row, Col, Spin, Button } from 'antd';
+import { Card, List, Spin, Button } from 'antd';
 import {
     UserOutlined,
     TeamOutlined,
     ProjectOutlined,
     DollarOutlined,
     AuditOutlined,
-    BankOutlined,
-    SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import { Link } from 'react-router-dom';
 import { Line, Column, Pie } from '@ant-design/charts';
@@ -29,20 +27,38 @@ interface OverviewStats {
     pendingBookings: number;
     materialShopCount: number;
     monthlyGMV: number;
+    northStar?: { key: string; label: string; value: number };
+    coreMetrics?: Array<{ key: string; label: string; value: number }>;
+    dashboardSections?: Array<{ key: string; title: string; metrics: Array<{ key: string; label: string; value: number }> }>;
 }
 
 interface TrendItem {
     date: string;
-    users: number;
-    bookings: number;
-    projects: number;
-    gmv: number;
+    effectiveBookings: number;
+    designConfirmed: number;
+    constructionConfirmed: number;
+    completedProjects: number;
+    disputeRate: number;
+    refundRate: number;
+}
+
+interface DistributionMetric {
+    key: string;
+    label: string;
+    value: number;
+}
+
+interface DistributionStats {
+    providerTiers?: DistributionMetric[];
+    serviceTypes?: DistributionMetric[];
+    projectStages?: DistributionMetric[];
 }
 
 const Dashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<OverviewStats | null>(null);
     const [trends, setTrends] = useState<TrendItem[]>([]);
+    const [distribution, setDistribution] = useState<DistributionStats | null>(null);
 
     useEffect(() => {
         void loadData();
@@ -51,19 +67,24 @@ const Dashboard: React.FC = () => {
     const loadData = async () => {
         setLoading(true);
         try {
-            const [overviewRes, trendsRes] = await Promise.all([
+            const [overviewRes, trendsRes, distributionRes] = await Promise.all([
                 adminStatsApi.overview(),
                 adminStatsApi.trends({ days: 7 }),
+                adminStatsApi.distribution(),
             ]);
 
             const overviewData = overviewRes as { code?: number; data?: OverviewStats };
             const trendsData = trendsRes as { code?: number; data?: TrendItem[] };
+            const distributionData = distributionRes as { code?: number; data?: DistributionStats };
 
             if (overviewData.code === 0 && overviewData.data) {
                 setStats(overviewData.data);
             }
             if (trendsData.code === 0) {
                 setTrends(trendsData.data || []);
+            }
+            if (distributionData.code === 0 && distributionData.data) {
+                setDistribution(distributionData.data);
             }
         } catch (error) {
             console.error('Fetch dashboard data failed', error);
@@ -81,17 +102,27 @@ const Dashboard: React.FC = () => {
         };
 
         return [
-            { title: '待处理预约', value: `${currentStats.pendingBookings} 条`, path: '/bookings/list' },
-            { title: '进行中项目', value: `${currentStats.activeProjects} 个`, path: '/projects/list' },
-            { title: '服务商总量', value: `${currentStats.providerCount} 个`, path: '/providers/designers' },
-            { title: '主材商总量', value: `${currentStats.materialShopCount} 个`, path: '/materials/list' },
+            { title: '待处理预约', value: `${currentStats.pendingBookings} 条`, path: '/bookings/list', actionText: '处理' },
+            { title: '进行中项目', value: `${currentStats.activeProjects} 个`, path: '/projects/list', actionText: '查看' },
+            { title: '服务商总量', value: `${currentStats.providerCount} 个`, path: '/providers/designers', actionText: '查看' },
+            { title: '主材商总量', value: `${currentStats.materialShopCount} 个`, path: '/materials/list', actionText: '查看' },
         ];
     }, [stats]);
+
+    const formatMetricValue = (item: { key: string; value: number }) => {
+        if (item.key.endsWith('_rate')) {
+            return `${(item.value * 100).toFixed(1)}%`;
+        }
+        if (/(amount|revenue|gmv)/i.test(item.key)) {
+            return `¥${Math.round(item.value).toLocaleString()}`;
+        }
+        return Math.round(item.value).toLocaleString();
+    };
 
     const userTrendConfig = {
         data: trends,
         xField: 'date',
-        yField: 'users',
+        yField: 'effectiveBookings',
         smooth: true,
         point: {
             size: 4,
@@ -113,17 +144,17 @@ const Dashboard: React.FC = () => {
         legend: false,
         tooltip: {
             showTitle: true,
-            title: '新增用户',
+            title: '有效预约',
         },
     };
 
     const gmvTrendConfig = {
         data: trends.map((item) => ({
             ...item,
-            gmvDisplay: item.gmv / 10000,
+            completedDisplay: item.completedProjects,
         })),
         xField: 'date',
-        yField: 'gmvDisplay',
+        yField: 'completedDisplay',
         legend: false,
         columnStyle: {
             radius: [8, 8, 0, 0],
@@ -132,11 +163,10 @@ const Dashboard: React.FC = () => {
     };
 
     const providerDistributionConfig = {
-        data: [
-            { type: '设计师', value: stats?.designerCount || 0 },
-            { type: '装修公司', value: stats?.companyCount || 0 },
-            { type: '工长', value: stats?.foremanCount || 0 },
-        ],
+        data: (distribution?.providerTiers || []).map((item) => ({
+            type: item.label,
+            value: item.value,
+        })),
         angleField: 'value',
         colorField: 'type',
         radius: 0.84,
@@ -173,49 +203,49 @@ const Dashboard: React.FC = () => {
 
             <div className="hz-stat-grid">
                 <StatCard
-                    title="用户总数"
-                    value={(stats?.userCount || 0).toLocaleString()}
+                    title={stats?.northStar?.label || "北极星指标"}
+                    value={Math.round(stats?.northStar?.value || 0).toLocaleString()}
                     icon={<UserOutlined />}
                     tone="accent"
                     trend={`+${stats?.todayNewUsers || 0} 今日新增`}
                 />
                 <StatCard
-                    title="认证服务商"
-                    value={(stats?.providerCount || 0).toLocaleString()}
+                    title="有效预约数"
+                    value={Math.round((stats?.coreMetrics || []).find((item) => item.key === 'effective_bookings')?.value || 0).toLocaleString()}
                     icon={<TeamOutlined />}
                     tone="success"
-                    trend={`${stats?.designerCount || 0} 设计师`}
+                    trend={`服务商 ${stats?.providerCount || 0} 个`}
                 />
                 <StatCard
-                    title="进行中项目"
-                    value={(stats?.activeProjects || 0).toLocaleString()}
+                    title="施工确认数"
+                    value={Math.round((stats?.coreMetrics || []).find((item) => item.key === 'construction_confirmed')?.value || 0).toLocaleString()}
                     icon={<ProjectOutlined />}
                     tone="warning"
-                    trend={`${stats?.completedProjects || 0} 已完工`}
+                    trend={`${Math.round((stats?.coreMetrics || []).find((item) => item.key === 'completed_projects')?.value || 0)} 已完工`}
                 />
                 <StatCard
-                    title="月度成交额"
-                    value={`¥${((stats?.monthlyGMV || 0) / 10000).toFixed(1)}万`}
+                    title="售后风险"
+                    value={`${(((stats?.coreMetrics || []).find((item) => item.key === 'refund_rate')?.value || 0) * 100).toFixed(1)}%`}
                     icon={<DollarOutlined />}
                     tone="danger"
-                    trend={`${stats?.bookingCount || 0} 预约总数`}
+                    trend={`退款率 / 争议率联动观察`}
                 />
             </div>
 
             <div className="hz-dashboard-grid">
-                <Card className="hz-panel-card" title="用户增长趋势">
+                <Card className="hz-panel-card" title="有效预约趋势">
                     <div className="hz-chart-wrap">
                         <Line {...userTrendConfig} />
                     </div>
                 </Card>
 
-                <Card className="hz-panel-card" title="服务商结构">
+                <Card className="hz-panel-card" title="供给治理分层">
                     <div className="hz-chart-wrap">
                         <Pie {...providerDistributionConfig} />
                     </div>
                 </Card>
 
-                <Card className="hz-panel-card" title="月度成交额趋势">
+                <Card className="hz-panel-card" title="完工趋势">
                     <div className="hz-chart-wrap">
                         <Column {...gmvTrendConfig} />
                     </div>
@@ -228,7 +258,7 @@ const Dashboard: React.FC = () => {
                             <List.Item
                                 actions={[
                                     <Button key={item.path} type="link">
-                                        <Link to={item.path}>立即处理</Link>
+                                        <Link to={item.path}>{item.actionText}</Link>
                                     </Button>,
                                 ]}
                             >
@@ -243,38 +273,25 @@ const Dashboard: React.FC = () => {
                 </Card>
             </div>
 
-            <Card className="hz-panel-card hz-dashboard-grid--full" title="快捷操作">
-                <Row gutter={[16, 16]}>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/audits">
-                            <Button block size="large" icon={<AuditOutlined />}>
-                                进入审核中心
-                            </Button>
-                        </Link>
-                    </Col>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/projects/list">
-                            <Button block size="large" icon={<ProjectOutlined />}>
-                                查看工地列表
-                            </Button>
-                        </Link>
-                    </Col>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/finance/escrow">
-                            <Button block size="large" icon={<BankOutlined />}>
-                                资金中心
-                            </Button>
-                        </Link>
-                    </Col>
-                    <Col xs={24} sm={12} lg={6}>
-                        <Link to="/risk/warnings">
-                            <Button block size="large" icon={<SafetyCertificateOutlined />}>
-                                风险预警
-                            </Button>
-                        </Link>
-                    </Col>
-                </Row>
-            </Card>
+            {(stats?.dashboardSections || []).length ? (
+                <Card className="hz-panel-card hz-dashboard-grid--full" title="经营健康摘要">
+                    <div className="hz-dashboard-summary-grid">
+                        {(stats?.dashboardSections || []).map((section) => (
+                            <div key={section.key} className="hz-dashboard-summary-card">
+                                <div className="hz-dashboard-summary-card__title">{section.title}</div>
+                                <div className="hz-dashboard-summary-card__metrics">
+                                    {(section.metrics || []).map((metric) => (
+                                        <div key={metric.key} className="hz-dashboard-summary-card__metric">
+                                            <span>{metric.label}</span>
+                                            <strong>{formatMetricValue(metric)}</strong>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            ) : null}
         </div>
     );
 };

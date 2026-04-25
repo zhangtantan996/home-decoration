@@ -42,7 +42,7 @@ function toOrderFeed(item: Awaited<ReturnType<typeof listOrders>>['list'][number
     subtitle: item.providerName || '服务商待确认',
     meta: item.statusText,
     amountText: item.amountText,
-    href: item.projectId ? `/projects/${item.projectId}` : item.proposalId ? `/proposals/${item.proposalId}` : undefined,
+    href: item.projectId ? `/projects/${item.projectId}` : item.bookingId ? `/bookings/${item.bookingId}` : item.proposalId ? `/proposals/${item.proposalId}` : undefined,
   };
 }
 
@@ -163,13 +163,13 @@ export async function getProfileHomeData(): Promise<ProfileHomeVM> {
         pendingPaymentsCount,
         summaryCards: [
           { title: '进行中需求', value: `${demands.list.filter((item) => item.status === 'matching' || item.status === 'matched').length}`, description: '审核或匹配中的真实需求', href: '/me/demands' },
-          { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '需要你尽快决定的方案', href: '/me/proposals' },
+          { title: '设计阶段待办', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '设计费支付与正式方案确认都从预约主链进入', href: '/me/bookings' },
           { title: '进行中项目', value: `${projects.list.filter((item) => item.statusText.includes('进行中')).length}`, description: '正在推进的施工项目', href: '/me/projects' },
           { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '与报价或阶段付款相关', href: '/me/orders' },
         ],
         todos: [
           { title: '需求进度', value: `${demands.list.filter((item) => item.status === 'submitted' || item.status === 'matching').length}`, description: '查看平台审核和商家响应进度', href: '/me/demands' },
-          { title: '待确认报价', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '优先处理新的报价方案', href: '/me/proposals' },
+          { title: '设计阶段待办', value: `${proposals.filter((item) => item.statusText.includes('待')).length}`, description: '优先处理设计费支付与正式方案确认', href: '/me/bookings' },
           { title: '待处理预约', value: `${bookings.filter((item) => item.statusText.includes('待')).length}`, description: '跟进待沟通或待确认预约', href: '/me/bookings' },
           { title: '待支付订单', value: `${pendingPaymentsCount}`, description: '避免设计费或阶段款逾期', href: '/me/orders' },
           { title: '最新通知', value: `${unreadCount}`, description: '查看系统提醒与业务变化', href: '/me/messages' },

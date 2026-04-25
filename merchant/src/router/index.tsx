@@ -1,4 +1,5 @@
-import { createBrowserRouter, Navigate } from 'react-router-dom';
+import { createBrowserRouter, Navigate, useParams, useSearchParams } from 'react-router-dom';
+
 import MerchantEntry from '../pages/merchant/MerchantEntry';
 import MerchantLogin from '../pages/merchant/MerchantLogin';
 import MerchantRegister from '../pages/merchant/MerchantRegister';
@@ -8,7 +9,6 @@ import MaterialShopOnboardingCompletion from '../pages/merchant/MaterialShopOnbo
 import MerchantApplyStatus from '../pages/merchant/MerchantApplyStatus';
 import MerchantDashboard from '../pages/merchant/MerchantDashboard';
 import MerchantNotifications from '../pages/merchant/MerchantNotifications';
-import MerchantLeads from '../pages/merchant/MerchantLeads';
 import MerchantBookings from '../pages/merchant/MerchantBookings';
 import MerchantBookingBudgetConfirm from '../pages/merchant/MerchantBookingBudgetConfirm';
 import MerchantBookingSiteSurvey from '../pages/merchant/MerchantBookingSiteSurvey';
@@ -33,6 +33,9 @@ import MaterialShopSettings from '../pages/merchant/MaterialShopSettings';
 import MaterialShopProducts from '../pages/merchant/MaterialShopProducts';
 import MerchantDesignWorkflow from '../pages/merchant/MerchantDesignWorkflow';
 import MerchantProjectFlow from '../pages/merchant/MerchantProjectFlow';
+import MerchantConstructionPrepPage from '../pages/merchant/MerchantConstructionPrepPage';
+import MerchantDesignerTasks from '../pages/merchant/MerchantDesignerTasks';
+import MerchantCrewTasks from '../pages/merchant/MerchantCrewTasks';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
@@ -40,6 +43,16 @@ import MerchantLayout from '../layouts/MerchantLayout';
 import MerchantAuthGuard from '../components/MerchantAuthGuard';
 import MerchantCompletionGuard from '../components/MerchantCompletionGuard';
 import { getRouterBasename } from '../utils/env';
+
+const LegacyBookingFlowRedirect = () => {
+  const { id } = useParams<{ id: string }>();
+  const [searchParams] = useSearchParams();
+  if (!id) {
+    return <Navigate to="/proposals" replace />;
+  }
+  const query = searchParams.toString();
+  return <Navigate to={`/proposals/flow/${id}${query ? `?${query}` : ''}`} replace />;
+};
 
 const router = createBrowserRouter([
   { path: '/', element: <MerchantEntry /> },
@@ -63,12 +76,17 @@ const router = createBrowserRouter([
             children: [
               { path: '/dashboard', element: <MerchantDashboard /> },
               { path: '/notifications', element: <MerchantNotifications /> },
-              { path: '/leads', element: <MerchantLeads /> },
+              { path: '/designer-tasks', element: <MerchantDesignerTasks /> },
+              // Legacy compatibility surface for old quote-pk / crew-task deep links.
+              { path: '/crew-tasks', element: <MerchantCrewTasks /> },
+              { path: '/leads', element: <Navigate to="/bookings" replace /> },
               { path: '/bookings', element: <MerchantBookings /> },
               { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },
               { path: '/bookings/:id/budget-confirm', element: <MerchantBookingBudgetConfirm /> },
               { path: '/bookings/:id/design-workflow', element: <MerchantDesignWorkflow /> },
-              { path: '/bookings/:id/flow', element: <MerchantProjectFlow /> },
+              { path: '/bookings/:id/flow', element: <LegacyBookingFlowRedirect /> },
+              { path: '/proposals/flow/:id', element: <MerchantProjectFlow /> },
+              { path: '/proposals/flow/:id/construction-prep', element: <MerchantConstructionPrepPage /> },
               { path: '/proposals', element: <MerchantProposals /> },
               { path: '/price-book', element: <MerchantPriceBook /> },
               { path: '/quote-lists', element: <MerchantQuoteLists /> },

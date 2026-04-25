@@ -15,19 +15,26 @@
   }
 
   &__header-main {
+    position: relative;
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: 24rpx;
+    justify-content: flex-end;
   }
 
   &__header-title {
-    flex: 1;
-    min-width: 0;
+    position: absolute;
+    left: 50%;
+    max-width: 360rpx;
+    transform: translateX(-50%);
     color: #111111;
-    font-size: 36rpx;
+    font-size: 34rpx;
     font-weight: 600;
     line-height: 1;
+    text-align: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
   }
 
   &__capsule-spacer {

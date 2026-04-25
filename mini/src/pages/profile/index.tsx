@@ -219,6 +219,12 @@ export default function Profile() {
     });
   };
 
+  const handleProposals = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/proposals/list/index' });
+    });
+  };
+
   const handleProgress = () => {
     requireAuth(() => {
       if (auth.user?.activeRole && !['owner', 'homeowner'].includes(auth.user.activeRole)) {
@@ -226,6 +232,30 @@ export default function Profile() {
         return;
       }
       Taro.switchTab({ url: '/pages/progress/index' });
+    });
+  };
+
+  const handleMessages = () => {
+    requireAuth(() => {
+      Taro.switchTab({ url: '/pages/messages/index' });
+    });
+  };
+
+  const handleComplaints = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/complaints/list/index' });
+    });
+  };
+
+  const handleAfterSales = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/after-sales/list/index' });
+    });
+  };
+
+  const handleRefunds = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/refunds/list/index' });
     });
   };
 
@@ -297,7 +327,7 @@ export default function Profile() {
           </View>
 
           <View className="profile-page__content">
-            <Card className="profile-page__card">
+            <Card className="profile-page__card" title="业务中心">
               <ListItem
                 title="我的订单"
                 arrow
@@ -316,10 +346,43 @@ export default function Profile() {
                 onClick={handleBookings}
               />
               <ListItem
-                title="项目进度"
+                title="我的方案"
+                arrow
+                icon={<Icon name="orders" size={28} color="#71717A" />}
+                onClick={handleProposals}
+              />
+              <ListItem
+                title="我的项目"
                 arrow
                 icon={<Icon name="progress" size={28} color="#71717A" />}
                 onClick={handleProgress}
+              />
+            </Card>
+
+            <Card className="profile-page__card" title="个人与售后">
+              <ListItem
+                title="我的通知"
+                arrow
+                icon={<Icon name="notification" size={28} color="#71717A" />}
+                onClick={handleMessages}
+              />
+              <ListItem
+                title="我的投诉"
+                arrow
+                icon={<Icon name="support" size={28} color="#71717A" />}
+                onClick={handleComplaints}
+              />
+              <ListItem
+                title="售后服务"
+                arrow
+                icon={<Icon name="history" size={28} color="#71717A" />}
+                onClick={handleAfterSales}
+              />
+              <ListItem
+                title="退款记录"
+                arrow
+                icon={<Icon name="history" size={28} color="#71717A" />}
+                onClick={handleRefunds}
               />
               <ListItem
                 title="灵感收藏"

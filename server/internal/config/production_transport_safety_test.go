@@ -17,6 +17,24 @@ func TestValidateProductionTransportSafety_RequiresHTTPSForRelease(t *testing.T)
 	}
 }
 
+func TestValidateProductionTransportSafety_RequiresHTTPSForStoragePublicBaseURLInRelease(t *testing.T) {
+	t.Setenv("APP_ENV", AppEnvLocal)
+
+	cfg := &Config{
+		Server: ServerConfig{
+			Mode:      "release",
+			PublicURL: "https://api.example.com",
+		},
+		Storage: StorageConfig{
+			PublicBaseURL: "http://cdn.example.com",
+		},
+	}
+
+	if err := ValidateProductionTransportSafety(cfg); err == nil {
+		t.Fatalf("expected release mode to require https storage public base url")
+	}
+}
+
 func TestValidateProductionTransportSafety_ProductionAllowsPrivateInfra(t *testing.T) {
 	t.Setenv("APP_ENV", AppEnvProduction)
 	t.Setenv("TINODE_DATABASE_DSN", "postgres://tinode:secret@tinode-db.internal:5432/tinode?sslmode=disable")

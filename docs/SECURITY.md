@@ -42,7 +42,7 @@
 
 **修复前**:
 ```bash
-JWT_SECRET=TE5zufBZn5hgu6vryJs8ROC0Y9jm49HotZPFmN+qv1X/...
+JWT_SECRET=REPLACE_WITH_YOUR_GENERATED_SECRET_HERE
 ```
 
 **修复后**:

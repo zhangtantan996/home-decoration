@@ -46,6 +46,20 @@ const actionText = (action?: string) => {
 
 const businessStageText = (stage?: string) => ADMIN_BUSINESS_STAGE_META[stage || '']?.text || stage || '-';
 const actionLabel = (action?: string) => ADMIN_BUSINESS_ACTION_LABELS[action || ''] || action || '-';
+const reviewStatusText = (status?: string) => {
+    switch (status) {
+        case 'approved':
+            return '已通过';
+        case 'rejected':
+            return '已驳回';
+        case 'pending':
+            return '待复核';
+        case 'not_required':
+            return '无需复核';
+        default:
+            return status || '-';
+    }
+};
 
 type RevisionDiffRow = {
     key: number;
@@ -231,6 +245,7 @@ const QuoteComparison: React.FC = () => {
         { title: '服务商', dataIndex: 'providerName', key: 'providerName' },
         { title: '类型', dataIndex: 'providerSubType', key: 'providerSubType', width: 120 },
         { title: '状态', dataIndex: 'status', key: 'status', width: 120, render: (value: string) => <StatusTag status="info" text={value} /> },
+        { title: '复核', dataIndex: 'reviewStatus', key: 'reviewStatus', width: 120, render: (value?: string) => <StatusTag status="info" text={reviewStatusText(value)} /> },
         { title: '总价', dataIndex: 'totalCent', key: 'totalCent', width: 140, render: (value: number) => formatCent(value) },
         {
             title: '缺项',
@@ -256,10 +271,52 @@ const QuoteComparison: React.FC = () => {
                     >
                         历史记录
                     </Button>
+                    {!readonlyMode && record.reviewStatus === 'pending' ? (
+                        <Button
+                            onClick={async () => {
+                                try {
+                                    await adminQuoteApi.reviewSubmission(record.submissionId, { approved: true });
+                                    message.success('已通过平台复核');
+                                    await load();
+                                } catch (error: any) {
+                                    message.error(error?.message || '更新复核失败');
+                                }
+                            }}
+                        >
+                            复核通过
+                        </Button>
+                    ) : null}
+                    {!readonlyMode && record.reviewStatus === 'pending' ? (
+                        <Button
+                            danger
+                            onClick={() => {
+                                Modal.confirm({
+                                    title: '退回商家重报',
+                                    content: `确定退回 ${record.providerName} 的报价版本吗？`,
+                                    okText: '退回重报',
+                                    cancelText: '取消',
+                                    onOk: async () => {
+                                        try {
+                                            await adminQuoteApi.reviewSubmission(record.submissionId, {
+                                                approved: false,
+                                                reason: '平台复核退回，请补充偏差说明后重新提交',
+                                            });
+                                            message.success('已退回重报');
+                                            await load();
+                                        } catch (error: any) {
+                                            message.error(error?.message || '退回重报失败');
+                                        }
+                                    },
+                                });
+                            }}
+                        >
+                            退回重报
+                        </Button>
+                    ) : null}
                     {!readonlyMode ? <Button
                         type="primary"
                         icon={<SendOutlined />}
-                        disabled={data?.quoteList.status === 'user_confirmed'}
+                        disabled={data?.quoteList.status === 'user_confirmed' || (record.reviewStatus === 'pending' || record.reviewStatus === 'rejected')}
                         onClick={() => {
                             Modal.confirm({
                                 title: '提交给用户确认',
@@ -335,9 +392,64 @@ const QuoteComparison: React.FC = () => {
                 ) : null}
             </Card>
 
+            {(data?.quoteTruthSummary || data?.submissionHealth || data?.changeOrderSummary || data?.settlementSummary || data?.payoutSummary) ? (
+                <Card className="hz-panel-card" title="统一报价真相与履约后链">
+                    <Descriptions column={4} size="small">
+                        <Descriptions.Item label="成交总额">
+                            {data?.quoteTruthSummary?.totalCent ? formatCent(data.quoteTruthSummary.totalCent) : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="预计工期">
+                            {data?.quoteTruthSummary?.estimatedDays ? `${data.quoteTruthSummary.estimatedDays} 天` : '-'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="版本链">
+                            第 {data?.submissionHealth?.lastRevisionNo || data?.quoteTruthSummary?.revisionCount || 0} 版
+                        </Descriptions.Item>
+                        <Descriptions.Item label="当前待办">
+                            {data?.nextPendingAction || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="缺价项">
+                            {data?.submissionHealth?.missingPriceCount || 0}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="偏差项">
+                            {data?.submissionHealth?.deviationItemCount || 0}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="平台复核">
+                            {reviewStatusText(data?.submissionHealth?.platformReviewStatus)}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="资金闭环">
+                            {data?.financialClosureStatus || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="变更待结算">
+                            {data?.changeOrderSummary?.pendingSettlementCount || 0}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="结算状态">
+                            {data?.settlementSummary?.status || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="出款状态">
+                            {data?.payoutSummary?.status || '待同步'}
+                        </Descriptions.Item>
+                        <Descriptions.Item label="最近改价原因">
+                            {data?.submissionHealth?.lastChangeReason || '待同步'}
+                        </Descriptions.Item>
+                    </Descriptions>
+                </Card>
+            ) : null}
+
             <Card className="hz-table-card" title="报价对比">
                 <Table rowKey="submissionId" loading={loading} columns={columns} dataSource={data?.submissions || []} pagination={false} />
             </Card>
+
+            {data?.paymentPlanSummary?.length ? (
+                <Card className="hz-panel-card" title="施工支付计划摘要">
+                    <Space size={[8, 8]} wrap>
+                        {data.paymentPlanSummary.map((plan) => (
+                            <Tag key={plan.id}>
+                                {plan.seq}. {plan.name}: {formatCent(Math.round((plan.amount || 0) * 100))}
+                            </Tag>
+                        ))}
+                    </Space>
+                </Card>
+            ) : null}
 
             <Card className="hz-panel-card" title="分类小计">
                 <List

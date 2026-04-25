@@ -3212,6 +3212,10 @@ main {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(247, 250, 252, 0.94));
 }
 
+.booking-detail-record-card--side {
+  gap: 14px;
+}
+
 .booking-detail-info-card span,
 .booking-detail-record-card span,
 .booking-detail-action-tile span,
@@ -3244,6 +3248,12 @@ main {
   line-height: 1.8;
 }
 
+.booking-detail-note-panel--compact {
+  margin-top: 0;
+  padding: 14px 16px;
+  border-radius: 18px;
+}
+
 .booking-detail-record-head {
   display: flex;
   justify-content: space-between;
@@ -3273,6 +3283,17 @@ main {
   background: rgba(180, 83, 9, 0.08);
   color: var(--color-warning);
   line-height: 1.6;
+}
+
+.booking-detail-record-link {
+  min-width: 116px;
+  justify-content: center;
+}
+
+.booking-detail-inline-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .booking-detail-provider-card {

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Text, View } from '@tarojs/components';
+import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow, useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
-import { Icon, type IconName } from '@/components/Icon';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { SurveyDepositQrDialog } from '@/components/SurveyDepositQrDialog';
@@ -23,7 +25,7 @@ import {
 import type { PaymentChannel, PaymentLaunchMode } from '@/services/payments';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
 import { deriveOrderEntryActions } from '@/utils/orderEntryActions';
 import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { buildSurveyDepositDetailUrl, formatSurveyDepositOrderNo } from '@/utils/orderRoutes';
@@ -45,10 +47,10 @@ const buildSurveyDepositEntryKey = (bookingId?: number) => (
 
 const getOrderStatusMeta = (detail: OrderCenterEntryDetail) => {
   if (detail.refundSummary?.latestRefundStatus === 'completed' || detail.booking?.surveyDepositRefunded) {
-    return { label: '已退款', variant: 'brand' as const, desc: '退款已完成', icon: 'pending' as IconName };
+    return { label: '已退款', variant: 'brand' as const };
   }
   if (detail.refundSummary?.latestRefundStatus === 'pending' || detail.refundSummary?.latestRefundStatus === 'approved') {
-    return { label: '退款中', variant: 'brand' as const, desc: '退款申请正在处理中', icon: 'pending' as IconName };
+    return { label: '退款中', variant: 'brand' as const };
   }
 
   switch (detail.statusGroup) {
@@ -56,22 +58,21 @@ const getOrderStatusMeta = (detail: OrderCenterEntryDetail) => {
       return {
         label: detail.statusText || '已支付',
         variant: 'success' as const,
-        desc: '订单已支付，服务人员将尽快与您联系',
-        icon: 'success' as IconName,
       };
     case 'cancelled':
       return {
         label: detail.statusText || '已取消',
         variant: 'default' as const,
-        desc: '订单已取消，如有需要请重新发起预约',
-        icon: 'about' as IconName,
+      };
+    case 'refund':
+      return {
+        label: detail.statusText || '退款中',
+        variant: 'brand' as const,
       };
     default:
       return {
         label: detail.statusText || '待支付',
         variant: 'warning' as const,
-        desc: '请尽快完成支付，以免订单失效',
-        icon: 'history' as IconName,
       };
   }
 };
@@ -92,13 +93,13 @@ const DetailRow: React.FC<DetailRowProps> = ({
   onClick,
 }) => (
   <View
-    className={`order-detail-page__detail-row${multiline ? ' order-detail-page__detail-row--multiline' : ''}${onClick ? ' order-detail-page__detail-row--clickable' : ''}`}
+    className={`order-detail-page__row${multiline ? ' order-detail-page__row--multiline' : ''}${onClick ? ' order-detail-page__row--clickable' : ''}`}
     onClick={onClick}
   >
-    <View className="order-detail-page__detail-main">
-      <Text className="order-detail-page__detail-label">{label}</Text>
-      <View className="flex items-center">
-        <Text className="order-detail-page__detail-value">{value || '-'}</Text>
+    <View className="order-detail-page__row-main">
+      <Text className="order-detail-page__row-label">{label}</Text>
+      <View className="order-detail-page__row-value-wrap">
+        <Text className="order-detail-page__row-value">{value || '-'}</Text>
         {extra}
       </View>
     </View>
@@ -118,7 +119,6 @@ const SurveyDepositOrderPage: React.FC = () => {
   const didFirstShowRef = useRef(true);
 
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(120), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     const bookingId = Number(options.id || 0);
@@ -187,7 +187,10 @@ const SurveyDepositOrderPage: React.FC = () => {
     if (detail.statusGroup !== 'pending_payment') {
       return;
     }
-    if ((detail.availablePaymentOptions?.length ?? 0) > 0) {
+    const bookingId = detail.booking.id;
+    const paymentOptionCount = detail.availablePaymentOptions?.length ?? 0;
+
+    if (paymentOptionCount > 0) {
       return;
     }
 
@@ -195,7 +198,7 @@ const SurveyDepositOrderPage: React.FC = () => {
 
     const loadFallbackPaymentOptions = async () => {
       try {
-        const bookingDetail = await getBookingDetail(detail.booking!.id);
+        const bookingDetail = await getBookingDetail(bookingId);
         if (!cancelled) {
           setFallbackPaymentOptions(bookingDetail.surveyDepositPaymentOptions || []);
         }
@@ -211,7 +214,7 @@ const SurveyDepositOrderPage: React.FC = () => {
     return () => {
       cancelled = true;
     };
-  }, [auth.token, detail?.availablePaymentOptions, detail?.booking?.id, detail?.statusGroup]);
+  }, [auth.token, detail?.availablePaymentOptions?.length, detail?.booking?.id, detail?.statusGroup]);
 
   const resolvedPaymentOptions = useMemo(
     () => ((detail?.availablePaymentOptions?.length ?? 0) > 0
@@ -235,8 +238,11 @@ const SurveyDepositOrderPage: React.FC = () => {
     closeQrPayment,
     confirmQrPayment,
     retryQrPayment,
+    launchPreferredChannel,
     chooseAndLaunch,
     canPay,
+    canPayWithWechat,
+    canPayWithAlipay,
   } = useSurveyDepositPaymentFlow({
     bookingId: detail?.booking?.id,
     amount: detail?.amount || 0,
@@ -343,6 +349,7 @@ const SurveyDepositOrderPage: React.FC = () => {
       ? { label: detail.statusText || '退款中', variant: 'brand' as const }
       : getRefundStatus(undefined);
   const amount = Number(detail.amount || detail.booking.surveyDeposit || 0);
+  const payableAmount = Number(detail.payableAmount || amount);
   const orderNo = detail.referenceNo || formatSurveyDepositOrderNo(booking.id || fallbackBookingId, entryOrderNo);
   const entryActions = deriveOrderEntryActions({
     statusGroup: detail.statusGroup,
@@ -350,13 +357,14 @@ const SurveyDepositOrderPage: React.FC = () => {
     canPay,
     canCancel: Boolean(detail.canCancel),
   });
-  const showPayBar = detail.statusGroup === 'pending_payment';
+  const showPayBar = detail.statusGroup === 'pending_payment' && entryActions.showFooterPayBar;
   const showCancelButton = showPayBar && entryActions.showFooterCancel;
-  const showRefundSection = entryActions.showRefundSection && Boolean(detail.refundSummary || detail.statusGroup === 'refund');
-  const payableAmount = Number(detail.payableAmount || amount);
-  const paidAmount = detail.statusGroup === 'paid' || detail.statusGroup === 'refund'
-    ? amount
-    : 0;
+  const showRefundSection = Boolean(
+    detail.refundSummary?.latestRefundId
+      || detail.refundSummary?.latestRefundStatus
+      || detail.statusGroup === 'refund'
+      || booking.surveyDepositRefunded,
+  );
   const detailActions = entryActions.detailActions.filter((action) => {
     if (action.key === 'view_refund') {
       return Boolean(booking.id && entryActions.hasRefundRecord);
@@ -366,139 +374,85 @@ const SurveyDepositOrderPage: React.FC = () => {
     }
     return false;
   });
-  const reminderNotes = [booking.surveyRefundNotice].filter(Boolean) as string[];
+  const actionCount = showPayBar
+    ? [showCancelButton, true, canPayWithAlipay].filter(Boolean).length
+    : detailActions.length;
+  const showActionBar = showPayBar || detailActions.length > 0;
+  const providerName = detail.provider?.name || '待分配';
+  const orderAddress = booking.address || detail.project?.address || '地址待同步';
+  const refundAmount = Math.min(
+    Number(detail.refundSummary?.refundableAmount || 0) || amount,
+    amount || Number(detail.refundSummary?.refundableAmount || 0),
+  );
+  const summaryRows = [
+    { label: '当前进展', value: stageMeta?.label || detail.statusText || '待同步' },
+    { label: '预约量房', value: booking.preferredDate || '待同步' },
+    ...(booking.surveyDepositPaidAt ? [{ label: '支付时间', value: formatServerDateTime(booking.surveyDepositPaidAt) }] : []),
+    { label: '下单时间', value: formatServerDateTime(detail.createdAt) },
+  ];
 
   return (
     <View
       className="order-detail-page survey-deposit-page page"
-      style={showPayBar ? pageBottomStyle : undefined}
+      style={showActionBar ? pageBottomStyle : undefined}
       {...bindPullToRefresh}
     >
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
-      <View className={`order-detail-page__status-header order-detail-page__status-header--${detail.statusGroup}`}>
-        <View className="order-detail-page__status-main">
-          <Text className="order-detail-page__status-title">{orderStatus.label}</Text>
-          <Text className="order-detail-page__status-desc">{orderStatus.desc}</Text>
-        </View>
-        <View className="order-detail-page__status-icon-wrapper">
-          <Icon name={orderStatus.icon} size={64} color="#FFFFFF" />
-        </View>
-      </View>
+      <NotificationSurfaceShell className="order-detail-page__shell">
+        <ScrollView scrollY className="h-full">
+          <Card className="order-detail-page__summary-card">
+            <View className="order-detail-page__summary-head">
+              <View className="order-detail-page__summary-main">
+                <Text className="order-detail-page__summary-eyebrow">量房费订单</Text>
+                <Text className="order-detail-page__summary-amount">{formatCurrency(showPayBar ? payableAmount : amount)}</Text>
+                <Text className="order-detail-page__summary-title">{detail.title || '量房费'}</Text>
+              </View>
+              <Tag variant={orderStatus.variant}>{orderStatus.label}</Tag>
+            </View>
 
-      <View className="order-detail-page__container">
-        <Card className="order-detail-page__card" title="关联服务信息">
-          <View className="order-detail-page__section">
-            <DetailRow
-              label="服务方"
-              value={detail.provider?.name || '待分配'}
-              extra={detail.provider?.id ? <Text className="order-detail-page__link">查看</Text> : undefined}
-              onClick={detail.provider?.id
-                ? () => Taro.navigateTo({
-                    url: `/pages/providers/detail/index?id=${detail.provider?.id}&type=${detail.provider?.providerType || 'designer'}`,
-                  })
-                : undefined}
-            />
-            <DetailRow label="项目地址" value={booking.address || detail.project?.address || '-'} multiline />
-            {stageMeta ? (
-              <DetailRow
-                label="当前进展"
-                value={stageMeta.label}
-              />
-            ) : null}
-          </View>
-        </Card>
+            <View className="order-detail-page__summary-facts">
+              <View className="order-detail-page__summary-fact">
+                <Text className="order-detail-page__summary-fact-label">服务商</Text>
+                <Text className="order-detail-page__summary-fact-value">{providerName}</Text>
+              </View>
+              <View className="order-detail-page__summary-fact">
+                <Text className="order-detail-page__summary-fact-label">地址</Text>
+                <Text className="order-detail-page__summary-fact-value">{orderAddress}</Text>
+              </View>
+            </View>
 
-        {reminderNotes.length > 0 ? (
-          <Card className="order-detail-page__card" title="温馨提醒">
-            <View className="order-detail-page__section pb-md">
-              {reminderNotes.map((note) => (
-                <View key={note} className="order-detail-page__note">
-                  {note}
-                </View>
+            <View className="order-detail-page__summary-rows">
+              {summaryRows.map((item) => (
+                <DetailRow key={item.label} label={item.label} value={item.value} />
               ))}
-            </View>
-          </Card>
-        ) : null}
-
-        <Card className="order-detail-page__card" title="费用清单">
-          <View className="order-detail-page__section pb-md pt-sm">
-            <View className="order-detail-page__amount-row">
-              <Text className="order-detail-page__amount-label">订单总额</Text>
-              <Text className="order-detail-page__amount-value">{formatCurrency(amount)}</Text>
-            </View>
-            <View className="order-detail-page__amount-row">
-              <Text className="order-detail-page__amount-label">已支付</Text>
-              <Text className="order-detail-page__amount-value">{formatCurrency(paidAmount)}</Text>
-            </View>
-            <View className="order-detail-page__amount-row order-detail-page__amount-row--highlight">
-              <Text className="order-detail-page__amount-label">{showPayBar ? '待支付金额' : '合计应付'}</Text>
-              <Text className="order-detail-page__amount-value">
-                {formatCurrency(showPayBar ? payableAmount : amount)}
-              </Text>
-            </View>
-          </View>
-        </Card>
-
-        {showRefundSection ? (
-          <Card className="order-detail-page__card" title="退款服务">
-            <View className="order-detail-page__section pb-md">
               <DetailRow
-                label="当前状态"
-                value={refundStatus.label}
-                extra={<Tag className="ml-sm" variant={refundStatus.variant}>{refundStatus.label}</Tag>}
+                label="订单编号"
+                value={orderNo}
+                extra={<Text className="order-detail-page__row-link" onClick={() => handleCopy(orderNo)}>复制</Text>}
               />
-              <DetailRow label="可退金额" value={formatCurrency(detail.refundSummary?.refundableAmount || 0)} />
             </View>
           </Card>
-        ) : null}
 
-        <Card className="order-detail-page__card" title="订单基础信息">
-          <View className="order-detail-page__section pb-md">
-            <DetailRow
-              label="订单编号"
-              value={orderNo}
-              extra={<Text className="order-detail-page__link" onClick={() => handleCopy(orderNo)}>复制</Text>}
-            />
-            <DetailRow label="订单类型" value={detail.title || '量房费订单'} />
-            <DetailRow label="下单时间" value={formatServerDateTime(detail.createdAt)} />
-            <DetailRow label="预约量房时间" value={booking.preferredDate || '-'} />
-            {booking.surveyDepositPaidAt ? (
-              <DetailRow label="支付时间" value={formatServerDateTime(booking.surveyDepositPaidAt)} />
-            ) : null}
-          </View>
-        </Card>
+          {showRefundSection ? (
+            <Card className="notification-surface-card" title="退款进度">
+              <NotificationFactRows
+                compact
+                items={[
+                  { label: '当前状态', value: refundStatus.label },
+                  { label: '涉及金额', value: formatCurrency(refundAmount) },
+                ]}
+              />
+            </Card>
+          ) : null}
+        </ScrollView>
+      </NotificationSurfaceShell>
 
-        {detailActions.length > 0 ? (
-          <View
-            className={`order-detail-page__footer-actions${detailActions.length === 1 ? ' order-detail-page__footer-actions--single' : ''}`}
-          >
-            {detailActions.map((action) => (
-              <Button
-                key={action.key}
-                variant={action.variant}
-                className="order-detail-page__footer-action-button"
-                onClick={() => {
-                  if (action.key === 'view_refund') {
-                    handleViewRefundRecords();
-                    return;
-                  }
-                  handleApplyRefund();
-                }}
-              >
-                {action.label}
-              </Button>
-            ))}
-          </View>
-        ) : null}
-      </View>
-
-      {showPayBar ? (
-        <View className="order-detail-page__bottom-bar" style={fixedBottomBarStyle}>
-          {showCancelButton ? (
+      {showActionBar ? (
+        <NotificationActionBar single={actionCount <= 1}>
+          {showPayBar && showCancelButton ? (
             <Button
               variant="outline"
-              className="order-detail-page__bottom-button"
               disabled={submitting || !!launchingChannel}
               onClick={() => {
                 void handleCancel();
@@ -506,24 +460,47 @@ const SurveyDepositOrderPage: React.FC = () => {
             >
               取消预约
             </Button>
-          ) : (
-            <View className="order-detail-page__bottom-amount">
-              <Text className="order-detail-page__bottom-amount-label">待支付</Text>
-              <Text className="order-detail-page__bottom-amount-value">{formatCurrency(payableAmount)}</Text>
-            </View>
-          )}
-          <Button
-            variant="primary"
-            className="order-detail-page__bottom-button"
-            loading={!!launchingChannel}
-            disabled={submitting || !!launchingChannel}
-            onClick={() => {
-              void chooseAndLaunch();
-            }}
-          >
-            去支付
-          </Button>
-        </View>
+          ) : null}
+          {showPayBar ? (
+            <Button
+              variant="primary"
+              loading={!!launchingChannel}
+              disabled={submitting || !!launchingChannel}
+              onClick={() => {
+                void (canPayWithWechat ? launchPreferredChannel('wechat') : chooseAndLaunch());
+              }}
+            >
+              {canPayWithWechat ? '微信支付' : '去支付'}
+            </Button>
+          ) : null}
+          {showPayBar && canPayWithAlipay ? (
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={submitting || !!launchingChannel}
+              onClick={() => {
+                void launchPreferredChannel('alipay');
+              }}
+            >
+              支付宝扫码
+            </Button>
+          ) : null}
+          {!showPayBar ? detailActions.map((action) => (
+            <Button
+              key={action.key}
+              variant={action.variant}
+              onClick={() => {
+                if (action.key === 'view_refund') {
+                  handleViewRefundRecords();
+                  return;
+                }
+                handleApplyRefund();
+              }}
+            >
+              {action.label}
+            </Button>
+          )) : null}
+        </NotificationActionBar>
       ) : null}
 
       {qrPayment ? (

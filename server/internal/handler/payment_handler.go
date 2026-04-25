@@ -110,6 +110,20 @@ func PaymentWechatNotify(c *gin.Context) {
 	})
 }
 
+func PaymentWechatRefundNotify(c *gin.Context) {
+	if err := paymentService.HandleWechatRefundNotify(c.Request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "FAIL",
+			"message": err.Error(),
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"code":    "SUCCESS",
+		"message": "成功",
+	})
+}
+
 func PaymentAlipayReturn(c *gin.Context) {
 	paymentID := parseUint64(c.Query("paymentId"))
 	if paymentID == 0 {

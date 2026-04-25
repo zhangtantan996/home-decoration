@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"time"
@@ -14,10 +15,18 @@ import (
 )
 
 const (
-	SystemAlertTypeBackupFailure               = "system_backup_failure"
-	SystemAlertTypeEscrowReleaseFailure        = "system_escrow_release_failure"
-	SystemAlertTypeFinanceReconciliationFailed = "system_finance_reconciliation_failure"
-	SystemAlertTypeRefundSyncFailure           = "system_refund_sync_failure"
+	SystemAlertTypeBackupFailure                   = "system_backup_failure"
+	SystemAlertTypeEscrowReleaseFailure            = "system_escrow_release_failure"
+	SystemAlertTypeFinanceReconciliationFailed     = "system_finance_reconciliation_failure"
+	SystemAlertTypeSettlementReconciliationFailed  = "system_settlement_reconciliation_failure"
+	SystemAlertTypeRefundSyncFailure               = "system_refund_sync_failure"
+	SystemAlertTypePaymentCallbackFailed           = "payment_callback_failed"
+	SystemAlertTypePaymentReconciliationFailed     = "payment_reconciliation_failed"
+	SystemAlertTypePaymentReconciliationDifference = "payment_reconciliation_difference"
+	SystemAlertTypeRefundFailed                    = "refund_failed"
+	SystemAlertTypeRefundReconciliationDifference  = "refund_reconciliation_difference"
+	SystemAlertTypeSettlementFailed                = "settlement_failed"
+	SystemAlertTypeSettlementReconciliationDiff    = "settlement_reconciliation_difference"
 )
 
 type CreateSystemAlertInput struct {
@@ -51,7 +60,7 @@ func (s *SystemAlertService) UpsertAlert(input *CreateSystemAlertInput) (*model.
 
 	alertType := strings.TrimSpace(input.Type)
 	scope := strings.TrimSpace(input.Scope)
-	description := strings.TrimSpace(input.Description)
+	description := sanitizeSystemAlertDescription(input.Description)
 	level := normalizeSystemAlertLevel(input.Level)
 	if alertType == "" || scope == "" || description == "" {
 		return nil, false, errors.New("告警类型、范围和描述不能为空")
@@ -240,13 +249,38 @@ func normalizeSystemAlertLevel(level string) string {
 	}
 }
 
-func buildSystemAlertDescription(description, actionURL string) string {
+func buildSystemAlertDescription(description, _ string) string {
 	description = strings.TrimSpace(description)
-	actionURL = strings.TrimSpace(actionURL)
-	if actionURL == "" {
-		return description
+	if description == "" {
+		return "系统任务异常，请进入风险中心查看处理。"
 	}
-	return fmt.Sprintf("%s | action=%s", description, actionURL)
+	return description
+}
+
+func sanitizeSystemAlertDescription(description string) string {
+	description = strings.TrimSpace(description)
+	if description == "" {
+		return "系统任务异常，请进入风险中心查看处理。"
+	}
+	lower := strings.ToLower(description)
+	technicalMarkers := []string{
+		"error:",
+		"sqlstate",
+		"relation ",
+		"does not exist",
+		"failed to create",
+		"no such table",
+		"database",
+		"schema",
+		"panic",
+		"stack trace",
+	}
+	for _, marker := range technicalMarkers {
+		if strings.Contains(lower, marker) {
+			return "系统任务异常，请进入风险中心查看处理。"
+		}
+	}
+	return description
 }
 
 func parseRiskWarningStatus(raw string) (int8, error) {
@@ -259,4 +293,200 @@ func parseRiskWarningStatus(raw string) (int8, error) {
 		return 0, errors.New("无效预警状态")
 	}
 	return status, nil
+}
+
+func buildAdminPaymentTransactionActionURL(paymentOrderID uint64) string {
+	if paymentOrderID == 0 {
+		return "/finance/transactions"
+	}
+	return fmt.Sprintf("/finance/transactions?paymentOrderId=%d", paymentOrderID)
+}
+
+func buildAdminFinanceReconciliationActionURL(reconciliationID uint64) string {
+	if reconciliationID == 0 {
+		return "/finance/reconciliations"
+	}
+	return fmt.Sprintf("/finance/reconciliations?reconciliationId=%d", reconciliationID)
+}
+
+func buildAdminRefundOrderActionURL(refundOrderID uint64) string {
+	if refundOrderID == 0 {
+		return "/refunds"
+	}
+	return fmt.Sprintf("/refunds?refundOrderId=%d", refundOrderID)
+}
+
+func buildAdminSettlementOrderActionURL(settlementOrderID uint64) string {
+	if settlementOrderID == 0 {
+		return "/finance/settlements"
+	}
+	return fmt.Sprintf("/finance/settlements?settlementOrderId=%d", settlementOrderID)
+}
+
+// AlertPaymentCallbackFailed 支付回调验签失败告警
+func (s *SystemAlertService) AlertPaymentCallbackFailed(paymentOrderID uint64, reason string) error {
+	scope := fmt.Sprintf("支付订单#%d", paymentOrderID)
+	description := fmt.Sprintf("支付回调验签失败，原因：%s", reason)
+	actionURL := buildAdminPaymentTransactionActionURL(paymentOrderID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypePaymentCallbackFailed,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 支付回调验签失败告警发送失败: paymentOrderID=%d, error=%v", paymentOrderID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 支付回调验签失败告警已发送: paymentOrderID=%d, reason=%s", paymentOrderID, reason)
+	}
+	return nil
+}
+
+// AlertPaymentReconciliationFailed 支付对账失败告警
+func (s *SystemAlertService) AlertPaymentReconciliationFailed(reconciliationID uint64, reason string) error {
+	scope := fmt.Sprintf("支付对账任务#%d", reconciliationID)
+	description := fmt.Sprintf("支付对账任务执行失败，原因：%s，请检查第三方支付接口或网络连接", reason)
+	actionURL := buildAdminFinanceReconciliationActionURL(reconciliationID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypePaymentReconciliationFailed,
+		Level:       "critical",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 支付对账失败告警发送失败: reconciliationID=%d, error=%v", reconciliationID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 支付对账失败告警已发送: reconciliationID=%d, reason=%s", reconciliationID, reason)
+	}
+	return nil
+}
+
+// AlertPaymentReconciliationDifference 支付对账差异告警
+func (s *SystemAlertService) AlertPaymentReconciliationDifference(reconciliationID uint64, differenceCount int, differenceAmount float64) error {
+	scope := fmt.Sprintf("支付对账任务#%d", reconciliationID)
+	description := fmt.Sprintf("支付对账发现差异：差异笔数=%d，差异金额=%.2f元，请人工核对并处理", differenceCount, differenceAmount)
+	actionURL := buildAdminFinanceReconciliationActionURL(reconciliationID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypePaymentReconciliationDifference,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 支付对账差异告警发送失败: reconciliationID=%d, error=%v", reconciliationID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 支付对账差异告警已发送: reconciliationID=%d, count=%d, amount=%.2f", reconciliationID, differenceCount, differenceAmount)
+	}
+	return nil
+}
+
+// AlertRefundFailed 退款失败告警
+func (s *SystemAlertService) AlertRefundFailed(refundOrderID uint64, reason string) error {
+	scope := fmt.Sprintf("退款订单#%d", refundOrderID)
+	description := fmt.Sprintf("退款申请失败，原因：%s，请检查退款参数或联系第三方支付平台", reason)
+	actionURL := buildAdminRefundOrderActionURL(refundOrderID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypeRefundFailed,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 退款失败告警发送失败: refundOrderID=%d, error=%v", refundOrderID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 退款失败告警已发送: refundOrderID=%d, reason=%s", refundOrderID, reason)
+	}
+	return nil
+}
+
+// AlertRefundReconciliationDifference 退款对账差异告警
+func (s *SystemAlertService) AlertRefundReconciliationDifference(reconciliationID uint64, differenceCount int) error {
+	scope := fmt.Sprintf("退款对账任务#%d", reconciliationID)
+	description := fmt.Sprintf("退款对账发现差异：差异笔数=%d，请人工核对退款状态", differenceCount)
+	actionURL := buildAdminFinanceReconciliationActionURL(reconciliationID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypeRefundReconciliationDifference,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 退款对账差异告警发送失败: reconciliationID=%d, error=%v", reconciliationID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 退款对账差异告警已发送: reconciliationID=%d, count=%d", reconciliationID, differenceCount)
+	}
+	return nil
+}
+
+// AlertSettlementFailed 结算出款失败告警
+func (s *SystemAlertService) AlertSettlementFailed(settlementOrderID uint64, reason string) error {
+	scope := fmt.Sprintf("结算订单#%d", settlementOrderID)
+	description := fmt.Sprintf("结算出款失败，原因：%s，请检查商户账户信息或联系第三方支付平台", reason)
+	actionURL := buildAdminSettlementOrderActionURL(settlementOrderID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypeSettlementFailed,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 结算出款失败告警发送失败: settlementOrderID=%d, error=%v", settlementOrderID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 结算出款失败告警已发送: settlementOrderID=%d, reason=%s", settlementOrderID, reason)
+	}
+	return nil
+}
+
+// AlertSettlementReconciliationDifference 结算对账差异告警
+func (s *SystemAlertService) AlertSettlementReconciliationDifference(reconciliationID uint64, differenceCount int, differenceAmount float64) error {
+	scope := fmt.Sprintf("结算对账任务#%d", reconciliationID)
+	description := fmt.Sprintf("结算对账发现差异：差异笔数=%d，差异金额=%.2f元，请人工核对结算状态", differenceCount, differenceAmount)
+	actionURL := buildAdminFinanceReconciliationActionURL(reconciliationID)
+
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypeSettlementReconciliationDiff,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   actionURL,
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] 结算对账差异告警发送失败: reconciliationID=%d, error=%v", reconciliationID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] 结算对账差异告警已发送: reconciliationID=%d, count=%d, amount=%.2f", reconciliationID, differenceCount, differenceAmount)
+	}
+	return nil
 }

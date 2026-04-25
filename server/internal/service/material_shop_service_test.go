@@ -78,8 +78,8 @@ func TestMaterialShopServiceListIncludesVerifiedShopWithoutProducts(t *testing.T
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
-	createMaterialShopForTest(t, db, model.MaterialShop{Name: "零商品已审核店", Type: "showroom", IsVerified: true}, 0)
-	createMaterialShopForTest(t, db, model.MaterialShop{Name: "五商品已审核店", Type: "showroom", IsVerified: true}, 5)
+	createMaterialShopForTest(t, db, model.MaterialShop{Name: "零商品已审核店", Type: "showroom", IsVerified: true, IsSettled: true}, 0)
+	createMaterialShopForTest(t, db, model.MaterialShop{Name: "五商品已审核店", Type: "showroom", IsVerified: true, IsSettled: true}, 5)
 
 	list, total, err := service.ListMaterialShops(&MaterialShopQuery{Page: 1, PageSize: 10})
 	if err != nil {
@@ -97,8 +97,8 @@ func TestMaterialShopServiceListIncludesVerifiedShopBelowFiveProducts(t *testing
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
-	createMaterialShopForTest(t, db, model.MaterialShop{Name: "四商品已审核店", Type: "showroom", IsVerified: true}, 4)
-	createMaterialShopForTest(t, db, model.MaterialShop{Name: "五商品已审核店", Type: "showroom", IsVerified: true}, 5)
+	createMaterialShopForTest(t, db, model.MaterialShop{Name: "四商品已审核店", Type: "showroom", IsVerified: true, IsSettled: true}, 4)
+	createMaterialShopForTest(t, db, model.MaterialShop{Name: "五商品已审核店", Type: "showroom", IsVerified: true, IsSettled: true}, 5)
 
 	list, total, err := service.ListMaterialShops(&MaterialShopQuery{Page: 1, PageSize: 10})
 	if err != nil {
@@ -116,8 +116,8 @@ func TestMaterialShopServiceListExcludesUnverifiedShop(t *testing.T) {
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
-	createMaterialShopForTest(t, db, model.MaterialShop{Name: "六商品未审核店", Type: "showroom", IsVerified: false}, 6)
-	createMaterialShopForTest(t, db, model.MaterialShop{Name: "五商品已审核店", Type: "showroom", IsVerified: true}, 5)
+	createMaterialShopForTest(t, db, model.MaterialShop{Name: "六商品未审核店", Type: "showroom", IsVerified: false, IsSettled: true}, 6)
+	createMaterialShopForTest(t, db, model.MaterialShop{Name: "五商品已审核店", Type: "showroom", IsVerified: true, IsSettled: true}, 5)
 
 	list, total, err := service.ListMaterialShops(&MaterialShopQuery{Page: 1, PageSize: 10})
 	if err != nil {
@@ -139,6 +139,7 @@ func TestMaterialShopServiceListSupportsKeywordCityAndRatingFilters(t *testing.T
 		Name:              "西安木作馆",
 		Type:              "showroom",
 		IsVerified:        true,
+		IsSettled:         true,
 		Address:           "陕西省西安市雁塔区科技路",
 		Rating:            4.9,
 		MainProducts:      `["木地板","定制木作"]`,
@@ -149,6 +150,7 @@ func TestMaterialShopServiceListSupportsKeywordCityAndRatingFilters(t *testing.T
 		Name:              "成都木作馆",
 		Type:              "showroom",
 		IsVerified:        true,
+		IsSettled:         true,
 		Address:           "四川省成都市高新区天府大道",
 		Rating:            4.9,
 		MainProducts:      `["木地板"]`,
@@ -158,6 +160,7 @@ func TestMaterialShopServiceListSupportsKeywordCityAndRatingFilters(t *testing.T
 		Name:              "西安低分店",
 		Type:              "showroom",
 		IsVerified:        true,
+		IsSettled:         true,
 		Address:           "陕西省西安市未央区",
 		Rating:            4.2,
 		MainProducts:      `["木地板"]`,
@@ -186,7 +189,7 @@ func TestMaterialShopServiceDetailAllowsVerifiedShopWithoutEnoughProducts(t *tes
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
-	shop := createMaterialShopForTest(t, db, model.MaterialShop{Name: "详情零商品已审核店", Type: "showroom", IsVerified: true}, 0)
+	shop := createMaterialShopForTest(t, db, model.MaterialShop{Name: "详情零商品已审核店", Type: "showroom", IsVerified: true, IsSettled: true}, 0)
 
 	if _, err := service.GetMaterialShopByID(shop.ID); err != nil {
 		t.Fatalf("expected detail to stay visible for verified shop without enough products: %v", err)
@@ -201,6 +204,7 @@ func TestMaterialShopServiceDetailReturnsPublicProductsAndUsesProductCoverFallba
 		Name:       "公开商品门店",
 		Type:       "showroom",
 		IsVerified: true,
+		IsSettled:  true,
 		Cover:      "",
 	}, 0)
 
@@ -235,6 +239,44 @@ func TestMaterialShopServiceDetailReturnsPublicProductsAndUsesProductCoverFallba
 	if len(detail.Products[0].Images) != 2 {
 		t.Fatalf("expected product images to be returned, got=%v", detail.Products[0].Images)
 	}
+	if detail.Description != "" {
+		t.Fatalf("expected public detail description to be blank, got=%q", detail.Description)
+	}
+}
+
+func TestMaterialShopServiceListHidesUnsettledLeadShops(t *testing.T) {
+	db := setupMaterialShopServiceDB(t)
+	service := &MaterialShopService{}
+
+	settledStatus := int8(1)
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:       "正式入驻门店",
+		Type:       "showroom",
+		IsVerified: true,
+		IsSettled:  true,
+		Status:     &settledStatus,
+	}, 1)
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:       "未入驻线索门店",
+		Type:       "showroom",
+		IsVerified: false,
+		IsSettled:  false,
+		Status:     &settledStatus,
+	}, 1)
+
+	list, total, err := service.ListMaterialShops(&MaterialShopQuery{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list material shops: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("expected only settled verified shop to remain visible, total=%d len=%d", total, len(list))
+	}
+	if list[0].Name != "正式入驻门店" {
+		t.Fatalf("unexpected visible shop: %+v", list[0])
+	}
+	if list[0].Description != "" {
+		t.Fatalf("expected public list description to be blank, got=%q", list[0].Description)
+	}
 }
 
 func TestMaterialShopServiceHidesShopWhenPlatformDisplayDisabled(t *testing.T) {
@@ -245,6 +287,7 @@ func TestMaterialShopServiceHidesShopWhenPlatformDisplayDisabled(t *testing.T) {
 		Name:                   "平台关闭门店",
 		Type:                   "showroom",
 		IsVerified:             true,
+		IsSettled:              true,
 		PlatformDisplayEnabled: true,
 		MerchantDisplayEnabled: true,
 	}, 2)
@@ -273,6 +316,7 @@ func TestMaterialShopServiceHidesShopWhenMerchantDisplayDisabled(t *testing.T) {
 		Name:                   "商家关闭门店",
 		Type:                   "showroom",
 		IsVerified:             true,
+		IsSettled:              true,
 		PlatformDisplayEnabled: true,
 		MerchantDisplayEnabled: true,
 	}, 2)

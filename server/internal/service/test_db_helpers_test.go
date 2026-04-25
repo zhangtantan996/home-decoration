@@ -15,11 +15,14 @@ func withPaymentCentralTestModels(models ...any) []any {
 		&model.PaymentCallback{},
 		&model.RefundOrder{},
 		&model.PayoutOrder{},
+		&model.PaymentPlan{},
+		&model.ChangeOrder{},
 		&model.SettlementOrder{},
 		&model.LedgerAccount{},
 		&model.LedgerEntry{},
 		&model.MerchantBondRule{},
 		&model.MerchantBondAccount{},
+		&model.UserSettings{},
 	}
 	all := make([]any, 0, len(models)+len(extra))
 	all = append(all, models...)

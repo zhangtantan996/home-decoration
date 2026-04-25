@@ -1,0 +1,67 @@
+.refunds-list-page {
+  min-height: 100vh;
+
+  &__content {
+    padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+  }
+
+  &__filters-scroll {
+    margin-bottom: 18rpx;
+    white-space: nowrap;
+  }
+
+  &__filters {
+    display: inline-flex;
+    gap: 12rpx;
+    padding-right: 12rpx;
+  }
+
+  &__filter {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 60rpx;
+    padding: 0 24rpx;
+    border-radius: 999rpx;
+    background: rgba(255, 255, 255, 0.92);
+    border: 1rpx solid rgba(226, 232, 240, 0.96);
+    color: #64748b;
+    font-size: 24rpx;
+    font-weight: 600;
+
+    &--active {
+      background: #ffffff;
+      border-color: rgba(37, 99, 235, 0.18);
+      color: #2563eb;
+      box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.08);
+    }
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+  }
+
+  &__card {
+    overflow: hidden;
+    border-radius: 28rpx;
+    background: rgba(255, 255, 255, 0.98);
+    border: 1rpx solid rgba(226, 232, 240, 0.96);
+    box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.04);
+  }
+
+  &__badge-row {
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+    flex-wrap: wrap;
+  }
+
+  &__loading {
+    padding: 28rpx 0 8rpx;
+    color: #94a3b8;
+    font-size: 24rpx;
+    text-align: center;
+  }
+}

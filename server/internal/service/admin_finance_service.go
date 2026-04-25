@@ -54,6 +54,68 @@ type AdminFinanceTransactionItem struct {
 	CompletedAt  *time.Time `json:"completedAt"`
 }
 
+type AdminPaymentOrderFilter struct {
+	Channel      string
+	Status       string
+	BizType      string
+	FundScene    string
+	RefundStatus string
+	OutTradeNo   string
+	StartDate    string
+	EndDate      string
+	Page         int
+	PageSize     int
+}
+
+type AdminPaymentOrderItem struct {
+	ID                   uint64     `json:"id"`
+	BizType              string     `json:"bizType"`
+	BizID                uint64     `json:"bizId"`
+	PayerUserID          uint64     `json:"payerUserId"`
+	Channel              string     `json:"channel"`
+	FundScene            string     `json:"fundScene"`
+	TerminalType         string     `json:"terminalType"`
+	Subject              string     `json:"subject"`
+	Amount               float64    `json:"amount"`
+	AmountCent           int64      `json:"amountCent"`
+	RefundedAmount       float64    `json:"refundedAmount"`
+	RefundedAmountCent   int64      `json:"refundedAmountCent"`
+	RefundStatus         string     `json:"refundStatus"`
+	OutTradeNo           string     `json:"outTradeNo"`
+	ProviderTradeNo      string     `json:"providerTradeNo"`
+	Status               string     `json:"status"`
+	ExpiredAt            *time.Time `json:"expiredAt"`
+	PaidAt               *time.Time `json:"paidAt"`
+	CreatedAt            time.Time  `json:"createdAt"`
+	UpdatedAt            time.Time  `json:"updatedAt"`
+	LaunchTokenSet       bool       `json:"launchTokenSet"`
+	RefundOrderCount     int64      `json:"refundOrderCount"`
+	RefundSucceededCount int64      `json:"refundSucceededCount"`
+}
+
+type AdminRefundOrderItem struct {
+	ID                  uint64     `json:"id"`
+	PaymentOrderID      uint64     `json:"paymentOrderId"`
+	BizType             string     `json:"bizType"`
+	BizID               uint64     `json:"bizId"`
+	FundScene           string     `json:"fundScene"`
+	RefundApplicationID uint64     `json:"refundApplicationId"`
+	OutRefundNo         string     `json:"outRefundNo"`
+	Amount              float64    `json:"amount"`
+	AmountCent          int64      `json:"amountCent"`
+	Reason              string     `json:"reason"`
+	Status              string     `json:"status"`
+	FailureReason       string     `json:"failureReason"`
+	SucceededAt         *time.Time `json:"succeededAt"`
+	CreatedAt           time.Time  `json:"createdAt"`
+	UpdatedAt           time.Time  `json:"updatedAt"`
+}
+
+type AdminPaymentOrderDetail struct {
+	Payment AdminPaymentOrderItem  `json:"payment"`
+	Refunds []AdminRefundOrderItem `json:"refunds"`
+}
+
 type FreezeFundsInput struct {
 	ProjectID uint64  `json:"projectId"`
 	Amount    float64 `json:"amount"`
@@ -183,6 +245,83 @@ func (s *AdminFinanceService) ListTransactions(filter AdminFinanceTransactionFil
 	}
 
 	return items, total, nil
+}
+
+func (s *AdminFinanceService) ListPaymentOrders(filter AdminPaymentOrderFilter) ([]AdminPaymentOrderItem, int64, error) {
+	page := filter.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filter.PageSize
+	if pageSize <= 0 {
+		pageSize = 20
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	query := repository.DB.Model(&model.PaymentOrder{})
+	query = applyPaymentOrderFilters(query, filter)
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+
+	var payments []model.PaymentOrder
+	if err := query.Order("created_at DESC, id DESC").
+		Offset((page - 1) * pageSize).
+		Limit(pageSize).
+		Find(&payments).Error; err != nil {
+		return nil, 0, err
+	}
+
+	refundStats, err := loadPaymentRefundStats(payments)
+	if err != nil {
+		return nil, 0, err
+	}
+	items := make([]AdminPaymentOrderItem, 0, len(payments))
+	for _, payment := range payments {
+		item := serializeAdminPaymentOrder(payment)
+		if stat, ok := refundStats[payment.ID]; ok {
+			item.RefundOrderCount = stat.TotalCount
+			item.RefundSucceededCount = stat.SucceededCount
+		}
+		items = append(items, item)
+	}
+	return items, total, nil
+}
+
+func (s *AdminFinanceService) GetPaymentOrderDetail(paymentOrderID uint64) (*AdminPaymentOrderDetail, error) {
+	if paymentOrderID == 0 {
+		return nil, errors.New("支付单不存在")
+	}
+	var payment model.PaymentOrder
+	if err := repository.DB.First(&payment, paymentOrderID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("支付单不存在")
+		}
+		return nil, err
+	}
+	var refunds []model.RefundOrder
+	if err := repository.DB.Where("payment_order_id = ?", payment.ID).Order("created_at DESC, id DESC").Find(&refunds).Error; err != nil {
+		return nil, err
+	}
+	item := serializeAdminPaymentOrder(payment)
+	item.RefundOrderCount = int64(len(refunds))
+	for _, refund := range refunds {
+		if refund.Status == model.RefundOrderStatusSucceeded {
+			item.RefundSucceededCount++
+		}
+	}
+	refundItems := make([]AdminRefundOrderItem, 0, len(refunds))
+	for _, refund := range refunds {
+		refundItems = append(refundItems, serializeAdminRefundOrder(refund))
+	}
+	return &AdminPaymentOrderDetail{
+		Payment: item,
+		Refunds: refundItems,
+	}, nil
 }
 
 func (s *AdminFinanceService) ExportTransactions(filter AdminFinanceTransactionFilter) ([]byte, error) {
@@ -439,7 +578,7 @@ func (s *AdminFinanceService) ManualRelease(adminID uint64, input *ManualRelease
 			return err
 		}
 		released = releasedResult.Transaction
-		return notifyFinanceParticipantsTx(tx, project, "project.finance.released", "节点款项已放款", fmt.Sprintf("项目 #%d 的节点“%s”已完成放款，金额 %.2f 元。原因：%s", project.ID, releasedResult.Milestone.Name, input.Amount, strings.TrimSpace(input.Reason)), fmt.Sprintf("/projects/%d", project.ID))
+		return notifyFinanceParticipantsTx(tx, project, "project.finance.released", "节点结算已提交", fmt.Sprintf("项目 #%d 的节点“%s”已生成结算记录，等待线下打款确认，金额 %.2f 元。原因：%s", project.ID, releasedResult.Milestone.Name, input.Amount, strings.TrimSpace(input.Reason)), fmt.Sprintf("/projects/%d", project.ID))
 	})
 	if err != nil {
 		return nil, err
@@ -534,19 +673,12 @@ func createNotificationTx(tx *gorm.DB, input *CreateNotificationInput) error {
 	if input.UserID == 0 || strings.TrimSpace(input.Title) == "" || strings.TrimSpace(input.Content) == "" {
 		return nil
 	}
-
-	notification := &model.Notification{
-		UserID:      input.UserID,
-		UserType:    input.UserType,
-		Title:       input.Title,
-		Content:     input.Content,
-		Type:        input.Type,
-		RelatedID:   input.RelatedID,
-		RelatedType: input.RelatedType,
-		ActionURL:   input.ActionURL,
-		Extra:       marshalAuditJSON(input.Extra),
-		IsRead:      false,
+	shouldCreate, err := shouldCreateNotificationTx(tx, input)
+	if err != nil || !shouldCreate {
+		return err
 	}
+
+	notification := buildNotificationRecord(input)
 	return tx.Create(notification).Error
 }
 
@@ -564,4 +696,111 @@ func applyFinanceTransactionFilters(query *gorm.DB, filter AdminFinanceTransacti
 		query = query.Where("t.created_at < ?", endAt)
 	}
 	return query
+}
+
+func applyPaymentOrderFilters(query *gorm.DB, filter AdminPaymentOrderFilter) *gorm.DB {
+	if channel := strings.TrimSpace(filter.Channel); channel != "" {
+		query = query.Where("channel = ?", channel)
+	}
+	if status := strings.TrimSpace(filter.Status); status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if bizType := strings.TrimSpace(filter.BizType); bizType != "" {
+		query = query.Where("biz_type = ?", bizType)
+	}
+	if fundScene := strings.TrimSpace(filter.FundScene); fundScene != "" {
+		query = query.Where("fund_scene = ?", fundScene)
+	}
+	if refundStatus := strings.TrimSpace(filter.RefundStatus); refundStatus != "" {
+		query = query.Where("refund_status = ?", refundStatus)
+	}
+	if outTradeNo := strings.TrimSpace(filter.OutTradeNo); outTradeNo != "" {
+		query = query.Where("LOWER(out_trade_no) LIKE LOWER(?)", "%"+outTradeNo+"%")
+	}
+	if startAt, ok := parseAuditFilterTime(filter.StartDate, false); ok {
+		query = query.Where("created_at >= ?", startAt)
+	}
+	if endAt, ok := parseAuditFilterTime(filter.EndDate, true); ok {
+		query = query.Where("created_at < ?", endAt)
+	}
+	return query
+}
+
+type paymentRefundStat struct {
+	PaymentOrderID uint64
+	TotalCount     int64
+	SucceededCount int64
+}
+
+func loadPaymentRefundStats(payments []model.PaymentOrder) (map[uint64]paymentRefundStat, error) {
+	result := make(map[uint64]paymentRefundStat, len(payments))
+	if len(payments) == 0 {
+		return result, nil
+	}
+	ids := make([]uint64, 0, len(payments))
+	for _, payment := range payments {
+		ids = append(ids, payment.ID)
+	}
+	var rows []paymentRefundStat
+	if err := repository.DB.Model(&model.RefundOrder{}).
+		Select(`
+			payment_order_id,
+			COUNT(*) AS total_count,
+			SUM(CASE WHEN status = ? THEN 1 ELSE 0 END) AS succeeded_count
+		`, model.RefundOrderStatusSucceeded).
+		Where("payment_order_id IN ?", ids).
+		Group("payment_order_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		result[row.PaymentOrderID] = row
+	}
+	return result, nil
+}
+
+func serializeAdminPaymentOrder(payment model.PaymentOrder) AdminPaymentOrderItem {
+	return AdminPaymentOrderItem{
+		ID:                 payment.ID,
+		BizType:            payment.BizType,
+		BizID:              payment.BizID,
+		PayerUserID:        payment.PayerUserID,
+		Channel:            payment.Channel,
+		FundScene:          payment.FundScene,
+		TerminalType:       payment.TerminalType,
+		Subject:            payment.Subject,
+		Amount:             payment.Amount,
+		AmountCent:         payment.AmountCent,
+		RefundedAmount:     payment.RefundedAmount,
+		RefundedAmountCent: payment.RefundedAmountCent,
+		RefundStatus:       payment.RefundStatus,
+		OutTradeNo:         payment.OutTradeNo,
+		ProviderTradeNo:    payment.ProviderTradeNo,
+		Status:             payment.Status,
+		ExpiredAt:          payment.ExpiredAt,
+		PaidAt:             payment.PaidAt,
+		CreatedAt:          payment.CreatedAt,
+		UpdatedAt:          payment.UpdatedAt,
+		LaunchTokenSet:     strings.TrimSpace(payment.LaunchTokenHash) != "",
+	}
+}
+
+func serializeAdminRefundOrder(refund model.RefundOrder) AdminRefundOrderItem {
+	return AdminRefundOrderItem{
+		ID:                  refund.ID,
+		PaymentOrderID:      refund.PaymentOrderID,
+		BizType:             refund.BizType,
+		BizID:               refund.BizID,
+		FundScene:           refund.FundScene,
+		RefundApplicationID: refund.RefundApplicationID,
+		OutRefundNo:         refund.OutRefundNo,
+		Amount:              refund.Amount,
+		AmountCent:          refund.AmountCent,
+		Reason:              refund.Reason,
+		Status:              refund.Status,
+		FailureReason:       refund.FailureReason,
+		SucceededAt:         refund.SucceededAt,
+		CreatedAt:           refund.CreatedAt,
+		UpdatedAt:           refund.UpdatedAt,
+	}
 }

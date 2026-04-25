@@ -60,11 +60,11 @@ type RefundTypeEstimate struct {
 }
 
 type BookingRefundSummary struct {
-	CanApplyRefund    bool                 `json:"canApplyRefund"`
-	LatestRefundID    uint64               `json:"latestRefundId,omitempty"`
-	LatestRefundStatus string              `json:"latestRefundStatus,omitempty"`
-	RefundableAmount  float64              `json:"refundableAmount"`
-	RefundableTypes   []RefundTypeEstimate `json:"refundableTypes"`
+	CanApplyRefund     bool                 `json:"canApplyRefund"`
+	LatestRefundID     uint64               `json:"latestRefundId,omitempty"`
+	LatestRefundStatus string               `json:"latestRefundStatus,omitempty"`
+	RefundableAmount   float64              `json:"refundableAmount"`
+	RefundableTypes    []RefundTypeEstimate `json:"refundableTypes"`
 }
 
 type ReviewRefundApplicationInput struct {
@@ -762,9 +762,9 @@ func applyIntentFeeRefundTx(tx *gorm.DB, booking *model.Booking, reason string) 
 		refundAmount = booking.IntentFee
 	}
 	return tx.Model(booking).Updates(map[string]interface{}{
-		"intent_fee_refunded":      true,
-		"intent_fee_refund_reason": strings.TrimSpace(reason),
-		"intent_fee_refunded_at":   now,
+		"intent_fee_refunded":       true,
+		"intent_fee_refund_reason":  strings.TrimSpace(reason),
+		"intent_fee_refunded_at":    now,
 		"survey_deposit_refunded":   true,
 		"survey_deposit_refund_amt": refundAmount,
 		"survey_deposit_refund_at":  now,
@@ -819,13 +819,23 @@ func applyConstructionRefundTx(tx *gorm.DB, projectID, userID, orderID, refundAp
 	if amount <= 0 {
 		return errors.New("施工费退款金额无效")
 	}
-	if amount > escrow.FrozenAmount {
+	amount = normalizeAmount(amount)
+	availableAmount := normalizeAmount(escrow.AvailableAmount)
+	frozenAmount := normalizeAmount(escrow.FrozenAmount)
+	unreleasedAmount := normalizeAmount(availableAmount + frozenAmount)
+	if amount > unreleasedAmount {
 		return errors.New("施工费退款金额超过未放款余额")
 	}
-	if err := tx.Model(&escrow).Updates(map[string]interface{}{
-		"total_amount":  gorm.Expr("total_amount - ?", amount),
-		"frozen_amount": gorm.Expr("frozen_amount - ?", amount),
-	}).Error; err != nil {
+	fromAvailable := amount
+	if fromAvailable > availableAmount {
+		fromAvailable = availableAmount
+	}
+	fromFrozen := normalizeAmount(amount - fromAvailable)
+	escrow.TotalAmount = normalizeAmount(escrow.TotalAmount - amount)
+	escrow.AvailableAmount = normalizeAmount(availableAmount - fromAvailable)
+	escrow.FrozenAmount = normalizeAmount(frozenAmount - fromFrozen)
+	escrow.Status = reconcileEscrowStatus(&escrow)
+	if err := tx.Save(&escrow).Error; err != nil {
 		return err
 	}
 	if err := applySettlementRefundByProjectTx(tx, projectID, amount); err != nil {
@@ -968,7 +978,9 @@ func applyRefundToSettlementsTx(tx *gorm.DB, settlements []model.SettlementOrder
 		case model.SettlementStatusPaid:
 			updates["status"] = model.SettlementStatusException
 			updates["recovery_status"] = model.SettlementRecoveryStatusPending
-			updates["recovery_amount"] = normalizeAmount(settlement.RecoveryAmount + used)
+			recoveryAmount := normalizeAmount(settlement.RecoveryAmount + used)
+			updates["recovery_amount"] = recoveryAmount
+			updates["recovery_amount_cent"] = floatToCents(recoveryAmount)
 			updates["failure_reason"] = "已出款后发生退款，待追偿"
 			incomeUpdates["settlement_status"] = model.SettlementStatusException
 			incomeUpdates["payout_failed_reason"] = "已出款后发生退款，待追偿"

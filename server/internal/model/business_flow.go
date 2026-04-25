@@ -60,14 +60,16 @@ const (
 	ConfigKeySurveyDepositRefundRate     = "booking.survey_deposit_refund_rate" // 退款比例(0-1)
 	ConfigKeySurveyDepositMin            = "booking.survey_deposit_min"         // 设计师可设最低
 	ConfigKeySurveyDepositMax            = "booking.survey_deposit_max"         // 设计师可设最高
-	ConfigKeyDesignFeeQuoteExpireHours   = "design.fee_quote_expire_hours"      // 报价有效期(小时)
-	ConfigKeyDeliverableDeadlineDays     = "design.deliverable_deadline_days"   // 交付截止天数
-	ConfigKeyConstructionReleaseDelay    = "construction.release_delay_days"    // T+N 放款延迟天数
+	ConfigKeyBudgetConfirmRejectLimit    = "booking.budget_confirm_reject_limit"
+	ConfigKeyDesignFeeQuoteExpireHours   = "design.fee_quote_expire_hours"    // 报价有效期(小时)
+	ConfigKeyDeliverableDeadlineDays     = "design.deliverable_deadline_days" // 交付截止天数
+	ConfigKeyConstructionReleaseDelay    = "construction.release_delay_days"  // T+N 放款延迟天数
 	ConfigKeyMerchantDepositRules        = "payment.merchant_deposit_rules"
 	ConfigKeyPaymentReleaseDelayDays     = "payment.release_delay_days"
 	ConfigKeyPaymentPayoutAutoEnabled    = "payment.payout_auto_enabled"
 	ConfigKeyPaymentChannelWechatEnabled = "payment.channel.wechat.enabled"
 	ConfigKeyPaymentChannelAlipayEnabled = "payment.channel.alipay.enabled"
+	ConfigKeyMiniHomePopup               = "mini.home_popup.config"
 )
 
 // Proposal 设计方案
@@ -127,16 +129,26 @@ func (Order) TableName() string {
 // PaymentPlan 支付计划
 type PaymentPlan struct {
 	Base
-	OrderID     uint64     `json:"orderId" gorm:"index"`
-	Type        string     `json:"type" gorm:"size:20"` // milestone, onetime
-	Seq         int        `json:"seq"`                 // 期数顺序
-	Name        string     `json:"name" gorm:"size:50"` // e.g., "开工款"
-	Amount      float64    `json:"amount"`
-	Percentage  float32    `json:"percentage"`
-	Status      int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付
-	DueAt       *time.Time `json:"dueAt"`                   // 应付日期
-	PaidAt      *time.Time `json:"paidAt"`
-	MilestoneID uint64     `json:"milestoneId" gorm:"index"` // 关联里程碑ID（施工费分期）
+	OrderID            uint64     `json:"orderId" gorm:"index"`
+	Type               string     `json:"type" gorm:"size:20"` // milestone, onetime
+	Seq                int        `json:"seq"`                 // 期数顺序
+	Name               string     `json:"name" gorm:"size:50"` // e.g., "开工款"
+	Amount             float64    `json:"amount"`
+	AmountCent         int64      `json:"amountCent" gorm:"default:0"`
+	Percentage         float32    `json:"percentage"`
+	Status             int8       `json:"status" gorm:"default:0"` // 0:待支付 1:已支付 2:已失效
+	RefundedAmount     float64    `json:"refundedAmount" gorm:"default:0"`
+	RefundedAmountCent int64      `json:"refundedAmountCent" gorm:"default:0"`
+	RefundStatus       string     `json:"refundStatus" gorm:"size:30;default:'none';index"`
+	ActivatedAt        *time.Time `json:"activatedAt"`
+	DueAt              *time.Time `json:"dueAt"` // 应付日期
+	PaidAt             *time.Time `json:"paidAt"`
+	MilestoneID        uint64     `json:"milestoneId" gorm:"index"` // 关联里程碑ID（施工费分期）
+	ChangeOrderID      *uint64    `json:"changeOrderId,omitempty" gorm:"index"`
+	Payable            bool       `json:"payable" gorm:"-"`
+	PayableReason      string     `json:"payableReason,omitempty" gorm:"-"`
+	ExpiresAt          *time.Time `json:"expiresAt,omitempty" gorm:"-"`
+	PlanType           string     `json:"planType,omitempty" gorm:"-"`
 }
 
 // TableName 指定表名
@@ -153,6 +165,12 @@ const (
 	OrderStatusPaid      int8 = 1 // 已支付
 	OrderStatusCancelled int8 = 2 // 已取消
 	OrderStatusRefunded  int8 = 3 // 已退款
+)
+
+const (
+	PaymentPlanStatusPending int8 = 0
+	PaymentPlanStatusPaid    int8 = 1
+	PaymentPlanStatusExpired int8 = 2
 )
 
 const (

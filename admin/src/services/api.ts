@@ -1,6 +1,7 @@
 import axios from "axios";
 import { message } from "antd";
 import { getApiBaseUrl, getLoginPath } from "../utils/env";
+import { toSafeUserFacingText } from "../utils/userFacingText";
 import {
   useAuthStore,
   type AdminSecurityStatus,
@@ -118,7 +119,7 @@ const normalizeAdminError = (error: unknown) => {
       : undefined;
 
   return new AdminApiError(
-    payload?.message || `请求失败${status ? `(${status})` : ""}`,
+    toSafeUserFacingText(payload?.message, "操作失败"),
     {
       status,
       code: payload?.code,
@@ -430,10 +431,22 @@ export interface AdminSupervisionProjectItem {
   address?: string;
   ownerName?: string;
   providerName?: string;
+  businessStage?: string;
+  kickoffStatus?: string;
+  plannedStartDate?: string;
+  currentResponsible?: string;
   currentPhase?: string;
   currentPhaseStatus?: string;
   lastLogAt?: string;
+  latestLogTitle?: string;
   unhandledRiskCount: number;
+}
+
+export interface AdminBridgeSupervisorSummary {
+  plannedStartDate?: string;
+  latestLogAt?: string;
+  latestLogTitle?: string;
+  unhandledRiskCount?: number;
 }
 
 export interface AdminSupervisionWorkspace {
@@ -442,10 +455,16 @@ export interface AdminSupervisionWorkspace {
   address?: string;
   ownerName?: string;
   providerName?: string;
+  businessStage?: string;
+  kickoffStatus?: string;
+  plannedStartDate?: string;
+  currentResponsible?: string;
   currentPhase?: string;
   currentPhaseStatus?: string;
   lastInspectionAt?: string;
+  latestLogTitle?: string;
   unhandledRiskCount: number;
+  supervisorSummary?: AdminBridgeSupervisorSummary;
   riskWarnings: AdminRiskWarningItem[];
 }
 
@@ -454,6 +473,7 @@ export interface AdminSupervisionProjectQuery {
   pageSize?: number;
   keyword?: string;
   phaseStatus?: string;
+  businessStage?: string;
   hasPendingRisk?: boolean;
 }
 
@@ -853,6 +873,68 @@ export interface AdminFinanceTransactionQuery {
   pageSize?: number;
   type?: string;
   projectId?: number;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface AdminPaymentOrderItem {
+  id: number;
+  bizType: string;
+  bizId: number;
+  payerUserId: number;
+  channel: string;
+  fundScene: string;
+  terminalType: string;
+  subject: string;
+  amount: number;
+  amountCent: number;
+  refundedAmount: number;
+  refundedAmountCent: number;
+  refundStatus: "none" | "partial_refunded" | "refunded" | string;
+  outTradeNo: string;
+  providerTradeNo?: string;
+  status: string;
+  expiredAt?: string;
+  paidAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  launchTokenSet?: boolean;
+  refundOrderCount?: number;
+  refundSucceededCount?: number;
+}
+
+export interface AdminRefundOrderItem {
+  id: number;
+  paymentOrderId: number;
+  bizType: string;
+  bizId: number;
+  fundScene: string;
+  refundApplicationId: number;
+  outRefundNo: string;
+  amount: number;
+  amountCent: number;
+  reason?: string;
+  status: string;
+  failureReason?: string;
+  succeededAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminPaymentOrderDetail {
+  payment: AdminPaymentOrderItem;
+  refunds: AdminRefundOrderItem[];
+}
+
+export interface AdminPaymentOrderQuery {
+  page?: number;
+  pageSize?: number;
+  channel?: string;
+  status?: string;
+  bizType?: string;
+  fundScene?: string;
+  refundStatus?: string;
+  outTradeNo?: string;
   startDate?: string;
   endDate?: string;
 }
@@ -1310,6 +1392,29 @@ export interface AdminProviderListItem {
   visibility?: AdminAuditVisibility;
   actions?: AdminAuditActions;
   legacyInfo?: AdminAuditLegacyInfo;
+  governanceTier?: string;
+  scoreSummary?: {
+    responseRate?: number;
+    proposalRate?: number;
+    designConfirmRate?: number;
+    constructionConfirmRate?: number;
+    completionRate?: number;
+    acceptancePassRate?: number;
+    complaintRate?: number;
+    refundRate?: number;
+    caseCount?: number;
+    officialReviewCount?: number;
+  };
+  riskFlags?: string[];
+  recommendedAction?: string;
+  funnelMetrics?: {
+    bookingsTotal?: number;
+    respondedBookings?: number;
+    proposalSubmittedCount?: number;
+    designConfirmedCount?: number;
+    constructionConfirmedCount?: number;
+    completedProjectCount?: number;
+  };
 }
 
 export interface AdminMaterialShopListItem {
@@ -1868,6 +1973,26 @@ export const adminFinanceApi = {
         }
       >
     >("/admin/finance/transactions", { params }),
+  paymentOrders: (params?: AdminPaymentOrderQuery) =>
+    api.get<
+      AdminApiResponse<
+        AdminListData<AdminPaymentOrderItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >,
+      AdminApiResponse<
+        AdminListData<AdminPaymentOrderItem> & {
+          page?: number;
+          pageSize?: number;
+        }
+      >
+    >("/admin/finance/payment-orders", { params }),
+  paymentOrderDetail: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminPaymentOrderDetail>,
+      AdminApiResponse<AdminPaymentOrderDetail>
+    >(`/admin/finance/payment-orders/${id}`),
   reconciliations: (params?: AdminFinanceReconciliationQuery) =>
     api.get<
       AdminApiResponse<
@@ -2155,6 +2280,87 @@ export const identityApi = {
     providerSubType: "designer" | "company" | "foreman";
     applicationData?: string;
   }) => api.post("/identities/apply", data),
+};
+
+// 智能报价询价管理
+export interface AdminQuoteInquiryPriceRange {
+  min: number;
+  max: number;
+}
+
+export interface AdminQuoteInquiryBreakdownItem {
+  category: string;
+  description: string;
+  min: number;
+  max: number;
+}
+
+export interface AdminQuoteInquiryResult {
+  totalMin: number;
+  totalMax: number;
+  designFee: AdminQuoteInquiryPriceRange;
+  constructionFee: AdminQuoteInquiryPriceRange;
+  materialFee: AdminQuoteInquiryPriceRange;
+  estimatedDuration: number;
+  breakdown: AdminQuoteInquiryBreakdownItem[];
+  cityCoefficient: number;
+  areaCoefficient: number;
+  styleCoefficient: number;
+  complexityCoefficient: number;
+  tips?: string[];
+}
+
+export interface AdminQuoteInquiryListItem {
+  id: number;
+  userId?: number;
+  phoneMasked?: string;
+  addressMasked?: string;
+  cityCode?: string;
+  cityName?: string;
+  area?: number;
+  houseLayout?: string;
+  renovationType?: string;
+  style?: string;
+  budgetRange?: string;
+  totalMin?: number;
+  totalMax?: number;
+  conversionStatus: string;
+  source: string;
+  hasPhone: boolean;
+  createdAt: string;
+}
+
+export interface AdminQuoteInquiryDetail extends AdminQuoteInquiryListItem {
+  phone?: string;
+  address?: string;
+  result?: AdminQuoteInquiryResult;
+  estimatedDurationDays?: number;
+  openId?: string;
+  updatedAt: string;
+}
+
+export interface AdminQuoteInquiryQuery {
+  page?: number;
+  pageSize?: number;
+  conversionStatus?: string;
+  city?: string;
+  hasPhone?: boolean;
+  startDate?: string;
+  endDate?: string;
+  keyword?: string;
+}
+
+export const adminQuoteInquiryApi = {
+  list: (params?: AdminQuoteInquiryQuery) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminQuoteInquiryListItem>>,
+      AdminApiResponse<AdminListData<AdminQuoteInquiryListItem>>
+    >("/admin/quote-inquiries", { params }),
+  detail: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminQuoteInquiryDetail>,
+      AdminApiResponse<AdminQuoteInquiryDetail>
+    >(`/admin/quote-inquiries/${id}`),
 };
 
 export default api;

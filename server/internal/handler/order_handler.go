@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
@@ -287,7 +288,23 @@ func normalizeLegacyDiscount(entry service.OrderCenterEntrySummary) float64 {
 
 func legacyActionPath(entry service.OrderCenterEntrySummary) string {
 	if entry.SourceKind == service.OrderCenterSourceSurveyDeposit {
+		if bookingID := entryBookingID(entry.Booking); bookingID > 0 {
+			return fmt.Sprintf("/bookings/%d", bookingID)
+		}
 		return ""
+	}
+	if entry.SourceKind == service.OrderCenterSourceDesignOrder {
+		bookingID := entryBookingID(entry.Booking)
+		if bookingID == 0 {
+			return ""
+		}
+		if entry.StatusGroup == service.OrderCenterStatusPendingPayment {
+			return fmt.Sprintf("/bookings/%d/design-quote", bookingID)
+		}
+		if entryBookingProposalID(entry.Booking) > 0 {
+			return fmt.Sprintf("/proposals/%d", entryBookingProposalID(entry.Booking))
+		}
+		return fmt.Sprintf("/bookings/%d", bookingID)
 	}
 	return ""
 }
@@ -311,8 +328,38 @@ func GetOrder(c *gin.Context) {
 			_ = repository.DB.First(order, order.ID).Error
 		}
 	}
+	result := gin.H{
+		"id":          order.ID,
+		"orderNo":     order.OrderNo,
+		"orderType":   order.OrderType,
+		"totalAmount": order.TotalAmount,
+		"paidAmount":  order.PaidAmount,
+		"discount":    order.Discount,
+		"status":      order.Status,
+		"expireAt":    order.ExpireAt,
+		"paidAt":      order.PaidAt,
+		"bookingId":   order.BookingID,
+		"projectId":   order.ProjectID,
+		"proposalId":  order.ProposalID,
+		"createdAt":   order.CreatedAt,
+	}
+	if order.ProjectID > 0 {
+		if projectDetail, projectErr := (&service.ProjectService{}).GetProjectDetail(order.ProjectID); projectErr == nil && projectDetail != nil {
+			result["closureSummary"] = projectDetail.ClosureSummary
+			result["bridgeConversionSummary"] = projectDetail.BridgeConversionSummary
+			result["businessStage"] = projectDetail.BusinessStage
+			result["flowSummary"] = projectDetail.FlowSummary
+			result["quoteTruthSummary"] = projectDetail.QuoteTruthSummary
+			result["commercialExplanation"] = projectDetail.CommercialExplanation
+			result["changeOrderSummary"] = projectDetail.ChangeOrderSummary
+			result["settlementSummary"] = projectDetail.SettlementSummary
+			result["payoutSummary"] = projectDetail.PayoutSummary
+			result["financialClosureStatus"] = projectDetail.FinancialClosureStatus
+			result["nextPendingAction"] = projectDetail.NextPendingAction
+		}
+	}
 
-	response.Success(c, order)
+	response.Success(c, result)
 }
 
 // GetOrderPaymentPlans 获取订单分期计划

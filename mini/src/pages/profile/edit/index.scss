@@ -76,13 +76,6 @@
     line-height: 1.2;
   }
 
-  &__hint {
-    margin-top: 10rpx;
-    color: #64748b;
-    font-size: 24rpx;
-    line-height: 1.5;
-  }
-
   &__form-card {
     padding: 28rpx;
     border-radius: 32rpx;
@@ -103,19 +96,13 @@
     margin-bottom: 12rpx;
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    justify-content: flex-start;
   }
 
   &__label {
     color: #111827;
     font-size: 28rpx;
     font-weight: 600;
-    line-height: 1.4;
-  }
-
-  &__field-tip {
-    color: #94a3b8;
-    font-size: 22rpx;
     line-height: 1.4;
   }
 

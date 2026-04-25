@@ -1,0 +1,483 @@
+.overviewCard :global(.ant-card-body) {
+  display: grid;
+  gap: 20px;
+}
+
+.overviewBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.currentStepRow {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+
+.currentStepIndex {
+  flex-shrink: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24px;
+  font-weight: 700;
+  box-shadow: 0 18px 36px rgba(37, 99, 235, 0.18);
+}
+
+.currentStepContent {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.currentStepEyebrow {
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.currentStepTitle {
+  font-size: 22px;
+  line-height: 1.2;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.currentStepMeta {
+  font-size: 13px;
+  color: #64748b;
+  line-height: 1.7;
+}
+
+.overviewActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.progressSummary {
+  display: grid;
+  gap: 8px;
+}
+
+.progressSummaryRow {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.progressSummaryValue {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+  min-width: 52px;
+}
+
+.metricsGrid {
+  display: none;
+}
+
+.metricCard {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border-radius: 20px;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+  border: 1px solid #dbeafe;
+}
+
+.metricLabel {
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.metricValue {
+  color: #0f172a;
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.metricValueSmall {
+  color: #0f172a;
+  font-size: 16px;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.metricHint {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.progressRail {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.progressChip {
+  border: 1px solid #dbe4f0;
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 14px 12px;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.progressChip:hover {
+  border-color: #93c5fd;
+  transform: translateY(-1px);
+}
+
+.progressChipCurrent {
+  border-color: #2563eb;
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.14);
+}
+
+.progressChipIndex {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.progressChipTitle {
+  font-size: 13px;
+  line-height: 1.5;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.progressChipState {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.stepList {
+  display: grid;
+  gap: 0;
+}
+
+.stepItem {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 16px;
+  position: relative;
+}
+
+.stepItem:not(:last-child) {
+  padding-bottom: 18px;
+}
+
+.stepConnector {
+  position: absolute;
+  left: 21px;
+  top: 40px;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, #dbeafe 0%, #e2e8f0 100%);
+}
+
+.stepItem:last-child .stepConnector {
+  display: none;
+}
+
+.stepIndex {
+  position: relative;
+  z-index: 1;
+  width: 44px;
+  height: 44px;
+  border-radius: 16px;
+  border: 1px solid #dbe4f0;
+  background: #ffffff;
+  color: #334155;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.05);
+  cursor: pointer;
+}
+
+.stepIndexCurrent {
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.18);
+}
+
+.stepCard {
+  display: grid;
+  gap: 14px;
+  padding: 18px 20px;
+  border-radius: 24px;
+  border: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+}
+
+.stepCardCurrent {
+  border-color: #93c5fd;
+  box-shadow: 0 20px 40px rgba(37, 99, 235, 0.1);
+}
+
+.stepCardReturned {
+  border-color: rgba(248, 113, 113, 0.55);
+  box-shadow: 0 18px 36px rgba(239, 68, 68, 0.08);
+}
+
+.stepHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.stepHeaderMain {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.stepHeaderTop {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stepTitle {
+  color: #0f172a;
+  font-size: 18px;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.stepHint {
+  color: #475569;
+  line-height: 1.7;
+}
+
+.stepHeaderActions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stepBody {
+  display: grid;
+  gap: 12px;
+}
+
+.completenessCard {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  border: 1px solid #dbeafe;
+}
+
+.completenessHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.completenessTitle {
+  font-size: 12px;
+  color: #475569;
+  letter-spacing: 0.04em;
+}
+
+.completenessValue {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.completenessSummary {
+  color: #334155;
+  line-height: 1.6;
+}
+
+.stepMetaGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.metaPanel {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: rgba(248, 250, 252, 0.88);
+  border: 1px solid #e2e8f0;
+}
+
+.metaPanelLabel {
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.metaPanelValue {
+  color: #334155;
+  line-height: 1.7;
+  font-weight: 500;
+}
+
+.summaryBox {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.summaryLabel {
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.summaryText {
+  color: #334155;
+  line-height: 1.7;
+}
+
+.explainerBox {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+.explainerLabel {
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
+.explainerList {
+  display: grid;
+  gap: 8px;
+}
+
+.explainerItem {
+  position: relative;
+  padding-left: 14px;
+  color: #334155;
+  line-height: 1.7;
+}
+
+.explainerItem::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 11px;
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: #60a5fa;
+}
+
+.eventItem {
+  display: grid;
+  gap: 6px;
+}
+
+.toneNeutral {
+  border-color: #dbe4f0;
+}
+
+.toneBlue {
+  border-color: rgba(59, 130, 246, 0.28);
+  background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.toneGold {
+  border-color: rgba(245, 158, 11, 0.26);
+  background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.toneGreen {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+}
+
+.toneRed {
+  border-color: rgba(239, 68, 68, 0.24);
+  background: linear-gradient(180deg, #fff1f2 0%, #ffffff 100%);
+}
+
+@media (max-width: 1200px) {
+  .metricsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .progressRail {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 768px) {
+  .currentStepTitle {
+    font-size: 18px;
+  }
+
+  .progressRail {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stepItem {
+    grid-template-columns: 36px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .stepConnector {
+    left: 17px;
+  }
+
+  .stepIndex {
+    width: 36px;
+    height: 36px;
+    border-radius: 14px;
+    font-size: 14px;
+  }
+
+  .stepCard {
+    padding: 16px;
+  }
+
+  .stepMetaGrid {
+    grid-template-columns: 1fr;
+  }
+}

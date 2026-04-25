@@ -1,5 +1,6 @@
 import { MINI_ENV } from '@/config/env';
 import type { ProviderCaseItem, ProviderDetail } from '@/services/providers';
+import { parseAbsoluteUrl, replaceAbsoluteUrlOrigin } from '@/utils/url';
 
 const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 const UNSTABLE_IMAGE_HOST_FRAGMENTS = ['images.unsplash.com', 'via.placeholder.com'];
@@ -13,24 +14,21 @@ const normalizeFirstPartyAbsoluteUrl = (raw: string) => {
     return value;
   }
 
-  try {
-    const currentOrigin = new URL(API_ORIGIN);
-    const targetUrl = new URL(value);
-    if (KNOWN_SECURE_FIRST_PARTY_HOSTS.has(targetUrl.hostname)) {
-      targetUrl.protocol = 'https:';
-      return targetUrl.toString();
-    }
-
-    if (targetUrl.hostname !== currentOrigin.hostname) {
-      return value;
-    }
-
-    targetUrl.protocol = currentOrigin.protocol;
-    targetUrl.host = currentOrigin.host;
-    return targetUrl.toString();
-  } catch {
+  const currentOrigin = parseAbsoluteUrl(API_ORIGIN);
+  const targetUrl = parseAbsoluteUrl(value);
+  if (!currentOrigin || !targetUrl) {
     return value;
   }
+
+  if (KNOWN_SECURE_FIRST_PARTY_HOSTS.has(targetUrl.hostname)) {
+    return `https://${targetUrl.host}${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
+  }
+
+  if (targetUrl.hostname !== currentOrigin.hostname) {
+    return value;
+  }
+
+  return replaceAbsoluteUrlOrigin(value, API_ORIGIN);
 };
 
 const isKnownUnstableImageUrl = (raw: string) => {

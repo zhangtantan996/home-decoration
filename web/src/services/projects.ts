@@ -1,5 +1,6 @@
 import type { PageEnvelope } from '../types/api';
 import type {
+  ProjectChangeOrderVM,
   ProjectBillingItemVM,
   ProjectBillingPlanVM,
   ProjectCompletionVM,
@@ -10,6 +11,7 @@ import type {
   ProjectListItemVM,
   ProjectLogVM,
   ProjectMilestoneVM,
+  ProjectPaymentPlanVM,
   ProjectPhaseVM,
 } from '../types/viewModels';
 import {
@@ -20,6 +22,15 @@ import {
   TRANSACTION_STATUS_LABELS,
 } from '../constants/statuses';
 import { compactPhone, formatArea, formatCurrency, formatDate, formatDateTime } from '../utils/format';
+import {
+  adaptBridgeConversionSummary,
+  adaptChangeOrderSummary,
+  adaptCommercialExplanation,
+  adaptPayoutSummary,
+  adaptProjectClosureSummary,
+  adaptQuoteTruthSummary,
+  adaptSettlementSummary,
+} from './bridgeSummary';
 import { requestJson } from './http';
 import { readThroughCache } from './runtimeCache';
 
@@ -33,6 +44,15 @@ interface ProjectListDTO {
   currentPhase?: string;
   status?: number;
   budget?: number;
+  kickoffStatus?: string;
+  plannedStartDate?: string;
+}
+
+interface BridgeSupervisorSummaryDTO {
+  plannedStartDate?: string;
+  latestLogAt?: string;
+  latestLogTitle?: string;
+  unhandledRiskCount?: number;
 }
 
 interface ProjectDetailResponse {
@@ -47,6 +67,23 @@ interface ProjectDetailResponse {
   flowSummary?: string;
   availableActions?: string[];
   selectedQuoteTaskId?: number;
+  baselineStatus?: string;
+  baselineSubmittedAt?: string;
+  constructionSubjectType?: string;
+  constructionSubjectId?: number;
+  constructionSubjectDisplayName?: string;
+  kickoffStatus?: string;
+  plannedStartDate?: string;
+  supervisorSummary?: BridgeSupervisorSummaryDTO | null;
+  bridgeConversionSummary?: unknown;
+  closureSummary?: unknown;
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   area?: number;
   budget?: number;
   ownerName?: string;
@@ -63,6 +100,59 @@ interface ProjectDetailResponse {
   completionSubmittedAt?: string;
   completionRejectedAt?: string;
   completionRejectionReason?: string;
+  paymentPlans?: Array<{
+    id: number;
+    orderId: number;
+    seq: number;
+    name?: string;
+    amount?: number;
+    dueAt?: string;
+    activatedAt?: string;
+    expiresAt?: string;
+    status?: number;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+  }>;
+  nextPayablePlan?: {
+    id: number;
+    orderId: number;
+    seq: number;
+    name?: string;
+    amount?: number;
+    dueAt?: string;
+    activatedAt?: string;
+    expiresAt?: string;
+    status?: number;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+  } | null;
+  changeOrders?: ChangeOrderDTO[];
+}
+
+export interface ChangeOrderDTO {
+  id: number;
+  projectId: number;
+  initiatorType?: string;
+  initiatorId?: number;
+  changeType?: string;
+  title?: string;
+  reason?: string;
+  description?: string;
+  amountImpact?: number;
+  timelineImpact?: number;
+  status?: string;
+  evidenceUrls?: string[];
+  items?: Array<{ title?: string; description?: string; amountImpact?: number }>;
+  createdAt?: string;
+  updatedAt?: string;
+  userConfirmedAt?: string;
+  userRejectedAt?: string;
+  userRejectReason?: string;
+  settledAt?: string;
+  settlementReason?: string;
+  payablePlanId?: number;
 }
 
 interface ProjectCompletionResponse {
@@ -76,6 +166,14 @@ interface ProjectCompletionResponse {
   completionRejectedAt?: string;
   completionRejectionReason?: string;
   inspirationCaseDraftId?: number;
+  closureSummary?: unknown;
+  quoteTruthSummary?: unknown;
+  commercialExplanation?: unknown;
+  changeOrderSummary?: unknown;
+  settlementSummary?: unknown;
+  payoutSummary?: unknown;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   projectReview?: {
     id: number;
     projectId: number;
@@ -96,6 +194,10 @@ export interface ProjectReviewPayload {
 export interface ProjectDisputePayload {
   reason: string;
   evidence: string[];
+}
+
+export interface ChangeOrderDecisionPayload {
+  reason?: string;
 }
 
 interface ProjectPhaseDTO {
@@ -186,6 +288,8 @@ function toProjectListItem(dto: ProjectListDTO): ProjectListItemVM {
     statusText: PROJECT_STATUS_LABELS[Number(dto.status || 0)] || '处理中',
     budgetText: formatCurrency(dto.budget),
     href: `/projects/${dto.id}`,
+    kickoffStatus: dto.kickoffStatus || undefined,
+    plannedStartDate: formatDate(dto.plannedStartDate),
   };
 }
 
@@ -260,6 +364,57 @@ function adaptBillingPlan(item: NonNullable<ProjectBillDTO['paymentPlans']>[numb
   };
 }
 
+function adaptProjectPaymentPlan(item: NonNullable<ProjectDetailResponse['paymentPlans']>[number]): ProjectPaymentPlanVM {
+  const statusText = item.payable
+    ? '可支付'
+    : Number(item.status || 0) === 1
+      ? '已支付'
+      : Number(item.status || 0) === 2
+        ? '已失效'
+        : item.activatedAt
+          ? '待支付'
+          : '待激活';
+
+  return {
+    id: item.id,
+    orderId: item.orderId,
+    seq: item.seq,
+    name: item.name || `${item.planType || '分期'} #${item.seq || '-'}`,
+    amountText: formatCurrency(item.amount),
+    statusText,
+    activatedAt: formatDateTime(item.activatedAt),
+    dueAt: formatDateTime(item.dueAt),
+    expiresAt: formatDateTime(item.expiresAt),
+    payable: item.payable,
+    payableReason: item.payableReason || undefined,
+    planType: item.planType || undefined,
+  };
+}
+
+function adaptProjectChangeOrder(item: ChangeOrderDTO): ProjectChangeOrderVM {
+  const statusMap: Record<string, string> = {
+    pending_user_confirm: '待确认',
+    user_confirmed: '已确认',
+    user_rejected: '已拒绝',
+    admin_settlement_required: '待人工结算',
+    settled: '已结算',
+    cancelled: '已取消',
+  };
+  return {
+    id: item.id,
+    title: item.title || `变更单 #${item.id}`,
+    reason: item.reason || '未填写',
+    description: item.description || undefined,
+    amountImpactText: formatCurrency(item.amountImpact),
+    timelineImpactText: item.timelineImpact ? `${item.timelineImpact} 天` : undefined,
+    status: item.status || '',
+    statusText: statusMap[item.status || ''] || (item.status || '待处理'),
+    createdAt: formatDateTime(item.createdAt),
+    userRejectReason: item.userRejectReason || undefined,
+    settlementReason: item.settlementReason || undefined,
+  };
+}
+
 export async function listProjects(params: { page?: number; pageSize?: number } = {}) {
   const query = {
     page: params.page || 1,
@@ -304,6 +459,30 @@ export async function getProjectDetail(id: number) {
         businessStage: detail.businessStage || undefined,
         flowSummary: detail.flowSummary || undefined,
         availableActions: detail.availableActions || [],
+        baselineStatus: detail.baselineStatus || undefined,
+        baselineSubmittedAt: formatDateTime(detail.baselineSubmittedAt),
+        constructionSubjectType: detail.constructionSubjectType || undefined,
+        constructionSubjectId: detail.constructionSubjectId ? Number(detail.constructionSubjectId) : undefined,
+        constructionSubjectDisplayName: detail.constructionSubjectDisplayName || undefined,
+        kickoffStatus: detail.kickoffStatus || undefined,
+        plannedStartDate: formatDateTime(detail.plannedStartDate),
+        supervisorSummary: detail.supervisorSummary
+          ? {
+              plannedStartDate: formatDateTime(detail.supervisorSummary.plannedStartDate),
+              latestLogAt: formatDateTime(detail.supervisorSummary.latestLogAt),
+              latestLogTitle: detail.supervisorSummary.latestLogTitle || undefined,
+              unhandledRiskCount: Number(detail.supervisorSummary.unhandledRiskCount || 0),
+            }
+          : undefined,
+        bridgeConversionSummary: adaptBridgeConversionSummary(detail.bridgeConversionSummary),
+        closureSummary: adaptProjectClosureSummary(detail.closureSummary),
+        quoteTruthSummary: adaptQuoteTruthSummary(detail.quoteTruthSummary),
+        commercialExplanation: adaptCommercialExplanation(detail.commercialExplanation),
+        changeOrderSummary: adaptChangeOrderSummary(detail.changeOrderSummary),
+        settlementSummary: adaptSettlementSummary(detail.settlementSummary),
+        payoutSummary: adaptPayoutSummary(detail.payoutSummary),
+        financialClosureStatus: detail.financialClosureStatus || undefined,
+        nextPendingAction: detail.nextPendingAction || undefined,
         selectedQuoteTaskId: detail.selectedQuoteTaskId || undefined,
         areaText: formatArea(detail.area),
         budgetText: formatCurrency(detail.budget),
@@ -323,6 +502,9 @@ export async function getProjectDetail(id: number) {
         completionSubmittedAt: formatDateTime(detail.completionSubmittedAt),
         completionRejectedAt: formatDateTime(detail.completionRejectedAt),
         completionRejectionReason: detail.completionRejectionReason || undefined,
+        paymentPlans: (detail.paymentPlans || []).map(adaptProjectPaymentPlan),
+        nextPayablePlan: detail.nextPayablePlan ? adaptProjectPaymentPlan(detail.nextPayablePlan) : undefined,
+        changeOrders: (detail.changeOrders || []).map(adaptProjectChangeOrder),
       };
 
       return result;
@@ -444,6 +626,14 @@ function adaptProjectCompletion(data: ProjectCompletionResponse): ProjectComplet
     completionRejectedAt: formatDateTime(data.completionRejectedAt),
     completionRejectionReason: data.completionRejectionReason || undefined,
     inspirationCaseDraftId: data.inspirationCaseDraftId || undefined,
+    closureSummary: adaptProjectClosureSummary(data.closureSummary),
+    quoteTruthSummary: adaptQuoteTruthSummary(data.quoteTruthSummary),
+    commercialExplanation: adaptCommercialExplanation(data.commercialExplanation),
+    changeOrderSummary: adaptChangeOrderSummary(data.changeOrderSummary),
+    settlementSummary: adaptSettlementSummary(data.settlementSummary),
+    payoutSummary: adaptPayoutSummary(data.payoutSummary),
+    financialClosureStatus: data.financialClosureStatus || undefined,
+    nextPendingAction: data.nextPendingAction || undefined,
     projectReview: data.projectReview
       ? {
           id: data.projectReview.id,
@@ -487,4 +677,24 @@ export async function submitProjectReview(projectId: number, payload: ProjectRev
     body: payload,
   });
   return data.review;
+}
+
+export async function listProjectChangeOrders(projectId: number) {
+  const data = await requestJson<{ list?: ChangeOrderDTO[] }>(`/projects/${projectId}/change-orders`);
+  return data.list || [];
+}
+
+export async function confirmProjectChangeOrder(changeOrderId: number) {
+  const data = await requestJson<{ changeOrder?: ChangeOrderDTO }>(`/change-orders/${changeOrderId}/confirm`, {
+    method: 'POST',
+  });
+  return data.changeOrder;
+}
+
+export async function rejectProjectChangeOrder(changeOrderId: number, payload: ChangeOrderDecisionPayload) {
+  const data = await requestJson<{ changeOrder?: ChangeOrderDTO }>(`/change-orders/${changeOrderId}/reject`, {
+    method: 'POST',
+    body: payload,
+  });
+  return data.changeOrder;
 }

@@ -23,11 +23,20 @@ import DemandList from './pages/demands/DemandList';
 import ComplaintManagement from './pages/complaints/ComplaintManagement';
 import QuoteLibraryManagement from './pages/quotes/QuoteLibraryManagement';
 import QuoteListManagement from './pages/quotes/QuoteListManagement';
+import QuoteTemplateManagement from './pages/quotes/QuoteTemplateManagement';
 import QuoteComparison from './pages/quotes/QuoteComparison';
+import ProviderPriceBookInspection from './pages/quotes/ProviderPriceBookInspection';
+import QuoteInquiryList from './pages/quote-inquiries/QuoteInquiryList';
+import QuoteInquiryDetail from './pages/quote-inquiries/QuoteInquiryDetail';
 import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
 import WorkbenchList from './pages/supervision/WorkbenchList';
 import FinanceOverview from './pages/finance/FinanceOverview';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
+import FinanceReconciliationList from './pages/finance/FinanceReconciliationList';
+import FinanceAuditList from './pages/finance/FinanceAuditList';
+import PayoutList from './pages/finance/PayoutList';
+import PaymentOrderList from './pages/finance/PaymentOrderList';
+import SettlementList from './pages/finance/SettlementList';
 import TransactionList from './pages/finance/TransactionList';
 import RiskWarningList from './pages/risk/RiskWarningList';
 import ArbitrationCenter from './pages/risk/ArbitrationCenter';
@@ -42,11 +51,13 @@ import IdentityApplicationAudit from './pages/audits/IdentityApplicationAudit';
 import ProjectAuditList from './pages/projectAudits/ProjectAuditList';
 import ProjectAuditDetail from './pages/projectAudits/ProjectAuditDetail';
 import ProjectAuditArbitrate from './pages/projectAudits/ProjectAuditArbitrate';
+import ProjectClosureReview from './pages/projectAudits/ProjectClosureReview';
 import RefundList from './pages/refunds/RefundList';
 import RefundDetail from './pages/refunds/RefundDetail';
 import WithdrawList from './pages/withdraws/WithdrawList';
 import WithdrawDetail from './pages/withdraws/WithdrawDetail';
 import OrderList from './pages/orders/OrderList';
+import NotificationListPage from './pages/notifications/NotificationList';
 import { ProtectedRoute } from './components/ProtectedRoute';
 import { getRouterBasename } from './utils/env';
 
@@ -73,6 +84,7 @@ const router = createBrowserRouter([
         children: [
             { index: true, element: <Navigate to="/dashboard" replace /> },
             { path: 'dashboard', element: <ProtectedRoute permission="dashboard:view"><Dashboard /></ProtectedRoute> },
+            { path: 'notifications', element: <ProtectedRoute><NotificationListPage /></ProtectedRoute> },
 
             // Users
             { path: 'users', element: <Navigate to="/users/list" replace /> },
@@ -103,9 +115,12 @@ const router = createBrowserRouter([
             { path: 'projects/list', element: <ProtectedRoute permission="project:list"><ProjectList /></ProtectedRoute> },
             { path: 'projects/detail/:id', element: <ProtectedRoute permission="project:view"><ProjectDetail /></ProtectedRoute> },
             { path: 'projects/map', element: <ProtectedRoute permission="project:map"><ProjectMap /></ProtectedRoute> },
+            { path: 'projects/quotes', element: <Navigate to="/projects/quotes/lists" replace /> },
             { path: 'projects/quotes/library', element: <ProtectedRoute permission="project:list"><QuoteLibraryManagement /></ProtectedRoute> },
+            { path: 'projects/quotes/templates', element: <ProtectedRoute permission="project:list"><QuoteTemplateManagement /></ProtectedRoute> },
             { path: 'projects/quotes/lists', element: <ProtectedRoute permission="project:edit"><QuoteListManagement /></ProtectedRoute> },
             { path: 'projects/quotes/compare/:id', element: <ProtectedRoute permission="project:view"><QuoteComparison /></ProtectedRoute> },
+            { path: 'projects/quotes/price-books', element: <ProtectedRoute permission="provider:list"><ProviderPriceBookInspection /></ProtectedRoute> },
 
             // Supervision Workspace
             { path: 'supervision', element: <Navigate to="/supervision/projects" replace /> },
@@ -122,17 +137,29 @@ const router = createBrowserRouter([
             { path: 'project-audits', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectAuditList /></ProtectedRoute> },
             { path: 'project-audits/:id', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectAuditDetail /></ProtectedRoute> },
             { path: 'project-audits/:id/arbitrate', element: <ProtectedRoute permission="risk:arbitration:judge"><ProjectAuditArbitrate /></ProtectedRoute> },
+            { path: 'project-audits/closure-review', element: <ProtectedRoute permission="risk:arbitration:list"><ProjectClosureReview /></ProtectedRoute> },
 
             // Bookings
             { path: 'bookings', element: <Navigate to="/bookings/list" replace /> },
             { path: 'bookings/list', element: <ProtectedRoute permission="booking:list"><BookingList /></ProtectedRoute> },
             { path: 'bookings/disputed', element: <ProtectedRoute permission="booking:dispute:detail"><DisputedBookings /></ProtectedRoute> },
 
+            // Quote Inquiries
+            { path: 'quote-inquiries', element: <Navigate to="/quote-inquiries/list" replace /> },
+            { path: 'quote-inquiries/list', element: <ProtectedRoute permission="quote:inquiry:list"><QuoteInquiryList /></ProtectedRoute> },
+            { path: 'quote-inquiries/:id', element: <ProtectedRoute permission="quote:inquiry:list"><QuoteInquiryDetail /></ProtectedRoute> },
+
             // Finance
             { path: 'finance', element: <Navigate to="/finance/overview" replace /> },
             { path: 'finance/overview', element: <ProtectedRoute permission="finance:escrow:list"><FinanceOverview /></ProtectedRoute> },
             { path: 'finance/escrow', element: <ProtectedRoute permission="finance:escrow:list"><EscrowAccountList /></ProtectedRoute> },
+            { path: 'finance/payment-orders', element: <ProtectedRoute permission="finance:transaction:list"><PaymentOrderList /></ProtectedRoute> },
             { path: 'finance/transactions', element: <ProtectedRoute permission="finance:transaction:list"><TransactionList /></ProtectedRoute> },
+            { path: 'finance/reconciliations', element: <ProtectedRoute permission="finance:transaction:list"><FinanceReconciliationList /></ProtectedRoute> },
+            { path: 'finance/settlements', element: <ProtectedRoute permission="finance:transaction:list"><SettlementList /></ProtectedRoute> },
+            { path: 'finance/payouts', element: <ProtectedRoute permission="finance:transaction:list"><PayoutList /></ProtectedRoute> },
+            { path: 'finance/audit-list', element: <ProtectedRoute permission="finance:transaction:list"><FinanceAuditList /></ProtectedRoute> },
+
             { path: 'orders', element: <ProtectedRoute permission="order:center:list"><OrderList /></ProtectedRoute> },
             { path: 'refunds', element: <ProtectedRoute permission="finance:transaction:list"><RefundList /></ProtectedRoute> },
             { path: 'refunds/:id', element: <ProtectedRoute permission="finance:transaction:view"><RefundDetail /></ProtectedRoute> },

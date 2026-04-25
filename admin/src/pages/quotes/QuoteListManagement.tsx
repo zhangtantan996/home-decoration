@@ -17,6 +17,7 @@ import {
   Table,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
+import { readSafeErrorMessage } from "../../utils/userFacingText";
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -27,7 +28,7 @@ import {
   TeamOutlined,
   UnorderedListOutlined,
 } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   adminQuoteApi,
   type AdminQuoteListDetail,
@@ -55,7 +56,7 @@ const InlinePill: React.FC<{
 
 const TASK_STATUS_META: Record<string, { text: string; tone: PillTone }> = {
   draft: { text: "草稿", tone: "muted" },
-  ready_for_selection: { text: "待选工长", tone: "warning" },
+  ready_for_selection: { text: "待选施工主体", tone: "warning" },
   pricing_in_progress: { text: "报价处理中", tone: "accent" },
   submitted_to_user: { text: "已提交用户", tone: "accent" },
   user_confirmed: { text: "用户已确认", tone: "success" },
@@ -90,7 +91,7 @@ const BUSINESS_STAGE_META: Record<string, { text: string; tone: PillTone }> = {
   proposal_confirmed: { text: "设计已确认", tone: "success" },
   constructor_pending: { text: "待选施工方", tone: "warning" },
   construction_quote_pending: { text: "施工报价待确认", tone: "accent" },
-  ready_to_start: { text: "待开工", tone: "warning" },
+  ready_to_start: { text: "待监理协调开工", tone: "warning" },
   in_progress: { text: "施工中", tone: "accent" },
   milestone_review: { text: "节点验收中", tone: "warning" },
   completed: { text: "已完工", tone: "success" },
@@ -104,9 +105,9 @@ const ACTION_LABELS: Record<string, string> = {
   confirm_proposal: "确认设计方案",
   reject_proposal: "驳回设计方案",
   create_quote_task: "创建施工报价任务",
-  select_constructor: "运营干预施工方",
+  select_constructor: "项目内施工协调",
   submit_construction_quote: "跟进施工报价提交",
-  confirm_construction_quote: "运营干预施工报价",
+  confirm_construction_quote: "项目内报价干预",
   reject_construction_quote: "驳回施工报价",
   start_project: "发起开工",
   submit_milestone: "提交节点验收",
@@ -147,22 +148,58 @@ const safeJsonParse = <T,>(value?: string, fallback: T = {} as T): T => {
   }
 };
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-  if (error && typeof error === "object") {
-    const candidate = error as {
-      message?: string;
-      response?: { data?: { message?: string } };
-    };
-    return candidate.response?.data?.message || candidate.message || fallback;
+const readErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
+
+const quoteSourceTypeLabel = (value?: string) => {
+  switch (String(value || "").toLowerCase()) {
+    case "proposal":
+      return "正式方案";
+    case "proposal_internal_draft":
+      return "方案内部草稿";
+    case "admin_imported":
+      return "Admin 导入";
+    default:
+      return value || "未标记";
   }
-  return fallback;
+};
+
+const bridgeBaselineStatusLabel = (value?: string) => {
+  switch (String(value || '').trim()) {
+    case 'submitted':
+      return '已提交';
+    case 'ready_for_selection':
+      return '可进入施工主体选择';
+    case 'pending_submission':
+      return '待提交';
+    default:
+      return value || '待同步';
+  }
+};
+
+const constructionSubjectLabel = (subjectType?: string, displayName?: string) => {
+  if (subjectType === 'company') {
+    return displayName ? `装修公司主体 · ${displayName}` : '装修公司主体';
+  }
+  if (subjectType === 'foreman') {
+    return displayName ? `独立工长主体 · ${displayName}` : '独立工长主体';
+  }
+  return '待确认施工主体';
+};
+
+const kickoffStatusLabel = (kickoffStatus?: string, plannedStartDate?: string) => {
+  if (kickoffStatus === 'scheduled') {
+    return plannedStartDate ? `已排期（${formatDateTime(plannedStartDate)}）` : '已排期';
+  }
+  return '待监理协调登记进场时间';
 };
 
 const QuoteListManagement: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [createVisible, setCreateVisible] = useState(false);
+  const [rebuildVisible, setRebuildVisible] = useState(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
   const [libraryVisible, setLibraryVisible] = useState(false);
   const [rows, setRows] = useState<QuoteListSummary[]>([]);
@@ -185,6 +222,13 @@ const QuoteListManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string | undefined>();
   const [taskForm] = Form.useForm();
   const [prerequisiteForm] = Form.useForm();
+  const [rebuildForm] = Form.useForm();
+  const providerIdFilter = useMemo(() => {
+    const raw = searchParams.get("providerId");
+    if (!raw) return undefined;
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }, [searchParams]);
 
   const loadQuoteTasks = useCallback(async () => {
     try {
@@ -221,7 +265,7 @@ const QuoteListManagement: React.FC = () => {
     setProviderOptions(
       providers.map((provider) => ({
         value: provider.id,
-        label: `${provider.realName || provider.companyName || `服务商#${provider.id}`} · ${provider.providerType === 3 ? "工长" : "装修公司"}`,
+        label: `${provider.realName || provider.companyName || `服务商#${provider.id}`} · ${provider.providerType === 3 ? "独立工长" : "装修公司"}`,
       })),
     );
   };
@@ -292,6 +336,29 @@ const QuoteListManagement: React.FC = () => {
     }
   };
 
+  const handleRebuildLegacy = async () => {
+    try {
+      const values = await rebuildForm.validateFields();
+      setSubmitting(true);
+      const result = await adminQuoteApi.rebuildFromLegacy({
+        legacyTaskId: Number(values.legacyTaskId),
+        quantityBaseId: values.quantityBaseId ? Number(values.quantityBaseId) : undefined,
+        templateId: values.templateId ? Number(values.templateId) : undefined,
+        title: values.title || undefined,
+      });
+      message.success(result.created ? '已重建为新报价清单' : '已返回既有重建清单');
+      setRebuildVisible(false);
+      rebuildForm.resetFields();
+      await loadQuoteTasks();
+      await openDetail(result.quoteListId);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) return;
+      message.error(readErrorMessage(error, '重建 legacy quote-pk 失败'));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const handleSavePrerequisites = async () => {
     if (!detail) return;
     try {
@@ -317,7 +384,7 @@ const QuoteListManagement: React.FC = () => {
         detail.quoteList.id,
       );
       if (result.ok) {
-        message.success("前置数据完整，可以进入选工长阶段");
+        message.success("前置数据完整，可以进入选施工主体阶段");
       } else {
         message.warning(`前置数据仍缺少：${result.missingFields.join("、")}`);
       }
@@ -336,9 +403,10 @@ const QuoteListManagement: React.FC = () => {
       setSubmitting(true);
       const result = await adminQuoteApi.recommendForemen(detail.quoteList.id);
       setRecommendedForemen(result.list || []);
-      message.success(`已生成 ${result.list?.length || 0} 位推荐工长`);
+      message.success(`已生成 ${result.list?.length || 0} 位推荐施工主体`);
     } catch (error) {
-      message.error(readErrorMessage(error, "推荐工长失败"));
+      setRecommendedForemen([]);
+      message.error(readErrorMessage(error, "推荐施工主体失败"));
     } finally {
       setSubmitting(false);
     }
@@ -394,7 +462,7 @@ const QuoteListManagement: React.FC = () => {
   const handleSelectForemen = async () => {
     if (!detail) return;
     if (!selectedForemanIds.length) {
-      message.warning("请先选择工长");
+      message.warning("请先选择施工主体");
       return;
     }
     try {
@@ -403,11 +471,11 @@ const QuoteListManagement: React.FC = () => {
         detail.quoteList.id,
         selectedForemanIds,
       );
-      message.success("参与工长已更新");
+      message.success("参与施工主体已更新");
       await openDetail(detail.quoteList.id);
       await loadQuoteTasks();
     } catch (error) {
-      message.error(readErrorMessage(error, "选择工长失败"));
+      message.error(readErrorMessage(error, "选择施工主体失败"));
     } finally {
       setSubmitting(false);
     }
@@ -430,20 +498,34 @@ const QuoteListManagement: React.FC = () => {
     }
   };
 
+  const filteredRows = useMemo(() => {
+    if (!providerIdFilter) {
+      return rows;
+    }
+    return rows.filter((item) => {
+      const candidateIds = [
+        item.awardedProviderId,
+        item.constructionSubjectId,
+        item.quoteTruthSummary?.awardedProviderId,
+      ].filter((value): value is number => Number(value || 0) > 0);
+      return candidateIds.includes(providerIdFilter);
+    });
+  }, [providerIdFilter, rows]);
+
   const stats = useMemo(() => {
-    const readyCount = rows.filter(
+    const readyCount = filteredRows.filter(
       (item) => item.status === "ready_for_selection",
     ).length;
-    const draftCount = rows.filter((item) => item.status === "draft").length;
-    const confirmedCount = rows.filter(
+    const draftCount = filteredRows.filter((item) => item.status === "draft").length;
+    const confirmedCount = filteredRows.filter(
       (item) => item.status === "user_confirmed",
     ).length;
-    const submissionTotal = rows.reduce(
+    const submissionTotal = filteredRows.reduce(
       (sum, item) => sum + item.submissionCount,
       0,
     );
     return { readyCount, draftCount, confirmedCount, submissionTotal };
-  }, [rows]);
+  }, [filteredRows]);
 
   const taskColumns: ColumnsType<QuoteListSummary> = [
     {
@@ -463,6 +545,9 @@ const QuoteListManagement: React.FC = () => {
               text={`方案 v${record.proposalVersion || "-"}`}
             />
             <InlinePill tone="muted" text={formatDateTime(record.updatedAt)} />
+            {record.sourceType === 'legacy_quote_pk_rebuild' ? (
+              <InlinePill tone="warning" text="legacy 重建" />
+            ) : null}
           </Space>
           {record.flowSummary ? (
             <span style={{ color: "#64748b", fontSize: 12 }}>
@@ -504,11 +589,23 @@ const QuoteListManagement: React.FC = () => {
         renderStatusPill(USER_CONFIRM_META[value || "pending"]),
     },
     {
-      title: "参与工长",
+      title: "参与施工主体",
       dataIndex: "invitationCount",
       key: "invitationCount",
       width: 100,
       render: (value: number) => <InlinePill tone="accent" text={`${value}`} />,
+    },
+    {
+      title: '作业健康',
+      key: 'submissionHealth',
+      width: 260,
+      render: (_value, record) => (
+        <Space size={[4, 6]} wrap>
+          <InlinePill tone={(record.submissionHealth?.missingPriceCount || 0) > 0 ? 'danger' : 'success'} text={`缺价 ${record.submissionHealth?.missingPriceCount || 0}`} />
+          <InlinePill tone={(record.submissionHealth?.deviationItemCount || 0) > 0 ? 'warning' : 'muted'} text={`偏差 ${record.submissionHealth?.deviationItemCount || 0}`} />
+          <InlinePill tone={record.submissionHealth?.canSubmit ? 'accent' : 'warning'} text={record.submissionHealth?.canSubmit ? '可提交' : '待补齐'} />
+        </Space>
+      ),
     },
     {
       title: "报价版本",
@@ -550,23 +647,28 @@ const QuoteListManagement: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="报价任务批次管理"
-        description="按任务批次维护报价前置数据、工长筛选、标准项注入与报价草稿生成流程。"
+        description="按任务批次维护报价前置数据、施工主体筛选、标准项注入与报价草稿生成流程。"
+        extra={(
+          <Button onClick={() => navigate('/projects/quotes/templates')}>
+            施工报价模板
+          </Button>
+        )}
       />
 
       <div className="hz-stat-grid">
         <StatCard
           title="报价任务总数"
-          value={rows.length}
+          value={filteredRows.length}
           icon={<UnorderedListOutlined />}
           tone="accent"
           footer="当前列表范围内任务数"
         />
         <StatCard
-          title="待选工长"
+          title="待选施工主体"
           value={stats.readyCount}
           icon={<ClockCircleOutlined />}
           tone="warning"
-          footer="前置数据完整，待进入工长筛选"
+          footer="前置数据完整，待进入施工主体筛选"
         />
         <StatCard
           title="已完成确认"
@@ -613,6 +715,11 @@ const QuoteListManagement: React.FC = () => {
             onClick={() => {
               setKeyword("");
               setStatusFilter(undefined);
+              if (providerIdFilter) {
+                const next = new URLSearchParams(searchParams);
+                next.delete("providerId");
+                setSearchParams(next, { replace: true });
+              }
               void loadQuoteTasks();
             }}
           >
@@ -632,15 +739,35 @@ const QuoteListManagement: React.FC = () => {
           >
             新建报价任务
           </Button>
+          <Button onClick={() => setRebuildVisible(true)}>
+            重建 legacy quote-pk
+          </Button>
         </div>
       </ToolbarCard>
+
+      {providerIdFilter ? (
+        <Alert
+          type="info"
+          showIcon
+          message={`当前仅查看施工主体 #${providerIdFilter} 相关的报价清单；如需恢复全量视图，可清除筛选。`}
+          action={(
+            <Button type="link" onClick={() => {
+              const next = new URLSearchParams(searchParams);
+              next.delete("providerId");
+              setSearchParams(next, { replace: true });
+            }}>
+              清除筛选
+            </Button>
+          )}
+        />
+      ) : null}
 
       <Card className="hz-table-card">
         <Table
           rowKey="id"
           loading={loading}
           columns={taskColumns}
-          dataSource={rows}
+          dataSource={filteredRows}
           pagination={{ pageSize: 10, showSizeChanger: false }}
           scroll={{ x: 1280 }}
         />
@@ -718,6 +845,44 @@ const QuoteListManagement: React.FC = () => {
         </Form>
       </Modal>
 
+      <Modal
+        title="重建 legacy quote-pk"
+        open={rebuildVisible}
+        onCancel={() => setRebuildVisible(false)}
+        onOk={() => void handleRebuildLegacy()}
+        confirmLoading={submitting}
+        destroyOnClose
+        width={640}
+      >
+        <Form form={rebuildForm} layout="vertical">
+          <Alert
+            type="warning"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message="只重建为新的 QuoteList 草稿"
+            description="不会迁移旧 PK 报价结果，不会自动选中旧报价，也不会覆盖现有项目数据。"
+          />
+          <Form.Item
+            name="legacyTaskId"
+            label="legacyTaskId"
+            rules={[{ required: true, message: '请填写 legacy 任务 ID' }]}
+          >
+            <InputNumber min={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Space style={{ width: '100%' }} size={16} align="start">
+            <Form.Item name="quantityBaseId" label="quantityBaseId" style={{ flex: 1 }}>
+              <InputNumber min={1} style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item name="templateId" label="templateId" style={{ flex: 1 }}>
+              <InputNumber min={1} style={{ width: '100%' }} />
+            </Form.Item>
+          </Space>
+          <Form.Item name="title" label="新标题">
+            <Input placeholder="可选，不填则自动使用 legacy quote-pk 重建标题" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Drawer
         title={
           detail ? (
@@ -755,8 +920,9 @@ const QuoteListManagement: React.FC = () => {
                 type="primary"
                 onClick={() => void handleGenerateDrafts()}
                 loading={submitting}
+                disabled={detail.quoteList.prerequisiteStatus !== "complete"}
               >
-                按工长价格库生成草稿
+                按施工主体价格库生成草稿
               </Button>
             </Space>
           ) : null
@@ -773,7 +939,7 @@ const QuoteListManagement: React.FC = () => {
                   ]?.text || "待补齐"}
                 </div>
                 <div className="hz-summary-card__meta">
-                  决定是否可进入选工长阶段
+                  决定是否可进入选施工主体阶段
                 </div>
               </div>
               <div className="hz-summary-card">
@@ -796,12 +962,12 @@ const QuoteListManagement: React.FC = () => {
                 </div>
               </div>
               <div className="hz-summary-card">
-                <div className="hz-summary-card__label">参与工长</div>
+                <div className="hz-summary-card__label">参与施工主体</div>
                 <div className="hz-summary-card__value">
                   {detail.invitations.length}
                 </div>
                 <div className="hz-summary-card__meta">
-                  已选入任务的工长数量
+                  已选入任务的施工主体数量
                 </div>
               </div>
               <div className="hz-summary-card">
@@ -862,6 +1028,20 @@ const QuoteListManagement: React.FC = () => {
                 <Descriptions.Item label="方案版本">
                   {detail.quoteList.proposalVersion || "-"}
                 </Descriptions.Item>
+                <Descriptions.Item label="正式来源">
+                  {quoteSourceTypeLabel(detail.quoteList.sourceType)}
+                  {detail.quoteList.sourceId
+                    ? ` / #${detail.quoteList.sourceId}`
+                    : ""}
+                </Descriptions.Item>
+                <Descriptions.Item label="工程量基线">
+                  {detail.quoteList.quantityBaseId
+                    ? `#${detail.quoteList.quantityBaseId}`
+                    : "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="基线版本">
+                  {detail.quoteList.quantityBaseVersion || "-"}
+                </Descriptions.Item>
                 <Descriptions.Item label="场景标识">
                   {detail.quoteList.scenarioType || "-"}
                 </Descriptions.Item>
@@ -883,7 +1063,138 @@ const QuoteListManagement: React.FC = () => {
                 <Descriptions.Item label="截止时间">
                   {formatDateTime(detail.quoteList.deadlineAt)}
                 </Descriptions.Item>
+                <Descriptions.Item label="报价基线状态">
+                  {bridgeBaselineStatusLabel(detail.baselineStatus)}
+                </Descriptions.Item>
+                <Descriptions.Item label="施工主体">
+                  {constructionSubjectLabel(
+                    detail.constructionSubjectType,
+                    detail.constructionSubjectDisplayName,
+                  )}
+                </Descriptions.Item>
+                <Descriptions.Item label="待开工协同">
+                  {kickoffStatusLabel(detail.kickoffStatus, detail.plannedStartDate)}
+                </Descriptions.Item>
+                <Descriptions.Item label="监理摘要" span={2}>
+                  {detail.supervisorSummary?.latestLogTitle || '暂无监理同步'}
+                </Descriptions.Item>
+                <Descriptions.Item label="未处理风险">
+                  {detail.supervisorSummary?.unhandledRiskCount ?? 0}
+                </Descriptions.Item>
               </Descriptions>
+              {detail.bridgeConversionSummary?.bridgeNextStep?.reason ? (
+                <Alert
+                  type="info"
+                  showIcon
+                  style={{ marginTop: 16 }}
+                  message="用户端桥接解释预览"
+                  description={detail.bridgeConversionSummary.bridgeNextStep.reason}
+                />
+              ) : null}
+              {(detail.quoteTruthSummary || detail.submissionHealth || detail.changeOrderSummary || detail.settlementSummary || detail.payoutSummary) ? (
+                <Descriptions bordered column={3} size="small" style={{ marginTop: 16 }}>
+                  <Descriptions.Item label="成交总额">
+                    {detail.quoteTruthSummary?.totalCent ? `¥${(detail.quoteTruthSummary.totalCent / 100).toFixed(2)}` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="预计工期">
+                    {detail.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="版本链">
+                    第 {detail.submissionHealth?.lastRevisionNo || detail.quoteTruthSummary?.revisionCount || 0} 版
+                  </Descriptions.Item>
+                  <Descriptions.Item label="缺价项">
+                    {detail.submissionHealth?.missingPriceCount || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="偏差项">
+                    {detail.submissionHealth?.deviationItemCount || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="平台复核">
+                    {detail.submissionHealth?.platformReviewStatus || '待同步'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="变更待结算">
+                    {detail.changeOrderSummary?.pendingSettlementCount || 0}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="结算状态">
+                    {detail.settlementSummary?.status || '待同步'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="出款状态">
+                    {detail.payoutSummary?.status || '待同步'}
+                  </Descriptions.Item>
+                </Descriptions>
+              ) : null}
+            </Card>
+
+            <Card
+              className="hz-panel-card"
+              title="方案来源与工程量基线"
+            >
+              <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                <Alert
+                  type="info"
+                  showIcon
+                  message="该施工报价任务必须挂接正式来源与工程量基线"
+                  description="Admin 与 Merchant 应看到同一份方案/源清单来源及版本语义，避免任务表现为孤立报价单。"
+                />
+                <Descriptions bordered column={3} size="small">
+                  <Descriptions.Item label="来源类型">
+                    {quoteSourceTypeLabel(detail.quoteList.sourceType)}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="来源记录 ID">
+                    {detail.quoteList.sourceId
+                      ? `#${detail.quoteList.sourceId}`
+                      : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="方案 ID">
+                    {detail.quoteList.proposalId
+                      ? `#${detail.quoteList.proposalId}`
+                      : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="方案版本">
+                    {detail.quoteList.proposalVersion || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线 ID">
+                    {detail.quantityBase?.id
+                      ? `#${detail.quantityBase.id}`
+                      : detail.quoteList.quantityBaseId
+                        ? `#${detail.quoteList.quantityBaseId}`
+                        : "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线版本">
+                    {detail.quantityBase?.version ||
+                      detail.quoteList.quantityBaseVersion ||
+                      "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线状态">
+                    {detail.quantityBase?.status || "-"}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="基线标题" span={2}>
+                    {detail.quantityBase?.title || "未返回标题"}
+                  </Descriptions.Item>
+                </Descriptions>
+                {detail.quantityItems.length ? (
+                  <div className="hz-quote-list">
+                    {detail.quantityItems.slice(0, 6).map((item) => (
+                      <div key={item.id} className="hz-quote-list__item">
+                        <div className="hz-quote-list__title">
+                          {item.sourceItemName || `基线项 #${item.id}`}
+                        </div>
+                        <div className="hz-quote-list__meta">
+                          {item.categoryL1 || "未分类"}
+                          {item.categoryL2 ? ` / ${item.categoryL2}` : ""}
+                          {" · "}
+                          基准 {item.quantity}
+                          {item.unit || "项"}
+                          {item.baselineNote
+                            ? ` · ${item.baselineNote}`
+                            : ""}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Empty description="当前任务尚未返回工程量基线明细" />
+                )}
+              </Space>
             </Card>
 
             <Card
@@ -902,7 +1213,7 @@ const QuoteListManagement: React.FC = () => {
                     onClick={() => void handleValidatePrerequisites()}
                     loading={submitting}
                   >
-                    校验并进入选工长
+                    校验并进入选施工主体
                   </Button>
                 </Space>
               }
@@ -918,9 +1229,9 @@ const QuoteListManagement: React.FC = () => {
                   message={
                     detail.quoteList.prerequisiteStatus === "complete"
                       ? "前置数据已完整"
-                      : "请先补齐前置数据后再进入工长筛选"
+                      : "请先补齐前置数据后再进入施工主体筛选"
                   }
-                  description="报价任务的面积、房型、施工范围、服务城市和目标工种会直接影响推荐工长和后续价格库匹配结果。"
+                  description="报价任务的面积、房型、施工范围、服务城市和目标工种会直接影响推荐施工主体和后续价格库匹配结果。"
                 />
                 <Form form={prerequisiteForm} layout="vertical">
                   <Space style={{ width: "100%" }} size={16} align="start">
@@ -979,7 +1290,7 @@ const QuoteListManagement: React.FC = () => {
                   <Form.Item name="notes" label="补充说明">
                     <Input.TextArea
                       rows={4}
-                      placeholder="补充任何影响报价与工长筛选的约束条件。"
+                      placeholder="补充任何影响报价与施工主体筛选的约束条件。"
                     />
                   </Form.Item>
                 </Form>
@@ -1021,22 +1332,24 @@ const QuoteListManagement: React.FC = () => {
 
             <Card
               className="hz-panel-card"
-              title="工长选择与推荐"
+              title="施工主体选择与推荐"
               extra={
                 <Space>
                   <Button
                     icon={<RobotOutlined />}
                     onClick={() => void handleRecommendForemen()}
                     loading={submitting}
+                    disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                   >
-                    推荐工长
+                    推荐施工主体
                   </Button>
                   <Button
                     type="primary"
                     onClick={() => void handleSelectForemen()}
                     loading={submitting}
+                    disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                   >
-                    确认参与工长
+                    确认参与施工主体
                   </Button>
                 </Space>
               }
@@ -1045,19 +1358,18 @@ const QuoteListManagement: React.FC = () => {
                 <Select
                   mode="multiple"
                   style={{ width: "100%" }}
-                  placeholder="手动选择工长"
-                  options={providerOptions.filter((option) =>
-                    option.label.includes("工长"),
-                  )}
+                  placeholder="手动选择施工主体"
+                  options={providerOptions}
                   value={selectedForemanIds}
                   onChange={(values) => setSelectedForemanIds(values)}
+                  disabled={detail.quoteList.prerequisiteStatus !== "complete"}
                 />
 
                 {recommendedForemen.length > 0 ? (
                   <Alert
                     type="info"
                     showIcon
-                    message="规则推荐工长"
+                    message="规则推荐施工主体"
                     description={
                       <div className="hz-quote-list" style={{ marginTop: 12 }}>
                         {recommendedForemen.map((item) => (
@@ -1108,7 +1420,7 @@ const QuoteListManagement: React.FC = () => {
                     ))}
                   </div>
                 ) : (
-                  <Empty description="暂无已选工长，请通过规则推荐或手动添加。" />
+                  <Empty description="暂无已选施工主体，请通过规则推荐或手动添加。" />
                 )}
               </Space>
             </Card>
@@ -1119,7 +1431,7 @@ const QuoteListManagement: React.FC = () => {
                   type="info"
                   showIcon
                   message="草稿生成规则"
-                  description="系统会根据前置数据、标准施工项和工长价格库生成报价草稿；缺失映射或缺失价格的条目会明确标记，不会静默吞掉。"
+                  description="系统会根据前置数据、标准施工项和施工主体价格库生成报价草稿；缺失映射或缺失价格的条目会明确标记，不会静默吞掉。"
                 />
                 <div className="hz-panel-muted">
                   <div
@@ -1138,7 +1450,7 @@ const QuoteListManagement: React.FC = () => {
                       lineHeight: 1.75,
                     }}
                   >
-                    建议先完成前置数据校验与工长确认，再生成草稿并进入“报价对比
+                    建议先完成前置数据校验与施工主体确认，再生成草稿并进入“报价对比
                     / 提交用户确认”页面处理最终比价结果。
                   </div>
                 </div>

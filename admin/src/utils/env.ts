@@ -39,6 +39,14 @@ const normalizeRouterBasename = (raw: unknown): string => {
 };
 
 export const getAppEnv = (): AppEnv => normalizeAppEnv(import.meta.env.VITE_APP_ENV);
+const getRuntimeMode = (): AppEnv => {
+    const configured = normalizeAppEnv(import.meta.env.VITE_APP_ENV);
+    if (configured !== 'local') {
+        return configured;
+    }
+
+    return import.meta.env.PROD ? 'production' : 'local';
+};
 
 export const getRouterBasename = (): string => {
     const configured = normalizeRouterBasename(import.meta.env.VITE_ROUTER_BASENAME);
@@ -46,7 +54,7 @@ export const getRouterBasename = (): string => {
         return configured;
     }
 
-    return getAppEnv() === 'production' ? '/admin' : '/';
+    return getRuntimeMode() === 'production' ? '/admin' : '/';
 };
 
 export const getLoginPath = (): string => {
@@ -63,7 +71,7 @@ export const getApiBaseUrl = (): string => {
         return configured.replace(/\/+$/, '');
     }
 
-    return getAppEnv() === 'local' ? 'http://localhost:8080/api/v1' : '/api/v1';
+    return getRuntimeMode() === 'local' ? 'http://localhost:8080/api/v1' : '/api/v1';
 };
 
 export const getApiOrigin = (): string => {

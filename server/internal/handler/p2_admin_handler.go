@@ -48,6 +48,47 @@ func AdminExportTransactions(c *gin.Context) {
 	c.Data(200, "text/csv; charset=utf-8", payload)
 }
 
+func AdminListPaymentOrders(c *gin.Context) {
+	page := parseInt(c.Query("page"), 1)
+	pageSize := parseInt(c.Query("pageSize"), 20)
+	items, total, err := adminFinanceService.ListPaymentOrders(service.AdminPaymentOrderFilter{
+		Channel:      c.Query("channel"),
+		Status:       c.Query("status"),
+		BizType:      c.Query("bizType"),
+		FundScene:    c.Query("fundScene"),
+		RefundStatus: c.Query("refundStatus"),
+		OutTradeNo:   c.Query("outTradeNo"),
+		StartDate:    c.Query("startDate"),
+		EndDate:      c.Query("endDate"),
+		Page:         page,
+		PageSize:     pageSize,
+	})
+	if err != nil {
+		response.ServerError(c, "获取支付单列表失败")
+		return
+	}
+	response.Success(c, gin.H{
+		"list":     items,
+		"total":    total,
+		"page":     page,
+		"pageSize": pageSize,
+	})
+}
+
+func AdminGetPaymentOrderDetail(c *gin.Context) {
+	paymentOrderID := parseUint64(c.Param("id"))
+	if paymentOrderID == 0 {
+		response.BadRequest(c, "无效支付单ID")
+		return
+	}
+	detail, err := adminFinanceService.GetPaymentOrderDetail(paymentOrderID)
+	if err != nil {
+		response.Error(c, 404, err.Error())
+		return
+	}
+	response.Success(c, detail)
+}
+
 func AdminFreezeFunds(c *gin.Context) {
 	adminID := c.GetUint64("adminId")
 	var input service.FreezeFundsInput

@@ -101,3 +101,24 @@ func TestBookingServiceCreateNotifiesProviderForPendingConfirmation(t *testing.T
 		t.Fatalf("expected action url /bookings, got %s", got.ActionURL)
 	}
 }
+
+func TestBookingServiceCreateRejectsAreaAboveResidentialLimit(t *testing.T) {
+	svc := &BookingService{}
+
+	_, err := svc.Create(1001, &CreateBookingRequest{
+		ProviderID:     1,
+		ProviderType:   "designer",
+		Address:        "西安市高新区科技路 88 号",
+		Area:           2001,
+		RenovationType: "新房装修",
+		BudgetRange:    "20-30万",
+		PreferredDate:  "2026-03-30",
+		Phone:          "13800138000",
+	})
+	if err == nil {
+		t.Fatalf("expected area validation error")
+	}
+	if err.Error() != "房屋面积需在 10-2000 ㎡ 之间" {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}

@@ -16,6 +16,6 @@ docker cp "erp报价.xls" "${API_CONTAINER}:/app/erp报价.xls"
 docker exec -i "${DB_CONTAINER}" psql -U postgres -d home_decoration < "server/migrations/v1.7.1_add_quote_management_menu.sql"
 
 E2E_API_BASE_URL="${E2E_API_BASE_URL:-http://127.0.0.1:8080/api/v1}" \
-E2E_ADMIN_ORIGIN="${E2E_ADMIN_ORIGIN:-http://127.0.0.1:5173}" \
-MERCHANT_ORIGIN="${MERCHANT_ORIGIN:-http://127.0.0.1:5174}" \
+E2E_ADMIN_ORIGIN="${E2E_ADMIN_ORIGIN:-http://127.0.0.1:5175/admin}" \
+MERCHANT_ORIGIN="${MERCHANT_ORIGIN:-http://127.0.0.1:5175/merchant}" \
 npx playwright test tests/e2e/quote-system-v1.smoke.test.ts

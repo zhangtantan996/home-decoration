@@ -1,7 +1,7 @@
 package service
 
 import (
-	"fmt"
+	"errors"
 	"os"
 	"strings"
 
@@ -61,13 +61,13 @@ func VerifyIDCardForApply(idNo, realName string) error {
 	case "manual":
 		result := (ManualIDCardVerifier{}).Verify(idNo, realName)
 		if !result.Passed {
-			return fmt.Errorf(result.Reason)
+			return errors.New(result.Reason)
 		}
 		return nil
 	default:
 		result := (ManualIDCardVerifier{}).Verify(idNo, realName)
 		if !result.Passed {
-			return fmt.Errorf(result.Reason)
+			return errors.New(result.Reason)
 		}
 		return nil
 	}
@@ -78,13 +78,13 @@ func VerifyLicenseForApply(licenseNo, companyName string) error {
 	case "manual":
 		result := (ManualLicenseVerifier{}).Verify(licenseNo, companyName)
 		if !result.Passed {
-			return fmt.Errorf(result.Reason)
+			return errors.New(result.Reason)
 		}
 		return nil
 	default:
 		result := (ManualLicenseVerifier{}).Verify(licenseNo, companyName)
 		if !result.Passed {
-			return fmt.Errorf(result.Reason)
+			return errors.New(result.Reason)
 		}
 		return nil
 	}

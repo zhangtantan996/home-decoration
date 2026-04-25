@@ -11,7 +11,7 @@ import type {
   ProviderShowcaseDetailVM,
   ReviewStatsVM,
 } from '../types/viewModels';
-import { compactPhone, formatDateTime } from '../utils/format';
+import { formatDateTime } from '../utils/format';
 import { normalizeProviderPriceDisplay, normalizeProviderRole, parseTextArray, resolveProviderDisplayName, roleToBasePath } from '../utils/provider';
 import { requestJson } from './http';
 import { readThroughCache } from './runtimeCache';
@@ -20,7 +20,6 @@ const PROVIDER_LIST_TTL_MS = 20 * 1000;
 
 interface ProviderListDTO {
   id: number;
-  userPublicId?: string;
   providerType?: number | string;
   companyName?: string;
   nickname?: string;
@@ -126,7 +125,6 @@ function toProviderListItem(dto: ProviderListDTO): ProviderListItemVM {
     priceDisplay,
     tags: parseTextArray(dto.highlightTags).slice(0, 3),
     serviceArea: parseTextArray(dto.serviceArea),
-    userPublicId: dto.userPublicId,
   };
 }
 
@@ -175,10 +173,9 @@ function toProviderDetail(
     priceDisplay,
     tags: parseTextArray(readStringRecord(provider, 'highlightTags')),
     serviceArea: parseTextArray(readStringRecord(provider, 'serviceArea')),
-    userPublicId: readStringRecord(user, 'publicId') || undefined,
     coverImage: readStringRecord(provider, 'coverImage') || readStringRecord(provider, 'avatar') || readStringRecord(user, 'avatar') || 'https://placehold.co/1200x540/111827/f8fafc?text=%E5%AE%B6%E8%A3%85%E7%AE%A1%E5%AE%B6',
     serviceIntro: readStringRecord(provider, 'serviceIntro') || readStringRecord(provider, 'introduction') || '可先沟通户型、预算和入住时间，再安排测量或远程方案建议。',
-    officeAddress: readStringRecord(provider, 'officeAddress') || '线上沟通 + 同城到场',
+    officeAddress: '',
     teamSize: readNumericRecord(provider, 'teamSize'),
     establishedText: readNumericRecord(provider, 'establishedYear') ? `${readNumericRecord(provider, 'establishedYear')} 年成立` : `${readNumericRecord(provider, 'yearsExperience')} 年从业经验`,
     certifications: parseTextArray(readStringRecord(provider, 'certifications')),
@@ -186,7 +183,7 @@ function toProviderDetail(
     scenes,
     reviews,
     reviewStats,
-    phoneHint: compactPhone(readStringRecord(user, 'phone')),
+    phoneHint: '',
     surveyDepositPrice: readNumericRecord(provider, 'surveyDepositPrice') || undefined,
   };
 }

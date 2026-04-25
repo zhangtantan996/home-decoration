@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"gorm.io/gorm"
 )
@@ -118,10 +119,26 @@ func (s *ConfigService) GetConfigJSON(key string, target interface{}) error {
 	return json.Unmarshal([]byte(val), target)
 }
 
-// SetConfig 设置配置值（管理后台使用）
-func (s *ConfigService) SetConfig(key, value, description string) error {
+func (s *ConfigService) setConfigValue(tx *gorm.DB, key, value, description string) error {
+	if key == model.ConfigKeyMiniHomePopup {
+		normalized, err := normalizeMiniHomePopupConfigPayload(value, time.Now())
+		if err != nil {
+			return err
+		}
+		bytes, err := json.Marshal(normalized)
+		if err != nil {
+			return err
+		}
+		value = string(bytes)
+	}
+
+	queryDB := repository.DB
+	if tx != nil {
+		queryDB = tx
+	}
+
 	var config model.SystemConfig
-	err := repository.DB.Where("key = ?", key).First(&config).Error
+	err := queryDB.Where("key = ?", key).First(&config).Error
 	if err != nil {
 		// 不存在则创建
 		config = model.SystemConfig{
@@ -130,15 +147,22 @@ func (s *ConfigService) SetConfig(key, value, description string) error {
 			Description: description,
 			Editable:    true,
 		}
-		if err := repository.DB.Create(&config).Error; err != nil {
+		if err := queryDB.Create(&config).Error; err != nil {
 			return err
 		}
 	} else {
 		// 存在则更新
 		config.Value = value
-		if err := repository.DB.Save(&config).Error; err != nil {
+		if description != "" {
+			config.Description = description
+		}
+		if err := queryDB.Save(&config).Error; err != nil {
 			return err
 		}
+	}
+
+	if tx != nil {
+		return nil
 	}
 
 	// 更新缓存
@@ -147,6 +171,16 @@ func (s *ConfigService) SetConfig(key, value, description string) error {
 	configCacheMu.Unlock()
 
 	return nil
+}
+
+// SetConfig 设置配置值（管理后台使用）
+func (s *ConfigService) SetConfig(key, value, description string) error {
+	return s.setConfigValue(nil, key, value, description)
+}
+
+// SetConfigTx 在事务中设置配置值。
+func (s *ConfigService) SetConfigTx(tx *gorm.DB, key, value, description string) error {
+	return s.setConfigValue(tx, key, value, description)
 }
 
 // ClearCache 清除配置缓存
@@ -182,13 +216,15 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeySurveyDepositRefundRate, "0.6", "量房费退款比例(不继续时退给用户,0-1)"},
 		{model.ConfigKeySurveyDepositMin, "100", "设计师可设量房费最低金额"},
 		{model.ConfigKeySurveyDepositMax, "2000", "设计师可设量房费最高金额"},
+		{model.ConfigKeyBudgetConfirmRejectLimit, "3", "沟通确认可被用户驳回的阈值，达到后才关闭预约"},
 		{model.ConfigKeyDesignFeeQuoteExpireHours, "72", "设计费报价有效期(小时)"},
 		{model.ConfigKeyDeliverableDeadlineDays, "30", "设计交付件截止天数"},
 		{model.ConfigKeyConstructionReleaseDelay, "3", "验收确认后T+N天自动放款"},
 		{model.ConfigKeyPaymentReleaseDelayDays, "3", "支付中台统一T+N出款延迟天数"},
-		{model.ConfigKeyPaymentPayoutAutoEnabled, "true", "是否启用自动出款"},
+		{model.ConfigKeyPaymentPayoutAutoEnabled, "false", "是否启用自动出款"},
 		{model.ConfigKeyPaymentChannelWechatEnabled, "false", "是否启用微信支付"},
 		{model.ConfigKeyPaymentChannelAlipayEnabled, strconv.FormatBool(appconfig.GetConfig().Alipay.Enabled), "是否启用支付宝"},
+		{model.ConfigKeyMiniHomePopup, defaultMiniHomePopupConfigJSON(), "小程序首页运营弹窗配置"},
 	}
 
 	for _, d := range defaults {
@@ -433,6 +469,22 @@ func (s *ConfigService) GetSurveyDepositRefundRate() float64 {
 	return val
 }
 
+func (s *ConfigService) GetBudgetConfirmRejectLimit() int {
+	val, err := s.GetConfigInt(model.ConfigKeyBudgetConfirmRejectLimit)
+	if err != nil || val <= 0 {
+		return 3
+	}
+	return val
+}
+
+func (s *ConfigService) GetBudgetConfirmRejectLimitTx(tx *gorm.DB) int {
+	val, err := s.GetConfigIntTx(tx, model.ConfigKeyBudgetConfirmRejectLimit)
+	if err != nil || val <= 0 {
+		return 3
+	}
+	return val
+}
+
 // GetDesignQuoteExpireHours 设计费报价有效期(小时)
 func (s *ConfigService) GetDesignQuoteExpireHours() int {
 	val, err := s.GetConfigInt(model.ConfigKeyDesignFeeQuoteExpireHours)
@@ -470,7 +522,7 @@ func (s *ConfigService) GetPaymentReleaseDelayDays() int {
 func (s *ConfigService) GetPaymentPayoutAutoEnabled() bool {
 	val, err := s.GetConfigBool(model.ConfigKeyPaymentPayoutAutoEnabled)
 	if err != nil {
-		return true
+		return false
 	}
 	return val
 }

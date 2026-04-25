@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // OrderService 订单服务
@@ -60,6 +61,11 @@ type BillResult struct {
 	PaymentPlans      []model.PaymentPlan `json:"paymentPlans"`
 }
 
+type ConstructionOrderPlanBundle struct {
+	Order *model.Order
+	Plans []model.PaymentPlan
+}
+
 type ProjectBillItem struct {
 	Order        model.Order         `json:"order"`
 	PaymentPlans []model.PaymentPlan `json:"paymentPlans"`
@@ -101,10 +107,15 @@ func (s *OrderService) GenerateBill(userID uint64, input *GenerateBillInput) (*B
 		intentFeeDiscount = booking.IntentFee
 	}
 
+	designOrderNo, err := s.generateOrderNo(model.OrderTypeDesign)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 	designOrder := &model.Order{
 		ProjectID:   input.ProjectID,
 		BookingID:   booking.ID,
-		OrderNo:     s.generateOrderNo("D"),
+		OrderNo:     designOrderNo,
 		OrderType:   model.OrderTypeDesign,
 		TotalAmount: input.DesignFee,
 		Discount:    intentFeeDiscount,
@@ -125,10 +136,15 @@ func (s *OrderService) GenerateBill(userID uint64, input *GenerateBillInput) (*B
 	}
 
 	// 5. 创建施工费订单
+	constructionOrderNo, err := s.generateOrderNo(model.OrderTypeConstruction)
+	if err != nil {
+		tx.Rollback()
+		return nil, err
+	}
 	constructionOrder := &model.Order{
 		ProjectID:   input.ProjectID,
 		BookingID:   booking.ID,
-		OrderNo:     s.generateOrderNo("C"),
+		OrderNo:     constructionOrderNo,
 		OrderType:   model.OrderTypeConstruction,
 		TotalAmount: input.ConstructionFee + input.MaterialFee,
 		Status:      model.OrderStatusPending,
@@ -207,6 +223,260 @@ func (s *OrderService) GenerateBill(userID uint64, input *GenerateBillInput) (*B
 	}, nil
 }
 
+func (s *OrderService) EnsureConstructionOrderAndPaymentPlansTx(tx *gorm.DB, projectID uint64, quoteList *model.QuoteList, submission *model.QuoteSubmission) (*ConstructionOrderPlanBundle, error) {
+	if tx == nil {
+		return nil, errors.New("事务不能为空")
+	}
+	if projectID == 0 {
+		return nil, errors.New("项目不存在")
+	}
+
+	var project model.Project
+	if err := tx.First(&project, projectID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, errors.New("项目不存在")
+		}
+		return nil, fmt.Errorf("查询项目失败: %w", err)
+	}
+
+	var existingOrder model.Order
+	orderErr := tx.
+		Where("project_id = ? AND order_type = ?", projectID, model.OrderTypeConstruction).
+		Order("id DESC").
+		First(&existingOrder).Error
+	if orderErr == nil {
+		var plans []model.PaymentPlan
+		if err := tx.Where("order_id = ?", existingOrder.ID).Order("seq ASC").Find(&plans).Error; err != nil {
+			return nil, fmt.Errorf("查询施工支付计划失败: %w", err)
+		}
+		if len(plans) > 0 {
+			return &ConstructionOrderPlanBundle{
+				Order: &existingOrder,
+				Plans: plans,
+			}, nil
+		}
+	} else if !errors.Is(orderErr, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("查询施工订单失败: %w", orderErr)
+	}
+
+	totalAmount := project.ConstructionQuote
+	if submission != nil && submission.TotalCent > 0 {
+		totalAmount = float64(submission.TotalCent) / 100
+	}
+	totalAmount = normalizeAmount(totalAmount)
+	if totalAmount <= 0 {
+		return nil, errors.New("施工报价金额无效，无法创建施工订单")
+	}
+
+	proposalID := project.ProposalID
+	if proposalID == 0 && quoteList != nil {
+		proposalID = quoteList.ProposalID
+	}
+	var bookingID uint64
+	if proposalID > 0 {
+		var proposal model.Proposal
+		if err := tx.Select("id", "booking_id").First(&proposal, proposalID).Error; err == nil {
+			bookingID = proposal.BookingID
+		}
+	}
+
+	now := time.Now()
+	expireAt := now.Add(48 * time.Hour)
+	orderNo, err := s.generateOrderNo(model.OrderTypeConstruction)
+	if err != nil {
+		return nil, err
+	}
+	order := &model.Order{
+		ProjectID:   project.ID,
+		ProposalID:  proposalID,
+		BookingID:   bookingID,
+		OrderNo:     orderNo,
+		OrderType:   model.OrderTypeConstruction,
+		TotalAmount: totalAmount,
+		Status:      model.OrderStatusPending,
+		ExpireAt:    &expireAt,
+	}
+	if orderErr == nil {
+		order.ID = existingOrder.ID
+		if err := tx.Model(&existingOrder).Updates(map[string]interface{}{
+			"proposal_id":  proposalID,
+			"booking_id":   bookingID,
+			"total_amount": totalAmount,
+			"status":       model.OrderStatusPending,
+			"expire_at":    &expireAt,
+			"paid_amount":  existingOrder.PaidAmount,
+			"discount":     existingOrder.Discount,
+		}).Error; err != nil {
+			return nil, fmt.Errorf("更新施工订单失败: %w", err)
+		}
+		order = &existingOrder
+		order.ProposalID = proposalID
+		order.BookingID = bookingID
+		order.TotalAmount = totalAmount
+		order.Status = model.OrderStatusPending
+		order.ExpireAt = &expireAt
+	} else {
+		if err := tx.Create(order).Error; err != nil {
+			return nil, fmt.Errorf("创建施工订单失败: %w", err)
+		}
+	}
+
+	plans, err := s.createConstructionPaymentPlansTx(tx, &project, order, totalAmount, expireAt)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ConstructionOrderPlanBundle{
+		Order: order,
+		Plans: plans,
+	}, nil
+}
+
+func (s *OrderService) createConstructionPaymentPlansTx(tx *gorm.DB, project *model.Project, order *model.Order, totalAmount float64, firstDueAt time.Time) ([]model.PaymentPlan, error) {
+	if tx == nil || project == nil || order == nil {
+		return nil, errors.New("支付计划生成参数错误")
+	}
+
+	var milestones []model.Milestone
+	if err := tx.Where("project_id = ?", project.ID).Order("seq ASC").Find(&milestones).Error; err != nil {
+		return nil, fmt.Errorf("查询项目里程碑失败: %w", err)
+	}
+
+	plans := make([]model.PaymentPlan, 0)
+	activatedAt := time.Now()
+	if len(milestones) > 0 {
+		for idx, milestone := range milestones {
+			planType := "milestone"
+			switch idx {
+			case 0:
+				planType = "down_payment"
+			case len(milestones) - 1:
+				planType = "final_payment"
+			}
+			plan := model.PaymentPlan{
+				OrderID:     order.ID,
+				MilestoneID: milestone.ID,
+				Type:        planType,
+				Seq:         idx + 1,
+				Name:        milestone.Name,
+				Amount:      normalizeAmount(milestone.Amount),
+				Percentage:  milestone.Percentage,
+				Status:      0,
+			}
+			if idx == 0 {
+				plan.ActivatedAt = &activatedAt
+				plan.DueAt = &firstDueAt
+			}
+			plans = append(plans, plan)
+		}
+	} else {
+		milestoneConfigs, err := configService.GetConstructionMilestones()
+		if err != nil || len(milestoneConfigs) == 0 {
+			milestoneConfigs = []MilestoneConfig{
+				{Name: "首付款", Percentage: 30},
+				{Name: "节点进度款", Percentage: 50},
+				{Name: "尾款", Percentage: 20},
+			}
+		}
+		for idx, cfg := range milestoneConfigs {
+			planType := "milestone"
+			switch idx {
+			case 0:
+				planType = "down_payment"
+			case len(milestoneConfigs) - 1:
+				planType = "final_payment"
+			}
+			plan := model.PaymentPlan{
+				OrderID:    order.ID,
+				Type:       planType,
+				Seq:        idx + 1,
+				Name:       cfg.Name,
+				Amount:     SafeMoneyPercentage(totalAmount, float64(cfg.Percentage)),
+				Percentage: cfg.Percentage,
+				Status:     0,
+			}
+			if idx == 0 {
+				plan.ActivatedAt = &activatedAt
+				plan.DueAt = &firstDueAt
+			}
+			plans = append(plans, plan)
+		}
+	}
+
+	if len(plans) == 0 {
+		return nil, errors.New("未生成有效支付计划")
+	}
+	if err := tx.Create(&plans).Error; err != nil {
+		return nil, fmt.Errorf("创建施工支付计划失败: %w", err)
+	}
+	return plans, nil
+}
+
+func syncPaidOrderPlansTx(tx *gorm.DB, order *model.Order) error {
+	if tx == nil || order == nil || order.ID == 0 || order.Status != model.OrderStatusPaid {
+		return nil
+	}
+
+	paidAt := time.Now()
+	if order.PaidAt != nil && !order.PaidAt.IsZero() {
+		paidAt = *order.PaidAt
+	}
+
+	if err := tx.Model(&model.PaymentPlan{}).
+		Where("order_id = ? AND status = ?", order.ID, model.PaymentPlanStatusPending).
+		Updates(map[string]any{
+			"status":  model.PaymentPlanStatusPaid,
+			"paid_at": paidAt,
+		}).Error; err != nil {
+		return fmt.Errorf("同步订单支付计划状态失败: %w", err)
+	}
+
+	return nil
+}
+
+func repairPaidOrderPlansIfNeeded(order *model.Order, plans []model.PaymentPlan) error {
+	if order == nil || order.ID == 0 || order.Status != model.OrderStatusPaid || len(plans) == 0 {
+		return nil
+	}
+
+	needsRepair := false
+	for _, plan := range plans {
+		if plan.Status == model.PaymentPlanStatusPending {
+			needsRepair = true
+			break
+		}
+	}
+	if !needsRepair {
+		return nil
+	}
+
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var latest model.Order
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&latest, order.ID).Error; err != nil {
+			return err
+		}
+		if latest.Status != model.OrderStatusPaid {
+			return nil
+		}
+		return syncPaidOrderPlansTx(tx, &latest)
+	}); err != nil {
+		return err
+	}
+
+	paidAt := time.Now()
+	if order.PaidAt != nil && !order.PaidAt.IsZero() {
+		paidAt = *order.PaidAt
+	}
+	for idx := range plans {
+		if plans[idx].Status == model.PaymentPlanStatusPending {
+			plans[idx].Status = model.PaymentPlanStatusPaid
+			plans[idx].PaidAt = &paidAt
+		}
+	}
+
+	return nil
+}
+
 // PayOrder 支付订单
 func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 	var order model.Order
@@ -214,41 +484,49 @@ func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 		return nil, errors.New("订单不存在")
 	}
 
-	// 验证归属
-	if order.ProjectID > 0 {
-		var project model.Project
-		if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
-			return nil, errors.New("项目不存在")
-		}
+	booking, project, err := s.resolveBookingAndProject(&order)
+	if err != nil {
+		return nil, err
+	}
+	if project != nil {
 		if project.OwnerID != userID {
 			return nil, errors.New("无权操作此订单")
 		}
-	} else {
-		// 如果没有项目ID（如设计费订单），通过 Proposal -> Booking 验证
-		var proposal model.Proposal
-		if err := repository.DB.First(&proposal, order.ProposalID).Error; err != nil {
-			return nil, errors.New("关联方案不存在")
-		}
-		var booking model.Booking
-		if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
-			return nil, errors.New("关联预约不存在")
-		}
+	} else if booking != nil {
 		if booking.UserID != userID {
 			return nil, errors.New("无权操作此订单")
 		}
+	} else {
+		return nil, errors.New("订单数据异常")
 	}
 
 	if order.Status != model.OrderStatusPending {
 		return nil, errors.New("订单状态不正确")
 	}
 
-	// 模拟支付成功
-	now := time.Now()
-	order.Status = model.OrderStatusPaid
-	order.PaidAmount = order.TotalAmount - order.Discount
-	order.PaidAt = &now
+	paidAt := time.Now()
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&order, orderID).Error; err != nil {
+			return errors.New("订单不存在")
+		}
+		if order.Status != model.OrderStatusPending {
+			return errors.New("订单状态不正确")
+		}
 
-	if err := repository.DB.Save(&order).Error; err != nil {
+		order.Status = model.OrderStatusPaid
+		order.PaidAmount = order.TotalAmount - order.Discount
+		order.PaidAt = &paidAt
+
+		if err := tx.Model(&order).Updates(map[string]any{
+			"status":      order.Status,
+			"paid_amount": order.PaidAmount,
+			"paid_at":     order.PaidAt,
+		}).Error; err != nil {
+			return err
+		}
+
+		return syncPaidOrderPlansTx(tx, &order)
+	}); err != nil {
 		return nil, err
 	}
 
@@ -260,48 +538,34 @@ func (s *OrderService) PayOrder(userID, orderID uint64) (*model.Order, error) {
 		"amount": order.TotalAmount - order.Discount,
 	}
 
-	// Get provider's user ID through booking
-	if order.ProposalID > 0 {
-		var proposal model.Proposal
-		if err := repository.DB.First(&proposal, order.ProposalID).Error; err == nil {
-			var booking model.Booking
-			if err := repository.DB.First(&booking, proposal.BookingID).Error; err == nil {
-				var provider model.Provider
-				if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
-					_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
-
-					// 施工订单不预创建收入，等里程碑验收后T+3释放
-					if order.OrderType != model.OrderTypeConstruction {
-						_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-							ProviderID:  provider.ID,
-							OrderID:     order.ID,
-							BookingID:   booking.ID,
-							Type:        order.OrderType,
-							Amount:      order.TotalAmount - order.Discount,
-							Description: "订单支付",
-						})
-					}
-				}
+	if booking != nil {
+		var provider model.Provider
+		if err := repository.DB.First(&provider, booking.ProviderID).Error; err == nil {
+			_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
+			if order.OrderType != model.OrderTypeConstruction {
+				_, _ = incomeService.CreateIncome(&CreateIncomeInput{
+					ProviderID:  provider.ID,
+					OrderID:     order.ID,
+					BookingID:   booking.ID,
+					Type:        order.OrderType,
+					Amount:      order.TotalAmount - order.Discount,
+					Description: "订单支付",
+				})
 			}
 		}
-	} else if order.ProjectID > 0 {
-		var project model.Project
-		if err := repository.DB.First(&project, order.ProjectID).Error; err == nil {
-			var provider model.Provider
-			if err := repository.DB.First(&provider, project.ProviderID).Error; err == nil {
-				_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
-
-				// 施工订单不预创建收入，等里程碑验收后T+3释放
-				if order.OrderType != model.OrderTypeConstruction {
-					_, _ = incomeService.CreateIncome(&CreateIncomeInput{
-						ProviderID:  provider.ID,
-						OrderID:     order.ID,
-						BookingID:   0, // 无关联预约
-						Type:        order.OrderType,
-						Amount:      order.TotalAmount - order.Discount,
-						Description: "订单支付",
-					})
-				}
+	} else if project != nil {
+		var provider model.Provider
+		if err := repository.DB.First(&provider, project.ProviderID).Error; err == nil {
+			_ = notifService.NotifyOrderPaid(orderData, provider.UserID)
+			if order.OrderType != model.OrderTypeConstruction {
+				_, _ = incomeService.CreateIncome(&CreateIncomeInput{
+					ProviderID:  provider.ID,
+					OrderID:     order.ID,
+					BookingID:   0,
+					Type:        order.OrderType,
+					Amount:      order.TotalAmount - order.Discount,
+					Description: "订单支付",
+				})
 			}
 		}
 	}
@@ -321,27 +585,20 @@ func (s *OrderService) CancelOrder(userID, orderID uint64) error {
 		return errors.New("订单不存在")
 	}
 
-	// 验证归属
-	if order.ProjectID > 0 {
-		var project model.Project
-		if err := repository.DB.First(&project, order.ProjectID).Error; err != nil {
-			return errors.New("项目不存在")
-		}
+	booking, project, err := s.resolveBookingAndProject(&order)
+	if err != nil {
+		return err
+	}
+	if project != nil {
 		if project.OwnerID != userID {
 			return errors.New("无权操作此订单")
 		}
-	} else {
-		var proposal model.Proposal
-		if err := repository.DB.First(&proposal, order.ProposalID).Error; err != nil {
-			return errors.New("关联方案不存在")
-		}
-		var booking model.Booking
-		if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
-			return errors.New("关联预约不存在")
-		}
+	} else if booking != nil {
 		if booking.UserID != userID {
 			return errors.New("无权操作此订单")
 		}
+	} else {
+		return errors.New("订单数据异常")
 	}
 
 	canCancel, err := canCancelOrderTx(repository.DB, &order)
@@ -486,6 +743,38 @@ func (s *OrderService) GetPaymentPlansByOrder(orderID uint64) ([]model.PaymentPl
 	var plans []model.PaymentPlan
 	if err := repository.DB.Where("order_id = ?", orderID).Order("seq ASC").Find(&plans).Error; err != nil {
 		return nil, err
+	}
+	if len(plans) == 0 {
+		return plans, nil
+	}
+	var order model.Order
+	if err := repository.DB.First(&order, orderID).Error; err == nil {
+		if err := repairPaidOrderPlansIfNeeded(&order, plans); err != nil {
+			return nil, err
+		}
+		var project model.Project
+		var projectRef *model.Project
+		if order.ProjectID > 0 {
+			if err := repository.DB.First(&project, order.ProjectID).Error; err == nil {
+				projectRef = &project
+			}
+		}
+		milestones := make(map[uint64]model.Milestone)
+		for idx := range plans {
+			var milestoneRef *model.Milestone
+			if plans[idx].MilestoneID > 0 {
+				if cached, ok := milestones[plans[idx].MilestoneID]; ok {
+					milestoneRef = &cached
+				} else {
+					var milestone model.Milestone
+					if err := repository.DB.First(&milestone, plans[idx].MilestoneID).Error; err == nil {
+						milestones[milestone.ID] = milestone
+						milestoneRef = &milestone
+					}
+				}
+			}
+			applyPaymentPlanState(&plans[idx], projectRef, milestoneRef)
+		}
 	}
 	return plans, nil
 }
@@ -704,29 +993,25 @@ func (s *OrderService) GetPaymentPlansForUser(userID, orderID uint64) ([]model.P
 		if project.OwnerID != userID {
 			return nil, errors.New("无权查看此订单")
 		}
-	} else if order.ProposalID > 0 {
-		var proposal model.Proposal
-		if err := repository.DB.First(&proposal, order.ProposalID).Error; err != nil {
-			return nil, errors.New("关联方案不存在")
+	} else {
+		booking, _, err := s.resolveBookingAndProject(&order)
+		if err != nil {
+			return nil, err
 		}
-
-		var booking model.Booking
-		if err := repository.DB.First(&booking, proposal.BookingID).Error; err != nil {
-			return nil, errors.New("关联预约不存在")
+		if booking == nil {
+			return nil, errors.New("订单数据异常")
 		}
 		if booking.UserID != userID {
 			return nil, errors.New("无权查看此订单")
 		}
-	} else {
-		return nil, errors.New("订单数据异常")
 	}
 
 	return s.GetPaymentPlansByOrder(order.ID)
 }
 
 // generateOrderNo 生成订单号
-func (s *OrderService) generateOrderNo(prefix string) string {
-	return fmt.Sprintf("%s%d", prefix, time.Now().UnixNano())
+func (s *OrderService) generateOrderNo(orderType string) (string, error) {
+	return generateBusinessOrderNo(orderType)
 }
 
 // CanAccessDesignFiles 检查用户是否有权限访问设计文件

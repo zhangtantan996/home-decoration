@@ -47,9 +47,14 @@ export interface AdminBusinessFlowPaymentPlan {
   amount?: number;
   percentage?: number;
   status?: number | string;
+  activatedAt?: string;
   dueAt?: string;
+  expiresAt?: string;
   paidAt?: string;
   milestoneId?: number;
+  payable?: boolean;
+  payableReason?: string;
+  planType?: string;
 }
 
 export interface AdminBusinessFlowRiskSnapshot {
@@ -80,6 +85,8 @@ export interface AdminBusinessFlowListItem {
   primaryOrderNo?: string;
   orderStatus?: number | string;
   paymentPlanStatus?: number | string;
+  settlementStatus?: string;
+  payoutStatus?: string;
   refundStatus?: string;
   riskStatus?: string;
   paymentPaused?: boolean;
@@ -143,6 +150,99 @@ export interface AdminBusinessFlowQuoteSubmissionSnapshot {
   estimatedDays?: number;
   remark?: string;
   userConfirmedAt?: string;
+  reviewStatus?: string;
+  reviewReason?: string;
+}
+
+export interface AdminBusinessFlowChangeOrder {
+  id: number;
+  projectId: number;
+  initiatorType?: string;
+  initiatorId?: number;
+  changeType?: string;
+  title?: string;
+  reason?: string;
+  description?: string;
+  amountImpact?: number;
+  timelineImpact?: number;
+  status?: string;
+  evidenceUrls?: string[];
+  createdAt?: string;
+  updatedAt?: string;
+  userRejectReason?: string;
+  settlementReason?: string;
+  payablePlanId?: number;
+}
+
+export interface AdminQuoteTruthSummary {
+  quoteListId?: number;
+  sourceType?: string;
+  sourceId?: number;
+  quantityBaseId?: number;
+  quantityBaseVersion?: number;
+  activeSubmissionId?: number;
+  awardedProviderId?: number;
+  confirmedAt?: string;
+  totalCent?: number;
+  estimatedDays?: number;
+  revisionCount?: number;
+}
+
+export interface AdminCommercialExplanation {
+  baselineSummary?: string;
+  scopeIncluded?: string[];
+  scopeExcluded?: string[];
+  teamSize?: number;
+  workTypes?: string[];
+  constructionMethodNote?: string;
+  siteVisitRequired?: boolean;
+  paymentPlanSummary?: Array<Record<string, unknown>>;
+}
+
+export interface AdminSubmissionHealth {
+  missingPriceCount?: number;
+  deviationItemCount?: number;
+  platformReviewStatus?: string;
+  lastRevisionNo?: number;
+  lastChangeReason?: string;
+  canSubmit?: boolean;
+  blockingReasons?: string[];
+}
+
+export interface AdminChangeOrderSummary {
+  totalCount?: number;
+  pendingUserConfirmCount?: number;
+  pendingSettlementCount?: number;
+  settledCount?: number;
+  netAmountCent?: number;
+  latestChangeOrderId?: number;
+}
+
+export interface AdminSettlementSummary {
+  latestSettlementId?: number;
+  status?: string;
+  grossAmount?: number;
+  netAmount?: number;
+  totalGrossAmount?: number;
+  totalNetAmount?: number;
+  settledAmount?: number;
+  pendingAmount?: number;
+  failedAmount?: number;
+  scheduledAt?: string;
+  paidAt?: string;
+}
+
+export interface AdminPayoutSummary {
+  latestPayoutId?: number;
+  status?: string;
+  channel?: string;
+  totalAmount?: number;
+  paidAmount?: number;
+  pendingAmount?: number;
+  failedAmount?: number;
+  scheduledAt?: string;
+  paidAt?: string;
+  failureReason?: string;
 }
 
 export interface AdminBusinessFlowProjectSnapshot {
@@ -275,12 +375,21 @@ export interface AdminBusinessFlowDetail {
   project?: AdminBusinessFlowProjectSnapshot;
   milestones?: AdminBusinessFlowMilestoneSnapshot[];
   orders?: AdminBusinessFlowOrderSnapshot[];
+  changeOrders?: AdminBusinessFlowChangeOrder[];
   escrowAccount?: AdminBusinessFlowEscrowSnapshot;
   transactions?: AdminBusinessFlowTransactionSnapshot[];
   refundApplications?: AdminBusinessFlowRefundSnapshot[];
   projectAudits?: AdminBusinessFlowProjectAuditSnapshot[];
   riskWarnings?: Array<Record<string, unknown>>;
   arbitrations?: Array<Record<string, unknown>>;
+  quoteTruthSummary?: AdminQuoteTruthSummary;
+  commercialExplanation?: AdminCommercialExplanation;
+  submissionHealth?: AdminSubmissionHealth;
+  changeOrderSummary?: AdminChangeOrderSummary;
+  settlementSummary?: AdminSettlementSummary;
+  payoutSummary?: AdminPayoutSummary;
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   risk?: AdminBusinessFlowRiskSnapshot;
   auditLogs?: AdminBusinessFlowAuditLogSnapshot[];
   availableAdminActions: AdminBusinessFlowAction[];
@@ -295,6 +404,8 @@ export interface AdminBusinessFlowListQuery {
   projectId?: number;
   orderStatus?: string | number;
   paymentPlanStatus?: string | number;
+  settlementStatus?: string;
+  payoutStatus?: string;
   refundStatus?: string;
   riskStatus?: string;
   paymentPaused?: boolean;
@@ -360,6 +471,8 @@ export const adminOrderCenterApi = {
     api.post(`/admin/projects/${projectId}/completion/approve`, { reason }),
   rejectCompletion: (projectId: number, reason: string) =>
     api.post(`/admin/projects/${projectId}/completion/reject`, { reason }),
+  settleChangeOrder: (changeOrderId: number, reason: string) =>
+    api.post(`/admin/change-orders/${changeOrderId}/settle`, { reason }),
   freezeFunds: adminFinanceApi.freeze,
   unfreezeFunds: adminFinanceApi.unfreeze,
   manualReleaseFunds: adminFinanceApi.manualRelease,

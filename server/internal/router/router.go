@@ -119,6 +119,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 	// 静态文件服务 (上传文件)
 	r.Static("/uploads", "./uploads")
 	r.Static("/static/inspiration", "./static/inspiration")
+	r.Static("/static/home-popup", "./static/home-popup")
 	r.GET("/metrics", handler.HandleNotificationRealtimeMetrics)
 
 	// API版本分组
@@ -154,6 +155,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			payments.HEAD("/:id/qr", handler.PaymentQRCode)
 			payments.POST("/alipay/notify", handler.PaymentAlipayNotify)
 			payments.POST("/wechat/notify", handler.PaymentWechatNotify)
+			payments.POST("/wechat/refund/notify", handler.PaymentWechatRefundNotify)
 			payments.GET("/alipay/return", handler.PaymentAlipayReturn)
 		}
 
@@ -203,6 +205,14 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 		v1.GET("/dictionaries/categories", dictHandler.GetAllCategories)
 		v1.GET("/dictionaries/:category", dictHandler.GetDictOptions)
+
+		// 智能报价 (公开)
+		v1.POST("/quote-estimate", handler.GenerateQuoteEstimate)
+
+		// 智能报价询价 (公开接口，支持未登录用户)
+		v1.POST("/quote-inquiries", middleware.OptionalJWT(cfg.JWT.Secret), handler.CreateQuoteInquiry)
+		v1.GET("/quote-inquiries/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetQuoteInquiry)
+		v1.GET("/public/mini/home-popup", handler.GetMiniHomePopup)
 
 		// 案例详情 (公开)
 		v1.GET("/cases/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetCaseDetail)
@@ -291,8 +301,6 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				bookings.POST("", handler.CreateBooking)
 				bookings.GET("/:id", handler.GetBooking)
 				bookings.GET("/:id/site-survey", handler.GetSiteSurvey)
-				bookings.POST("/:id/site-survey/confirm", handler.ConfirmSiteSurvey)
-				bookings.POST("/:id/site-survey/reject", handler.RejectSiteSurvey)
 				bookings.GET("/:id/budget-confirm", handler.GetBudgetConfirmation)
 				bookings.POST("/:id/budget-confirm/accept", handler.AcceptBudgetConfirmation)
 				bookings.POST("/:id/budget-confirm/reject", handler.RejectBudgetConfirmation)
@@ -303,6 +311,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				bookings.POST("/:id/pay-survey-deposit", handler.PaySurveyDeposit)
 				bookings.POST("/:id/survey-deposit/refund", handler.RefundSurveyDeposit)
 				bookings.GET("/:id/design-fee-quote", handler.GetDesignFeeQuoteForUser)
+				bookings.GET("/:id/design-deliverable", handler.GetBookingDesignDeliverable)
+				bookings.POST("/:id/select-crew", handler.SelectConstructionParty)
 			}
 
 			// 设计费报价
@@ -335,6 +345,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			userPayments := authorized.Group("/payments")
 			{
+				userPayments.GET("/:id", handler.PaymentDetail)
 				userPayments.GET("/:id/status", handler.PaymentStatus)
 			}
 
@@ -360,6 +371,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.POST("/:id/start", handler.StartProject)
 				projects.POST("/:id/pause", handler.PauseProject)
 				projects.POST("/:id/resume", handler.ResumeProject)
+				projects.GET("/:id/closure", handler.GetProjectClosure)
+				projects.GET("/:id/change-orders", handler.ListProjectChangeOrders)
 				projects.POST("/:id/dispute", handler.SubmitProjectDispute)
 				projects.GET("/:id/milestones", handler.GetMilestones)
 				projects.POST("/:id/milestones/:milestoneId/submit", handler.SubmitMilestone)
@@ -378,8 +391,33 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				projects.POST("/:id/deposit", handler.Deposit)
 				projects.POST("/:id/release", handler.ReleaseFunds)
 
+				// 节点付款系统
+				milestonePaymentHandler := handler.NewMilestonePaymentHandler()
+				projects.POST("/:id/milestone-payment-plan", milestonePaymentHandler.CreateMilestonePaymentPlan)
+				projects.GET("/:id/milestone-payments", milestonePaymentHandler.GetMilestonePayments)
+
 				// 项目阶段
 				projects.GET("/:id/phases", handler.GetProjectPhases)
+
+				// 验收清单
+				projects.POST("/:id/inspections", handler.CreateInspectionChecklist)
+				projects.GET("/:id/inspections", handler.GetInspectionChecklist)
+				projects.PUT("/:id/inspections/:inspection_id", handler.UpdateInspectionChecklist)
+				projects.POST("/:id/accept-all-milestones", handler.AcceptAllMilestones)
+				projects.GET("/inspection-template", handler.GetInspectionTemplate)
+
+				// 节点验收
+				milestones := authorized.Group("/milestones")
+				{
+					milestones.POST("/:id/submit-inspection", handler.SubmitInspection)         // 商家提交验收申请
+					milestones.POST("/:id/inspect", handler.InspectMilestone)                   // 用户验收节点
+					milestones.POST("/:id/request-rectification", handler.RequestRectification) // 用户要求整改
+					milestones.POST("/:id/resubmit-inspection", handler.ResubmitInspection)     // 商家重新提交
+
+					// 节点付款
+					milestones.POST("/:id/pay", milestonePaymentHandler.PayMilestone)
+					milestones.POST("/:id/release-payment", milestonePaymentHandler.ReleaseMilestonePayment)
+				}
 
 				// 项目账单
 				projects.GET("/:id/bill", handler.GetProjectBill)
@@ -425,6 +463,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			authorized.POST("/contracts/:id/confirm", handler.ConfirmContract)
 			authorized.GET("/contracts/:id", handler.GetContract)
+			authorized.POST("/contracts/:id/sign", handler.SignContractByUser)
+			authorized.GET("/contracts/:id/status", handler.GetContractStatus)
+			authorized.GET("/contracts/:id/download", handler.DownloadContract)
+			authorized.POST("/contracts/:id/pay-deposit", handler.StartContractDepositPayment)
 
 			quoteTasks := authorized.Group("/quote-tasks")
 			{
@@ -432,11 +474,26 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				quoteTasks.GET("/:id/user-view", handler.UserGetQuoteTask)
 			}
 
+			// Legacy quote-pk 历史兼容只读区：写入口保留路由但固定返回 retired 冲突，不再承接现行主链。
+			quotePK := authorized.Group("/quote-pk")
+			{
+				quotePK.POST("/tasks", handler.CreateQuoteTask)                   // 用户发起报价需求
+				quotePK.GET("/tasks/:id", handler.GetQuoteTask)                   // 获取报价任务详情
+				quotePK.GET("/tasks/:id/submissions", handler.GetQuoteComparison) // 获取报价对比表
+				quotePK.POST("/tasks/:id/select", handler.SelectQuote)            // 用户选择报价
+			}
+
 			quoteSubmissions := authorized.Group("/quote-submissions")
 			{
 				quoteSubmissions.POST("/:id/confirm", handler.UserConfirmQuoteSubmission)
 				quoteSubmissions.POST("/:id/reject", handler.UserRejectQuoteSubmission)
 				quoteSubmissions.GET("/:id/print", handler.UserPrintQuoteSubmission)
+			}
+
+			changeOrders := authorized.Group("/change-orders")
+			{
+				changeOrders.POST("/:id/confirm", handler.ConfirmChangeOrder)
+				changeOrders.POST("/:id/reject", handler.RejectChangeOrder)
 			}
 
 			// 订单（用户端）
@@ -606,6 +663,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/upload", caseListPerm, handler.AdminUploadImage)
 
 			// 统计
+			admin.GET("/health", dashboardRead, handler.HealthCheckDetailed)
 			admin.GET("/stats/overview", dashboardRead, handler.AdminStatsOverview)
 			admin.GET("/stats/trends", dashboardRead, handler.AdminStatsTrends)
 			admin.GET("/stats/distribution", dashboardRead, handler.AdminStatsDistribution)
@@ -660,6 +718,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/project-audits", complaintListPerm, handler.AdminListProjectAudits)
 			admin.GET("/project-audits/:id", complaintListPerm, handler.AdminGetProjectAudit)
 			admin.POST("/project-audits/:id/arbitrate", complaintResolvePerm, middleware.RequireAdminReason("conclusionReason", "reason"), middleware.RequireAdminReauth(), handler.AdminArbitrateProjectAudit)
+			admin.POST("/projects/:id/close", complaintResolvePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminCloseProject)
 			admin.GET("/audits/providers", providerAuditListPerm, handler.AdminListProviderAudits)
 			admin.GET("/audits/material-shops", materialAuditListPerm, handler.AdminListMaterialShopAudits)
 			admin.POST("/audits/:type/:id/approve", middleware.RequireAnyPermission("provider:audit:approve", "material:audit:approve"), handler.AdminApproveAudit)
@@ -706,6 +765,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 财务管理
 			admin.GET("/finance/overview", financeEscrowListPerm, handler.AdminGetFinanceOverview)
 			admin.GET("/finance/escrow-accounts", financeEscrowListPerm, handler.AdminListEscrowAccounts)
+			admin.GET("/finance/payment-orders", financeTransactionListPerm, handler.AdminListPaymentOrders)
+			admin.GET("/finance/payment-orders/:id", financeTransactionViewPerm, handler.AdminGetPaymentOrderDetail)
 			admin.GET("/finance/transactions", financeTransactionListPerm, handler.AdminListTransactions)
 			admin.GET("/finance/transactions/export", financeTransactionListPerm, handler.AdminExportTransactions)
 			admin.GET("/finance/reconciliations", financeTransactionListPerm, handler.AdminListFinanceReconciliations)
@@ -716,6 +777,15 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUnfreezeFunds)
 			admin.POST("/finance/manual-release", financeTransactionApprovePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminManualReleaseFunds)
 			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, handler.AdminWithdraw)
+
+			// 对账报表管理
+			admin.GET("/reconciliation/list", financeTransactionListPerm, handler.AdminReconciliationList)
+			admin.GET("/reconciliation/:id", financeTransactionViewPerm, handler.AdminReconciliationDetail)
+			admin.GET("/reconciliation/:id/differences", financeTransactionListPerm, handler.AdminReconciliationDifferences)
+			admin.POST("/reconciliation/differences/:id/resolve", financeTransactionApprovePerm, middleware.RequireAdminReason("resolveNotes"), middleware.RequireAdminReauth(), handler.AdminReconciliationResolve)
+			admin.POST("/reconciliation/differences/:id/investigate", financeTransactionApprovePerm, middleware.RequireAdminReauth(), handler.AdminReconciliationDifferenceInvestigate)
+			admin.POST("/reconciliation/differences/:id/ignore", financeTransactionApprovePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminReconciliationDifferenceIgnore)
+			admin.POST("/reconciliation/differences/:id/resolve-enhanced", financeTransactionApprovePerm, middleware.RequireAdminReason("solution"), middleware.RequireAdminReauth(), handler.AdminReconciliationDifferenceResolve)
 
 			// 风险管理
 			admin.GET("/risk/warnings", riskWarningListPerm, handler.AdminListRiskWarnings)
@@ -736,6 +806,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/withdraws/:id/approve", financeTransactionApprovePerm, middleware.RequireAdminReason("remark", "reason"), middleware.RequireAdminReauth(), handler.AdminWithdrawApprove)
 			admin.POST("/withdraws/:id/mark-paid", financeTransactionApprovePerm, middleware.RequireAdminReason("remark", "reason"), middleware.RequireAdminReauth(), handler.AdminWithdrawMarkPaid)
 			admin.POST("/withdraws/:id/reject", financeTransactionApprovePerm, middleware.RequireAdminReason("reason", "remark"), middleware.RequireAdminReauth(), handler.AdminWithdrawReject)
+
+			// 出款报表管理
+			admin.GET("/payout/list", financeTransactionListPerm, handler.AdminPayoutList)
+			admin.GET("/payout/:id", financeTransactionViewPerm, handler.AdminPayoutDetail)
+			admin.POST("/payout/:id/retry", financeTransactionApprovePerm, middleware.RequireAdminReauth(), handler.AdminPayoutRetry)
 
 			// 操作日志
 			admin.GET("/logs", logListPerm, handler.AdminListLogs)
@@ -777,6 +852,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/proposals/:id/reject", proposalReviewPerm, handler.AdminRejectProposal)
 			admin.GET("/projects", projectListPerm, handler.AdminListProjects)
 			admin.GET("/projects/:id", projectViewPerm, handler.AdminGetProject)
+			admin.GET("/projects/:id/change-orders", projectViewPerm, handler.AdminListProjectChangeOrders)
+			admin.POST("/projects/:id/change-orders", projectEditPerm, handler.AdminCreateProjectChangeOrder)
 			admin.POST("/projects/:id/audit", complaintResolvePerm, handler.AdminCreateProjectAudit)
 			admin.PUT("/projects/:id/status", projectEditPerm, handler.AdminUpdateProjectStatus)
 			admin.POST("/projects/:id/construction/confirm", projectEditPerm, handler.AdminConfirmProjectConstruction)
@@ -826,16 +903,19 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/quote-templates", projectEditPerm, handler.AdminCreateQuoteTemplate)
 			admin.PUT("/quote-templates/:id", projectEditPerm, handler.AdminUpdateQuoteTemplate)
 			admin.POST("/quote-templates/:id/items", projectEditPerm, handler.AdminBatchUpsertTemplateItems)
+			admin.POST("/quote-templates/ensure", projectEditPerm, handler.AdminEnsureQuoteTemplate)
 
 			admin.GET("/quote-lists", projectListPerm, handler.AdminListQuoteLists)
 			admin.GET("/quote-lists/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
 			admin.POST("/quote-lists", projectEditPerm, handler.AdminCreateQuoteList)
+			admin.POST("/quote-lists/rebuild-from-legacy", projectEditPerm, handler.AdminRebuildQuoteListFromLegacy)
 			admin.POST("/quote-lists/:id/items/batch-upsert", projectEditPerm, handler.AdminBatchUpsertQuoteListItems)
 			admin.POST("/quote-lists/:id/invitations", projectEditPerm, handler.AdminCreateQuoteInvitations)
 			admin.POST("/quote-lists/:id/start", projectEditPerm, handler.AdminStartQuoteList)
 			admin.GET("/quote-lists/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
 			admin.POST("/quote-lists/:id/award", projectEditPerm, handler.AdminAwardQuote)
 			admin.GET("/providers/:id/price-book", providerListPerm, handler.AdminGetProviderPriceBook)
+			admin.GET("/provider-price-books/inspection", providerListPerm, handler.AdminListProviderPriceBookInspection)
 			admin.GET("/quote-tasks", projectListPerm, handler.AdminListQuoteLists)
 			admin.GET("/quote-tasks/:id", projectViewPerm, handler.AdminGetQuoteListDetail)
 			admin.POST("/quote-tasks", projectEditPerm, handler.AdminCreateQuoteList)
@@ -846,6 +926,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/quote-tasks/:id/select-foremen", projectEditPerm, handler.AdminSelectForemen)
 			admin.POST("/quote-tasks/:id/generate-drafts", projectEditPerm, handler.AdminGenerateQuoteDrafts)
 			admin.GET("/quote-submissions/:id/revisions", projectViewPerm, handler.AdminListQuoteSubmissionRevisions)
+			admin.POST("/quote-submissions/:id/review", projectEditPerm, handler.AdminReviewQuoteSubmission)
+			admin.POST("/change-orders/:id/settle", projectEditPerm, handler.AdminSettleChangeOrder)
 			admin.GET("/quote-tasks/:id/comparison", projectViewPerm, handler.AdminGetQuoteComparison)
 			admin.POST("/quote-tasks/:id/submit-to-user", projectEditPerm, handler.AdminSubmitQuoteTaskToUser)
 			admin.POST("/quote-tasks/:id/requote", projectEditPerm, handler.AdminRequoteTask)
@@ -868,6 +950,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/refunds/:id", financeTransactionViewPerm, handler.AdminGetRefundApplication)
 			admin.POST("/refunds/:id/approve", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminApproveRefundApplication)
 			admin.POST("/refunds/:id/reject", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminRejectRefundApplication)
+
+			// ========== 智能报价询价管理 ==========
+			admin.GET("/quote-inquiries", demandListPerm, handler.AdminListQuoteInquiries)
+			admin.GET("/quote-inquiries/:id", demandListPerm, handler.AdminGetQuoteInquiry)
 
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)
@@ -901,18 +987,16 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		// 商家登录 (无需认证)
 		v1.POST("/merchant/login", middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
 
-		contracts := v1.Group("/contracts")
-		contracts.Use(middleware.MerchantJWT(cfg.JWT.Secret))
-		{
-			contracts.POST("", handler.MerchantRequireCompletedOnboarding(), handler.CreateContract)
-		}
-
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）
 		merchant := v1.Group("/merchant")
 		merchant.Use(middleware.MerchantJWT(cfg.JWT.Secret))
 		{
 			// Tinode helper endpoints
 			merchant.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
+
+			// 合同管理
+			merchant.POST("/contracts", handler.MerchantRequireCompletedOnboarding(), handler.CreateContract)
+			merchant.POST("/contracts/:id/sign", handler.SignContractByProvider)
 
 			// 获取当前商家信息
 			merchant.GET("/info", handler.MerchantGetInfo)
@@ -930,22 +1014,34 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 预约管理
 			merchant.GET("/bookings", handler.MerchantListBookings)
 			merchant.GET("/bookings/:id", handler.MerchantGetBookingDetail)
+			merchant.GET("/bookings/:id/flow-summary", handler.MerchantGetBookingFlowSummary)
 			merchant.PUT("/bookings/:id/handle", handler.MerchantRequireCompletedOnboarding(), handler.MerchantHandleBooking)
 			merchant.GET("/bookings/:id/site-survey", handler.MerchantGetSiteSurvey)
 			merchant.POST("/bookings/:id/site-survey", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitSiteSurvey)
 			merchant.GET("/bookings/:id/budget-confirm", handler.MerchantGetBudgetConfirmation)
 			merchant.POST("/bookings/:id/budget-confirm", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitBudgetConfirmation)
+			merchant.POST("/bookings/:id/confirm-crew", handler.ConfirmConstructionParty)
 			merchant.GET("/quote-lists", handler.MerchantListQuoteLists)
 			merchant.GET("/quote-lists/:id", handler.MerchantGetQuoteListDetail)
 			merchant.PUT("/quote-lists/:id/submission", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSaveQuoteSubmission)
 			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuoteSubmission)
 			merchant.GET("/quote-tasks", handler.MerchantListQuoteTasks)
 			merchant.GET("/quote-tasks/:id", handler.MerchantGetQuoteTask)
+			merchant.GET("/quote-tasks/:id/preparation", handler.MerchantGetQuoteTaskPreparation)
+			merchant.PUT("/quote-tasks/:id/prerequisites", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateQuoteTaskPrerequisites)
+			merchant.PUT("/quote-tasks/:id/quantity-items", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateQuoteTaskQuantityItems)
+			merchant.POST("/quote-tasks/:id/recommend-foremen", handler.MerchantRecommendForemen)
+			merchant.POST("/quote-tasks/:id/select-foremen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
+
+			// Legacy quote-pk 历史兼容区：商家写入口固定 retired，仅保留深链兼容。
+			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                         // 商家获取报价任务列表
+			merchant.POST("/quote-pk/tasks/:id/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
 			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)
 			merchant.GET("/bookings/:id/working-docs", handler.MerchantListWorkingDocs)
 			merchant.POST("/bookings/:id/design-fee-quote", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateDesignFeeQuote)
 			merchant.GET("/bookings/:id/design-fee-quote", handler.MerchantGetDesignFeeQuote)
 			merchant.POST("/bookings/:id/deliverable", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitDeliverable)
+			merchant.POST("/bookings/:id/construction-prep/start", handler.MerchantRequireCompletedOnboarding(), handler.MerchantStartConstructionPreparation)
 
 			// 方案管理
 			merchant.POST("/proposals", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProposal)
@@ -970,6 +1066,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/orders", handler.MerchantListOrders)
 			merchant.GET("/projects", handler.MerchantListProjects)
 			merchant.GET("/projects/:projectId", handler.MerchantGetProjectDetail)
+			merchant.GET("/projects/:projectId/change-orders", handler.MerchantListProjectChangeOrders)
+			merchant.POST("/projects/:projectId/change-orders", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectChangeOrder)
 			merchant.GET("/projects/:projectId/dispute", handler.MerchantGetProjectDispute)
 			merchant.POST("/projects/:projectId/dispute/respond", handler.MerchantRequireCompletedOnboarding(), handler.MerchantRespondProjectDispute)
 			merchant.POST("/projects/:projectId/logs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectLog)
@@ -999,6 +1097,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/cases/:id", handler.MerchantCaseGet)
 			merchant.POST("/cases", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreate)
 			merchant.POST("/projects/:projectId/cases", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreateFromProject)
+			merchant.POST("/change-orders/:id/cancel", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCancelChangeOrder)
 			merchant.PUT("/cases/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseUpdate)
 			merchant.DELETE("/cases/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseDelete)
 			merchant.PUT("/cases/reorder", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseReorder)

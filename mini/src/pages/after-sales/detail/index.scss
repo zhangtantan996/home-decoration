@@ -1,0 +1,30 @@
+.after-sales-detail-page {
+  min-height: 100vh;
+
+  &__result-text {
+    display: block;
+    color: #1f2937;
+    font-size: 25rpx;
+    line-height: 1.6;
+    font-weight: 500;
+    word-break: break-word;
+  }
+
+  &__image-count {
+    color: #8e8e93;
+    font-size: 22rpx;
+    line-height: 1.4;
+  }
+
+  &__empty-evidence {
+    padding: 24rpx 0 4rpx;
+    color: #9ca3af;
+    font-size: 24rpx;
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .notification-gallery__item {
+    height: 220rpx;
+  }
+}

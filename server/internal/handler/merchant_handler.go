@@ -13,8 +13,6 @@ import (
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"log"
-	"os"
-	"path/filepath"
 	"strconv"
 	"time"
 
@@ -1014,7 +1012,7 @@ func MerchantListBookings(c *gin.Context) {
 		p0Summary, _ := bookingService.GetBookingP0Summary(b.ID)
 		proposalID := proposalMap[b.ID]
 		item := BookingWithUser{
-			BookingLifecycleView: service.BuildBookingLifecycleView(b, p0Summary, proposalID),
+			BookingLifecycleView: service.BuildBookingLifecycleView(b, p0Summary, proposalID, nil),
 		}
 		if u, ok := userMap[b.UserID]; ok {
 			identity := dto.NewUserIdentity(&u)
@@ -1070,7 +1068,7 @@ func MerchantGetBookingDetail(c *gin.Context) {
 		monitor.RecordPublicIDMissing("merchant_booking_detail", bookingIdentity.UserID, "merchant_booking_detail")
 	}
 	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
-	bookingView := service.BuildBookingLifecycleView(booking, p0Summary, proposal.ID)
+	bookingView := service.BuildBookingLifecycleView(booking, p0Summary, proposal.ID, nil)
 	var siteSurveySummary interface{}
 	var budgetConfirmSummary interface{}
 	var availableActions []string
@@ -1085,6 +1083,8 @@ func MerchantGetBookingDetail(c *gin.Context) {
 		currentStage = p0Summary.CurrentStage
 	}
 	currentStageText = bookingView.CurrentStageText
+	bridgeSummary := service.BuildBridgeReadModelByBookingID(booking.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByBookingID(booking.ID)
 
 	type BookingDetailWithIdentity struct {
 		service.BookingLifecycleView
@@ -1094,21 +1094,30 @@ func MerchantGetBookingDetail(c *gin.Context) {
 	response.Success(c, gin.H{
 		"booking": BookingDetailWithIdentity{
 			BookingLifecycleView: bookingView,
-			UserPublicID: bookingIdentity.UserPublicID,
+			UserPublicID:         bookingIdentity.UserPublicID,
 		},
-		"hasProposal":          hasProposal,
-		"proposal":             proposal,
-		"statusGroup":          bookingView.StatusGroup,
-		"statusText":           bookingView.StatusText,
-		"siteSurveySummary":    siteSurveySummary,
-		"budgetConfirmSummary": budgetConfirmSummary,
-		"availableActions":     availableActions,
-		"flowSummary":          flowSummary,
-		"currentStage":         currentStage,
-		"currentStageText":     currentStageText,
-		"surveyDepositAmount":  bookingView.SurveyDepositAmount,
-		"surveyDepositPaid":    bookingView.SurveyDepositPaid,
-		"surveyDepositPaidAt":  bookingView.SurveyDepositPaidAt,
+		"hasProposal":                    hasProposal,
+		"proposal":                       proposal,
+		"statusGroup":                    bookingView.StatusGroup,
+		"statusText":                     bookingView.StatusText,
+		"siteSurveySummary":              siteSurveySummary,
+		"budgetConfirmSummary":           budgetConfirmSummary,
+		"availableActions":               availableActions,
+		"flowSummary":                    flowSummary,
+		"currentStage":                   currentStage,
+		"currentStageText":               currentStageText,
+		"surveyDepositAmount":            bookingView.SurveyDepositAmount,
+		"surveyDepositPaid":              bookingView.SurveyDepositPaid,
+		"surveyDepositPaidAt":            bookingView.SurveyDepositPaidAt,
+		"baselineStatus":                 bridgeSummary.BaselineStatus,
+		"baselineSubmittedAt":            bridgeSummary.BaselineSubmittedAt,
+		"constructionSubjectType":        bridgeSummary.ConstructionSubjectType,
+		"constructionSubjectId":          bridgeSummary.ConstructionSubjectID,
+		"constructionSubjectDisplayName": bridgeSummary.ConstructionSubjectDisplayName,
+		"kickoffStatus":                  bridgeSummary.KickoffStatus,
+		"plannedStartDate":               bridgeSummary.PlannedStartDate,
+		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 
@@ -1341,6 +1350,7 @@ func MerchantStartProject(c *gin.Context) {
 // MerchantDashboardStats 商家首页统计
 func MerchantDashboardStats(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
+	governanceSummary := (&service.ProviderGovernanceService{}).BuildSummary(providerID)
 
 	// 预约统计
 	var pendingBookings, confirmedBookings int64
@@ -1384,15 +1394,117 @@ func MerchantDashboardStats(c *gin.Context) {
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&monthRevenue)
 
-	activeProjects := paidOrders
+	var pendingQuoteInvitations int64
+	repository.DB.Model(&model.QuoteInvitation{}).
+		Where("provider_id = ? AND status = ?", providerID, model.QuoteInvitationStatusInvited).
+		Count(&pendingQuoteInvitations)
+
+	var draftQuoteSubmissions int64
+	repository.DB.Model(&model.QuoteSubmission{}).
+		Where("provider_id = ? AND status IN ?", providerID, []string{
+			model.QuoteSubmissionStatusDraft,
+			model.QuoteSubmissionStatusGenerated,
+			model.QuoteSubmissionStatusMerchantReviewing,
+		}).
+		Count(&draftQuoteSubmissions)
+
+	var rejectedQuoteSubmissions int64
+	repository.DB.Model(&model.QuoteSubmission{}).
+		Where("provider_id = ? AND task_status = ?", providerID, model.QuoteListStatusRejected).
+		Count(&rejectedQuoteSubmissions)
+
+	var submittedToUserQuotes int64
+	repository.DB.Model(&model.QuoteSubmission{}).
+		Where("provider_id = ? AND (submitted_to_user = ? OR task_status = ?)", providerID, true, model.QuoteListStatusSubmittedToUser).
+		Count(&submittedToUserQuotes)
+
+	var missingPriceRequiredCount int64
+	repository.DB.Model(&model.QuoteSubmissionItem{}).
+		Joins("JOIN quote_submissions ON quote_submissions.id = quote_submission_items.quote_submission_id").
+		Where("quote_submissions.provider_id = ? AND quote_submission_items.missing_price_flag = ?", providerID, true).
+		Count(&missingPriceRequiredCount)
+
+	var pendingChangeOrders int64
+	repository.DB.Model(&model.ChangeOrder{}).
+		Joins("JOIN projects ON projects.id = change_orders.project_id").
+		Where("change_orders.status IN ?", []string{
+			model.ChangeOrderStatusPendingUserConfirm,
+			model.ChangeOrderStatusAdminSettlementRequired,
+		}).
+		Where("(projects.provider_id = ? OR projects.construction_provider_id = ? OR projects.foreman_id = ?)", providerID, providerID, providerID).
+		Count(&pendingChangeOrders)
+
+	var pendingSettlementAmount float64
+	repository.DB.Model(&model.SettlementOrder{}).
+		Where("provider_id = ? AND status IN ?", providerID, []string{
+			model.SettlementStatusScheduled,
+			model.SettlementStatusPayoutProcessing,
+			model.SettlementStatusPayoutFailed,
+			model.SettlementStatusException,
+		}).
+		Select("COALESCE(SUM(merchant_net_amount), 0)").
+		Scan(&pendingSettlementAmount)
+
+	var failedPayoutCount int64
+	repository.DB.Model(&model.PayoutOrder{}).
+		Where("provider_id = ? AND status = ?", providerID, model.PayoutStatusFailed).
+		Count(&failedPayoutCount)
+
+	activeProjects := int64(0)
+	var provider model.Provider
+	if err := repository.DB.Select("provider_type").First(&provider, providerID).Error; err == nil {
+		projectDomainStages := []string{
+			model.BusinessFlowStageReadyToStart,
+			model.BusinessFlowStageInConstruction,
+			model.BusinessFlowStageNodeAcceptanceInProgress,
+			model.BusinessFlowStageCompleted,
+			model.BusinessFlowStageArchived,
+			model.BusinessFlowStageDisputed,
+			model.BusinessFlowStagePaymentPaused,
+		}
+		query := repository.DB.
+			Model(&model.BusinessFlow{}).
+			Distinct("project_id").
+			Where("project_id > 0").
+			Where("current_stage IN ?", projectDomainStages)
+
+		switch provider.ProviderType {
+		case 3:
+			query = query.Where("selected_foreman_provider_id = ?", providerID)
+		case 2:
+			query = query.Where("(designer_provider_id = ? OR selected_foreman_provider_id = ?)", providerID, providerID)
+		default:
+			query = query.Where("designer_provider_id = ?", providerID)
+		}
+
+		query.Count(&activeProjects)
+	}
 
 	response.Success(c, gin.H{
-		"pendingLeads":     pendingLeads,
-		"todayBookings":    todayBookings,
-		"pendingProposals": pendingProposals,
-		"activeProjects":   activeProjects,
-		"totalRevenue":     totalRevenue,
-		"monthRevenue":     monthRevenue,
+		"pendingLeads":              pendingLeads,
+		"todayBookings":             todayBookings,
+		"pendingProposals":          pendingProposals,
+		"pendingQuoteInvitations":   pendingQuoteInvitations,
+		"draftQuoteSubmissions":     draftQuoteSubmissions,
+		"rejectedQuoteSubmissions":  rejectedQuoteSubmissions,
+		"submittedToUserQuotes":     submittedToUserQuotes,
+		"missingPriceRequiredCount": missingPriceRequiredCount,
+		"pendingChangeOrders":       pendingChangeOrders,
+		"pendingSettlementAmount":   pendingSettlementAmount,
+		"failedPayoutCount":         failedPayoutCount,
+		"quoteErp": gin.H{
+			"pendingQuoteInvitations":   pendingQuoteInvitations,
+			"draftQuoteSubmissions":     draftQuoteSubmissions,
+			"rejectedQuoteSubmissions":  rejectedQuoteSubmissions,
+			"submittedToUserQuotes":     submittedToUserQuotes,
+			"missingPriceRequiredCount": missingPriceRequiredCount,
+			"pendingChangeOrders":       pendingChangeOrders,
+			"pendingSettlementAmount":   pendingSettlementAmount,
+			"failedPayoutCount":         failedPayoutCount,
+		},
+		"activeProjects": activeProjects,
+		"totalRevenue":   totalRevenue,
+		"monthRevenue":   monthRevenue,
 		"bookings": gin.H{
 			"pending":   pendingBookings,
 			"confirmed": confirmedBookings,
@@ -1405,6 +1517,37 @@ func MerchantDashboardStats(c *gin.Context) {
 			"pending": pendingOrders,
 			"paid":    paidOrders,
 		},
+		"governanceSummary": governanceSummary,
+		"governanceTier": func() string {
+			if governanceSummary == nil {
+				return ""
+			}
+			return governanceSummary.GovernanceTier
+		}(),
+		"riskFlags": func() []string {
+			if governanceSummary == nil {
+				return nil
+			}
+			return governanceSummary.RiskFlags
+		}(),
+		"recommendedAction": func() string {
+			if governanceSummary == nil {
+				return ""
+			}
+			return governanceSummary.RecommendedAction
+		}(),
+		"scoreSummary": func() service.ProviderGovernanceScoreSummary {
+			if governanceSummary == nil {
+				return service.ProviderGovernanceScoreSummary{}
+			}
+			return governanceSummary.ScoreSummary
+		}(),
+		"funnelMetrics": func() service.ProviderGovernanceFunnelMetrics {
+			if governanceSummary == nil {
+				return service.ProviderGovernanceFunnelMetrics{}
+			}
+			return governanceSummary.FunnelMetrics
+		}(),
 	})
 }
 
@@ -1432,30 +1575,13 @@ func MerchantUploadAvatar(c *gin.Context) {
 
 	// 生成唯一文件名
 	filename := fmt.Sprintf("avatar_%d_%d%s", userID, time.Now().UnixNano(), ext)
-	uploadDir := "./uploads/avatars"
-
-	// 确保目录存在
-	if err := os.MkdirAll(uploadDir, 0750); err != nil {
-		response.Error(c, 500, "创建目录失败")
-		return
-	}
-
-	// 保存文件
-	dst := filepath.Join(uploadDir, filename)
-	if err := c.SaveUploadedFile(file, dst); err != nil {
-		response.Error(c, 500, "保存文件失败")
-		return
-	}
-
-	// 生成访问URL (根据实际部署配置)
-	avatarURL := fmt.Sprintf("/uploads/avatars/%s", filename)
-	meta, err := imgutil.ProcessUploadedImageAsset(dst, avatarURL, ext, imgutil.UploadAssetSpec{
+	avatarPath := buildUploadPublicPath("avatars", filename)
+	asset, err := persistUploadedFileWithSpec(file, avatarPath, &imgutil.UploadAssetSpec{
 		MinShortEdge:       300,
 		ThumbnailMaxWidth:  320,
 		ThumbnailMaxHeight: 320,
 	})
 	if err != nil {
-		_ = os.Remove(dst)
 		if smallErr, ok := imgutil.IsImageTooSmallError(err); ok {
 			response.Error(c, 400, smallErr.Error())
 			return
@@ -1464,18 +1590,18 @@ func MerchantUploadAvatar(c *gin.Context) {
 		return
 	}
 
-	if err := repository.DB.Model(&model.Provider{}).Where("user_id = ?", userID).Update("avatar", avatarURL).Error; err != nil {
+	if err := repository.DB.Model(&model.Provider{}).Where("user_id = ?", userID).Update("avatar", avatarPath).Error; err != nil {
 		response.Error(c, 500, "更新商家头像失败")
 		return
 	}
 
 	response.Success(c, gin.H{
-		"url":           imgutil.GetFullImageURL(avatarURL),
-		"path":          avatarURL,
-		"thumbnailUrl":  imgutil.GetFullImageURL(resolveUploadThumbnailPath(meta, avatarURL)),
-		"thumbnailPath": resolveUploadThumbnailPath(meta, avatarURL),
-		"width":         resolveUploadAssetWidth(meta),
-		"height":        resolveUploadAssetHeight(meta),
+		"url":           asset.URL,
+		"path":          asset.Path,
+		"thumbnailUrl":  asset.ThumbnailURL,
+		"thumbnailPath": asset.ThumbnailPath,
+		"width":         asset.Width,
+		"height":        asset.Height,
 	})
 }
 
@@ -1503,30 +1629,13 @@ func MerchantUploadImage(c *gin.Context) {
 
 	// 生成唯一文件名
 	filename := fmt.Sprintf("case_%d_%d%s", providerID, time.Now().UnixNano(), ext)
-	uploadDir := "./uploads/cases"
-
-	// 确保目录存在
-	if err := os.MkdirAll(uploadDir, 0750); err != nil {
-		response.Error(c, 500, "创建目录失败")
-		return
-	}
-
-	// 保存文件
-	dst := filepath.Join(uploadDir, filename)
-	if err := c.SaveUploadedFile(file, dst); err != nil {
-		response.Error(c, 500, "保存文件失败")
-		return
-	}
-
-	// 生成访问URL
-	imageURL := fmt.Sprintf("/uploads/cases/%s", filename)
-	meta, err := imgutil.ProcessUploadedImageAsset(dst, imageURL, ext, imgutil.UploadAssetSpec{
+	imagePath := buildUploadPublicPath("cases", filename)
+	asset, err := persistUploadedFileWithSpec(file, imagePath, &imgutil.UploadAssetSpec{
 		MinShortEdge:       600,
 		ThumbnailMaxWidth:  960,
 		ThumbnailMaxHeight: 960,
 	})
 	if err != nil {
-		_ = os.Remove(dst)
 		if smallErr, ok := imgutil.IsImageTooSmallError(err); ok {
 			response.Error(c, 400, smallErr.Error())
 			return
@@ -1536,12 +1645,12 @@ func MerchantUploadImage(c *gin.Context) {
 	}
 
 	response.Success(c, gin.H{
-		"url":           imgutil.GetFullImageURL(imageURL),
-		"path":          imageURL,
-		"thumbnailUrl":  imgutil.GetFullImageURL(resolveUploadThumbnailPath(meta, imageURL)),
-		"thumbnailPath": resolveUploadThumbnailPath(meta, imageURL),
-		"width":         resolveUploadAssetWidth(meta),
-		"height":        resolveUploadAssetHeight(meta),
+		"url":           asset.URL,
+		"path":          asset.Path,
+		"thumbnailUrl":  asset.ThumbnailURL,
+		"thumbnailPath": asset.ThumbnailPath,
+		"width":         asset.Width,
+		"height":        asset.Height,
 	})
 }
 
@@ -1633,9 +1742,20 @@ func MerchantGetProposal(c *gin.Context) {
 		}
 	}
 
+	bridgeSummary := service.BuildBridgeReadModelByProposalID(proposal.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByProposalID(proposal.ID)
 	response.Success(c, gin.H{
-		"proposal": proposal,
-		"booking":  bookingWithUser,
+		"proposal":                       proposal,
+		"booking":                        bookingWithUser,
+		"baselineStatus":                 bridgeSummary.BaselineStatus,
+		"baselineSubmittedAt":            bridgeSummary.BaselineSubmittedAt,
+		"constructionSubjectType":        bridgeSummary.ConstructionSubjectType,
+		"constructionSubjectId":          bridgeSummary.ConstructionSubjectID,
+		"constructionSubjectDisplayName": bridgeSummary.ConstructionSubjectDisplayName,
+		"kickoffStatus":                  bridgeSummary.KickoffStatus,
+		"plannedStartDate":               bridgeSummary.PlannedStartDate,
+		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 

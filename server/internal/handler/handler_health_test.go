@@ -18,6 +18,14 @@ type healthCheckResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
 	Data    struct {
+		Status string `json:"status"`
+	} `json:"data"`
+}
+
+type healthCheckDetailedResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
 		Status     string `json:"status"`
 		Service    string `json:"service"`
 		AlertCount int    `json:"alertCount"`
@@ -108,11 +116,33 @@ func newHealthTestDB(t *testing.T, withSMSAudit bool) *gorm.DB {
 		&model.Booking{},
 		&model.Proposal{},
 		&model.Milestone{},
+		&model.PaymentOrder{},
+		&model.RefundOrder{},
 		&model.PaymentPlan{},
 		&model.MerchantServiceSetting{},
 		&model.DesignWorkingDoc{},
 		&model.DesignFeeQuote{},
 		&model.DesignDeliverable{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
+		&model.QuoteCategory{},
+		&model.QuoteLibraryItem{},
+		&model.QuotePriceBook{},
+		&model.QuotePriceBookItem{},
+		&model.QuotePriceTier{},
+		&model.QuoteCategoryRule{},
+		&model.QuoteTemplate{},
+		&model.QuoteTemplateItem{},
+		&model.QuoteList{},
+		&model.QuoteListItem{},
+		&model.QuoteInvitation{},
+		&model.QuoteSubmission{},
+		&model.QuoteSubmissionItem{},
+		&model.QuoteSubmissionRevision{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
+		&model.MerchantIncome{},
+		&model.MerchantWithdraw{},
 	}
 	if withSMSAudit {
 		models = append(models, &model.SMSAuditLog{})
@@ -141,7 +171,16 @@ func decodeHealthResponse(t *testing.T, body []byte) healthCheckResponse {
 	return payload
 }
 
-func TestHealthCheckReportsDegradedWhenSMSAuditTableMissing(t *testing.T) {
+func decodeHealthDetailedResponse(t *testing.T, body []byte) healthCheckDetailedResponse {
+	t.Helper()
+	var payload healthCheckDetailedResponse
+	if err := json.Unmarshal(body, &payload); err != nil {
+		t.Fatalf("decode detailed health response: %v", err)
+	}
+	return payload
+}
+
+func TestHealthCheckPublicEndpointOnlyReturnsStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	withHealthRepositoryDB(t, newHealthTestDB(t, false))
 
@@ -156,53 +195,23 @@ func TestHealthCheckReportsDegradedWhenSMSAuditTableMissing(t *testing.T) {
 	if payload.Data.Status != "degraded" {
 		t.Fatalf("expected degraded health status, got %s", payload.Data.Status)
 	}
-	if payload.Data.Checks.SMSAuditLog.TableExists {
-		t.Fatalf("expected sms_audit_logs to be missing")
-	}
-	if !payload.Data.Checks.SMSAuditLog.MigrationRequired {
-		t.Fatalf("expected migrationRequired=true when table is missing")
-	}
-	if payload.Data.Checks.UserAuthSchema.Status != "ok" {
-		t.Fatalf("expected user auth schema ok, got %s", payload.Data.Checks.UserAuthSchema.Status)
-	}
-	if payload.Data.Checks.MerchantOnboardingSchema.Status != "ok" {
-		t.Fatalf("expected merchant onboarding schema ok, got %s", payload.Data.Checks.MerchantOnboardingSchema.Status)
-	}
-	if payload.Data.Checks.BookingP0Schema.Status != "ok" {
-		t.Fatalf("expected booking p0 schema ok, got %s", payload.Data.Checks.BookingP0Schema.Status)
-	}
-	if payload.Data.Checks.ProjectRiskSchema.Status != "ok" {
-		t.Fatalf("expected project risk schema ok, got %s", payload.Data.Checks.ProjectRiskSchema.Status)
-	}
-	if payload.Data.Checks.AuditLogSchema.Status != "ok" {
-		t.Fatalf("expected audit log schema ok, got %s", payload.Data.Checks.AuditLogSchema.Status)
-	}
-	if payload.Data.Checks.CommerceRuntimeSchema.Status != "ok" {
-		t.Fatalf("expected commerce runtime schema ok, got %s", payload.Data.Checks.CommerceRuntimeSchema.Status)
-	}
-	if payload.Data.AlertCount != 1 {
-		t.Fatalf("expected alertCount=1, got %d", payload.Data.AlertCount)
-	}
-	if payload.Data.Alerts[0].Code != "sms_audit_log_table_missing" {
-		t.Fatalf("unexpected alert code: %s", payload.Data.Alerts[0].Code)
-	}
-	if payload.Data.Alerts[0].Metadata["requiredMigration"] != repository.CanonicalSchemaReconcileMigrationPath {
-		t.Fatalf("unexpected migration metadata: %s", payload.Data.Alerts[0].Metadata["requiredMigration"])
+	if strings.Contains(w.Body.String(), "requiredMigration") || strings.Contains(w.Body.String(), "sms_audit_logs") {
+		t.Fatalf("public health response leaked internal schema details: %s", w.Body.String())
 	}
 }
 
-func TestHealthCheckReportsOKWhenSMSAuditTableExists(t *testing.T) {
+func TestHealthCheckDetailedReportsOKWhenSMSAuditTableExists(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	withHealthRepositoryDB(t, newHealthTestDB(t, true))
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	HealthCheck(c)
+	HealthCheckDetailed(c)
 
 	if w.Code != 200 {
 		t.Fatalf("expected status code 200, got %d", w.Code)
 	}
-	payload := decodeHealthResponse(t, w.Body.Bytes())
+	payload := decodeHealthDetailedResponse(t, w.Body.Bytes())
 	if payload.Data.Status != "ok" {
 		t.Fatalf("expected ok health status, got %s", payload.Data.Status)
 	}
@@ -238,5 +247,37 @@ func TestHealthCheckReportsOKWhenSMSAuditTableExists(t *testing.T) {
 	}
 	if len(payload.Data.Alerts) != 0 {
 		t.Fatalf("expected no alerts, got %d", len(payload.Data.Alerts))
+	}
+}
+
+func TestHealthCheckDetailedReportsDegradedWhenSMSAuditTableMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	withHealthRepositoryDB(t, newHealthTestDB(t, false))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	HealthCheckDetailed(c)
+
+	if w.Code != 200 {
+		t.Fatalf("expected status code 200, got %d", w.Code)
+	}
+	payload := decodeHealthDetailedResponse(t, w.Body.Bytes())
+	if payload.Data.Status != "degraded" {
+		t.Fatalf("expected degraded health status, got %s", payload.Data.Status)
+	}
+	if payload.Data.Checks.SMSAuditLog.TableExists {
+		t.Fatalf("expected sms_audit_logs to be missing")
+	}
+	if !payload.Data.Checks.SMSAuditLog.MigrationRequired {
+		t.Fatalf("expected migrationRequired=true when table is missing")
+	}
+	if payload.Data.AlertCount != 1 {
+		t.Fatalf("expected alertCount=1, got %d", payload.Data.AlertCount)
+	}
+	if payload.Data.Alerts[0].Code != "sms_audit_log_table_missing" {
+		t.Fatalf("unexpected alert code: %s", payload.Data.Alerts[0].Code)
+	}
+	if payload.Data.Alerts[0].Metadata["requiredMigration"] != repository.CanonicalSchemaReconcileMigrationPath {
+		t.Fatalf("unexpected migration metadata: %s", payload.Data.Alerts[0].Metadata["requiredMigration"])
 	}
 }

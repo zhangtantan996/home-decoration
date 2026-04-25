@@ -3,6 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware';
 import Taro from '@tarojs/taro';
 
 import { taroStorage } from '@/utils/storage';
+import { getErrorMessage } from '@/utils/error';
 import { identityService, type Identity } from '@/services/identity';
 import { useAuthStore } from './auth';
 
@@ -97,7 +98,7 @@ export const useIdentityStore = create<IdentityState>()(
 
           Taro.showToast({ title: '切换成功', icon: 'success' });
         } catch (err) {
-          const error = err instanceof Error ? err.message : '切换身份失败';
+          const error = getErrorMessage(err, '切换身份失败');
           set({ error, loading: false });
           Taro.showToast({ title: error, icon: 'none' });
           throw err;
@@ -118,7 +119,7 @@ export const useIdentityStore = create<IdentityState>()(
 
           Taro.showToast({ title: '申请已提交', icon: 'success' });
         } catch (err) {
-          const error = err instanceof Error ? err.message : '申请失败';
+          const error = getErrorMessage(err, '申请失败');
           set({ error, loading: false });
           Taro.showToast({ title: error, icon: 'none' });
           throw err;

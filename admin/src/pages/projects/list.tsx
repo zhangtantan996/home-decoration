@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Card, Table, Tag, Button, Space, Input, Select, message } from 'antd';
-import { SearchOutlined, EyeOutlined, FileTextOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { SearchOutlined, EyeOutlined } from '@ant-design/icons';
 import { adminProjectApi } from '../../services/api';
 import { useNavigate } from 'react-router-dom';
 import { ADMIN_BUSINESS_STAGE_META, ADMIN_PROJECT_STAGE_FILTERS, ADMIN_PROJECT_STATUS_META, isSecurityAuditorRole } from '../../constants/statuses';
@@ -130,14 +130,14 @@ const ProjectList: React.FC = () => {
                     {!readonlyMode && record.businessStage === 'construction_party_pending' ? (
                         <>
                             <Button type="link" onClick={() => navigate(`/projects/detail/${record.id}?action=construction`)}>
-                                干预施工方
+                                项目内施工协调
                             </Button>
                         </>
                     ) : null}
                     {!readonlyMode && (record.businessStage === 'construction_party_pending' || record.businessStage === 'construction_quote_pending') ? (
                         <>
                             <Button type="link" onClick={() => navigate(`/projects/detail/${record.id}?action=quote`)}>
-                                干预报价
+                                项目内报价干预
                             </Button>
                         </>
                     ) : null}
@@ -180,8 +180,6 @@ const ProjectList: React.FC = () => {
                     }}>
                         重置
                     </Button>
-                    <Button icon={<FileTextOutlined />} onClick={() => navigate('/projects/quotes/library')}>报价库</Button>
-                    <Button icon={<UnorderedListOutlined />} onClick={() => navigate('/projects/quotes/lists')}>报价清单</Button>
                     {!readonlyMode ? <Button type="primary">导出</Button> : null}
                 </Space>
             }

@@ -9,6 +9,41 @@ import (
 
 var userSettingsService = &service.UserSettingsService{}
 
+func normalizeUserSettingsUpdates(updates map[string]interface{}) map[string]interface{} {
+	allowedColumns := map[string]string{
+		"personalizedRecommend":  "personalized_recommend",
+		"personalized_recommend": "personalized_recommend",
+		"locationTracking":       "location_tracking",
+		"location_tracking":      "location_tracking",
+		"phoneVisible":           "phone_visible",
+		"phone_visible":          "phone_visible",
+		"notifySystem":           "notify_system",
+		"notify_system":          "notify_system",
+		"notifyProject":          "notify_project",
+		"notify_project":         "notify_project",
+		"notifyPayment":          "notify_payment",
+		"notify_payment":         "notify_payment",
+		"notifyPromo":            "notify_promo",
+		"notify_promo":           "notify_promo",
+		"notifySound":            "notify_sound",
+		"notify_sound":           "notify_sound",
+		"notifyVibrate":          "notify_vibrate",
+		"notify_vibrate":         "notify_vibrate",
+		"darkMode":               "dark_mode",
+		"dark_mode":              "dark_mode",
+		"fontSize":               "font_size",
+		"font_size":              "font_size",
+		"language":               "language",
+	}
+	normalized := make(map[string]interface{}, len(updates))
+	for key, value := range updates {
+		if column, ok := allowedColumns[key]; ok {
+			normalized[column] = value
+		}
+	}
+	return normalized
+}
+
 // ========== 修改密码 ==========
 
 // ChangePassword 修改登录密码
@@ -252,12 +287,11 @@ func UpdateUserSettings(c *gin.Context) {
 		return
 	}
 
-	// 移除不允许更新的字段
-	delete(updates, "id")
-	delete(updates, "userId")
-	delete(updates, "user_id")
-	delete(updates, "createdAt")
-	delete(updates, "created_at")
+	updates = normalizeUserSettingsUpdates(updates)
+	if len(updates) == 0 {
+		response.SuccessWithMessage(c, "设置已更新", nil)
+		return
+	}
 
 	if err := userSettingsService.UpdateSettings(userID, updates); err != nil {
 		response.ServerError(c, "更新失败")

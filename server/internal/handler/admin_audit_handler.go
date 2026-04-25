@@ -304,6 +304,12 @@ func AdminApproveCaseAudit(c *gin.Context) {
 	}
 
 	tx.Commit()
+	if audit.ProviderID > 0 {
+		var provider model.Provider
+		if err := repository.DB.Select("user_id").First(&provider, audit.ProviderID).Error; err == nil {
+			service.NewNotificationDispatcher().NotifyCaseAuditDecision(provider.UserID, audit.ID, true, "")
+		}
+	}
 	response.Success(c, gin.H{"message": "审核已通过"})
 }
 
@@ -351,5 +357,11 @@ func AdminRejectCaseAudit(c *gin.Context) {
 	}
 
 	tx.Commit()
+	if audit.ProviderID > 0 {
+		var provider model.Provider
+		if err := repository.DB.Select("user_id").First(&provider, audit.ProviderID).Error; err == nil {
+			service.NewNotificationDispatcher().NotifyCaseAuditDecision(provider.UserID, audit.ID, false, input.Reason)
+		}
+	}
 	response.Success(c, gin.H{"message": "已拒绝该申请"})
 }

@@ -8,13 +8,18 @@ const (
 )
 
 const (
-	BusinessFlowStageLeadPending              = "lead_pending"
-	BusinessFlowStageNegotiating              = "negotiating"
-	BusinessFlowStageConsulting               = "consulting"
-	BusinessFlowStageDesignPendingSubmission  = "design_pending_submission"
+	BusinessFlowStageLeadPending               = "lead_pending"
+	BusinessFlowStageNegotiating               = "negotiating"
+	BusinessFlowStageConsulting                = "consulting"
+	BusinessFlowStageDesignPendingSubmission   = "design_pending_submission"
 	BusinessFlowStageDesignPendingConfirmation = "design_pending_confirmation"
-	BusinessFlowStageProposalPending          = "proposal_pending"
-	BusinessFlowStageConstructionPartyPending = "construction_party_pending"
+	BusinessFlowStageProposalPending           = "proposal_pending"
+
+	// 设计确认后的新状态（PRD v2.3规则1：双成交点分离）
+	BusinessFlowStageDesignConfirmed          = "design_confirmed"           // 设计确认完成，待进入施工桥接
+	BusinessFlowStageConstructionPartyPending = "construction_party_pending" // 施工桥接中，待提交报价基线/确认施工主体/进入正式施工报价
+	BusinessFlowStageConstructorConfirmed     = "constructor_confirmed"      // 施工主体已确认，待创建项目
+
 	BusinessFlowStageProposalConfirmed        = "proposal_confirmed"
 	BusinessFlowStageConstructorPending       = "constructor_pending"
 	BusinessFlowStageConstructionQuotePending = "construction_quote_pending"
@@ -52,10 +57,15 @@ func NormalizeBusinessFlowStage(stage string) string {
 		return BusinessFlowStageDesignPendingConfirmation
 	case BusinessFlowStageDesignPendingConfirmation:
 		return BusinessFlowStageDesignPendingConfirmation
+	// 新增：设计确认后的状态流转
+	case BusinessFlowStageDesignConfirmed:
+		return BusinessFlowStageDesignConfirmed
 	case BusinessFlowStageProposalConfirmed, BusinessFlowStageConstructorPending:
 		return BusinessFlowStageConstructionPartyPending
 	case BusinessFlowStageConstructionPartyPending:
 		return BusinessFlowStageConstructionPartyPending
+	case BusinessFlowStageConstructorConfirmed:
+		return BusinessFlowStageConstructorConfirmed
 	case BusinessFlowStageConstructionQuotePending:
 		return BusinessFlowStageConstructionQuotePending
 	case BusinessFlowStageReadyToStart:
@@ -97,19 +107,19 @@ func NormalizeBusinessFlowStage(stage string) string {
 
 type BusinessFlow struct {
 	Base
-	SourceType               string     `json:"sourceType" gorm:"size:20;index:idx_business_flow_source,priority:1"`
-	SourceID                 uint64     `json:"sourceId" gorm:"index:idx_business_flow_source,priority:2"`
-	CustomerUserID           uint64     `json:"customerUserId" gorm:"index"`
-	DesignerProviderID       uint64     `json:"designerProviderId" gorm:"index"`
-	ConfirmedProposalID      uint64     `json:"confirmedProposalId" gorm:"index"`
-	SelectedForemanProviderID uint64    `json:"selectedForemanProviderId" gorm:"index"`
-	SelectedQuoteTaskID      uint64     `json:"selectedQuoteTaskId" gorm:"index"`
-	SelectedQuoteSubmissionID uint64    `json:"selectedQuoteSubmissionId" gorm:"index"`
-	ProjectID                uint64     `json:"projectId" gorm:"index"`
-	InspirationCaseDraftID   uint64     `json:"inspirationCaseDraftId" gorm:"index"`
-	CurrentStage             string     `json:"currentStage" gorm:"size:40;default:'lead_pending';index"`
-	StageChangedAt           *time.Time `json:"stageChangedAt"`
-	ClosedReason             string     `json:"closedReason" gorm:"size:255"`
+	SourceType                string     `json:"sourceType" gorm:"size:20;index:idx_business_flow_source,priority:1"`
+	SourceID                  uint64     `json:"sourceId" gorm:"index:idx_business_flow_source,priority:2"`
+	CustomerUserID            uint64     `json:"customerUserId" gorm:"index"`
+	DesignerProviderID        uint64     `json:"designerProviderId" gorm:"index"`
+	ConfirmedProposalID       uint64     `json:"confirmedProposalId" gorm:"index"`
+	SelectedForemanProviderID uint64     `json:"selectedForemanProviderId" gorm:"index"`
+	SelectedQuoteTaskID       uint64     `json:"selectedQuoteTaskId" gorm:"index"`
+	SelectedQuoteSubmissionID uint64     `json:"selectedQuoteSubmissionId" gorm:"index"`
+	ProjectID                 uint64     `json:"projectId" gorm:"index"`
+	InspirationCaseDraftID    uint64     `json:"inspirationCaseDraftId" gorm:"index"`
+	CurrentStage              string     `json:"currentStage" gorm:"size:40;default:'lead_pending';index"`
+	StageChangedAt            *time.Time `json:"stageChangedAt"`
+	ClosedReason              string     `json:"closedReason" gorm:"size:255"`
 }
 
 func (BusinessFlow) TableName() string {

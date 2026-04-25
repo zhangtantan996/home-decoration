@@ -61,6 +61,8 @@ type PendingQuoteTaskVM = {
   summary: string;
 };
 
+type SummaryTone = 'active' | 'pending' | 'done' | 'danger';
+
 function calcProgress(currentPhase: string) {
   if (currentPhase.includes('完工') || currentPhase.includes('竣工')) return 100;
   if (currentPhase.includes('验收')) return 92;
@@ -69,7 +71,7 @@ function calcProgress(currentPhase: string) {
   if (currentPhase.includes('泥木')) return 56;
   if (currentPhase.includes('水电')) return 42;
   if (currentPhase.includes('拆改')) return 24;
-  if (currentPhase.includes('准备') || currentPhase.includes('待开工')) return 8;
+  if (currentPhase.includes('准备') || currentPhase.includes('待监理协调开工') || currentPhase.includes('协调开工')) return 8;
   return 0;
 }
 
@@ -111,6 +113,20 @@ function getPhaseLabel(currentPhase: string) {
 function getPhaseTone(status: string): PhaseTone {
   if (status === 'completed') return 'done';
   if (status === 'in_progress') return 'active';
+  return 'pending';
+}
+
+function getPaymentPlanTone(item: ProjectDetailVM['paymentPlans'][number]): SummaryTone {
+  if (item.statusText === '已支付') return 'done';
+  if (item.statusText === '已失效') return 'danger';
+  if (item.payable) return 'active';
+  return 'pending';
+}
+
+function getChangeOrderTone(item: ProjectDetailVM['changeOrders'][number]): SummaryTone {
+  if (item.status === 'settled' || item.status === 'user_confirmed') return 'done';
+  if (item.status === 'user_rejected' || item.status === 'cancelled') return 'danger';
+  if (item.status === 'pending_user_confirm') return 'active';
   return 'pending';
 }
 
@@ -167,11 +183,12 @@ function resolveProjectState(
   }
 
   if (!hasPhases) {
+    const plannedText = detail?.plannedStartDate ? `计划进场：${detail.plannedStartDate}` : '监理待登记计划进场时间。';
     return {
       tone: 'waiting',
-      statusText: '待开工',
-      summary: detail?.flowSummary || '开工排期待同步。',
-      badgeText: '待开工',
+      statusText: '待监理协调开工',
+      summary: detail?.flowSummary || plannedText,
+      badgeText: '待监理协调开工',
     };
   }
 
@@ -198,6 +215,48 @@ function buildTodoItems(detail: ProjectDetailVM | null | undefined, focusProject
       tone: 'urgent',
       badgeText: '待确认',
       actions: [{ label: '去确认', to: `/quote-tasks/${detail.selectedQuoteTaskId}` }],
+    });
+  }
+
+  if (detail.nextPayablePlan) {
+    items.push({
+      id: `payment-plan-${detail.nextPayablePlan.id}`,
+      title: detail.nextPayablePlan.name,
+      description: detail.nextPayablePlan.payableReason || '施工付款已激活，需先完成支付后继续推进。',
+      amountText: detail.nextPayablePlan.amountText,
+      tone: 'urgent',
+      badgeText: detail.nextPayablePlan.statusText,
+      actions: [
+        { label: '去支付', to: `/orders/${detail.nextPayablePlan.orderId}` },
+        { label: '看账单', to: billingPath },
+      ],
+    });
+  }
+
+  if (detail.businessStage === 'ready_to_start' && !detail.plannedStartDate) {
+    items.push({
+      id: `kickoff-${focusProject.id}`,
+      title: '待监理登记进场时间',
+      description: '施工报价已确认，需先登记计划进场时间后再允许开工。',
+      amountText: '待同步',
+      tone: 'pending',
+      badgeText: '待进场协调',
+      actions: [{ label: '查看项目', to: `/projects/${focusProject.id}` }],
+    });
+  }
+
+  const pendingChangeOrder = detail.changeOrders.find((item) => item.status === 'pending_user_confirm');
+  if (pendingChangeOrder) {
+    items.push({
+      id: `change-order-${pendingChangeOrder.id}`,
+      title: pendingChangeOrder.title,
+      description: pendingChangeOrder.reason,
+      amountText: pendingChangeOrder.amountImpactText,
+      tone: 'urgent',
+      badgeText: pendingChangeOrder.statusText,
+      actions: [
+        { label: '去处理', to: `/projects/${focusProject.id}/change-request` },
+      ],
     });
   }
 
@@ -436,6 +495,14 @@ export function ProgressPage() {
     () => buildTodoItems(data?.detail, (data?.focusProject as FocusProjectVM | null | undefined) || null),
     [data],
   );
+  const paymentPlanHighlights = useMemo(
+    () => (data?.detail?.paymentPlans || []).slice(0, 3),
+    [data],
+  );
+  const recentChangeOrders = useMemo(
+    () => (data?.detail?.changeOrders || []).slice(0, 3),
+    [data],
+  );
 
   const phasePhotos = useMemo(() => {
     const photos = (data?.logs || []).find((item) => item.photos.length > 0)?.photos || [];
@@ -601,6 +668,94 @@ export function ProgressPage() {
                       <span className={styles.lbl}>{financeSummary.hasPaymentData ? '付款进度' : '付款数据'}</span>
                     </div>
                   </div>
+                </div>
+              </section>
+
+              <section className={styles.cardBase}>
+                <div className={styles.bridgeHeader}>
+                  <div className={styles.left}>
+                    <div className={styles.iconBox}>
+                      <span className={styles.materialIcon}>receipt_long</span>
+                    </div>
+                    <div>
+                      <h2>支付与变更</h2>
+                      <p>把当前可支付计划、已生成计划和最近变更放在同一处解释清楚。</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className={styles.bridgeGrid}>
+                  <section className={styles.bridgePanel}>
+                    <div className={styles.bridgePanelHeader}>
+                      <div>
+                        <h3>付款计划</h3>
+                        <p>已生成 {data.detail?.paymentPlans.length || 0} 笔，按闸门状态展示。</p>
+                      </div>
+                      <Link to={`/projects/${data.focusProject.id}/billing`} className={styles.bridgeLink}>
+                        查看账单
+                      </Link>
+                    </div>
+
+                    {paymentPlanHighlights.length === 0 ? (
+                      <div className={styles.bridgeEmpty}>当前还没有生成可展示的付款计划。</div>
+                    ) : (
+                      <div className={styles.bridgeList}>
+                        {paymentPlanHighlights.map((plan) => (
+                          <article key={plan.id} className={styles.bridgeItem}>
+                            <div className={styles.bridgeItemTop}>
+                              <div>
+                                <strong>{plan.name}</strong>
+                                <p>{plan.payableReason || '付款条件已按项目阶段自动判断。'}</p>
+                              </div>
+                              <span className={`${styles.bridgeBadge} ${styles[`bridgeBadge${getPaymentPlanTone(plan).charAt(0).toUpperCase()}${getPaymentPlanTone(plan).slice(1)}`]}`}>
+                                {plan.statusText}
+                              </span>
+                            </div>
+                            <div className={styles.bridgeMetaRow}>
+                              <span>{plan.amountText}</span>
+                              <span>{plan.dueAt ? `到期：${plan.dueAt}` : '到期时间待同步'}</span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className={styles.bridgePanel}>
+                    <div className={styles.bridgePanelHeader}>
+                      <div>
+                        <h3>最近变更</h3>
+                        <p>待确认、待结算、已处理状态统一在这里回看。</p>
+                      </div>
+                      <Link to={`/projects/${data.focusProject.id}/change-request`} className={styles.bridgeLink}>
+                        查看变更单
+                      </Link>
+                    </div>
+
+                    {recentChangeOrders.length === 0 ? (
+                      <div className={styles.bridgeEmpty}>当前没有项目变更记录。</div>
+                    ) : (
+                      <div className={styles.bridgeList}>
+                        {recentChangeOrders.map((item) => (
+                          <article key={item.id} className={styles.bridgeItem}>
+                            <div className={styles.bridgeItemTop}>
+                              <div>
+                                <strong>{item.title}</strong>
+                                <p>{item.reason}</p>
+                              </div>
+                              <span className={`${styles.bridgeBadge} ${styles[`bridgeBadge${getChangeOrderTone(item).charAt(0).toUpperCase()}${getChangeOrderTone(item).slice(1)}`]}`}>
+                                {item.statusText}
+                              </span>
+                            </div>
+                            <div className={styles.bridgeMetaRow}>
+                              <span>{item.amountImpactText}</span>
+                              <span>{item.timelineImpactText || item.createdAt || '已记录'}</span>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
                 </div>
               </section>
 

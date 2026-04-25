@@ -3,6 +3,11 @@ import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
+import { Card } from '@/components/Card';
+import { NotificationActionBar } from '@/components/NotificationActionBar';
+import { NotificationFactRows } from '@/components/NotificationFactRows';
+import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
+import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import {
@@ -13,7 +18,11 @@ import {
 } from '@/services/quoteTasks';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
-import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+
+import './index.scss';
+
+const formatCurrency = (value?: number) => `¥${Number(value || 0).toLocaleString()}`;
 
 const QuoteTaskDetailPage: React.FC = () => {
   const auth = useAuthStore();
@@ -22,7 +31,6 @@ const QuoteTaskDetailPage: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(), []);
-  const fixedBottomBarStyle = useMemo(() => getFixedBottomBarStyle(), []);
 
   useLoad((options) => {
     if (options.id) {
@@ -92,7 +100,11 @@ const QuoteTaskDetailPage: React.FC = () => {
   };
 
   if (!auth.token) {
-    return <View className="p-md text-center text-gray-500">登录后查看施工报价</View>;
+    return (
+      <NotificationSurfaceShell>
+        <View className="notification-surface-state-card">登录后查看施工报价</View>
+      </NotificationSurfaceShell>
+    );
   }
 
   if (loading) {
@@ -106,78 +118,108 @@ const QuoteTaskDetailPage: React.FC = () => {
   }
 
   if (!detail) {
-    return <View className="p-md text-center text-gray-500">未找到施工报价任务</View>;
+    return (
+      <NotificationSurfaceShell>
+        <View className="notification-surface-state-card">未找到施工报价任务</View>
+      </NotificationSurfaceShell>
+    );
   }
 
   return (
-    <View className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+    <NotificationSurfaceShell className="quote-task-detail-page" style={pageBottomStyle}>
       <ScrollView scrollY className="h-full">
-        <View className="bg-white p-md mb-sm flex justify-between items-center">
-          <View>
-            <View className="text-lg font-bold mb-xs">{detail.title}</View>
-            <View className="text-sm text-gray-500">施工报价确认页，确认后才会创建项目。</View>
-          </View>
-          <Tag variant="warning">{detail.status}</Tag>
-        </View>
+        <View className="notification-surface-shell__body">
+          <NotificationSurfaceHero
+            eyebrow="施工报价"
+            title={formatCurrency(detail.totalAmount)}
+            subtitle={detail.title}
+            status={<Tag variant="warning">{detail.status}</Tag>}
+            summary={detail.taskSummary.notes || '查看施工报价与清单'}
+            metrics={[
+              {
+                label: '首笔支付',
+                value: detail.paymentPlanSummary[0]
+                  ? formatCurrency(detail.paymentPlanSummary[0].amount)
+                  : '待生成',
+              },
+              {
+                label: '预计工期',
+                value: detail.estimatedDays > 0 ? `${detail.estimatedDays} 天` : '待补充',
+                hint: detail.taskSummary.area ? `${detail.taskSummary.area}㎡` : detail.taskSummary.layout || undefined,
+                emphasis: true,
+              },
+            ]}
+          />
 
-        {detail.flowSummary ? (
-          <View className="bg-amber-50 border border-amber-200 rounded-lg p-md mx-md mb-sm">
-            <Text className="text-sm text-amber-800">{detail.flowSummary}</Text>
-          </View>
-        ) : null}
+          {(detail.quoteTruthSummary || detail.commercialExplanation || detail.changeOrderSummary || detail.settlementSummary || detail.payoutSummary) ? (
+            <Card className="notification-surface-card" title="统一报价与后链摘要">
+              <NotificationFactRows
+                items={[
+                  { label: '成交报价', value: detail.quoteTruthSummary?.totalCent ? formatCurrency(Math.round(detail.quoteTruthSummary.totalCent / 100)) : '待同步' },
+                  { label: '预计工期', value: detail.quoteTruthSummary?.estimatedDays ? `${detail.quoteTruthSummary.estimatedDays} 天` : '待同步' },
+                  { label: '施工范围内', value: detail.commercialExplanation?.scopeIncluded?.join('、') || '待同步', multiline: true },
+                  { label: '施工范围外', value: detail.commercialExplanation?.scopeExcluded?.join('、') || '待同步', multiline: true },
+                  { label: '资金闭环', value: detail.financialClosureStatus || '待同步' },
+                  { label: '下一步', value: detail.nextPendingAction || '待同步', multiline: true },
+                ]}
+              />
+            </Card>
+          ) : null}
 
-        <View className="bg-white p-md mb-sm">
-          <View className="font-bold mb-md text-base">任务摘要</View>
-          <View className="space-y-sm">
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">施工总价</Text>
-              <Text>¥{detail.totalAmount.toLocaleString()}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">预计工期</Text>
-              <Text>{detail.estimatedDays > 0 ? `${detail.estimatedDays} 天` : '待补充'}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs border-b border-gray-100">
-              <Text className="text-gray-500">面积</Text>
-              <Text>{detail.taskSummary.area ? `${detail.taskSummary.area}㎡` : '待补充'}</Text>
-            </View>
-            <View className="flex justify-between text-sm py-xs">
-              <Text className="text-gray-500">户型</Text>
-              <Text>{detail.taskSummary.layout || '待补充'}</Text>
-            </View>
-          </View>
-        </View>
+          <Card className="notification-surface-card" title="房屋与范围">
+            <NotificationFactRows
+              items={[
+                { label: '房屋面积', value: detail.taskSummary.area ? `${detail.taskSummary.area}㎡` : '待补充' },
+                { label: '户型', value: detail.taskSummary.layout || '待补充' },
+                { label: '装修类型', value: detail.taskSummary.renovationType || '待补充' },
+                { label: '施工范围', value: detail.taskSummary.constructionScope || '待补充', multiline: true },
+              ]}
+            />
+          </Card>
 
-        <View className="bg-white p-md mb-xl">
-          <View className="font-bold mb-md text-base">施工清单</View>
-          {detail.items.length === 0 ? (
-            <View className="text-sm text-gray-500">暂无施工清单</View>
-          ) : (
-            <View className="space-y-sm">
-              {detail.items.map((item) => (
-                <View key={item.id} className="border border-gray-100 rounded-lg p-sm">
-                  <View className="flex justify-between items-start mb-xs">
-                    <Text className="font-medium">清单项 #{item.quoteListItemId}</Text>
-                    <Text className="text-brand font-bold">¥{item.amount.toLocaleString()}</Text>
+          <Card className="notification-surface-card" title="施工清单">
+            {detail.items.length === 0 ? (
+              <Text className="notification-section-row__note">暂无施工清单</Text>
+            ) : (
+              <View className="notification-section-list">
+                {detail.items.map((item) => (
+                  <View key={item.id} className="notification-section-row">
+                    <View className="notification-section-row__head">
+                      <Text className="notification-section-row__title">
+                        {item.itemName || `清单项 #${item.quoteListItemId}`}
+                      </Text>
+                      <Text className="notification-section-row__value">{formatCurrency(item.amount)}</Text>
+                    </View>
+                    <View className="notification-section-row__meta">
+                      <Text className="notification-section-row__chip">
+                        基准量 {item.baselineQuantity ?? '-'}{item.unit || ''}
+                      </Text>
+                      <Text className="notification-section-row__chip">
+                        报价量 {item.quotedQuantity ?? item.baselineQuantity ?? '-'}{item.unit || ''}
+                      </Text>
+                      <Text className="notification-section-row__chip">单价 {formatCurrency(item.unitPrice)}</Text>
+                    </View>
+                    {item.quantityChangeReason ? (
+                      <Text className="notification-section-row__note">数量变更：{item.quantityChangeReason}</Text>
+                    ) : null}
+                    {item.remark ? <Text className="notification-section-row__note">备注：{item.remark}</Text> : null}
                   </View>
-                  <View className="text-sm text-gray-500">单价：¥{item.unitPrice.toLocaleString()}</View>
-                  {item.remark ? <View className="text-sm text-gray-500 mt-xs">{item.remark}</View> : null}
-                </View>
-              ))}
-            </View>
-          )}
+                ))}
+              </View>
+            )}
+          </Card>
         </View>
       </ScrollView>
 
-      <View className="shadow-top flex gap-md" style={fixedBottomBarStyle}>
-        <Button variant="secondary" onClick={handleReject} className="flex-1" disabled={submitting}>
+      <NotificationActionBar>
+        <Button variant="secondary" onClick={handleReject} disabled={submitting}>
           驳回重报
         </Button>
-        <Button variant="primary" onClick={handleConfirm} className="flex-1" disabled={submitting} loading={submitting}>
-          确认施工报价
+        <Button variant="primary" onClick={handleConfirm} disabled={submitting} loading={submitting}>
+          确认报价
         </Button>
-      </View>
-    </View>
+      </NotificationActionBar>
+    </NotificationSurfaceShell>
   );
 };
 

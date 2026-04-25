@@ -5,7 +5,7 @@ services:
     container_name: home_decor_db_local
     environment:
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: "IXwUBjxFia33XltiY0wFch8n3N68hptI"
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-local_dev_db_password_change_me}
       POSTGRES_DB: home_decoration
     ports:
       - "5432:5432"
@@ -18,7 +18,7 @@ services:
   redis:
     image: redis:6.2-alpine
     container_name: home_decor_redis_local
-    command: redis-server --requirepass kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf
+    command: redis-server --requirepass ${REDIS_PASSWORD:-local_dev_redis_password_change_me}
     ports:
       - "6380:6379"
     networks:
@@ -38,6 +38,8 @@ services:
     environment:
       - APP_ENV=local
       - SERVER_PUBLIC_URL=http://localhost:8080
+      - WECHAT_MINI_APPID=${WECHAT_MINI_APPID:-}
+      - WECHAT_MINI_SECRET=${WECHAT_MINI_SECRET:-}
       - ALIPAY_ENABLED=${ALIPAY_ENABLED:-false}
       - ALIPAY_SANDBOX=${ALIPAY_SANDBOX:-false}
       - ALIPAY_GATEWAY_URL=${ALIPAY_GATEWAY_URL:-https://openapi.alipay.com/gateway.do}
@@ -51,16 +53,16 @@ services:
       - DATABASE_HOST=db
       - DATABASE_PORT=5432
       - DATABASE_USER=postgres
-      - DATABASE_PASSWORD=IXwUBjxFia33XltiY0wFch8n3N68hptI
+      - DATABASE_PASSWORD=${DATABASE_PASSWORD:-local_dev_db_password_change_me}
       - DATABASE_DBNAME=home_decoration
       - DATABASE_SSLMODE=disable
       - REDIS_HOST=redis
       - REDIS_PORT=6379
-      - REDIS_PASSWORD=kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf
-      - JWT_SECRET=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI=
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-local_dev_redis_password_change_me}
+      - JWT_SECRET=${JWT_SECRET:-local_dev_jwt_secret_change_me}
       # Tinode "token" authenticator configuration (must match Tinode container).
-      - TINODE_AUTH_TOKEN_KEY=jPsAHbLFCuvAkJtL9lsP/nYJLi0X3eIUhDN+uQ29NUI=
-      - TINODE_UID_ENCRYPTION_KEY=la6YsO+bNX/+XIkOqc5Svw==
+      - TINODE_AUTH_TOKEN_KEY=${JWT_SECRET:-local_dev_jwt_secret_change_me}
+      - TINODE_UID_ENCRYPTION_KEY=${TINODE_UID_ENCRYPTION_KEY:-MTIzNDU2Nzg5MGFiY2RlZg==}
     ports:
       - "8080:8080"
     networks:
@@ -85,6 +87,7 @@ services:
       - VITE_APP_ENV=local
       - VITE_API_URL=/api/v1
       - VITE_ROUTER_BASENAME=/admin
+      - VITE_DEV_WATCH_POLLING=true
     command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 5173"
     networks:
       - dev-net
@@ -107,6 +110,7 @@ services:
       - VITE_APP_ENV=local
       - VITE_API_URL=/api/v1
       - VITE_ROUTER_BASENAME=/merchant
+      - VITE_DEV_WATCH_POLLING=true
     command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 5174"
     networks:
       - dev-net
@@ -125,6 +129,7 @@ services:
     environment:
       - VITE_USER_WEB_URL=http://localhost:5175/app/
       - VITE_MERCHANT_WEB_URL=http://localhost:5175/merchant/
+      - VITE_DEV_WATCH_POLLING=true
     command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npx vite --port 5175 --host"
     networks:
       - dev-net
@@ -150,6 +155,7 @@ services:
       - VITE_API_PROXY_TARGET=http://api:8080
       - VITE_ROUTER_BASENAME=/app
       - VITE_PUBLIC_SITE_URL=http://localhost:5175
+      - VITE_DEV_WATCH_POLLING=true
     command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 5176"
     networks:
       - dev-net

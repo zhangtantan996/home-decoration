@@ -16,6 +16,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ==================== 商家收入中心 Handler ====================
@@ -41,11 +43,22 @@ func MerchantIncomeSummary(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
 	var summary struct {
-		TotalIncome     float64 `json:"totalIncome"`     // 累计收入
-		PendingSettle   float64 `json:"pendingSettle"`   // 待结算
-		SettledAmount   float64 `json:"settledAmount"`   // 已结算 (总额)
-		WithdrawnAmount float64 `json:"withdrawnAmount"` // 已提现 (总额)
-		AvailableAmount float64 `json:"availableAmount"` // 可提现
+		TotalIncome            float64 `json:"totalIncome"`            // 累计收入
+		PendingSettle          float64 `json:"pendingSettle"`          // 待结算
+		SettledAmount          float64 `json:"settledAmount"`          // 已结算 (总额)
+		WithdrawnAmount        float64 `json:"withdrawnAmount"`        // 已提现 (总额)
+		AvailableAmount        float64 `json:"availableAmount"`        // 可提现
+		FrozenAmount           float64 `json:"frozenAmount"`           // 提现审核/待打款冻结
+		AbnormalAmount         float64 `json:"abnormalAmount"`         // 异常/追偿/出款失败
+		PendingPayoutAmount    float64 `json:"pendingPayoutAmount"`    // 已申请未完成提现
+		RejectedWithdrawAmount float64 `json:"rejectedWithdrawAmount"` // 被驳回提现
+		LatestRejectReason     string  `json:"latestRejectReason"`
+	}
+	abnormalSettlementStatuses := []string{
+		model.SettlementStatusRefundFrozen,
+		model.SettlementStatusRefunded,
+		model.SettlementStatusPayoutFailed,
+		model.SettlementStatusException,
 	}
 
 	// 1. 累计收入 (所有状态)
@@ -76,11 +89,43 @@ func MerchantIncomeSummary(c *gin.Context) {
 
 	// 5. 待出款 = status=1
 	repository.DB.Model(&model.MerchantIncome{}).
-		Where("provider_id = ? AND status = 1", providerID).
+		Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') = ''", providerID).
+		Where("COALESCE(settlement_status, '') NOT IN ? AND COALESCE(payout_status, '') <> ?", abnormalSettlementStatuses, model.PayoutStatusFailed).
 		Select("COALESCE(SUM(net_amount), 0)").
 		Scan(&summary.AvailableAmount)
 	if summary.AvailableAmount < 0 {
 		summary.AvailableAmount = 0
+	}
+
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') <> ''", providerID).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&summary.FrozenAmount)
+
+	repository.DB.Model(&model.MerchantIncome{}).
+		Where("provider_id = ?", providerID).
+		Where("COALESCE(settlement_status, '') IN ? OR COALESCE(payout_status, '') = ?", abnormalSettlementStatuses, model.PayoutStatusFailed).
+		Select("COALESCE(SUM(net_amount), 0)").
+		Scan(&summary.AbnormalAmount)
+
+	repository.DB.Model(&model.MerchantWithdraw{}).
+		Where("provider_id = ? AND status IN ?", providerID, []int8{
+			model.MerchantWithdrawStatusPendingReview,
+			model.MerchantWithdrawStatusApprovedPendingTransfer,
+		}).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&summary.PendingPayoutAmount)
+
+	repository.DB.Model(&model.MerchantWithdraw{}).
+		Where("provider_id = ? AND status = ?", providerID, model.MerchantWithdrawStatusRejected).
+		Select("COALESCE(SUM(amount), 0)").
+		Scan(&summary.RejectedWithdrawAmount)
+	var latestRejected model.MerchantWithdraw
+	if err := repository.DB.
+		Where("provider_id = ? AND status = ?", providerID, model.MerchantWithdrawStatusRejected).
+		Order("created_at DESC, id DESC").
+		First(&latestRejected).Error; err == nil {
+		summary.LatestRejectReason = latestRejected.FailReason
 	}
 
 	response.Success(c, summary)
@@ -93,6 +138,13 @@ func MerchantIncomeList(c *gin.Context) {
 	var incomes []model.MerchantIncome
 	query := repository.DB.Where("provider_id = ?", providerID).
 		Order("created_at DESC")
+
+	if projectID := parseUint64(c.Query("projectId")); projectID > 0 {
+		query = query.Where(
+			"order_id IN (?)",
+			repository.DB.Model(&model.Order{}).Select("id").Where("project_id = ?", projectID),
+		)
+	}
 
 	// 筛选类型
 	if incomeType := c.Query("type"); incomeType != "" {
@@ -113,12 +165,34 @@ func MerchantIncomeList(c *gin.Context) {
 	query.Model(&model.MerchantIncome{}).Count(&total)
 	query.Offset(offset).Limit(pageSize).Find(&incomes)
 
+	projectByOrderID := make(map[uint64]uint64, len(incomes))
+	orderIDs := make([]uint64, 0, len(incomes))
+	seenOrderIDs := make(map[uint64]struct{}, len(incomes))
+	for _, income := range incomes {
+		if income.OrderID == 0 {
+			continue
+		}
+		if _, exists := seenOrderIDs[income.OrderID]; exists {
+			continue
+		}
+		seenOrderIDs[income.OrderID] = struct{}{}
+		orderIDs = append(orderIDs, income.OrderID)
+	}
+	if len(orderIDs) > 0 {
+		var orders []model.Order
+		if err := repository.DB.Select("id", "project_id").Where("id IN ?", orderIDs).Find(&orders).Error; err == nil {
+			for _, order := range orders {
+				projectByOrderID[order.ID] = order.ProjectID
+			}
+		}
+	}
+
 	// 收入类型文案
 	typeLabels := map[string]string{
-		"intent_fee":   "量房费",
+		"intent_fee":     "量房费",
 		"survey_deposit": "量房费",
-		"design_fee":   "设计费",
-		"construction": "施工款",
+		"design_fee":     "设计费",
+		"construction":   "施工款",
 	}
 
 	// 组装返回数据
@@ -128,6 +202,7 @@ func MerchantIncomeList(c *gin.Context) {
 			"id":          income.ID,
 			"orderId":     income.OrderID,
 			"bookingId":   income.BookingID,
+			"projectId":   projectByOrderID[income.OrderID],
 			"type":        income.Type,
 			"typeLabel":   typeLabels[income.Type],
 			"amount":      income.Amount,
@@ -350,7 +425,86 @@ func maskBankAccount(account string) string {
 
 // MerchantWithdrawCreate 申请提现（需要二次验证）
 func MerchantWithdrawCreate(c *gin.Context) {
-	response.Error(c, 400, "提现申请入口已下线，请查看结算记录与出款状态")
+	providerID := c.GetUint64("providerId")
+
+	var input struct {
+		Amount           float64 `json:"amount" binding:"required"`
+		BankAccountID    uint64  `json:"bankAccountId" binding:"required"`
+		VerificationCode string  `json:"verificationCode" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.Error(c, 400, "参数错误")
+		return
+	}
+
+	withdrawAmount := roundMoney(input.Amount)
+	if withdrawAmount <= 0 {
+		response.Error(c, 400, "提现金额必须大于0")
+		return
+	}
+
+	phone, err := resolveProviderPhone(providerID)
+	if err != nil {
+		response.Error(c, 400, "当前账号缺少绑定手机号")
+		return
+	}
+	if err := service.VerifySMSCode(phone, service.SMSPurposeMerchantWithdraw, input.VerificationCode); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	orderNo, err := generateWithdrawOrderNo()
+	if err != nil {
+		response.Error(c, 500, "生成提现单号失败")
+		return
+	}
+
+	var withdraw model.MerchantWithdraw
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
+		var account model.MerchantBankAccount
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ? AND provider_id = ? AND status = 1", input.BankAccountID, providerID).
+			First(&account).Error; err != nil {
+			return errors.New("银行卡不存在")
+		}
+
+		var availableAmount float64
+		if err := tx.Model(&model.MerchantIncome{}).
+			Where("provider_id = ? AND status = 1 AND COALESCE(withdraw_order_no, '') = ''", providerID).
+			Select("COALESCE(SUM(net_amount), 0)").
+			Scan(&availableAmount).Error; err != nil {
+			return err
+		}
+		if roundMoney(availableAmount) < withdrawAmount {
+			return errors.New("可提现金额不足")
+		}
+
+		if err := reserveWithdrawIncomesTx(tx, providerID, orderNo, withdrawAmount); err != nil {
+			return err
+		}
+
+		withdraw = model.MerchantWithdraw{
+			ProviderID:  providerID,
+			OrderNo:     orderNo,
+			Amount:      withdrawAmount,
+			BankAccount: maskBankAccount(account.AccountNo),
+			BankName:    account.BankName,
+			Status:      model.MerchantWithdrawStatusPendingReview,
+		}
+		return tx.Create(&withdraw).Error
+	})
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	response.Success(c, gin.H{
+		"withdrawId": withdraw.ID,
+		"orderNo":    withdraw.OrderNo,
+		"message":    "提现申请已提交，等待平台审核",
+	})
+
+	service.NewNotificationDispatcher().NotifyWithdrawAppliedToAdmins(withdraw.ID, providerID, withdraw.Amount, withdraw.OrderNo)
 }
 
 func generateWithdrawOrderNo() (string, error) {

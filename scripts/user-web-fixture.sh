@@ -4,9 +4,23 @@ set -euo pipefail
 ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
 SQL_FILE="$ROOT_DIR/server/scripts/testdata/user_web_fixture.sql"
 MIGRATIONS=(
+  "$ROOT_DIR/server/migrations/v1.6.4_reconcile_auth_and_onboarding_schema.sql"
+  "$ROOT_DIR/server/migrations/v1.6.9_reconcile_high_risk_schema_guard.sql"
+  "$ROOT_DIR/server/migrations/002_create_user_identities.sql"
+  "$ROOT_DIR/server/migrations/v1.8.0_add_demand_system.sql"
+  "$ROOT_DIR/server/migrations/v1.8.1_add_demand_center_menu.sql"
+  "$ROOT_DIR/server/migrations/v1.9.0_add_transaction_trust_loop.sql"
   "$ROOT_DIR/server/migrations/v1.9.7_add_business_flows.sql"
   "$ROOT_DIR/server/migrations/v1.9.8_case_audit_source_trace.sql"
+  "$ROOT_DIR/server/migrations/v1.9.13_add_official_provider_review_project_link.sql"
+  "$ROOT_DIR/server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql"
+  "$ROOT_DIR/server/migrations/v1.9.15_add_admin_security_columns.sql"
   "$ROOT_DIR/server/migrations/v1.10.4_add_project_business_closure_fields.sql"
+  "$ROOT_DIR/server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
+  "$ROOT_DIR/server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
+  "$ROOT_DIR/server/migrations/v1.12.10_add_user_profile_birthday_bio.sql"
+  "$ROOT_DIR/server/migrations/v1.13.4_add_public_visibility_switches.sql"
+  "$ROOT_DIR/server/migrations/v1.14.4_reconcile_contract_runtime_schema.sql"
 )
 DB_CONTAINER=${USER_WEB_FIXTURE_DB_CONTAINER:-home_decor_db_local}
 DB_NAME=${USER_WEB_FIXTURE_DB_NAME:-home_decoration}
@@ -34,6 +48,60 @@ apply_sql_file() {
   fi
 }
 
+align_postgres_sequences() {
+  if [[ -n "$DB_URL" ]]; then
+    psql "$DB_URL" -v ON_ERROR_STOP=1 <<'SQL'
+DO $$
+DECLARE
+  row record;
+  max_id bigint;
+BEGIN
+  FOR row IN
+    SELECT
+      n.nspname AS schema_name,
+      c.relname AS table_name,
+      a.attname AS column_name,
+      pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS sequence_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'id'
+    WHERE c.relkind = 'r'
+      AND n.nspname = current_schema()
+      AND pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) IS NOT NULL
+  LOOP
+    EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM %I.%I', row.column_name, row.schema_name, row.table_name) INTO max_id;
+    EXECUTE format('SELECT setval(%L::regclass, %s, %L)', row.sequence_name, GREATEST(max_id, 1), max_id > 0);
+  END LOOP;
+END $$;
+SQL
+  else
+    docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" <<'SQL'
+DO $$
+DECLARE
+  row record;
+  max_id bigint;
+BEGIN
+  FOR row IN
+    SELECT
+      n.nspname AS schema_name,
+      c.relname AS table_name,
+      a.attname AS column_name,
+      pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS sequence_name
+    FROM pg_class c
+    JOIN pg_namespace n ON n.oid = c.relnamespace
+    JOIN pg_attribute a ON a.attrelid = c.oid AND a.attname = 'id'
+    WHERE c.relkind = 'r'
+      AND n.nspname = current_schema()
+      AND pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) IS NOT NULL
+  LOOP
+    EXECUTE format('SELECT COALESCE(MAX(%I), 0) FROM %I.%I', row.column_name, row.schema_name, row.table_name) INTO max_id;
+    EXECUTE format('SELECT setval(%L::regclass, %s, %L)', row.sequence_name, GREATEST(max_id, 1), max_id > 0);
+  END LOOP;
+END $$;
+SQL
+  fi
+}
+
 if [[ -n "$DB_URL" ]]; then
   echo "Applying user-web fixture via direct psql connection"
 elif docker ps --format '{{.Names}}' | grep -qx "$DB_CONTAINER"; then
@@ -43,6 +111,9 @@ else
   echo "Set USER_WEB_FIXTURE_DB_CONTAINER or run psql manually with: $SQL_FILE" >&2
   exit 1
 fi
+
+echo "Aligning postgres id sequences"
+align_postgres_sequences
 
 for migration in "${MIGRATIONS[@]}"; do
   echo "Applying migration: $(basename "$migration")"

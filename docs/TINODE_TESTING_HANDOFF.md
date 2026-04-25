@@ -1,7 +1,7 @@
 # Tinode IM Testing - Handoff Document
 
-> **Date**: 2026-01-23  
-> **Session**: ses_414eac874ffeZRN0Ge8vpNxsTV  
+> **Date**: 2026-01-23
+> **Session**: ses_414eac874ffeZRN0Ge8vpNxsTV
 > **Status**: Automated work complete, manual testing required
 
 ---
@@ -51,9 +51,9 @@
 ## Test Guides Ready for Execution
 
 ### 1. Mobile E2E Test Guide
-**File**: `docs/MOBILE_E2E_TEST_GUIDE.md`  
-**Scenarios**: 7  
-**Estimated Time**: 2 hours  
+**File**: `docs/MOBILE_E2E_测试指南.md`
+**Scenarios**: 7
+**Estimated Time**: 2 hours
 **Prerequisites**: iOS/Android simulator
 
 **Scenarios**:
@@ -70,9 +70,9 @@
 ---
 
 ### 2. Admin E2E Test Guide
-**File**: `docs/ADMIN_E2E_TEST_GUIDE.md`  
-**Scenarios**: 3  
-**Estimated Time**: 1 hour  
+**File**: `docs/ADMIN_E2E_测试指南.md`
+**Scenarios**: 3
+**Estimated Time**: 1 hour
 **Prerequisites**: Chrome browser
 
 **Scenarios**:
@@ -85,9 +85,9 @@
 ---
 
 ### 3. Cross-Platform Sync Test Guide
-**File**: `docs/CROSS_PLATFORM_SYNC_TEST_GUIDE.md`  
-**Scenarios**: 5  
-**Estimated Time**: 30 minutes  
+**File**: `docs/跨平台同步测试指南.md`
+**Scenarios**: 5
+**Estimated Time**: 30 minutes
 **Prerequisites**: Mobile + Admin running simultaneously
 
 **Scenarios**:
@@ -102,9 +102,9 @@
 ---
 
 ### 4. Image Upload Test Guide
-**File**: `docs/IMAGE_UPLOAD_TEST_GUIDE.md`  
-**Scenarios**: 7  
-**Estimated Time**: 2 hours  
+**File**: `docs/图片上传测试指南.md`
+**Scenarios**: 7
+**Estimated Time**: 2 hours
 **Prerequisites**: Mobile simulator + test images
 
 **Scenarios**:
@@ -132,7 +132,7 @@ cd mobile && npm start
 # Terminal 2: Launch simulator
 npm run ios  # or npm run android
 
-# Follow: docs/MOBILE_E2E_TEST_GUIDE.md
+# Follow: docs/MOBILE_E2E_测试指南.md
 ```
 
 **Task 3: Admin E2E** (~1 hour)
@@ -141,7 +141,7 @@ npm run ios  # or npm run android
 cd admin && npm run dev
 
 # Browser: http://localhost:5173
-# Follow: docs/ADMIN_E2E_TEST_GUIDE.md
+# Follow: docs/ADMIN_E2E_测试指南.md
 ```
 
 ---
@@ -150,7 +150,7 @@ cd admin && npm run dev
 
 **Task 4: Cross-Platform Sync** (~30 minutes)
 - Requires both Mobile and Admin running
-- Follow: `docs/CROSS_PLATFORM_SYNC_TEST_GUIDE.md`
+- Follow: `docs/跨平台同步测试指南.md`
 - Record performance metrics (latency, message loss rate)
 
 ---
@@ -160,7 +160,7 @@ cd admin && npm run dev
 **Task 5: Image Upload** (~2 hours)
 - Start with backend API test (curl command in guide)
 - Then Mobile image testing
-- Follow: `docs/IMAGE_UPLOAD_TEST_GUIDE.md`
+- Follow: `docs/图片上传测试指南.md`
 
 ---
 
@@ -188,7 +188,7 @@ cd admin && npm run dev
 
 ### During Testing
 
-**For Each Scenario**, document in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+**For Each Scenario**, record it in the current test record (topic doc, issue, or PR comment):
 
 ```markdown
 ### Scenario X.Y: [Name]
@@ -200,7 +200,7 @@ cd admin && npm run dev
 
 ### For Issues Found
 
-Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
+Record in the current issue log (recommended: issue tracker, defect list, or PR comment):
 
 ```markdown
 ## 问题X: [Brief Description]
@@ -215,7 +215,7 @@ Document in `.sisyphus/notepads/tinode-im-completion-week1/issues.md`:
 
 ### Performance Metrics
 
-Record in `.sisyphus/notepads/tinode-im-completion-week1/verification.md`:
+Record in the current test record (recommended: topic doc, issue, or PR comment):
 
 ```markdown
 ## Performance Metrics
@@ -290,23 +290,23 @@ curl -X POST http://localhost:8080/api/v1/upload \
 ## Key Files Reference
 
 ### Test Guides (Read These First)
-- `docs/MOBILE_E2E_TEST_GUIDE.md`
-- `docs/ADMIN_E2E_TEST_GUIDE.md`
-- `docs/CROSS_PLATFORM_SYNC_TEST_GUIDE.md`
-- `docs/IMAGE_UPLOAD_TEST_GUIDE.md`
+- `docs/MOBILE_E2E_测试指南.md`
+- `docs/ADMIN_E2E_测试指南.md`
+- `docs/跨平台同步测试指南.md`
+- `docs/图片上传测试指南.md`
 
 ### Summary & Templates
 - `docs/TINODE_TESTING_SUMMARY.md` - Overall summary + final report template
 
-### Notepad (For Recording Results)
-- `.sisyphus/notepads/tinode-im-completion-week1/learnings.md` - Findings
-- `.sisyphus/notepads/tinode-im-completion-week1/issues.md` - Bugs found
-- `.sisyphus/notepads/tinode-im-completion-week1/verification.md` - Test results
-- `.sisyphus/notepads/tinode-im-completion-week1/decisions.md` - Strategy
-- `.sisyphus/notepads/tinode-im-completion-week1/problems.md` - Unresolved questions
+### Shared Recording Locations
+- 当前专题文档中的测试结果 / 问题记录
+- 对应 issue、PR 评论或缺陷清单
+- 发布 / 验收记录中的执行备注
 
-### Plan File
-- `.sisyphus/plans/tinode-im-completion-week1.md` - Original plan
+### Execution Checklist
+- 当前任务说明中的 checklist
+- issue / PR checklist
+- 团队自己的测试执行清单
 
 ### Code References
 - `mobile/src/services/TinodeService.ts` - Mobile IM service
@@ -406,17 +406,17 @@ If you encounter issues or have questions:
 
 ### What's Been Verified
 
-✅ **Code Quality**: Production-ready, no blocking issues  
-✅ **Environment**: All services operational  
-✅ **Implementation**: All features implemented correctly  
-✅ **Test Coverage**: 22 scenarios documented  
+✅ **Code Quality**: Production-ready, no blocking issues
+✅ **Environment**: All services operational
+✅ **Implementation**: All features implemented correctly
+✅ **Test Coverage**: 22 scenarios documented
 
 ### What Needs Verification
 
-⚠️ **Manual Testing**: All 22 scenarios need human execution  
-⚠️ **Performance**: Actual metrics need measurement  
-⚠️ **User Experience**: Visual and interaction verification  
-⚠️ **Bug Discovery**: Real-world testing may reveal issues  
+⚠️ **Manual Testing**: All 22 scenarios need human execution
+⚠️ **Performance**: Actual metrics need measurement
+⚠️ **User Experience**: Visual and interaction verification
+⚠️ **Bug Discovery**: Real-world testing may reveal issues
 
 ### Estimated Timeline
 
@@ -431,8 +431,8 @@ If you encounter issues or have questions:
 
 ---
 
-**Document Version**: 1.0  
-**Created**: 2026-01-23  
-**Session**: ses_414eac874ffeZRN0Ge8vpNxsTV  
-**Status**: Ready for manual testing  
+**Document Version**: 1.0
+**Created**: 2026-01-23
+**Session**: ses_414eac874ffeZRN0Ge8vpNxsTV
+**Status**: Ready for manual testing
 **Next Action**: Execute Phase 1 tests (Mobile + Admin)

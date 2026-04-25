@@ -1,0 +1,259 @@
+.quote-estimate-page {
+  min-height: 100vh;
+  background-color: #f5f5f5;
+  padding-bottom: 120px;
+}
+
+.form-section {
+  background-color: #fff;
+  margin: 16px;
+  padding: 24px;
+  border-radius: 12px;
+}
+
+.form-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 20px;
+}
+
+.form-item {
+  display: flex;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+
+  &:last-of-type {
+    border-bottom: none;
+  }
+}
+
+.form-label {
+  font-size: 15px;
+  color: #333;
+  width: 80px;
+  flex-shrink: 0;
+}
+
+.form-input {
+  flex: 1;
+  font-size: 15px;
+  color: #333;
+  padding: 8px 12px;
+  background-color: #f8f8f8;
+  border-radius: 6px;
+}
+
+.form-unit {
+  font-size: 14px;
+  color: #999;
+  margin-left: 8px;
+}
+
+.form-picker {
+  flex: 1;
+  font-size: 15px;
+  color: #333;
+  padding: 8px 12px;
+  background-color: #f8f8f8;
+  border-radius: 6px;
+}
+
+.generate-btn {
+  margin-top: 24px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  height: 48px;
+  line-height: 48px;
+}
+
+.result-section {
+  margin: 16px;
+}
+
+.result-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.price-cards {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.price-card {
+  flex: 1;
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.price-card-title {
+  font-size: 14px;
+  color: #666;
+  margin-bottom: 12px;
+  display: block;
+}
+
+.price-range {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  margin-bottom: 8px;
+}
+
+.price-value {
+  font-size: 28px;
+  font-weight: 700;
+  color: #667eea;
+}
+
+.price-separator {
+  font-size: 18px;
+  color: #999;
+  margin: 0 4px;
+}
+
+.price-unit {
+  font-size: 14px;
+  color: #999;
+  margin-left: 4px;
+}
+
+.price-desc {
+  font-size: 12px;
+  color: #999;
+}
+
+.duration-card {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  text-align: center;
+  margin-bottom: 16px;
+}
+
+.duration-label {
+  font-size: 14px;
+  color: #666;
+  margin-right: 8px;
+}
+
+.duration-value {
+  font-size: 32px;
+  font-weight: 700;
+  color: #333;
+  margin: 0 4px;
+}
+
+.duration-unit {
+  font-size: 14px;
+  color: #999;
+}
+
+.materials-section,
+.risk-section {
+  background-color: #fff;
+  padding: 20px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+}
+
+.section-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 16px;
+}
+
+.material-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 0;
+  border-bottom: 1px solid #f0f0f0;
+
+  &:last-child {
+    border-bottom: none;
+  }
+}
+
+.material-category {
+  font-size: 14px;
+  color: #666;
+}
+
+.material-budget {
+  font-size: 15px;
+  font-weight: 600;
+  color: #333;
+}
+
+.risk-item {
+  padding: 12px;
+  background-color: #fff9e6;
+  border-left: 3px solid #faad14;
+  border-radius: 4px;
+  margin-bottom: 12px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+}
+
+.risk-item-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 4px;
+  display: block;
+}
+
+.risk-item-desc {
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
+}
+
+.disclaimer {
+  background-color: #fff;
+  padding: 16px;
+  border-radius: 12px;
+  text-align: center;
+}
+
+.disclaimer-text {
+  font-size: 12px;
+  color: #999;
+  line-height: 1.6;
+}
+
+.bottom-action {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 12px 16px;
+  background-color: #fff;
+  box-shadow: 0 -2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.booking-btn {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: #fff;
+  border-radius: 8px;
+  font-size: 16px;
+  font-weight: 600;
+  height: 48px;
+  line-height: 48px;
+}
+

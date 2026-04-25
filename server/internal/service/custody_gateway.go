@@ -85,12 +85,9 @@ func (g *LocalCustodyGateway) CreatePayout(_ context.Context, payout *model.Payo
 	if payout == nil {
 		return nil, nil
 	}
-	now := time.Now()
 	return &CustodyPayoutResult{
-		ProviderPayoutNo: "SIM-" + payout.OutPayoutNo,
-		Status:           model.PayoutStatusPaid,
-		PaidAt:           &now,
-		RawJSON:          mustMarshalJSON(map[string]any{"mode": "local", "outPayoutNo": payout.OutPayoutNo, "status": model.PayoutStatusPaid}),
+		Status:  model.PayoutStatusProcessing,
+		RawJSON: mustMarshalJSON(map[string]any{"mode": "manual", "outPayoutNo": payout.OutPayoutNo, "status": model.PayoutStatusProcessing}),
 	}, nil
 }
 
@@ -99,7 +96,7 @@ func (g *LocalCustodyGateway) QueryPayout(_ context.Context, payout *model.Payou
 		return nil, nil
 	}
 	return &CustodyPayoutResult{
-		ProviderPayoutNo: firstNonEmpty(payout.ProviderPayoutNo, "SIM-"+payout.OutPayoutNo),
+		ProviderPayoutNo: payout.ProviderPayoutNo,
 		Status:           payout.Status,
 		PaidAt:           payout.PaidAt,
 		FailureReason:    payout.FailureReason,

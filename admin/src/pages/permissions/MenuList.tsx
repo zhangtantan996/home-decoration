@@ -33,6 +33,7 @@ import StatusTag from '../../components/StatusTag';
 import ToolbarCard from '../../components/ToolbarCard';
 import { usePermission } from '../../hooks/usePermission';
 import { useAuthStore } from '../../stores/authStore';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 import { isSecurityAuditorRole } from '../../constants/statuses';
 
 interface Menu {
@@ -112,13 +113,7 @@ const flattenMenus = (tree: Menu[], depth = 0): FlatMenu[] => {
     return result;
 };
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-    if (error && typeof error === 'object') {
-        const candidate = error as { message?: string; response?: { data?: { message?: string } } };
-        return candidate.response?.data?.message || candidate.message || fallback;
-    }
-    return fallback;
-};
+const readErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const MenuList: React.FC = () => {
     const { message } = App.useApp();

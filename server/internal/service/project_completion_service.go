@@ -20,16 +20,24 @@ type ProjectCompletionPayload struct {
 }
 
 type ProjectCompletionDetail struct {
-	ProjectID                 uint64     `json:"projectId"`
-	BusinessStage             string     `json:"businessStage"`
-	FlowSummary               string     `json:"flowSummary"`
-	AvailableActions          []string   `json:"availableActions"`
-	CompletedPhotos           []string   `json:"completedPhotos"`
-	CompletionNotes           string     `json:"completionNotes"`
-	CompletionSubmittedAt     *time.Time `json:"completionSubmittedAt,omitempty"`
-	CompletionRejectionReason string     `json:"completionRejectionReason,omitempty"`
-	CompletionRejectedAt      *time.Time `json:"completionRejectedAt,omitempty"`
-	InspirationCaseDraftID    uint64     `json:"inspirationCaseDraftId,omitempty"`
+	ProjectID                 uint64                 `json:"projectId"`
+	BusinessStage             string                 `json:"businessStage"`
+	FlowSummary               string                 `json:"flowSummary"`
+	AvailableActions          []string               `json:"availableActions"`
+	CompletedPhotos           []string               `json:"completedPhotos"`
+	CompletionNotes           string                 `json:"completionNotes"`
+	CompletionSubmittedAt     *time.Time             `json:"completionSubmittedAt,omitempty"`
+	CompletionRejectionReason string                 `json:"completionRejectionReason,omitempty"`
+	CompletionRejectedAt      *time.Time             `json:"completionRejectedAt,omitempty"`
+	InspirationCaseDraftID    uint64                 `json:"inspirationCaseDraftId,omitempty"`
+	ClosureSummary            *ProjectClosureSummary `json:"closureSummary,omitempty"`
+	QuoteTruthSummary         *QuoteTruthSummary     `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation     *CommercialExplanation `json:"commercialExplanation,omitempty"`
+	ChangeOrderSummary        *ChangeOrderSummary    `json:"changeOrderSummary,omitempty"`
+	SettlementSummary         *SettlementSummary     `json:"settlementSummary,omitempty"`
+	PayoutSummary             *PayoutSummary         `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus    string                 `json:"financialClosureStatus,omitempty"`
+	NextPendingAction         string                 `json:"nextPendingAction,omitempty"`
 }
 
 type ProjectCompletionApprovalResult struct {
@@ -150,6 +158,8 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		generatedProject *model.Project
 		audit            *model.CaseAudit
 		providerUserID   uint64
+		ownerUserID      uint64
+		activatedPlan    *model.PaymentPlan
 	)
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
@@ -159,6 +169,7 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		if project.OwnerID != userID {
 			return errors.New("无权操作此项目")
 		}
+		ownerUserID = project.OwnerID
 		if err := ensureCompletionSubmissionApprovable(&project, "审批完工材料"); err != nil {
 			return err
 		}
@@ -174,6 +185,18 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		}); err != nil {
 			return err
 		}
+		if usesMilestonePaymentMode(&project) {
+			finalPlan, err := findFinalConstructionPaymentPlanTx(tx, projectID)
+			if err != nil {
+				return err
+			}
+			if finalPlan != nil && finalPlan.Status == model.PaymentPlanStatusPending && finalPlan.ActivatedAt == nil {
+				if err := activatePaymentPlanTx(tx, finalPlan, time.Now()); err != nil {
+					return err
+				}
+				activatedPlan = finalPlan
+			}
+		}
 
 		var err error
 		generatedProject, audit, err = GenerateCaseDraftFromProjectTx(tx, projectID, providerID, &ProjectCaseDraftInput{})
@@ -187,6 +210,11 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		return nil, err
 	}
 	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserID, projectID, 0, nil)
+	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserID, projectID, audit.ID)
+	if activatedPlan != nil {
+		NewNotificationDispatcher().NotifyConstructionFinalPaymentActivated(ownerUserID, providerUserID, projectID, activatedPlan.OrderID, *activatedPlan)
+	}
 	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
 }
 
@@ -237,12 +265,15 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 		generatedProject *model.Project
 		audit            *model.CaseAudit
 		providerUserID   uint64
+		ownerUserID      uint64
+		activatedPlan    *model.PaymentPlan
 	)
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
 			return errors.New("项目不存在")
 		}
+		ownerUserID = project.OwnerID
 		if err := ensureCompletionSubmissionApprovable(&project, "管理员审批完工材料"); err != nil {
 			return err
 		}
@@ -268,6 +299,18 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 			Source:       "admin.project_completion_approve",
 		}); err != nil {
 			return err
+		}
+		if usesMilestonePaymentMode(&project) {
+			finalPlan, err := findFinalConstructionPaymentPlanTx(tx, projectID)
+			if err != nil {
+				return err
+			}
+			if finalPlan != nil && finalPlan.Status == model.PaymentPlanStatusPending && finalPlan.ActivatedAt == nil {
+				if err := activatePaymentPlanTx(tx, finalPlan, time.Now()); err != nil {
+					return err
+				}
+				activatedPlan = finalPlan
+			}
 		}
 
 		var err error
@@ -311,6 +354,11 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 		return nil, err
 	}
 	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
+	NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserID, projectID, 0, nil)
+	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserID, projectID, audit.ID)
+	if activatedPlan != nil {
+		NewNotificationDispatcher().NotifyConstructionFinalPaymentActivated(ownerUserID, providerUserID, projectID, activatedPlan.OrderID, *activatedPlan)
+	}
 	return &ProjectCompletionApprovalResult{Detail: detail, AuditID: audit.ID, Project: generatedProject}, nil
 }
 
@@ -461,6 +509,11 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 		return nil, err
 	}
 	photos = imgutil.GetFullImageURLs(photos)
+	closureSummary := buildProjectClosureSummaryFromProjectWithDB(db, &project)
+	runtimeSummary, err := loadProjectQuoteRuntimeSummaryWithDB(db, &project)
+	if err != nil {
+		return nil, err
+	}
 	return &ProjectCompletionDetail{
 		ProjectID:                 project.ID,
 		BusinessStage:             flowSummary.CurrentStage,
@@ -472,6 +525,14 @@ func (s *ProjectService) getProjectCompletionDetailTx(db *gorm.DB, projectID uin
 		CompletionRejectionReason: project.CompletionRejectionReason,
 		CompletionRejectedAt:      project.CompletionRejectedAt,
 		InspirationCaseDraftID:    project.InspirationCaseDraftID,
+		ClosureSummary:            closureSummary,
+		QuoteTruthSummary:         runtimeSummary.QuoteTruthSummary,
+		CommercialExplanation:     runtimeSummary.CommercialExplanation,
+		ChangeOrderSummary:        runtimeSummary.ChangeOrderSummary,
+		SettlementSummary:         runtimeSummary.SettlementSummary,
+		PayoutSummary:             runtimeSummary.PayoutSummary,
+		FinancialClosureStatus:    firstNonBlank(runtimeSummary.FinancialClosureStatus, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.FinancialClosureStatus })),
+		NextPendingAction:         firstNonBlank(runtimeSummary.NextPendingAction, summaryField(closureSummary, func(v *ProjectClosureSummary) string { return v.NextPendingAction })),
 	}, nil
 }
 

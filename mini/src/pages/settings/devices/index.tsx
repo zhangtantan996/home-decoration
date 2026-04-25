@@ -1,6 +1,6 @@
 import Taro from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/Button';
 import SettingsLayout, { SettingsGroup } from '@/components/settings/SettingsLayout';
@@ -49,7 +49,7 @@ export default function LoginDevicesPage() {
   const [loading, setLoading] = useState(true);
   const [actionKey, setActionKey] = useState<string>('');
 
-  const loadDevices = async (silent = false) => {
+  const loadDevices = useCallback(async (silent = false) => {
     if (!silent) {
       setLoading(true);
     }
@@ -68,11 +68,11 @@ export default function LoginDevicesPage() {
         setLoading(false);
       }
     }
-  };
+  }, [mountedRef]);
 
   useEffect(() => {
     void loadDevices();
-  }, []);
+  }, [loadDevices]);
 
   const currentDevice = useMemo(() => devices.find((item) => item.isCurrent) || null, [devices]);
   const otherDevices = useMemo(() => devices.filter((item) => !item.isCurrent), [devices]);

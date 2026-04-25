@@ -11,9 +11,9 @@ export const BUSINESS_STAGE_LABELS: Record<string, string> = {
   negotiating: '沟通中',
   design_pending_submission: '待设计师提交方案',
   design_pending_confirmation: '设计方案待确认',
-  construction_party_pending: '待确认施工方',
+  construction_party_pending: '施工桥接中',
   construction_quote_pending: '施工报价待确认',
-  ready_to_start: '待开工',
+  ready_to_start: '待监理协调开工',
   in_construction: '施工中',
   node_acceptance_in_progress: '节点验收中',
   completed: '已完工待验收',
@@ -30,9 +30,9 @@ export const BOOKING_STATUS_LABELS: Record<number, string> = {
 };
 
 export const SITE_SURVEY_STATUS_LABELS: Record<string, string> = {
-  submitted: '已提交',
-  confirmed: '已确认',
-  revision_requested: '待重新量房',
+  submitted: '已上传',
+  confirmed: '已完成',
+  revision_requested: '待重新提交',
 };
 
 export const BUDGET_CONFIRM_STATUS_LABELS: Record<string, string> = {

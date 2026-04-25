@@ -26,11 +26,11 @@ type BookingLifecycleView struct {
 	ProposalID          uint64   `json:"proposalId,omitempty"`
 }
 
-func BuildBookingLifecycleView(booking model.Booking, p0Summary *BookingP0Summary, proposalID uint64) BookingLifecycleView {
-	return buildBookingLifecycleView(&booking, p0Summary, proposalID)
+func BuildBookingLifecycleView(booking model.Booking, p0Summary *BookingP0Summary, proposalID uint64, deliverable *model.DesignDeliverable) BookingLifecycleView {
+	return buildBookingLifecycleView(&booking, p0Summary, proposalID, deliverable)
 }
 
-func buildBookingLifecycleView(booking *model.Booking, p0Summary *BookingP0Summary, proposalID uint64) BookingLifecycleView {
+func buildBookingLifecycleView(booking *model.Booking, p0Summary *BookingP0Summary, proposalID uint64, deliverable *model.DesignDeliverable) BookingLifecycleView {
 	if booking == nil {
 		return BookingLifecycleView{}
 	}
@@ -43,9 +43,9 @@ func buildBookingLifecycleView(booking *model.Booking, p0Summary *BookingP0Summa
 	))
 	statusGroup := resolveBookingStatusGroup(booking, currentStage, proposalID)
 	statusText := resolveBookingStatusText(statusGroup)
-	currentStageText := resolveBookingCurrentStageText(booking, p0Summary, proposalID, statusGroup, currentStage)
+	currentStageText := resolveBookingCurrentStageText(booking, p0Summary, proposalID, deliverable, statusGroup, currentStage)
 	if flowSummary == "" {
-		flowSummary = resolveBookingFlowSummary(booking, p0Summary, proposalID, statusGroup, currentStageText)
+		flowSummary = resolveBookingFlowSummary(booking, p0Summary, proposalID, deliverable, statusGroup, currentStage, currentStageText)
 	}
 	availableActions := resolveUserBookingAvailableActions(
 		statusGroup,
@@ -53,15 +53,15 @@ func buildBookingLifecycleView(booking *model.Booking, p0Summary *BookingP0Summa
 	)
 
 	return BookingLifecycleView{
-		Booking:              *booking,
-		StatusGroup:          statusGroup,
-		StatusText:           statusText,
-		CurrentStage:         currentStage,
-		CurrentStageText:     currentStageText,
-		FlowSummary:          flowSummary,
-		AvailableActions:     availableActions,
-		SurveyDepositAmount:  normalizeAmount(booking.SurveyDeposit),
-		ProposalID:           proposalID,
+		Booking:             *booking,
+		StatusGroup:         statusGroup,
+		StatusText:          statusText,
+		CurrentStage:        currentStage,
+		CurrentStageText:    currentStageText,
+		FlowSummary:         flowSummary,
+		AvailableActions:    availableActions,
+		SurveyDepositAmount: normalizeAmount(booking.SurveyDeposit),
+		ProposalID:          proposalID,
 	}
 }
 
@@ -85,14 +85,18 @@ func resolveBookingStatusGroup(booking *model.Booking, currentStage string, prop
 	if booking == nil {
 		return ""
 	}
+	normalizedStage := model.NormalizeBusinessFlowStage(strings.TrimSpace(currentStage))
 	if booking.Status == 4 || model.NormalizeBusinessFlowStage(currentStage) == model.BusinessFlowStageCancelled {
 		return BookingStatusGroupCancelled
 	}
-	if proposalID > 0 || booking.Status == 3 || isBookingCompletedStage(currentStage) {
+	if booking.Status == 3 || isBookingCompletedStage(normalizedStage) {
 		return BookingStatusGroupCompleted
 	}
 	if booking.Status == 2 && !booking.SurveyDepositPaid {
 		return BookingStatusGroupPendingPayment
+	}
+	if proposalID > 0 {
+		return BookingStatusGroupInService
 	}
 	if booking.SurveyDepositPaid {
 		return BookingStatusGroupInService
@@ -121,6 +125,7 @@ func resolveBookingCurrentStageText(
 	booking *model.Booking,
 	p0Summary *BookingP0Summary,
 	proposalID uint64,
+	deliverable *model.DesignDeliverable,
 	statusGroup string,
 	currentStage string,
 ) string {
@@ -136,8 +141,37 @@ func resolveBookingCurrentStageText(
 	if statusGroup == BookingStatusGroupPendingPayment {
 		return "待支付量房费"
 	}
+	normalizedStage := model.NormalizeBusinessFlowStage(strings.TrimSpace(currentStage))
+	if isConstructionBridgeStarted(normalizedStage) {
+		if normalizedStage == model.BusinessFlowStageConstructionPartyPending {
+			return "施工桥接中"
+		}
+		return resolveBusinessStageText(normalizedStage)
+	}
 	if proposalID > 0 {
-		return "已进入方案阶段"
+		return "待确认正式方案"
+	}
+	if deliverable != nil {
+		switch deliverable.Status {
+		case model.DesignDeliverableStatusRejected:
+			return "待重新提交设计交付"
+		case model.DesignDeliverableStatusSubmitted:
+			return "待确认设计交付"
+		case model.DesignDeliverableStatusAccepted:
+			return "待生成正式方案"
+		}
+	}
+	switch normalizedStage {
+	case model.BusinessFlowStageDesignQuotePending:
+		return "待发起设计费报价"
+	case model.BusinessFlowStageDesignFeePaying:
+		return "待继续支付设计费"
+	case model.BusinessFlowStageDesignDeliveryPending:
+		return "待设计师提交设计交付"
+	case model.BusinessFlowStageDesignAcceptancePending:
+		return "待确认设计交付"
+	case model.BusinessFlowStageDesignPendingConfirmation:
+		return "待确认正式方案"
 	}
 
 	siteSurvey := valueOrEmptySiteSurvey(p0Summary)
@@ -145,19 +179,17 @@ func resolveBookingCurrentStageText(
 
 	switch {
 	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusRejected:
-		return "待重新提交预算"
+		return "待重新提交沟通确认"
 	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusSubmitted:
-		return "待用户确认预算"
+		return "待用户确认沟通结果"
 	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusAccepted:
-		return "待商家提交方案"
+		return "待发起设计费报价"
 	case siteSurvey != nil && siteSurvey.Status == model.SiteSurveyStatusRevisionRequested:
-		return "待重新量房"
-	case siteSurvey != nil && siteSurvey.Status == model.SiteSurveyStatusSubmitted:
-		return "待用户确认量房记录"
-	case siteSurvey != nil && siteSurvey.Status == model.SiteSurveyStatusConfirmed:
-		return "待提交预算确认"
+		return "待重新上传量房资料"
+	case siteSurvey != nil && (siteSurvey.Status == model.SiteSurveyStatusSubmitted || siteSurvey.Status == model.SiteSurveyStatusConfirmed):
+		return "待提交沟通确认"
 	case booking.SurveyDepositPaid:
-		return "待安排量房"
+		return "待上传量房资料"
 	default:
 		return resolveBusinessStageText(currentStage)
 	}
@@ -167,7 +199,9 @@ func resolveBookingFlowSummary(
 	booking *model.Booking,
 	p0Summary *BookingP0Summary,
 	proposalID uint64,
+	deliverable *model.DesignDeliverable,
 	statusGroup string,
+	currentStage string,
 	currentStageText string,
 ) string {
 	if booking == nil {
@@ -175,6 +209,8 @@ func resolveBookingFlowSummary(
 	}
 	siteSurvey := valueOrEmptySiteSurvey(p0Summary)
 	budgetConfirm := valueOrEmptyBudgetConfirm(p0Summary)
+
+	normalizedStage := model.NormalizeBusinessFlowStage(strings.TrimSpace(currentStage))
 
 	switch statusGroup {
 	case BookingStatusGroupPendingConfirmation:
@@ -186,24 +222,56 @@ func resolveBookingFlowSummary(
 	}
 
 	switch {
+	case isConstructionBridgeStarted(normalizedStage):
+		if normalizedStage == model.BusinessFlowStageConstructionPartyPending {
+			return "正式方案已确认，待提交报价基线、选择施工主体并进入施工报价。"
+		}
+		return currentStageText
 	case proposalID > 0:
-		return "预约前置阶段已完成，已进入方案与后续订单阶段。"
+		return "正式方案已提交，待你确认后进入施工桥接。"
+	case deliverable != nil && deliverable.Status == model.DesignDeliverableStatusRejected:
+		return firstNonBlank(strings.TrimSpace(deliverable.RejectionReason), "设计交付已退回，待设计师重新提交。")
+	case deliverable != nil && deliverable.Status == model.DesignDeliverableStatusSubmitted:
+		return "设计交付已提交，待你确认后继续进入正式方案确认。"
+	case deliverable != nil && deliverable.Status == model.DesignDeliverableStatusAccepted:
+		return "设计交付已确认，待设计师生成正式方案。"
+	case normalizedStage == model.BusinessFlowStageDesignDeliveryPending:
+		return "设计费已支付，待设计师提交设计交付。"
+	case normalizedStage == model.BusinessFlowStageDesignAcceptancePending:
+		return "设计交付已提交，待你确认。"
+	case normalizedStage == model.BusinessFlowStageDesignPendingConfirmation:
+		return "正式方案已提交，待你确认。"
 	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusRejected:
-		return firstNonBlank(strings.TrimSpace(budgetConfirm.RejectionReason), "预算已被退回，待商家重新整理后提交。")
+		return firstNonBlank(strings.TrimSpace(budgetConfirm.RejectionReason), "沟通确认已被退回，待商家重新整理后提交。")
 	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusSubmitted:
-		return "预算确认已提交，待你确认后进入方案阶段。"
+		return "沟通确认已提交，待你确认后进入设计费报价阶段。"
 	case budgetConfirm != nil && budgetConfirm.Status == model.BudgetConfirmationStatusAccepted:
-		return "预算确认已接受，待商家继续提交方案。"
+		return "沟通确认已接受，待商家发起设计费报价。"
 	case siteSurvey != nil && siteSurvey.Status == model.SiteSurveyStatusRevisionRequested:
-		return firstNonBlank(strings.TrimSpace(siteSurvey.RevisionRequestReason), "量房记录已退回，待商家重新量房。")
-	case siteSurvey != nil && siteSurvey.Status == model.SiteSurveyStatusSubmitted:
-		return "量房记录已提交，待你确认后继续推进预算确认。"
-	case siteSurvey != nil && siteSurvey.Status == model.SiteSurveyStatusConfirmed:
-		return "量房记录已确认，待商家提交预算确认。"
+		return firstNonBlank(strings.TrimSpace(siteSurvey.RevisionRequestReason), "历史量房资料曾被退回，待商家重新提交最新资料。")
+	case siteSurvey != nil && (siteSurvey.Status == model.SiteSurveyStatusSubmitted || siteSurvey.Status == model.SiteSurveyStatusConfirmed):
+		return "量房资料已提交，待商家继续提交沟通确认。"
 	case booking.SurveyDepositPaid:
-		return "量房费已支付，待商家安排量房并继续推进。"
+		return "量房费已支付，待商家上传量房资料并继续推进。"
 	default:
 		return currentStageText
+	}
+}
+
+func isConstructionBridgeStarted(stage string) bool {
+	switch model.NormalizeBusinessFlowStage(strings.TrimSpace(stage)) {
+	case model.BusinessFlowStageConstructionPartyPending,
+		model.BusinessFlowStageConstructionQuotePending,
+		model.BusinessFlowStageReadyToStart,
+		model.BusinessFlowStageInConstruction,
+		model.BusinessFlowStageNodeAcceptanceInProgress,
+		model.BusinessFlowStageCompleted,
+		model.BusinessFlowStageArchived,
+		model.BusinessFlowStageDisputed,
+		model.BusinessFlowStagePaymentPaused:
+		return true
+	default:
+		return false
 	}
 }
 
@@ -220,11 +288,11 @@ func resolveBusinessStageText(stage string) string {
 	case model.BusinessFlowStageDesignPendingConfirmation:
 		return "待确认设计方案"
 	case model.BusinessFlowStageConstructionPartyPending:
-		return "待确认施工方"
+		return "施工桥接中"
 	case model.BusinessFlowStageConstructionQuotePending:
 		return "待确认施工报价"
 	case model.BusinessFlowStageReadyToStart:
-		return "待开工"
+		return "待监理协调开工"
 	case model.BusinessFlowStageInConstruction:
 		return "施工中"
 	case model.BusinessFlowStageNodeAcceptanceInProgress:
@@ -244,8 +312,7 @@ func resolveBusinessStageText(stage string) string {
 
 func isBookingCompletedStage(stage string) bool {
 	switch model.NormalizeBusinessFlowStage(strings.TrimSpace(stage)) {
-	case model.BusinessFlowStageDesignPendingConfirmation,
-		model.BusinessFlowStageConstructionPartyPending,
+	case model.BusinessFlowStageConstructionPartyPending,
 		model.BusinessFlowStageConstructionQuotePending,
 		model.BusinessFlowStageReadyToStart,
 		model.BusinessFlowStageInConstruction,
@@ -253,10 +320,6 @@ func isBookingCompletedStage(stage string) bool {
 		model.BusinessFlowStageCompleted,
 		model.BusinessFlowStageArchived,
 		model.BusinessFlowStageDisputed,
-		model.BusinessFlowStageDesignQuotePending,
-		model.BusinessFlowStageDesignFeePaying,
-		model.BusinessFlowStageDesignDeliveryPending,
-		model.BusinessFlowStageDesignAcceptancePending,
 		model.BusinessFlowStagePaymentPaused:
 		return true
 	default:

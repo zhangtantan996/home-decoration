@@ -72,6 +72,7 @@ const compactCount = (value: number) => {
 interface ProviderDetailParams {
   id: string;
   type: ProviderType;
+  fromQuote?: boolean;
 }
 
 const ProviderDetailPage: React.FC = () => {
@@ -95,6 +96,7 @@ const ProviderDetailPage: React.FC = () => {
       setParams({
         id: options.id,
         type: normalizeProviderType(options.type),
+        fromQuote: options.fromQuote === "1",
       });
       return;
     }
@@ -127,8 +129,6 @@ const ProviderDetailPage: React.FC = () => {
   }, [detail]);
 
   const userDetail = useMemo<{
-    id?: number;
-    publicId?: string;
     nickname?: string;
     avatar?: string;
   } | null>(() => {
@@ -136,8 +136,6 @@ const ProviderDetailPage: React.FC = () => {
       (
         detail as {
           user?: {
-            id?: number;
-            publicId?: string;
             nickname?: string;
             avatar?: string;
           };
@@ -229,6 +227,35 @@ const ProviderDetailPage: React.FC = () => {
     return parsed.length > 0 ? parsed : ["本地服务"];
   }, [providerDetail?.serviceArea]);
 
+  const settled =
+    providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
+
+  const trustTagItems = useMemo(() => {
+    const tags = [
+      ...parseStringListValue(providerDetail?.highlightTags),
+      ...parseStringListValue(providerDetail?.certifications),
+    ];
+
+    if (settled) {
+      tags.unshift("平台已认证");
+    }
+    if (Number(providerDetail?.completedCnt || 0) > 0) {
+      tags.push(`已交付${providerDetail?.completedCnt}单`);
+    }
+    if ((reviewTotal || reviews.length) > 0) {
+      tags.push(`${reviewTotal || reviews.length}条评价`);
+    }
+
+    return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
+  }, [
+    providerDetail?.certifications,
+    providerDetail?.completedCnt,
+    providerDetail?.highlightTags,
+    reviewTotal,
+    reviews.length,
+    settled,
+  ]);
+
   const quoteDisplay =
     detail?.priceDisplay ||
     providerDetail?.priceDisplay ||
@@ -243,9 +270,10 @@ const ProviderDetailPage: React.FC = () => {
   );
 
   const primaryActionText = useMemo(() => {
+    if (params.fromQuote) return "带着需求预约";
     if (params.type === "designer") return "立即预约设计";
     return "立即预约";
-  }, [params.type]);
+  }, [params.fromQuote, params.type]);
 
   const experienceText = useMemo(() => {
     if (params.type === "company" && providerDetail?.establishedYear) {
@@ -297,8 +325,6 @@ const ProviderDetailPage: React.FC = () => {
     [companyAlbumImages],
   );
 
-  const settled =
-    providerDetail?.isSettled !== false && providerRaw.isSettled !== false;
   const hasFixedFooter = !settled || !isForeman;
   const slowLoadingVisible = useSlowLoadingHint(loading);
   const ratingValue = Number(providerDetail?.rating || 0);
@@ -341,7 +367,7 @@ const ProviderDetailPage: React.FC = () => {
 
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
-      url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}`,
+      url: `/pages/booking/create/index?providerId=${params.id}&providerName=${providerName}&type=${params.type}${params.fromQuote ? "&quoteDraft=1" : ""}`,
     });
   };
 
@@ -694,6 +720,19 @@ const ProviderDetailPage: React.FC = () => {
           ))}
         </View>
       </View>
+
+      {trustTagItems.length > 0 ? (
+        <View className="provider-detail-page__section provider-detail-page__section--trust">
+          <Text className="provider-detail-page__section-title">履约标签</Text>
+          <View className="provider-detail-page__trust-list">
+            {trustTagItems.map((item) => (
+              <View key={item} className="provider-detail-page__trust-chip">
+                <Text className="provider-detail-page__trust-chip-text">{item}</Text>
+              </View>
+            ))}
+          </View>
+        </View>
+      ) : null}
 
       {isCompany
         ? renderIntroSection

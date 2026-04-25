@@ -622,7 +622,8 @@ nano .env  # 填入真实配置
 
 ## 相关文档
 
-- [项目总览](../CLAUDE.md)
+- [仓库规则](../AGENTS.md)
+- [Codex 工作流](CODEX_WORKFLOW.md)
 - [开发指南](CLAUDE_DEV_GUIDE.md)
 - [部署指南](DEPLOYMENT_GUIDE_ZH.md)
 - [故障排除](TROUBLESHOOTING.md)

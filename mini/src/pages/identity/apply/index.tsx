@@ -5,6 +5,7 @@ import React, { useState } from 'react';
 import { useIdentityStore } from '@/store/identity';
 import { Card } from '@/components/Card';
 import { Button } from '@/components/Button';
+import { isUserCancelError } from '@/utils/error';
 
 import './index.scss';
 
@@ -34,6 +35,9 @@ export default function IdentityApply() {
       setDocuments([...documents, ...res.tempFilePaths]);
       Taro.showToast({ title: '图片已添加', icon: 'success' });
     } catch (err) {
+      if (isUserCancelError(err)) {
+        return;
+      }
       Taro.showToast({ title: '选择图片失败', icon: 'none' });
     }
   };

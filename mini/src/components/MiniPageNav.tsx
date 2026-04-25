@@ -15,6 +15,8 @@ interface MiniPageNavProps {
   variant?: MiniPageNavVariant;
   progress?: number;
   placeholder?: boolean;
+  showBack?: boolean;
+  rightSlot?: React.ReactNode;
 }
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
@@ -25,6 +27,8 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
   variant = 'solid',
   progress = 1,
   placeholder = false,
+  showBack = true,
+  rightSlot,
 }) => {
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const navProgress = variant === 'overlay' ? clamp(progress, 0, 1) : 1;
@@ -60,7 +64,7 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
     return {
       backgroundColor: '#f5f5f5',
     };
-  }, [navProgress, variant]);
+  }, [variant]);
   const titleStyle = useMemo(
     () => ({
       opacity: navProgress,
@@ -108,7 +112,11 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
     <>
       <View className={`mini-page-nav mini-page-nav--${variant}`} style={navStyle}>
         <View className="mini-page-nav__main" style={headerMainStyle}>
-          <View className="mini-page-nav__back-button" style={backButtonStyle} onClick={onBack}>
+          <View
+            className={`mini-page-nav__back-button ${showBack ? '' : 'is-hidden'}`}
+            style={backButtonStyle}
+            onClick={showBack ? onBack : undefined}
+          >
             {variant === 'overlay' ? (
               <View className="mini-page-nav__icon-stack">
                 <View className="mini-page-nav__icon-layer" style={lightIconStyle}>
@@ -127,6 +135,7 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
               {title}
             </Text>
           </View>
+          {rightSlot ? <View className="mini-page-nav__right-slot">{rightSlot}</View> : null}
           <View className="mini-page-nav__right-spacer" style={rightSpacerStyle} />
         </View>
       </View>

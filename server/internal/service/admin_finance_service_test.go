@@ -181,27 +181,27 @@ func TestAdminFinanceServiceManualReleaseWritesAudit(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ManualRelease: %v", err)
 	}
-	if transaction == nil || transaction.Type != "release" {
-		t.Fatalf("expected release transaction, got %+v", transaction)
+	if transaction != nil {
+		t.Fatalf("manual offline payout must not create release transaction before voucher confirmation, got %+v", transaction)
 	}
 
 	var refreshedMilestone model.Milestone
 	if err := db.First(&refreshedMilestone, milestone.ID).Error; err != nil {
 		t.Fatalf("reload milestone: %v", err)
 	}
-	if refreshedMilestone.Status != model.MilestoneStatusPaid {
-		t.Fatalf("expected paid milestone, got %+v", refreshedMilestone)
+	if refreshedMilestone.Status != model.MilestoneStatusAccepted {
+		t.Fatalf("expected accepted milestone waiting for manual payout, got %+v", refreshedMilestone)
 	}
-	if refreshedMilestone.ReleasedAt == nil {
-		t.Fatalf("expected releasedAt to be written")
+	if refreshedMilestone.ReleasedAt != nil {
+		t.Fatalf("expected releasedAt to remain empty before manual transfer confirmation")
 	}
 
 	var income model.MerchantIncome
 	if err := db.Where("provider_id = ? AND type = ?", provider.ID, "construction").Order("id DESC").First(&income).Error; err != nil {
 		t.Fatalf("expected merchant income created: %v", err)
 	}
-	if income.Status != 2 {
-		t.Fatalf("expected payout completed merchant income, got %+v", income)
+	if income.Status != 1 || income.PayoutStatus != model.PayoutStatusProcessing {
+		t.Fatalf("expected merchant income waiting for manual payout, got %+v", income)
 	}
 
 	var auditLog model.AuditLog

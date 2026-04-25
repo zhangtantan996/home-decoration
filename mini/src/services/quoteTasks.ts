@@ -1,4 +1,5 @@
 import { request } from '@/utils/request';
+import type { BridgeConversionSummaryDTO } from './dto';
 
 export interface QuoteTaskSummary {
   id: number;
@@ -33,10 +34,81 @@ export interface QuoteTaskDetail {
   items: Array<{
     id: number;
     quoteListItemId: number;
+    itemName?: string;
+    unit?: string;
+    baselineQuantity?: number;
+    quotedQuantity?: number;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
     unitPrice: number;
     amount: number;
     remark?: string;
   }>;
+  paymentPlanSummary: Array<{
+    id: number;
+    orderId: number;
+    seq: number;
+    name: string;
+    amount: number;
+    status: number;
+    dueAt?: string;
+  }>;
+  bridgeConversionSummary?: BridgeConversionSummaryDTO;
+  quoteTruthSummary?: {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+  };
+  commercialExplanation?: {
+    baselineSummary?: {
+      title?: string;
+      sourceStage?: string;
+      submittedAt?: string;
+      itemCount?: number;
+      highlights?: string[];
+      readyForUser?: boolean;
+    };
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+  };
+  changeOrderSummary?: {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent?: number;
+    latestChangeOrderId?: number;
+  };
+  settlementSummary?: {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+  };
+  payoutSummary?: {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
+  };
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
 }
 
 interface QuoteTaskSummaryDTO {
@@ -64,9 +136,24 @@ interface QuoteTaskUserViewDTO {
   items?: Array<{
     id: number;
     quoteListItemId: number;
+    itemName?: string;
+    unit?: string;
+    baselineQuantity?: number;
+    quotedQuantity?: number;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
     unitPriceCent?: number;
     amountCent?: number;
     remark?: string;
+  }>;
+  paymentPlanSummary?: Array<{
+    id: number;
+    orderId: number;
+    seq: number;
+    name: string;
+    amount?: number;
+    status: number;
+    dueAt?: string;
   }>;
   taskSummary?: {
     area?: number;
@@ -80,6 +167,14 @@ interface QuoteTaskUserViewDTO {
   };
   businessStage?: string;
   flowSummary?: string;
+  bridgeConversionSummary?: QuoteTaskDetail['bridgeConversionSummary'];
+  quoteTruthSummary?: QuoteTaskDetail['quoteTruthSummary'];
+  commercialExplanation?: QuoteTaskDetail['commercialExplanation'];
+  changeOrderSummary?: QuoteTaskDetail['changeOrderSummary'];
+  settlementSummary?: QuoteTaskDetail['settlementSummary'];
+  payoutSummary?: QuoteTaskDetail['payoutSummary'];
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
 }
 
 export async function listMyQuoteTasks() {
@@ -126,10 +221,33 @@ export async function getQuoteTaskDetail(id: number) {
     items: (data.items || []).map((item) => ({
       id: item.id,
       quoteListItemId: item.quoteListItemId,
+      itemName: item.itemName || undefined,
+      unit: item.unit || undefined,
+      baselineQuantity: item.baselineQuantity || undefined,
+      quotedQuantity: item.quotedQuantity || undefined,
+      quantityChangeReason: item.quantityChangeReason || undefined,
+      deviationFlag: item.deviationFlag || false,
       unitPrice: Math.round(Number(item.unitPriceCent || 0) / 100),
       amount: Math.round(Number(item.amountCent || 0) / 100),
       remark: item.remark || undefined,
     })),
+    paymentPlanSummary: (data.paymentPlanSummary || []).map((plan) => ({
+      id: plan.id,
+      orderId: plan.orderId,
+      seq: plan.seq,
+      name: plan.name,
+      amount: Number(plan.amount || 0),
+      status: plan.status,
+      dueAt: plan.dueAt || undefined,
+    })),
+    bridgeConversionSummary: data.bridgeConversionSummary,
+    quoteTruthSummary: data.quoteTruthSummary,
+    commercialExplanation: data.commercialExplanation,
+    changeOrderSummary: data.changeOrderSummary,
+    settlementSummary: data.settlementSummary,
+    payoutSummary: data.payoutSummary,
+    financialClosureStatus: data.financialClosureStatus || undefined,
+    nextPendingAction: data.nextPendingAction || undefined,
   } satisfies QuoteTaskDetail;
 }
 

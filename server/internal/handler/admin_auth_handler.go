@@ -607,18 +607,48 @@ func getAdminMenuTree(admin *model.SysAdmin) []*model.SysMenu {
 			Find(&menus)
 	}
 
-	// 去重（保持顺序）
-	menuMap := make(map[uint64]bool)
-	var uniqueMenus []*model.SysMenu
-	for i := range menus {
-		if !menuMap[menus[i].ID] {
-			menuMap[menus[i].ID] = true
-			uniqueMenus = append(uniqueMenus, &menus[i])
-		}
-	}
+	uniqueMenus := uniqueAdminMenuNodes(menus)
 
 	// 构建树
 	return buildMenuTree(uniqueMenus, 0)
+}
+
+func uniqueAdminMenuNodes(menus []model.SysMenu) []*model.SysMenu {
+	seenIDs := make(map[uint64]bool)
+	seenKeys := make(map[string]bool)
+	var uniqueMenus []*model.SysMenu
+
+	for i := range menus {
+		menu := &menus[i]
+		if seenIDs[menu.ID] {
+			continue
+		}
+		seenIDs[menu.ID] = true
+
+		if key := adminMenuDedupKey(menu); key != "" {
+			if seenKeys[key] {
+				continue
+			}
+			seenKeys[key] = true
+		}
+
+		uniqueMenus = append(uniqueMenus, menu)
+	}
+
+	return uniqueMenus
+}
+
+func adminMenuDedupKey(menu *model.SysMenu) string {
+	if menu == nil {
+		return ""
+	}
+	if path := strings.TrimSpace(menu.Path); path != "" {
+		return "path:" + path
+	}
+	if permission := strings.TrimSpace(menu.Permission); permission != "" {
+		return "permission:" + permission
+	}
+	return ""
 }
 
 // buildMenuTree 构建菜单树
@@ -632,6 +662,9 @@ func buildMenuTree(menus []*model.SysMenu, parentID uint64) []*model.SysMenu {
 	}
 	// 按 Sort 排序
 	sort.Slice(tree, func(i, j int) bool {
+		if tree[i].Sort == tree[j].Sort {
+			return tree[i].ID < tree[j].ID
+		}
 		return tree[i].Sort < tree[j].Sort
 	})
 	return tree

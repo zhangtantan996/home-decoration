@@ -22,7 +22,13 @@ func TestAdminVisibilityResolver_MerchantApplication(t *testing.T) {
 	resolver := NewAdminVisibilityResolver()
 
 	t.Run("approved no blocker", func(t *testing.T) {
-		result := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 1}, &model.Provider{Base: model.Base{ID: 101}, Verified: true, Status: 1})
+		result := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 1}, &model.Provider{
+			Base:                   model.Base{ID: 101},
+			Verified:               true,
+			Status:                 1,
+			PlatformDisplayEnabled: true,
+			MerchantDisplayEnabled: true,
+		})
 		if !result.Visibility.PublicVisible {
 			t.Fatalf("expected public visible")
 		}
@@ -72,7 +78,12 @@ func TestAdminVisibilityResolver_MerchantApplication(t *testing.T) {
 
 	t.Run("preview consistency with approved path", func(t *testing.T) {
 		pending := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 0}, nil)
-		approved := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 1}, &model.Provider{Verified: true, Status: 1})
+		approved := resolver.ResolveMerchantApplication(model.MerchantApplication{Status: 1}, &model.Provider{
+			Verified:               true,
+			Status:                 1,
+			PlatformDisplayEnabled: true,
+			MerchantDisplayEnabled: true,
+		})
 		if pending.Visibility.PreviewAfterApprove == nil {
 			t.Fatalf("missing preview")
 		}

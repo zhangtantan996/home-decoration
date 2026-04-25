@@ -31,6 +31,7 @@ import {
   type AdminSupervisionWorkLog,
   type AdminSupervisionWorkspace,
 } from '../../services/api';
+import { adminOrderCenterApi } from '../../services/orderApi';
 import { usePermission } from '../../hooks/usePermission';
 import { toAbsoluteAssetUrl } from '../../utils/env';
 import { type AdminUploadedAsset, buildUploadedAssetFile, getStoredPathFromUploadFile } from '../../utils/uploadAsset';
@@ -114,15 +115,19 @@ const WorkbenchDetail: React.FC = () => {
   const [phaseModalOpen, setPhaseModalOpen] = useState(false);
   const [logModalOpen, setLogModalOpen] = useState(false);
   const [riskModalOpen, setRiskModalOpen] = useState(false);
+  const [startModalOpen, setStartModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingLogImages, setUploadingLogImages] = useState(false);
   const [logImageList, setLogImageList] = useState<UploadFile[]>([]);
   const [phaseForm] = Form.useForm();
   const [logForm] = Form.useForm();
   const [riskForm] = Form.useForm();
+  const [startForm] = Form.useForm();
 
   const canEdit = hasPermission('supervision:workspace:edit');
   const canCreateRisk = hasPermission('supervision:risk:create');
+  const plannedStartDate = workspace?.plannedStartDate || workspace?.supervisorSummary?.plannedStartDate;
+  const canStartProject = canEdit && workspace?.businessStage === 'ready_to_start' && Boolean(plannedStartDate);
 
   const selectedPhase = useMemo(
     () => phases.find((item) => item.id === selectedPhaseId) || phases[0],
@@ -219,8 +224,10 @@ const WorkbenchDetail: React.FC = () => {
       message.success('阶段已更新');
       setPhaseModalOpen(false);
       await loadWorkspace();
-    } catch (error: any) {
-      if (error?.errorFields) return;
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
       message.error(error instanceof Error ? error.message : '更新阶段失败');
     } finally {
       setSubmitting(false);
@@ -334,8 +341,10 @@ const WorkbenchDetail: React.FC = () => {
       resetLogModal();
       await loadLogs(selectedPhaseId);
       await loadWorkspace();
-    } catch (error: any) {
-      if (error?.errorFields) return;
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
       message.error(error instanceof Error ? error.message : '新增日志失败');
     } finally {
       setSubmitting(false);
@@ -360,9 +369,47 @@ const WorkbenchDetail: React.FC = () => {
       setRiskModalOpen(false);
       riskForm.resetFields();
       await loadWorkspace();
-    } catch (error: any) {
-      if (error?.errorFields) return;
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
       message.error(error instanceof Error ? error.message : '上报风险失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const openStartModal = () => {
+    startForm.setFieldsValue({
+      reason: plannedStartDate
+        ? `监理工作台确认项目按计划于 ${formatServerDate(plannedStartDate)} 开工`
+        : '监理工作台确认开工',
+    });
+    setStartModalOpen(true);
+  };
+
+  const handleStartProjectSubmit = async () => {
+    try {
+      const values = await startForm.validateFields();
+      setSubmitting(true);
+      const res = await adminOrderCenterApi.startProject(projectId, {
+        reason: values.reason,
+        startDate: plannedStartDate ? dayjs(plannedStartDate).format('YYYY-MM-DD') : undefined,
+      }) as any;
+      if (res.code !== 0) {
+        message.error(res.message || '确认开工失败');
+        return;
+      }
+      message.success('已确认开工');
+      setStartModalOpen(false);
+      startForm.resetFields();
+      await loadWorkspace();
+      await loadLogs(selectedPhaseId);
+    } catch (error: unknown) {
+      if (typeof error === 'object' && error !== null && 'errorFields' in error) {
+        return;
+      }
+      message.error(error instanceof Error ? error.message : '确认开工失败');
     } finally {
       setSubmitting(false);
     }
@@ -388,10 +435,19 @@ const WorkbenchDetail: React.FC = () => {
                 <Tag color={workspace?.unhandledRiskCount ? 'error' : 'default'}>
                   {workspace?.unhandledRiskCount ? `${workspace.unhandledRiskCount} 条未处理风险` : '无未处理风险'}
                 </Tag>
+                {workspace?.businessStage ? <Tag color="blue">主链阶段：{workspace.businessStage}</Tag> : null}
+                <Tag color={workspace?.kickoffStatus === 'scheduled' ? 'success' : 'default'}>
+                  {workspace?.kickoffStatus === 'scheduled' ? '进场已排期' : '待进场协调'}
+                </Tag>
               </Space>
             </div>
           </div>
           <Space wrap>
+            {canStartProject ? (
+              <Button type="primary" onClick={openStartModal}>
+                确认开工
+              </Button>
+            ) : null}
             <Button icon={<ReloadOutlined />} onClick={() => void loadWorkspace()}>
               刷新
             </Button>
@@ -408,6 +464,20 @@ const WorkbenchDetail: React.FC = () => {
           <Descriptions.Item label="施工方">{workspace?.providerName || '-'}</Descriptions.Item>
           <Descriptions.Item label="地址">{workspace?.address || '-'}</Descriptions.Item>
           <Descriptions.Item label="最近巡检">{workspace?.lastInspectionAt ? formatServerDateTime(workspace.lastInspectionAt) : '暂无'}</Descriptions.Item>
+          <Descriptions.Item label="计划进场">
+            {workspace?.plannedStartDate
+              ? formatServerDateTime(workspace.plannedStartDate)
+              : workspace?.supervisorSummary?.plannedStartDate
+                ? formatServerDateTime(workspace.supervisorSummary.plannedStartDate)
+                : '待登记'}
+          </Descriptions.Item>
+          <Descriptions.Item label="当前责任人">{workspace?.currentResponsible || '待分配'}</Descriptions.Item>
+          <Descriptions.Item label="最近监理同步">
+            {workspace?.latestLogTitle || workspace?.supervisorSummary?.latestLogTitle || '暂无'}
+          </Descriptions.Item>
+          <Descriptions.Item label="未处理风险">
+            {workspace?.supervisorSummary?.unhandledRiskCount ?? workspace?.unhandledRiskCount ?? 0} 条
+          </Descriptions.Item>
         </Descriptions>
       </Card>
 
@@ -588,6 +658,32 @@ const WorkbenchDetail: React.FC = () => {
           <Empty description="当前项目暂无风险记录" />
         )}
       </Card>
+
+      <Modal
+        open={startModalOpen}
+        title="确认开工"
+        onOk={() => void handleStartProjectSubmit()}
+        confirmLoading={submitting}
+        onCancel={() => {
+          setStartModalOpen(false);
+          startForm.resetFields();
+        }}
+        okText="确认开工"
+        cancelText="取消"
+      >
+        <Form form={startForm} layout="vertical">
+          <Form.Item label="计划进场时间">
+            <Input value={plannedStartDate ? formatServerDateTime(plannedStartDate) : '待登记'} disabled />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="开工说明"
+            rules={[{ required: true, message: '请填写开工说明' }]}
+          >
+            <TextArea rows={4} maxLength={300} showCount placeholder="说明监理确认开工的依据与同步结果" />
+          </Form.Item>
+        </Form>
+      </Modal>
 
       <Modal
         open={phaseModalOpen}

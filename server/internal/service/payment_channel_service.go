@@ -13,6 +13,7 @@ import (
 type PaymentChannelTradeResult struct {
 	ProviderTradeNo string
 	TradeStatus     string
+	BuyerLogonID    string
 	BuyerAmount     float64
 	RawJSON         string
 }
@@ -46,6 +47,26 @@ type PaymentChannelNotifyResult struct {
 	RawJSON         string
 }
 
+type PaymentChannelQueryResult struct {
+	OutTradeNo      string
+	ProviderTradeNo string
+	TradeStatus     string
+	Amount          float64
+	RawJSON         string
+}
+
+type RefundQueryResult struct {
+	OutRefundNo     string
+	ProviderTradeNo string
+	OutTradeNo      string
+	RefundStatus    string
+	RefundAmount    float64
+	Success         bool
+	Pending         bool
+	FailureReason   string
+	RawJSON         string
+}
+
 type PaymentChannelService interface {
 	Channel() string
 	CreateCollectOrder(ctx context.Context, order *model.PaymentOrder) (string, error)
@@ -56,6 +77,10 @@ type PaymentChannelService interface {
 	QueryCollectOrder(ctx context.Context, order *model.PaymentOrder) (*PaymentChannelTradeResult, error)
 	RefundCollectOrder(ctx context.Context, order *model.PaymentOrder, refund *model.RefundOrder) (*PaymentChannelRefundResult, error)
 	QueryRefundOrder(ctx context.Context, order *model.PaymentOrder, refund *model.RefundOrder) (*PaymentChannelRefundResult, error)
+}
+
+type PaymentChannelRefundNotifyParser interface {
+	ParseRefundNotifyRequest(ctx context.Context, request *http.Request) (*PaymentChannelRefundResult, error)
 }
 
 type AlipayPaymentChannelService struct {
@@ -126,6 +151,7 @@ func (s *AlipayPaymentChannelService) QueryCollectOrder(ctx context.Context, ord
 	return &PaymentChannelTradeResult{
 		ProviderTradeNo: result.TradeNo,
 		TradeStatus:     result.TradeStatus,
+		BuyerLogonID:    result.BuyerLogonID,
 		BuyerAmount:     result.BuyerAmount,
 		RawJSON:         result.RawJSON,
 	}, nil
@@ -191,6 +217,13 @@ func (s *WechatPaymentChannelService) ParseNotifyRequest(ctx context.Context, re
 		return nil, errors.New("微信支付网关未初始化")
 	}
 	return s.gateway.ParseNotifyRequest(ctx, request)
+}
+
+func (s *WechatPaymentChannelService) ParseRefundNotifyRequest(ctx context.Context, request *http.Request) (*PaymentChannelRefundResult, error) {
+	if s.gateway == nil {
+		return nil, errors.New("微信支付网关未初始化")
+	}
+	return s.gateway.ParseRefundNotifyRequest(ctx, request)
 }
 
 func (s *WechatPaymentChannelService) QueryCollectOrder(ctx context.Context, order *model.PaymentOrder) (*PaymentChannelTradeResult, error) {

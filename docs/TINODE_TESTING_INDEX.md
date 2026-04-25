@@ -25,70 +25,54 @@
 
 ### Phase 1: Individual Platform Testing
 
-**[MOBILE_E2E_TEST_GUIDE.md](./MOBILE_E2E_TEST_GUIDE.md)**
+**[MOBILE_E2E_测试指南.md](./MOBILE_E2E_测试指南.md)**
 - 7 test scenarios for Mobile app
 - Estimated time: 2 hours
 - Prerequisites: iOS/Android simulator
 
-**[ADMIN_E2E_TEST_GUIDE.md](./ADMIN_E2E_TEST_GUIDE.md)**
+**[ADMIN_E2E_测试指南.md](./ADMIN_E2E_测试指南.md)**
 - 3 test scenarios for Admin panel
 - Estimated time: 1 hour
 - Prerequisites: Chrome browser
 
 ### Phase 2: Integration Testing
 
-**[CROSS_PLATFORM_SYNC_TEST_GUIDE.md](./CROSS_PLATFORM_SYNC_TEST_GUIDE.md)**
+**[跨平台同步测试指南.md](./跨平台同步测试指南.md)**
 - 5 test scenarios for cross-platform sync
 - Estimated time: 30 minutes
 - Prerequisites: Mobile + Admin running simultaneously
 
 ### Phase 3: Feature Testing
 
-**[IMAGE_UPLOAD_TEST_GUIDE.md](./IMAGE_UPLOAD_TEST_GUIDE.md)**
+**[图片上传测试指南.md](./图片上传测试指南.md)**
 - 7 test scenarios for image upload
 - Estimated time: 2 hours
 - Prerequisites: Mobile simulator + test images
 
 ---
 
-## 📝 Notepad Files (Record Results Here)
+## 📝 Result Recording
 
-Located in: `.sisyphus/notepads/tinode-im-completion-week1/`
+历史 repo-local 测试笔记已移出仓库。当前请把结果记录到以下任一共享位置：
 
-**[learnings.md](../.sisyphus/notepads/tinode-im-completion-week1/learnings.md)**
-- Code inspection findings
-- Implementation insights
-- Best practices discovered
+- 当前专题文档中的“测试结果 / 问题记录”小节
+- 对应 issue、PR 评论或缺陷清单
+- 发布 / 验收记录中的执行备注
 
-**[verification.md](../.sisyphus/notepads/tinode-im-completion-week1/verification.md)**
-- Test execution results
-- Performance metrics
-- Pass/fail status for each scenario
-
-**[issues.md](../.sisyphus/notepads/tinode-im-completion-week1/issues.md)**
-- Bugs discovered during testing
-- Severity classification (P0/P1/P2)
-- Steps to reproduce
-
-**[decisions.md](../.sisyphus/notepads/tinode-im-completion-week1/decisions.md)**
-- Strategy decisions made
-- Execution approach
-- Rationale for choices
-
-**[problems.md](../.sisyphus/notepads/tinode-im-completion-week1/problems.md)**
-- Unresolved questions
-- Technical debt
-- Future considerations
+建议至少记录：
+- 场景名与通过/失败结论
+- 设备 / 浏览器 / 环境
+- 关键日志、截图、性能指标
+- 缺陷严重度与重现步骤
 
 ---
 
-## 📋 Plan File
+## 📋 Execution Checklist
 
-**[tinode-im-completion-week1.md](../.sisyphus/plans/tinode-im-completion-week1.md)**
-- Original work plan (Chinese)
-- 88 checkboxes total
-- 5 completed (Task 1)
-- 83 pending manual execution
+历史 repo-local 计划文件已移出仓库。当前请使用：
+- 当前任务说明中的 checklist
+- issue / PR checklist
+- 团队自己的发布或测试执行清单
 
 ---
 

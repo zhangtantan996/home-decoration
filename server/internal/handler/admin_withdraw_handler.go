@@ -111,7 +111,9 @@ func AdminWithdrawApprove(c *gin.Context) {
 	adminID := c.GetUint64("admin_id")
 
 	var input struct {
-		Remark string `json:"remark"`
+		Remark       string `json:"remark"`
+		AutoPayout   bool   `json:"autoPayout"`   // 是否启用自动出款
+		SettlementID uint64 `json:"settlementId"` // 关联的结算单ID（如果有）
 	}
 	if err := c.ShouldBindJSON(&input); err != nil && !errors.Is(err, io.EOF) {
 		response.Error(c, 400, "参数错误")
@@ -165,6 +167,7 @@ func AdminWithdrawApprove(c *gin.Context) {
 				"providerId": withdraw.ProviderID,
 				"orderNo":    withdraw.OrderNo,
 				"amount":     withdraw.Amount,
+				"autoPayout": input.AutoPayout,
 			},
 		})
 	})
@@ -173,13 +176,18 @@ func AdminWithdrawApprove(c *gin.Context) {
 		return
 	}
 
+	if input.AutoPayout {
+		log.Printf("[AdminWithdrawApprove] Auto payout ignored for withdraw #%d: phase-1 payout requires manual offline transfer", withdraw.ID)
+	}
+	payoutMessage := "审核通过，等待线下打款"
+
 	notifService := &service.NotificationService{}
 	if err := notifService.NotifyWithdrawApproved(&withdraw, provider.UserID); err != nil {
 		log.Printf("[AdminWithdrawApprove] Failed to send notification: %v", err)
 	}
 
 	response.Success(c, gin.H{
-		"message":  "审核通过，等待线下打款",
+		"message":  payoutMessage,
 		"withdraw": serializeAdminWithdraw(withdraw, provider),
 	})
 }
@@ -300,6 +308,9 @@ func AdminWithdrawReject(c *gin.Context) {
 		beforeState := map[string]interface{}{
 			"withdraw": snapshotWithdrawForAudit(withdraw),
 		}
+		if err := releaseWithdrawIncomesTx(tx, withdraw.OrderNo); err != nil {
+			return err
+		}
 		if err := tx.Model(&withdraw).Updates(map[string]any{
 			"status":       model.MerchantWithdrawStatusRejected,
 			"fail_reason":  strings.TrimSpace(input.Reason),
@@ -391,10 +402,19 @@ func markWithdrawIncomesPaidTx(tx *gorm.DB, withdraw *model.MerchantWithdraw) er
 
 	var incomes []model.MerchantIncome
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
-		Where("provider_id = ? AND status = ?", withdraw.ProviderID, 1).
+		Where("provider_id = ? AND status = ? AND withdraw_order_no = ?", withdraw.ProviderID, 1, withdraw.OrderNo).
 		Order("created_at ASC, id ASC").
 		Find(&incomes).Error; err != nil {
 		return err
+	}
+	useReserved := len(incomes) > 0
+	if !useReserved {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("provider_id = ? AND status = ?", withdraw.ProviderID, 1).
+			Order("created_at ASC, id ASC").
+			Find(&incomes).Error; err != nil {
+			return err
+		}
 	}
 
 	for _, income := range incomes {
@@ -406,7 +426,7 @@ func markWithdrawIncomesPaidTx(tx *gorm.DB, withdraw *model.MerchantWithdraw) er
 			continue
 		}
 
-		if available <= remaining {
+		if useReserved || available <= remaining {
 			if err := tx.Model(&income).Updates(map[string]any{
 				"status":            2,
 				"withdraw_order_no": withdraw.OrderNo,

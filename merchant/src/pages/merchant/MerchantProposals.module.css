@@ -1,0 +1,135 @@
+.page {
+  max-width: none;
+  width: 100%;
+}
+
+.contentPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.filterCard :global(.ant-card-body) {
+  padding: 16px 18px;
+}
+
+.filterBar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.filterGroup {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.filterButton {
+  border-radius: 12px;
+  min-width: 96px;
+}
+
+.filterActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.search {
+  width: 280px;
+}
+
+.countText {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.tableSection :global(.ant-card-body) {
+  padding: 8px 10px 4px;
+}
+
+.table :global(.ant-table) {
+  border-radius: 16px;
+}
+
+.table :global(.ant-table-thead > tr > th) {
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.table :global(.ant-table-tbody > tr > td) {
+  padding-top: 18px;
+  padding-bottom: 18px;
+  vertical-align: middle;
+}
+
+.table :global(.ant-table-tbody > tr:hover > td) {
+  background: #fcfdff;
+}
+
+.infoCell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.infoTitle {
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.infoMeta {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.infoSupplementary {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.stageText {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.nextAction {
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+@media (max-width: 1200px) {
+  .filterActions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .search {
+    width: 100%;
+    max-width: 360px;
+  }
+}
+
+@media (max-width: 768px) {
+  .filterActions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .search {
+    max-width: none;
+  }
+}

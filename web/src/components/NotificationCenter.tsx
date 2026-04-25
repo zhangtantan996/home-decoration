@@ -15,10 +15,8 @@ import styles from './NotificationCenter.module.scss';
 
 const filters = [
   { key: 'all', label: '全部' },
-  { key: 'booking', label: '预约提醒' },
-  { key: 'proposal', label: '报价提醒' },
-  { key: 'order', label: '支付提醒' },
   { key: 'project', label: '项目提醒' },
+  { key: 'payment', label: '支付提醒' },
   { key: 'system', label: '系统通知' },
 ] as const;
 
@@ -32,11 +30,48 @@ type NotificationCenterProps = {
 };
 
 function mapType(type: string) {
-  if (type.startsWith('booking')) return 'booking';
-  if (type.startsWith('proposal') || type.startsWith('quote')) return 'proposal';
-  if (type.startsWith('order') || type.startsWith('refund')) return 'order';
-  if (type.startsWith('project') || type.startsWith('audit')) return 'project';
+  if (type.startsWith('order') || type.startsWith('refund') || type.startsWith('payment.')) return 'payment';
+  if (type.startsWith('booking') || type.startsWith('proposal') || type.startsWith('quote') || type.startsWith('project') || type.startsWith('audit') || type.startsWith('complaint') || type.startsWith('change_order')) return 'project';
   return 'system';
+}
+
+function mapCategory(item: MessageListItemVM) {
+  if (item.category) {
+    if (item.category === 'payment') return 'payment';
+    if (item.category === 'project') return 'project';
+    return 'system';
+  }
+  return mapType(item.type);
+}
+
+function readTypeLabel(item: MessageListItemVM) {
+  const value = item.typeLabel?.trim();
+  if (value) return value;
+  if (item.category === 'payment') return '支付提醒';
+  if (item.category === 'project') return '项目提醒';
+  return '系统通知';
+}
+
+function readActionBadge(item: MessageListItemVM) {
+  if (item.actionStatus === 'processed') {
+    return { label: '已处理', tone: 'muted' as const };
+  }
+  if (item.actionStatus === 'expired') {
+    return { label: '已过期', tone: 'warn' as const };
+  }
+  if (item.actionRequired && item.actionLabel) {
+    return {
+      label: item.priority === 'urgent' ? `${item.actionLabel} · 紧急` : item.actionLabel,
+      tone: item.priority === 'urgent' ? ('warn' as const) : ('primary' as const),
+    };
+  }
+  if (item.kind === 'result') {
+    return { label: '结果通知', tone: 'muted' as const };
+  }
+  if (item.kind === 'risk') {
+    return { label: '风险提醒', tone: 'warn' as const };
+  }
+  return null;
 }
 
 function MessageIcon({ type }: { type: string }) {
@@ -54,14 +89,14 @@ function MessageIcon({ type }: { type: string }) {
       </div>
     );
   }
-  if (type.startsWith('order') || type.startsWith('refund')) {
+  if (type.startsWith('order') || type.startsWith('refund') || type.startsWith('payment.')) {
     return (
       <div className={styles.icon}>
         <svg fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M21 18v1c0 1.1-.9 2-2 2H5c-1.11 0-2-.9-2-2V5c0-1.1.89-2 2-2h14c1.1 0 2 .9 2 2v1h-9c-1.11 0-2 .9-2 2v8c0 1.1.89 2 2 2h9zm-9-2h10V8H12v8zm4-2.5c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z"/></svg>
       </div>
     );
   }
-  if (type.startsWith('project') || type.startsWith('audit')) {
+  if (type.startsWith('project') || type.startsWith('audit') || type.startsWith('change_order')) {
     return (
       <div className={styles.icon}>
         <svg fill="currentColor" height="24" viewBox="0 0 24 24" width="24"><path d="M10 4H4c-1.11 0-2 .9-2 2v12c0 1.1.89 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>
@@ -89,7 +124,7 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
   const unreadCount = useMemo(() => items.filter((item) => !item.isRead).length, [items]);
   const filtered = useMemo(() => {
     if (activeFilter === 'all') return items;
-    return items.filter((item) => mapType(item.type) === activeFilter);
+    return items.filter((item) => mapCategory(item) === activeFilter);
   }, [activeFilter, items]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
@@ -188,7 +223,7 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
     if (!item.isRead) {
       await handleMarkAsRead(item);
     }
-    if (item.actionUrl) {
+    if (item.actionUrl && item.supportsWeb) {
       navigate(item.actionUrl);
     }
   };
@@ -252,8 +287,15 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
         <EmptyBlock title="暂无通知" description="当前筛选条件下没有系统或业务通知。" />
       ) : (
         <div className={styles.msgList}>
-          {filtered.map((item) => (
+          {filtered.map((item) => {
+            const actionBadge = readActionBadge(item);
+            return (
             <article className={styles.msgItem} key={item.id}>
+              {actionBadge ? (
+                <div className={`${styles.actionBadge} ${styles[`actionBadge--${actionBadge.tone}`]}`}>
+                  {actionBadge.label}
+                </div>
+              ) : null}
               <div className={styles.contentWrapper}>
                 <button
                   className={styles.buttonArea}
@@ -264,6 +306,9 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
                   <div className={styles.body}>
                     <strong>{item.title}</strong>
                     <p>{item.content}</p>
+                    <div className={styles.metaRow}>
+                      <span className={styles.typeChip}>{readTypeLabel(item)}</span>
+                    </div>
                   </div>
                 </button>
                 <div className={styles.meta}>
@@ -282,7 +327,8 @@ export function NotificationCenter({ title, pageSize = 12, topPage = false, show
                 </button>
               </div>
             </article>
-          ))}
+            );
+          })}
         </div>
       )}
 

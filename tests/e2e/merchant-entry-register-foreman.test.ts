@@ -3,7 +3,7 @@ import { buildMerchantAppUrl } from './helpers/merchant';
 
 test.describe('Merchant Entry Foreman Flow', () => {
   test('entry page unified onboarding can select foreman flow', async ({ page }) => {
-    const origin = process.env.MERCHANT_ORIGIN || 'http://localhost:5174';
+    const origin = process.env.MERCHANT_ORIGIN || 'http://127.0.0.1:5175/merchant';
 
     await page.goto(buildMerchantAppUrl(origin, '/'), { waitUntil: 'domcontentloaded' });
 

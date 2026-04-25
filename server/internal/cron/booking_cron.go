@@ -27,6 +27,13 @@ func StartBookingCron() {
 
 // handleMerchantTimeout 处理商家48小时超时未响应
 func handleMerchantTimeout() {
+	// P1修复：添加错误恢复机制，防止单次失败导致整个定时任务停止
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Cron] Panic in handleMerchantTimeout: %v", r)
+		}
+	}()
+
 	refundSvc := &service.RefundService{}
 
 	// 批量退款超时预约
@@ -43,6 +50,13 @@ func handleMerchantTimeout() {
 
 // handleUserConfirmTimeout 处理用户14天超时未确认方案
 func handleUserConfirmTimeout() {
+	// P1修复：添加错误恢复机制，防止单次失败导致整个定时任务停止
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[Cron] Panic in handleUserConfirmTimeout: %v", r)
+		}
+	}()
+
 	now := time.Now()
 
 	// 查询超时的待确认方案

@@ -1,42 +1,119 @@
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Space, Spin, Tag, message } from 'antd';
+import { Spin, message } from 'antd';
 import {
     AppstoreOutlined,
-    BankOutlined,
-    DollarOutlined,
-    FileTextOutlined,
-    NotificationOutlined,
-    PictureOutlined,
-    PlusOutlined,
-    ProjectOutlined,
     SettingOutlined,
+    WalletOutlined,
 } from '@ant-design/icons';
 import { useNavigate } from 'react-router-dom';
 import dayjs from 'dayjs';
 
-import MerchantContentPanel from '../../components/MerchantContentPanel';
-import MerchantPageHeader from '../../components/MerchantPageHeader';
 import MerchantPageShell from '../../components/MerchantPageShell';
-import MerchantSectionCard from '../../components/MerchantSectionCard';
-import MerchantStatGrid from '../../components/MerchantStatGrid';
-import type { MerchantStatItem } from '../../components/MerchantStatGrid';
-import styles from '../../components/MerchantPage.module.css';
+import styles from './MerchantDashboard.module.css';
 import {
     materialShopCenterApi,
+    merchantAuthApi,
+    merchantBookingApi,
     merchantDashboardApi,
     merchantIncomeApi,
     type MaterialShopProduct,
+    type MaterialShopProfile,
+    type MerchantBookingEntry,
     type MerchantDashboardStats,
     type MerchantIncomeSummary,
+    type MerchantProviderInfo,
 } from '../../services/merchantApi';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
+import { resolveDisplayStatusMeta } from '../../utils/displayStatus';
+
+type DashboardMetricTone = 'accent' | 'warning' | 'success' | 'neutral';
+
+type DashboardMetric = {
+    label: string;
+    value: string | number;
+    note: string;
+    tone?: DashboardMetricTone;
+};
+
+type DashboardTask = {
+    label: string;
+    value: string | number;
+    hint: string;
+    path: string;
+    actionLabel?: string;
+};
+
+type DashboardAction = {
+    icon: React.ReactNode;
+    label: string;
+    hint: string;
+    path: string;
+    emphasis?: boolean;
+};
+
+type DashboardModel = {
+    roleTag: string;
+    title: string;
+    subtitle?: string;
+    statusLabel: string;
+    statusTone: 'slate' | 'blue' | 'green' | 'amber' | 'red';
+    statusHelper: string;
+    metrics: DashboardMetric[];
+    tasks: DashboardTask[];
+    secondaryActions: DashboardAction[];
+};
+
+const PROPOSAL_WORKFLOW_STAGES = new Set([
+    'survey_deposit_pending',
+    'negotiating',
+    'design_quote_pending',
+    'design_fee_paying',
+    'design_pending_submission',
+    'design_delivery_pending',
+    'design_acceptance_pending',
+    'design_pending_confirmation',
+]);
+
+const isProposalWorkflowBooking = (booking: MerchantBookingEntry) => {
+    const stage = String(booking.currentStage || '').trim().toLowerCase();
+    if (!stage) {
+        return Boolean(booking.hasProposal) || (booking.availableActions || []).some((action) => (
+            action === 'submit_site_survey'
+            || action === 'submit_budget'
+            || action === 'create_design_fee_quote'
+            || action === 'create_proposal'
+            || action === 'submit_design_delivery'
+        ));
+    }
+    return PROPOSAL_WORKFLOW_STAGES.has(stage);
+};
+
+function formatCurrency(value: number) {
+    return `¥${Number(value || 0).toLocaleString('zh-CN')}`;
+}
+
+function compactText(text: string | undefined, fallback: string) {
+    const normalized = String(text || '').trim();
+    if (!normalized) {
+        return fallback;
+    }
+    const sentence = normalized.match(/^[^。！？!?]+[。！？!?]?/u)?.[0]?.trim();
+    return sentence || normalized;
+}
+
+function renderMetricValue(value: string | number) {
+    return typeof value === 'number' ? value.toLocaleString('zh-CN') : value;
+}
 
 const MerchantDashboard: React.FC = () => {
     const [loading, setLoading] = useState(true);
     const [stats, setStats] = useState<MerchantDashboardStats | null>(null);
     const [income, setIncome] = useState<MerchantIncomeSummary | null>(null);
+    const [bookings, setBookings] = useState<MerchantBookingEntry[]>([]);
     const [products, setProducts] = useState<MaterialShopProduct[]>([]);
     const [profileCompletePercent, setProfileCompletePercent] = useState(0);
+    const [providerInfo, setProviderInfo] = useState<MerchantProviderInfo | null>(null);
+    const [materialProfile, setMaterialProfile] = useState<MaterialShopProfile | null>(null);
     const navigate = useNavigate();
     const provider = useMerchantAuthStore((state) => state.provider);
 
@@ -68,6 +145,7 @@ const MerchantDashboard: React.FC = () => {
                 }
                 if (profileRes.status === 'fulfilled') {
                     const profile = profileRes.value;
+                    setMaterialProfile(profile);
                     const fields = [
                         profile.shopName,
                         profile.companyName,
@@ -91,9 +169,11 @@ const MerchantDashboard: React.FC = () => {
                 return;
             }
 
-            const [statsRes, incomeRes] = await Promise.allSettled([
+            const [statsRes, incomeRes, infoRes, bookingRes] = await Promise.allSettled([
                 merchantDashboardApi.stats(),
                 merchantIncomeApi.summary(),
+                merchantAuthApi.getInfo(),
+                merchantBookingApi.list(),
             ]);
 
             if (statsRes.status === 'fulfilled') {
@@ -101,6 +181,13 @@ const MerchantDashboard: React.FC = () => {
             }
             if (incomeRes.status === 'fulfilled') {
                 setIncome(incomeRes.value);
+            }
+            if (infoRes.status === 'fulfilled') {
+                setProviderInfo(infoRes.value);
+            }
+
+            if (bookingRes.status === 'fulfilled') {
+                setBookings(bookingRes.value.list || []);
             }
 
             if (statsRes.status === 'rejected' && incomeRes.status === 'rejected') {
@@ -116,414 +203,216 @@ const MerchantDashboard: React.FC = () => {
 
     if (loading) {
         return (
-            <div
-                style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100%', minHeight: 400 }}
-                role="status"
-                aria-live="polite"
-            >
+            <div className={styles.loadingWrap} role="status" aria-live="polite">
                 <Spin size="large" />
-                <span className="sr-only">正在加载工作台数据</span>
+                <span className={styles.srOnly}>正在加载工作台数据</span>
             </div>
         );
     }
 
-    if (isMaterialShop) {
-        const withImagesCount = products.filter((item) => (item.images || []).length > 0).length;
-        const missingImagesCount = products.filter((item) => !(item.images || []).length).length;
-        const missingDescriptionCount = products.filter((item) => !String(item.description || '').trim()).length;
-        const readyProductsCount = products.filter((item) => (item.images || []).length > 0 && String(item.description || '').trim()).length;
-        const pendingImproveCount = missingImagesCount + missingDescriptionCount;
-        const remainingTargetCount = Math.max(0, 20 - products.length);
+    const materialStatusMeta = resolveDisplayStatusMeta(materialProfile, {
+        activeLabel: '营业中',
+        settingsPath: '/material-shop/settings',
+        workflowPath: '/material-shop/products',
+    });
 
-        return (
-            <MerchantPageShell>
-                <MerchantPageHeader
-                    title="主材商工作台"
-                    description="本期只聚焦工作台、商品管理与店铺设置，先把商品资料和店铺资料统一收口。"
-                    meta={(
-                        <>
-                            <Tag color="blue">主材商</Tag>
-                            <span className={styles.mutedNote}>{dayjs().format('YYYY年M月D日 · dddd')}</span>
-                        </>
-                    )}
-                    extra={(
-                        <Space>
-                            <Button icon={<PlusOutlined />} type="primary" onClick={() => navigate('/material-shop/products')}>
-                                新增商品
-                            </Button>
-                            <Button icon={<SettingOutlined />} onClick={() => navigate('/material-shop/settings')}>
-                                完善资料
-                            </Button>
-                        </Space>
-                    )}
-                />
-
-                <MerchantStatGrid
-                    items={[
-                        {
-                            label: '商品总数',
-                            value: products.length,
-                            meta: `有图 ${withImagesCount} · 可展示 ${readyProductsCount}`,
-                            percent: (products.length / 20) * 100,
-                            tone: 'blue',
-                        },
-                        {
-                            label: '待完善商品',
-                            value: pendingImproveCount,
-                            meta: '缺图或缺描述需优先补齐',
-                            percent: pendingImproveCount > 0 ? 100 : 0,
-                            tone: pendingImproveCount > 0 ? 'amber' : 'green',
-                        },
-                        {
-                            label: '已完善商品',
-                            value: readyProductsCount,
-                            meta: '有图且描述完整',
-                            percent: products.length ? (readyProductsCount / products.length) * 100 : 0,
-                            tone: readyProductsCount > 0 ? 'green' : 'slate',
-                        },
-                        {
-                            label: '资料完整度',
-                            value: `${profileCompletePercent}%`,
-                            meta: '店铺资料补全后更利于后续运营接入',
-                            percent: profileCompletePercent,
-                            tone: profileCompletePercent >= 80 ? 'blue' : 'amber',
-                        },
-                        {
-                            label: '建议上架目标',
-                            value: remainingTargetCount,
-                            meta: remainingTargetCount > 0 ? '建议先补齐到 20 个样品' : '已达到当前建议数量',
-                            percent: remainingTargetCount > 0 ? ((20 - remainingTargetCount) / 20) * 100 : 100,
-                            tone: remainingTargetCount > 0 ? 'amber' : 'green',
-                        },
-                    ]}
-                />
-
-                <MerchantContentPanel>
-                    <Card className={styles.heroCard}>
-                        <div className={styles.heroTitle}>今天优先处理什么？</div>
-                        <div className={styles.heroDescription}>
-                            先补齐商品图片与描述，再完善店铺资料。本期主材商中心不涉及售卖、订单、项目执行与资金结算，只保留资料维护与商品管理。
-                        </div>
-                    </Card>
-
-                    <MerchantSectionCard title="快捷入口">
-                        <div className={styles.actionGrid}>
-                            {[
-                                { icon: <AppstoreOutlined />, label: '商品管理', path: '/material-shop/products' },
-                                { icon: <SettingOutlined />, label: '店铺设置', path: '/material-shop/settings' },
-                            ].map((action) => (
-                                <div key={action.path} className={styles.actionButton} onClick={() => navigate(action.path)} role="button" tabIndex={0}>
-                                    <div className={styles.actionIcon}>{action.icon}</div>
-                                    <div className={styles.actionText}>{action.label}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </MerchantSectionCard>
-
-                    <div className={styles.statsGrid}>
-                        <MerchantSectionCard title="待办提醒">
-                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                <Button type="link" className={styles.inlineLinkButton} onClick={() => navigate('/material-shop/products')}>
-                                    待完善商品：{pendingImproveCount} 个
-                                </Button>
-                                <Button type="link" className={styles.inlineLinkButton} onClick={() => navigate('/material-shop/settings')}>
-                                    资料完整度：{profileCompletePercent}%
-                                </Button>
-                                <Button type="link" className={styles.inlineLinkButton} onClick={() => navigate('/material-shop/products')}>
-                                    建议上架补齐：{remainingTargetCount} 个
-                                </Button>
-                            </Space>
-                        </MerchantSectionCard>
-
-                        <MerchantSectionCard title="经营提示">
-                            <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                <div>有图商品 {withImagesCount} 个，可完整展示商品 {readyProductsCount} 个。</div>
-                                <div>当前版本不开放报价、订单、项目执行和资金结算，避免提前暴露空能力。</div>
-                                <div>通知能力暂不作为主材商中心主入口展示，优先把商品与资料维护稳定。</div>
-                            </Space>
-                        </MerchantSectionCard>
-                    </div>
-                </MerchantContentPanel>
-            </MerchantPageShell>
-        );
-    }
+    const providerStatusMeta = resolveDisplayStatusMeta(providerInfo || provider, {
+        activeLabel: '接单中',
+        settingsPath: '/settings',
+        workflowPath: '/bookings',
+    });
 
     const providerSubType = String(provider?.providerSubType || '').toLowerCase();
     const isForeman = providerSubType === 'foreman';
     const isCompany = providerSubType === 'company';
-    const roleTag = isForeman ? '工长' : isCompany ? '装修公司' : '设计师';
+    const proposalWorkflowBookings = bookings.filter(isProposalWorkflowBooking);
+    const proposalWorkflowCount = proposalWorkflowBookings.length;
+    const proposalWorkflowPath = proposalWorkflowBookings[0]
+        ? `/proposals/flow/${proposalWorkflowBookings[0].id}`
+        : '/proposals';
 
-    const dashboardTitle = isForeman
-        ? '施工履约工作台'
-        : isCompany
-            ? '企业经营工作台'
-            : '设计经营工作台';
+    const missingImagesCount = products.filter((item) => !(item.images || []).length).length;
+    const missingDescriptionCount = products.filter((item) => !String(item.description || '').trim()).length;
+    const readyProductsCount = products.filter((item) => (item.images || []).length > 0 && String(item.description || '').trim()).length;
+    const pendingImproveCount = missingImagesCount + missingDescriptionCount;
+    const remainingTargetCount = Math.max(0, 20 - products.length);
+    const governanceTier = String(stats?.governanceTier || '').trim();
+    const governanceRiskSummary = (stats?.riskFlags || []).join('、');
+    const governanceHint = compactText(
+        stats?.recommendedAction,
+        governanceRiskSummary || '当前以主链成交、履约和评价沉淀为主。',
+    );
+    const quoteErp = stats?.quoteErp || {};
+    const pendingQuoteInvitations = Number(stats?.pendingQuoteInvitations ?? quoteErp.pendingQuoteInvitations ?? 0);
+    const draftQuoteSubmissions = Number(stats?.draftQuoteSubmissions ?? quoteErp.draftQuoteSubmissions ?? 0);
+    const rejectedQuoteSubmissions = Number(stats?.rejectedQuoteSubmissions ?? quoteErp.rejectedQuoteSubmissions ?? 0);
+    const submittedToUserQuotes = Number(stats?.submittedToUserQuotes ?? quoteErp.submittedToUserQuotes ?? 0);
+    const missingPriceRequiredCount = Number(stats?.missingPriceRequiredCount ?? quoteErp.missingPriceRequiredCount ?? 0);
+    const pendingChangeOrders = Number(stats?.pendingChangeOrders ?? quoteErp.pendingChangeOrders ?? 0);
+    const pendingSettlementAmount = Number(stats?.pendingSettlementAmount ?? quoteErp.pendingSettlementAmount ?? income?.pendingSettle ?? 0);
+    const failedPayoutCount = Number(stats?.failedPayoutCount ?? quoteErp.failedPayoutCount ?? 0);
+    const pendingQuoteWorkCount = pendingQuoteInvitations + draftQuoteSubmissions + rejectedQuoteSubmissions;
 
-    const dashboardSubtitle = isForeman
-        ? '聚焦施工报价、项目履约与验收节奏，确保交付过程稳定透明。'
-        : isCompany
-            ? '聚焦线索分配、方案确认与订单推进，体现企业协同与交付能力。'
-            : '聚焦方案转化、作品展示与预约响应，持续提升设计成交效率。';
-
-    const providerStatItems: MerchantStatItem[] = isForeman
-        ? [
-            {
-                label: '待开工项目',
-                value: Number(stats?.pendingLeads || 0),
-                meta: '新分配线索',
-                percent: Number(stats?.pendingLeads || 0) > 0 ? 100 : 0,
-                tone: Number(stats?.pendingLeads || 0) > 0 ? 'amber' : 'slate',
-            },
-            {
-                label: '进行中项目',
-                value: Number(stats?.activeProjects || 0),
-                meta: '施工推进中',
-                percent: Number(stats?.activeProjects || 0) > 0 ? 100 : 0,
-                tone: Number(stats?.activeProjects || 0) > 0 ? 'blue' : 'slate',
-            },
-            {
-                label: '施工报价确认',
-                value: Number(stats?.pendingProposals || 0),
-                meta: '待确认报价/施工方案',
-                percent: Number(stats?.pendingProposals || 0) > 0 ? 100 : 0,
-                tone: Number(stats?.pendingProposals || 0) > 0 ? 'amber' : 'slate',
-            },
-            {
-                label: '待验收项目',
-                value: Number(stats?.todayBookings || 0),
-                meta: '待处理验收节奏',
-                percent: Number(stats?.todayBookings || 0) > 0 ? 100 : 0,
-                tone: Number(stats?.todayBookings || 0) > 0 ? 'amber' : 'slate',
-            },
-            {
-                label: '本月回款 / 待出款',
-                value: `¥${(income?.availableAmount || 0).toLocaleString()}`,
-                meta: `本月回款 ¥${(stats?.monthRevenue || 0).toLocaleString()}`,
-                percent: income?.totalIncome ? (income.availableAmount / income.totalIncome) * 100 : 0,
-                tone: 'green',
-            },
-        ]
-        : isCompany
-            ? [
-                {
-                    label: '待分配线索',
-                    value: Number(stats?.pendingLeads || 0),
-                    meta: '新线索待协同分配',
-                    percent: Number(stats?.pendingLeads || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.pendingLeads || 0) > 0 ? 'amber' : 'slate',
-                },
-                {
-                    label: '待确认预约',
-                    value: Number(stats?.todayBookings || 0),
-                    meta: '预约与到店安排',
-                    percent: Number(stats?.todayBookings || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.todayBookings || 0) > 0 ? 'blue' : 'slate',
-                },
-                {
-                    label: '待确认方案',
-                    value: Number(stats?.pendingProposals || 0),
-                    meta: '标准交付待推进',
-                    percent: Number(stats?.pendingProposals || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.pendingProposals || 0) > 0 ? 'amber' : 'slate',
-                },
-                {
-                    label: '进行中订单',
-                    value: Number(stats?.activeProjects || 0),
-                    meta: '企业履约推进中',
-                    percent: Number(stats?.activeProjects || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.activeProjects || 0) > 0 ? 'blue' : 'slate',
-                },
-                {
-                    label: '本月成交 / 待出款',
-                    value: `¥${(income?.availableAmount || 0).toLocaleString()}`,
-                    meta: `本月成交 ¥${(stats?.monthRevenue || 0).toLocaleString()}`,
-                    percent: income?.totalIncome ? (income.availableAmount / income.totalIncome) * 100 : 0,
-                    tone: 'green',
-                },
-            ]
-            : [
-                {
-                    label: '待响应线索',
-                    value: Number(stats?.pendingLeads || 0),
-                    meta: '新分配需求待处理',
-                    percent: Number(stats?.pendingLeads || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.pendingLeads || 0) > 0 ? 'amber' : 'slate',
-                },
-                {
-                    label: '待确认预约',
-                    value: Number(stats?.todayBookings || 0),
-                    meta: '最近新增预约',
-                    percent: Number(stats?.todayBookings || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.todayBookings || 0) > 0 ? 'blue' : 'slate',
-                },
-                {
-                    label: '待确认方案',
-                    value: Number(stats?.pendingProposals || 0),
-                    meta: '设计方案转化中',
-                    percent: Number(stats?.pendingProposals || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.pendingProposals || 0) > 0 ? 'amber' : 'slate',
-                },
-                {
-                    label: '进行中项目',
-                    value: Number(stats?.activeProjects || 0),
-                    meta: '当前项目履约进度',
-                    percent: Number(stats?.activeProjects || 0) > 0 ? 100 : 0,
-                    tone: Number(stats?.activeProjects || 0) > 0 ? 'blue' : 'slate',
-                },
-                {
-                    label: '本月收入 / 待出款',
-                    value: `¥${(income?.availableAmount || 0).toLocaleString()}`,
-                    meta: `本月收入 ¥${(stats?.monthRevenue || 0).toLocaleString()}`,
-                    percent: income?.totalIncome ? (income.availableAmount / income.totalIncome) * 100 : 0,
-                    tone: 'green',
-                },
-            ];
-
-    const quickActions = isForeman
-        ? [
-            { icon: <NotificationOutlined />, label: '施工线索', path: '/leads' },
-            { icon: <PictureOutlined />, label: '施工案例管理', path: '/cases' },
-            { icon: <DollarOutlined />, label: '工长价格库', path: '/price-book' },
-            { icon: <BankOutlined />, label: '结算中心', path: '/income' },
-            { icon: <SettingOutlined />, label: '施工设置', path: '/settings' },
-        ]
-        : isCompany
-            ? [
-                { icon: <NotificationOutlined />, label: '线索分配', path: '/leads' },
-                { icon: <FileTextOutlined />, label: '方案协同', path: '/proposals' },
-                { icon: <PictureOutlined />, label: '公司案例', path: '/cases' },
-                { icon: <BankOutlined />, label: '结算中心', path: '/income' },
-                { icon: <SettingOutlined />, label: '企业设置', path: '/settings' },
-            ]
-            : [
-                { icon: <NotificationOutlined />, label: '线索管理', path: '/leads' },
-                { icon: <PictureOutlined />, label: '作品集管理', path: '/cases' },
-                { icon: <DollarOutlined />, label: '结算中心', path: '/income' },
-                { icon: <BankOutlined />, label: '银行账户', path: '/bank-accounts' },
-                { icon: <SettingOutlined />, label: '账户设置', path: '/settings' },
-            ];
-
-    const providerTodos = isForeman
-        ? [
-            { label: '待开工项目', value: Number(stats?.pendingLeads || 0), path: '/leads' },
-            { label: '施工报价确认', value: Number(stats?.pendingProposals || 0), path: '/proposals' },
-            { label: '待验收项目', value: Number(stats?.todayBookings || 0), path: '/projects' },
-        ]
-        : isCompany
-            ? [
-                { label: '待分配线索', value: Number(stats?.pendingLeads || 0), path: '/leads' },
-                { label: '待确认预约', value: Number(stats?.todayBookings || 0), path: '/bookings' },
-                { label: '待确认方案', value: Number(stats?.pendingProposals || 0), path: '/proposals' },
-            ]
-            : [
-                { label: '待响应线索', value: Number(stats?.pendingLeads || 0), path: '/leads' },
-                { label: '待确认预约', value: Number(stats?.todayBookings || 0), path: '/bookings' },
-                { label: '待确认方案', value: Number(stats?.pendingProposals || 0), path: '/proposals' },
-            ];
-
-    const providerTips = isForeman
-        ? [
-            '优先确认施工报价与开工节奏，避免施工排期断档。',
-            '项目执行页已纳入节点与验收闭环，施工日志要持续补齐。',
-            '工长价格库与施工案例应保持同步更新，避免承接信息失真。',
-        ]
-        : isCompany
-            ? [
-                '优先处理待分配线索和待确认预约，避免企业协同断点。',
-                '公司案例与品牌介绍应持续更新，突出团队与交付能力。',
-                '方案与订单节奏统一从工作台推进，减少多页面来回切换。',
-            ]
-            : [
-                '优先跟进高意向线索和预约，减少设计转化等待时间。',
-                '作品集与服务介绍需要保持更新，避免展示信息滞后。',
-                '方案确认和项目推进统一回到工作台，不再依赖分散入口。',
-            ];
+    const dashboardModel: DashboardModel = isMaterialShop
+        ? {
+            roleTag: '主材商',
+            title: '店铺概览',
+            statusLabel: materialStatusMeta.label,
+            statusTone: materialStatusMeta.tone,
+            statusHelper: compactText(materialStatusMeta.helperText, '当前可继续维护商品与店铺资料。'),
+            metrics: [
+                { label: '商品总数', value: products.length, note: '建议控制在 20 个以内', tone: 'accent' },
+                { label: '可展示商品', value: readyProductsCount, note: '图文齐全', tone: readyProductsCount > 0 ? 'success' : 'neutral' },
+                { label: '待完善商品', value: pendingImproveCount, note: '缺图或缺描述', tone: pendingImproveCount > 0 ? 'warning' : 'neutral' },
+                { label: '资料完整度', value: `${profileCompletePercent}%`, note: '店铺基础资料', tone: profileCompletePercent >= 80 ? 'success' : 'warning' },
+            ],
+            tasks: [
+                { label: '待完善商品', value: pendingImproveCount, hint: '先补图片和描述', path: '/material-shop/products', actionLabel: '去处理' },
+                { label: '资料完整度', value: `${profileCompletePercent}%`, hint: '资料尽量补齐', path: '/material-shop/settings', actionLabel: '去完善' },
+                { label: '建议补齐商品', value: remainingTargetCount, hint: '补到合理陈列规模', path: '/material-shop/products', actionLabel: '去添加' },
+            ],
+            secondaryActions: [
+                { icon: <WalletOutlined />, label: '财务中心', hint: `可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', emphasis: true },
+                { icon: <AppstoreOutlined />, label: '商品列表', hint: `当前 ${products.length} 个商品`, path: '/material-shop/products' },
+            ],
+        }
+        : {
+            roleTag: isForeman ? '工长 · 报价经营' : isCompany ? '装修公司' : '设计师',
+            title: isForeman ? '报价经营工作台' : '今日重点',
+            subtitle: governanceTier ? `当前治理分层：${governanceTier}` : undefined,
+            statusLabel: providerStatusMeta.label,
+            statusTone: providerStatusMeta.tone,
+            statusHelper: compactText(
+                providerStatusMeta.helperText || governanceHint,
+                isForeman ? '先处理施工报价，再推进项目履约、变更与结算。' : '当前可继续推进主链路。',
+            ),
+            metrics: isForeman
+                ? [
+                    { label: '待处理施工报价', value: pendingQuoteWorkCount, note: `待接单 ${pendingQuoteInvitations} · 草稿 ${draftQuoteSubmissions} · 驳回 ${rejectedQuoteSubmissions}`, tone: pendingQuoteWorkCount > 0 ? 'warning' : 'neutral' },
+                    { label: '项目履约中', value: Number(stats?.activeProjects || 0), note: '施工、变更与验收推进', tone: Number(stats?.activeProjects || 0) > 0 ? 'accent' : 'neutral' },
+                    { label: '待结算金额', value: formatCurrency(pendingSettlementAmount), note: failedPayoutCount > 0 ? `含 ${failedPayoutCount} 笔出款异常` : '待排期或待结算', tone: pendingSettlementAmount > 0 || failedPayoutCount > 0 ? 'warning' : 'neutral' },
+                    { label: '可提现金额', value: formatCurrency(income?.availableAmount || 0), note: '可进入出款流程', tone: Number(income?.availableAmount || 0) > 0 ? 'success' : 'neutral' },
+                    { label: '治理分层', value: governanceTier || '待同步', note: governanceHint, tone: governanceTier === '风险观察期' ? 'warning' : 'success' },
+                ]
+                : [
+                    { label: isCompany ? '待推进线索' : '待响应线索', value: Number(stats?.pendingLeads || 0), note: '先判断是否接手', tone: Number(stats?.pendingLeads || 0) > 0 ? 'warning' : 'neutral' },
+                    { label: '方案流程待推进', value: proposalWorkflowCount, note: '量房、沟通、报价、交付链路', tone: proposalWorkflowCount > 0 ? 'accent' : 'neutral' },
+                    { label: '待确认方案', value: Number(stats?.pendingProposals || 0), note: '用户确认中的方案', tone: Number(stats?.pendingProposals || 0) > 0 ? 'warning' : 'neutral' },
+                    { label: '已进履约', value: Number(stats?.activeProjects || 0), note: '只看待开工 / 开工中 / 已完工项目', tone: Number(stats?.activeProjects || 0) > 0 ? 'success' : 'neutral' },
+                    { label: '治理分层', value: governanceTier || '待同步', note: governanceHint, tone: governanceTier === '风险观察期' ? 'warning' : 'success' },
+                ],
+            tasks: isForeman
+                ? [
+                    { label: '施工报价清单', value: pendingQuoteWorkCount, hint: `用户确认中 ${submittedToUserQuotes} 单，驳回待重提 ${rejectedQuoteSubmissions} 单`, path: '/quote-lists', actionLabel: '去处理' },
+                    { label: '价格库维护', value: missingPriceRequiredCount > 0 ? `${missingPriceRequiredCount} 项缺价` : '立即检查', hint: '补齐单价、最低起收和适用范围，避免报价草稿缺价', path: '/price-book', actionLabel: '去维护' },
+                    { label: '项目履约 / 变更', value: pendingChangeOrders > 0 ? `${pendingChangeOrders} 个变更待处理` : Number(stats?.activeProjects || 0), hint: '进入执行中的项目处理变更、验收和异常', path: '/projects', actionLabel: '去查看' },
+                    { label: '结算与出款', value: formatCurrency(pendingSettlementAmount), hint: `待结算 ${formatCurrency(pendingSettlementAmount)}，可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', actionLabel: '去处理' },
+                ]
+                : [
+                    { label: isCompany ? '待推进线索' : '待响应线索', value: Number(stats?.pendingLeads || 0), hint: '先看新进入的机会', path: '/bookings', actionLabel: '去处理' },
+                    { label: '方案流程待推进', value: proposalWorkflowCount, hint: '继续推进量房、沟通、报价或交付', path: proposalWorkflowPath, actionLabel: '去推进' },
+                    { label: '待确认方案', value: Number(stats?.pendingProposals || 0), hint: '查看等待用户确认的方案', path: '/proposals', actionLabel: '去查看' },
+                    { label: '平台建议', value: governanceTier || '待同步', hint: governanceHint, path: '/settings', actionLabel: '去查看' },
+                ],
+            secondaryActions: [
+                { icon: <WalletOutlined />, label: isForeman ? '结算与出款' : '财务中心', hint: isForeman ? `待结算 ${formatCurrency(pendingSettlementAmount)} · 可提现 ${formatCurrency(income?.availableAmount || 0)}` : `可提现 ${formatCurrency(income?.availableAmount || 0)}`, path: '/income', emphasis: true },
+                isForeman
+                    ? { icon: <AppstoreOutlined />, label: '价格库', hint: '维护报价经营所需的单价和适用范围', path: '/price-book' }
+                    : { icon: <AppstoreOutlined />, label: '内容资产', hint: isForeman ? '工艺与案例内容' : '案例与作品管理', path: '/cases' },
+                { icon: <SettingOutlined />, label: '资料设置', hint: '维护对外资料', path: '/settings' },
+            ],
+        };
 
     return (
-        <MerchantPageShell>
-            <MerchantPageHeader
-                title={dashboardTitle}
-                description={dashboardSubtitle}
-                meta={(
-                    <>
-                        <Tag color="blue">{roleTag}</Tag>
-                        <span className={styles.mutedNote}>{dayjs().format('YYYY年M月D日 · dddd')}</span>
-                    </>
-                )}
-                extra={(
-                    <Space>
-                        {isForeman ? (
-                            <Button icon={<DollarOutlined />} onClick={() => navigate('/price-book')}>
-                                工长价格库
-                            </Button>
-                        ) : (
-                            <Button icon={<FileTextOutlined />} onClick={() => navigate('/proposals')}>
-                                {isCompany ? '方案协同' : '方案管理'}
-                            </Button>
-                        )}
-                        <Button
-                            type="primary"
-                            icon={<ProjectOutlined />}
-                            onClick={() => navigate(isForeman ? '/projects' : '/bookings')}
-                        >
-                            {isForeman ? '进入项目执行' : '查看预约进度'}
-                        </Button>
-                    </Space>
-                )}
-            />
-
-            <MerchantStatGrid items={providerStatItems} />
-
-            <MerchantContentPanel>
-                <Card className={styles.heroCard}>
-                    <div className={styles.heroTitle}>今天优先处理什么？</div>
-                    <div className={styles.heroDescription}>
-                        {isForeman
-                            ? `先跟进待开工项目与施工报价，再推进项目执行和验收。当前进行中项目 ${Number(stats?.activeProjects || 0)} 个。`
-                            : isCompany
-                                ? `先处理待分配线索、待确认预约与方案，再从预约推进到项目执行。当前进行中项目 ${Number(stats?.activeProjects || 0)} 个。`
-                                : `先处理高意向线索、预约和待确认方案，再补齐作品展示与服务资料。当前进行中项目 ${Number(stats?.activeProjects || 0)} 个。`}
-                    </div>
-                </Card>
-
-                <MerchantSectionCard title="快捷入口">
-                    <div className={styles.actionGrid}>
-                        {quickActions.map((action) => (
-                            <div key={action.path} className={styles.actionButton} onClick={() => navigate(action.path)} role="button" tabIndex={0}>
-                                <div className={styles.actionIcon}>{action.icon}</div>
-                                <div className={styles.actionText}>{action.label}</div>
+        <MerchantPageShell className={styles.shell}>
+            <div className={styles.page}>
+                <section className={styles.heroPanel}>
+                    <div className={styles.heroTopRow}>
+                        <div className={styles.heroMain}>
+                            <div className={styles.heroMetaRow}>
+                                <span className={styles.roleBadge}>{dashboardModel.roleTag}</span>
+                                <span className={styles.dateText}>{dayjs().format('YYYY年M月D日')}</span>
                             </div>
+                            <h1 className={styles.heroTitle}>{dashboardModel.title}</h1>
+                            {dashboardModel.subtitle ? (
+                                <p className={styles.heroSubtitle}>{dashboardModel.subtitle}</p>
+                            ) : null}
+                        </div>
+
+                        <div className={styles.heroAside}>
+                            <div className={styles.heroStatusCard} data-tone={dashboardModel.statusTone}>
+                                <span className={styles.heroStatusLabel}>{isMaterialShop ? '营业状态' : '接单状态'}</span>
+                                <strong className={styles.heroStatusValue}>{dashboardModel.statusLabel}</strong>
+                                <p className={styles.heroStatusText}>{dashboardModel.statusHelper}</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className={styles.metricGrid}>
+                        {dashboardModel.metrics.map((item) => (
+                            <article key={item.label} className={styles.metricCard} data-tone={item.tone || 'neutral'}>
+                                <span className={styles.metricLabel}>{item.label}</span>
+                                <strong className={styles.metricValue}>{renderMetricValue(item.value)}</strong>
+                                <span className={styles.metricNote}>{item.note}</span>
+                            </article>
                         ))}
                     </div>
-                </MerchantSectionCard>
+                </section>
 
-                <div className={styles.statsGrid}>
-                    <MerchantSectionCard title="待办提醒">
-                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                            {providerTodos.map((item) => (
-                                <Button key={item.label} type="link" className={styles.inlineLinkButton} onClick={() => navigate(item.path)}>
-                                    {item.label}：{item.value}
-                                </Button>
-                            ))}
-                        </Space>
-                    </MerchantSectionCard>
+                <section className={styles.panel}>
+                    <div className={styles.panelHead}>
+                        <div>
+                            <h2>当前优先</h2>
+                        </div>
+                    </div>
 
-                    <MerchantSectionCard title="经营提示">
-                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                            {providerTips.map((item) => (
-                                <div key={item}>{item}</div>
-                            ))}
-                        </Space>
-                    </MerchantSectionCard>
+                    <div className={styles.taskList}>
+                        {dashboardModel.tasks.map((item) => (
+                            <button
+                                key={item.label}
+                                type="button"
+                                className={styles.taskRow}
+                                onClick={() => navigate(item.path)}
+                            >
+                                <div className={styles.taskMain}>
+                                    <span className={styles.taskLabel}>{item.label}</span>
+                                    <span className={styles.taskHint}>{item.hint}</span>
+                                </div>
+                                <div className={styles.taskAside}>
+                                    <strong className={styles.taskValue}>{renderMetricValue(item.value)}</strong>
+                                    <span className={styles.taskAction}>{item.actionLabel || '去查看'}</span>
+                                </div>
+                            </button>
+                        ))}
+                    </div>
+                </section>
 
-                    <MerchantSectionCard title="资金动作">
-                        <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                            <Button type="primary" onClick={() => navigate('/income')}>查看结算/出款状态</Button>
-                            <Button onClick={() => navigate('/bank-accounts')}>管理银行卡</Button>
-                        </Space>
-                    </MerchantSectionCard>
-                </div>
-            </MerchantContentPanel>
+                <section className={styles.panel}>
+                    <div className={styles.panelHead}>
+                        <div>
+                            <h2>更多入口</h2>
+                        </div>
+                    </div>
+
+                    <div className={styles.entryGrid}>
+                        {dashboardModel.secondaryActions.map((action) => (
+                            <button
+                                key={action.path}
+                                type="button"
+                                className={styles.secondaryAction}
+                                data-emphasis={action.emphasis ? 'true' : 'false'}
+                                onClick={() => navigate(action.path)}
+                            >
+                                <span className={styles.secondaryIcon}>{action.icon}</span>
+                                <span className={styles.secondaryCopy}>
+                                    <strong>{action.label}</strong>
+                                    <span>{action.hint}</span>
+                                </span>
+                            </button>
+                        ))}
+                    </div>
+                </section>
+            </div>
         </MerchantPageShell>
     );
 };

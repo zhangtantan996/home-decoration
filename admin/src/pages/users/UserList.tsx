@@ -30,19 +30,11 @@ import ToolbarCard from "../../components/ToolbarCard";
 import StatusTag from "../../components/StatusTag";
 import { useAuthStore } from "../../stores/authStore";
 import { formatServerDateTime } from "../../utils/serverTime";
+import { readSafeErrorMessage } from "../../utils/userFacingText";
 
 interface User extends AdminUserListItem {}
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-  if (error && typeof error === "object") {
-    const candidate = error as {
-      response?: { data?: { message?: string } };
-      message?: string;
-    };
-    return candidate.response?.data?.message || candidate.message || fallback;
-  }
-  return fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const userRoleMap: Record<string, { text: string; color: string }> = {
   owner: { text: "业主", color: "blue" },

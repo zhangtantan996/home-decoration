@@ -6,5 +6,6 @@ cd "$ROOT_DIR"
 
 node ./scripts/testing/run_command_suite.mjs \
   --suite verify-mini \
+  --step "frontend-style-mini::npm run check:frontend-style:mini" \
   --step "mini-lint::cd mini && npm run lint" \
   --step "mini-build-weapp::cd mini && npm run build:weapp"

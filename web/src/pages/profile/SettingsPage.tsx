@@ -118,7 +118,9 @@ function resolveVerificationStatusMeta(status?: number) {
 
 function resolveCodeHint(result: SendCodeResponse) {
   if (result.debugCode) {
-    return `开发环境验证码：${result.debugCode}`;
+    if (import.meta.env.DEV) {
+      console.debug(`[DEV] 验证码: ${result.debugCode}`);
+    }
   }
   return '验证码已发送，请留意短信。';
 }

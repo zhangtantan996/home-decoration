@@ -1,10 +1,12 @@
 package service
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -13,7 +15,8 @@ import (
 func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 
-	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+	dsn := fmt.Sprintf("file:project-service-%d?mode=memory&cache=shared", time.Now().UnixNano())
+	db, err := gorm.Open(gormsqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
@@ -21,6 +24,7 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(withPaymentCentralTestModels(
 		&model.User{},
 		&model.Provider{},
+		&model.SysAdmin{},
 		&model.Notification{},
 		&model.AuditLog{},
 		&model.SystemConfig{},
@@ -40,7 +44,20 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 	)...); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
-	bindRepositorySQLiteTestDB(t, db)
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	sqlDB.SetMaxOpenConns(4)
+	sqlDB.SetMaxIdleConns(4)
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+		_ = sqlDB.Close()
+	})
 
 	return db
 }
@@ -80,9 +97,14 @@ func TestProjectServiceCreateWorkLog(t *testing.T) {
 	if err := db.Create(&project).Error; err != nil {
 		t.Fatalf("create project: %v", err)
 	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 91}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "in_progress"}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
 
 	svc := &ProjectService{}
 	if err := svc.CreateWorkLog(project.ID, 2, &CreateWorkLogRequest{
+		PhaseID:     phase.ID,
 		Title:       "施工日志",
 		Description: "日志描述",
 	}); err != nil {
@@ -108,9 +130,17 @@ func TestProjectServiceConstructionClosureFlow(t *testing.T) {
 	if err := db.Create(&user).Error; err != nil {
 		t.Fatalf("create user: %v", err)
 	}
+	constructionProviderUser := model.User{Base: model.Base{ID: 8}, Phone: "13800138008", Status: 1}
+	if err := db.Create(&constructionProviderUser).Error; err != nil {
+		t.Fatalf("create construction provider user: %v", err)
+	}
+	admin := model.SysAdmin{ID: 9, Username: "admin", Password: "pwd", Nickname: "管理员", Status: 1}
+	if err := db.Create(&admin).Error; err != nil {
+		t.Fatalf("create admin: %v", err)
+	}
 
 	designProvider := model.Provider{Base: model.Base{ID: 77}, ProviderType: 1, CompanyName: "设计师"}
-	constructionProvider := model.Provider{Base: model.Base{ID: 88}, ProviderType: 2, CompanyName: "施工公司"}
+	constructionProvider := model.Provider{Base: model.Base{ID: 88}, UserID: constructionProviderUser.ID, ProviderType: 2, CompanyName: "施工公司"}
 	foreman := model.Provider{Base: model.Base{ID: 89}, ProviderType: 3, CompanyName: "张工长"}
 	for _, provider := range []model.Provider{designProvider, constructionProvider, foreman} {
 		if err := db.Create(&provider).Error; err != nil {
@@ -188,6 +218,28 @@ func TestProjectServiceConstructionClosureFlow(t *testing.T) {
 	}
 	if quotedMilestones[0].Amount != 15000 || quotedMilestones[1].Amount != 15000 {
 		t.Fatalf("expected milestone amounts recalculated to 15000, got %+v", quotedMilestones)
+	}
+	var providerNotification model.Notification
+	if err := db.Where("user_id = ? AND user_type = ? AND type = ?", constructionProviderUser.ID, "provider", "quote.awarded").
+		Order("id DESC").
+		First(&providerNotification).Error; err != nil {
+		t.Fatalf("expected canonical quote.awarded notification for provider: %v", err)
+	}
+	if providerNotification.ActionURL != fmt.Sprintf("/projects/%d", project.ID) {
+		t.Fatalf("expected provider quote-awarded notification to jump project detail, got %s", providerNotification.ActionURL)
+	}
+	var adminNotification model.Notification
+	if err := db.Where("user_id = ? AND user_type = ? AND type = ?", admin.ID, "admin", "quote.awarded").
+		Order("id DESC").
+		First(&adminNotification).Error; err != nil {
+		t.Fatalf("expected canonical quote.awarded notification for admin: %v", err)
+	}
+	var legacyNotificationCount int64
+	if err := db.Model(&model.Notification{}).Where("type = ?", "project.construction_quote.confirmed").Count(&legacyNotificationCount).Error; err != nil {
+		t.Fatalf("count legacy quote-confirmed notifications: %v", err)
+	}
+	if legacyNotificationCount != 0 {
+		t.Fatalf("expected legacy project.construction_quote.confirmed notifications to be removed, got %d", legacyNotificationCount)
 	}
 
 	startedProject, err := svc.StartProject(project.ID, user.ID, &StartProjectRequest{StartDate: "2026-03-18"})
@@ -495,7 +547,7 @@ func TestProjectServiceGetProjectDetailIncludesDesignerProfile(t *testing.T) {
 		Name:                   "团队展示项目",
 		Address:                "测试地址 707",
 		Status:                 model.ProjectStatusActive,
-		CurrentPhase:           "待开工",
+		CurrentPhase:           "待监理协调开工",
 		BusinessStatus:         model.ProjectBusinessStatusConstructionQuoteConfirmed,
 	}
 	if err := db.Create(&project).Error; err != nil {
@@ -506,8 +558,8 @@ func TestProjectServiceGetProjectDetailIncludesDesignerProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProjectDetail: %v", err)
 	}
-	if detail.ProviderName != "施工经理" {
-		t.Fatalf("expected current provider name from construction provider, got %q", detail.ProviderName)
+	if detail.ProviderName != "施工公司C" {
+		t.Fatalf("expected construction provider display name, got %q", detail.ProviderName)
 	}
 	if detail.DesignerName != "设计师李" {
 		t.Fatalf("expected designer name, got %q", detail.DesignerName)
@@ -536,7 +588,7 @@ func TestProjectServiceListMerchantProjects(t *testing.T) {
 		Name:           "项目执行列表测试",
 		Address:        "测试地址",
 		Status:         model.ProjectStatusActive,
-		CurrentPhase:   "待开工",
+		CurrentPhase:   "待监理协调开工",
 		BusinessStatus: model.ProjectBusinessStatusConstructionQuoteConfirmed,
 	}
 	if err := db.Create(&project).Error; err != nil {

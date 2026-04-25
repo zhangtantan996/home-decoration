@@ -1,0 +1,422 @@
+.shell {
+  width: 100%;
+  max-width: none !important;
+  margin: 0 !important;
+}
+
+.page {
+  width: 100%;
+  display: grid;
+  gap: 16px;
+}
+
+.pageHeader {
+  display: grid;
+  gap: 8px;
+}
+
+.backButton {
+  padding: 0 !important;
+  width: fit-content;
+  height: auto !important;
+}
+
+.pageTitle {
+  margin: 0;
+  color: #0f172a;
+  font-size: 30px;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.overviewCard,
+.sectionCard {
+  border-radius: 24px;
+  border: 1px solid #dce5ef;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.overviewCard :global(.ant-card-body) {
+  padding: 22px 24px;
+}
+
+.sectionCard :global(.ant-card-head) {
+  min-height: auto;
+  padding: 18px 20px 0;
+  border-bottom: none;
+}
+
+.sectionCard :global(.ant-card-head-title),
+.sectionCard :global(.ant-card-extra) {
+  padding: 0;
+}
+
+.sectionCard :global(.ant-card-body) {
+  padding: 18px 20px 20px;
+}
+
+.overviewBody {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: start;
+}
+
+.identityBlock {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.avatar {
+  flex-shrink: 0;
+  border: 2px solid #ffffff;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.1);
+}
+
+.identityMeta {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.identityName {
+  margin: 0;
+  color: #0f172a;
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+}
+
+.tagRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.summaryRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.summaryChip {
+  min-width: 148px;
+  padding: 10px 12px;
+  border: 1px solid #e5edf6;
+  border-radius: 16px;
+  background: #f8fbff;
+}
+
+.summaryChipLabel {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.summaryChipValue {
+  margin-top: 4px;
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.statusBlock {
+  min-width: 280px;
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.statusLabel {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.statusRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.statusValue {
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.statusHint {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.contentGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 380px;
+  gap: 16px;
+  align-items: start;
+}
+
+.mainColumn,
+.sideColumn {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  align-content: start;
+}
+
+.sectionTitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.sectionTitleIcon {
+  color: #2563eb;
+}
+
+.sectionButton {
+  border-radius: 12px !important;
+}
+
+.infoBody {
+  display: grid;
+  gap: 16px;
+}
+
+.infoGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px 24px;
+}
+
+.infoItem {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.infoLabel {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.infoValue {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.65;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.singleLineValue {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.infoDivider {
+  border-top: 1px solid #edf2f7;
+}
+
+.albumBlock {
+  display: grid;
+  gap: 10px;
+}
+
+.albumGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 12px;
+}
+
+.albumItem {
+  border-radius: 16px;
+  overflow: hidden;
+  border: 1px solid #e4ecf5;
+  aspect-ratio: 4 / 3;
+  background: #f1f5f9;
+}
+
+.albumItem img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.priceList,
+.settingList {
+  display: grid;
+  gap: 12px;
+}
+
+.priceItem,
+.settingItem {
+  border-radius: 18px;
+  border: 1px solid #e5edf6;
+  background: #fbfdff;
+  padding: 14px 16px;
+}
+
+.priceLabel,
+.settingLabel {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.priceValue {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.settingValue {
+  margin-top: 6px;
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.emptyState {
+  border-radius: 18px;
+  border: 1px dashed #d8e5f3;
+  background: #fbfdff;
+  padding: 18px 16px;
+  display: grid;
+  gap: 6px;
+}
+
+.emptyTitle {
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.emptyText {
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.editorScroll {
+  max-height: 72vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.editorStack {
+  display: grid;
+  gap: 14px;
+}
+
+.editorGroup {
+  border-radius: 20px;
+  border: 1px solid #e5edf6;
+  background: #fbfdff;
+  padding: 18px;
+}
+
+.editorGroupTitle {
+  margin-bottom: 14px;
+  color: #2563eb;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.avatarEditorRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.avatarEditorMeta {
+  display: grid;
+  gap: 8px;
+}
+
+.avatarEditorHint {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1200px) {
+  .overviewBody,
+  .contentGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .statusBlock {
+    justify-items: start;
+  }
+
+  .statusRow {
+    justify-content: flex-start;
+  }
+
+  .statusHint {
+    text-align: left;
+  }
+}
+
+@media (max-width: 900px) {
+  .infoGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .overviewCard :global(.ant-card-body) {
+    padding: 18px;
+  }
+
+  .sectionCard :global(.ant-card-head) {
+    padding: 16px 18px 0;
+  }
+
+  .sectionCard :global(.ant-card-body) {
+    padding: 16px 18px 18px;
+  }
+}
+
+@media (max-width: 640px) {
+  .identityBlock {
+    flex-direction: column;
+  }
+
+  .identityName {
+    font-size: 26px;
+  }
+
+  .pageTitle {
+    font-size: 26px;
+  }
+
+  .summaryChip {
+    min-width: calc(50% - 5px);
+  }
+}

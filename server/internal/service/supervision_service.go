@@ -21,6 +21,7 @@ type SupervisionProjectListQuery struct {
 	PageSize       int
 	Keyword        string
 	PhaseStatus    string
+	BusinessStage  string
 	HasPendingRisk *bool
 }
 
@@ -30,23 +31,34 @@ type SupervisionProjectListItem struct {
 	Address            string     `json:"address"`
 	OwnerName          string     `json:"ownerName"`
 	ProviderName       string     `json:"providerName"`
+	BusinessStage      string     `json:"businessStage,omitempty"`
+	KickoffStatus      string     `json:"kickoffStatus,omitempty"`
+	PlannedStartDate   *time.Time `json:"plannedStartDate,omitempty"`
+	CurrentResponsible string     `json:"currentResponsible,omitempty"`
 	CurrentPhase       string     `json:"currentPhase"`
 	CurrentPhaseStatus string     `json:"currentPhaseStatus"`
 	LastLogAt          *time.Time `json:"lastLogAt,omitempty"`
+	LatestLogTitle     string     `json:"latestLogTitle,omitempty"`
 	UnhandledRiskCount int64      `json:"unhandledRiskCount"`
 }
 
 type SupervisionProjectWorkspace struct {
-	ProjectID          uint64              `json:"projectId"`
-	Name               string              `json:"name"`
-	Address            string              `json:"address"`
-	OwnerName          string              `json:"ownerName"`
-	ProviderName       string              `json:"providerName"`
-	CurrentPhase       string              `json:"currentPhase"`
-	CurrentPhaseStatus string              `json:"currentPhaseStatus"`
-	LastInspectionAt   *time.Time          `json:"lastInspectionAt,omitempty"`
-	UnhandledRiskCount int64               `json:"unhandledRiskCount"`
-	RiskWarnings       []model.RiskWarning `json:"riskWarnings"`
+	ProjectID          uint64                   `json:"projectId"`
+	Name               string                   `json:"name"`
+	Address            string                   `json:"address"`
+	OwnerName          string                   `json:"ownerName"`
+	ProviderName       string                   `json:"providerName"`
+	BusinessStage      string                   `json:"businessStage,omitempty"`
+	KickoffStatus      string                   `json:"kickoffStatus,omitempty"`
+	PlannedStartDate   *time.Time               `json:"plannedStartDate,omitempty"`
+	CurrentResponsible string                   `json:"currentResponsible,omitempty"`
+	CurrentPhase       string                   `json:"currentPhase"`
+	CurrentPhaseStatus string                   `json:"currentPhaseStatus"`
+	LastInspectionAt   *time.Time               `json:"lastInspectionAt,omitempty"`
+	LatestLogTitle     string                   `json:"latestLogTitle,omitempty"`
+	UnhandledRiskCount int64                    `json:"unhandledRiskCount"`
+	SupervisorSummary  *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
+	RiskWarnings       []model.RiskWarning      `json:"riskWarnings"`
 }
 
 type CreateSupervisionRiskWarningInput struct {
@@ -65,6 +77,7 @@ func (s *SupervisionService) ListProjects(query *SupervisionProjectListQuery) ([
 	pageSize := 20
 	keyword := ""
 	phaseStatus := ""
+	businessStage := ""
 	var hasPendingRisk *bool
 	if query != nil {
 		if query.Page > 0 {
@@ -75,6 +88,7 @@ func (s *SupervisionService) ListProjects(query *SupervisionProjectListQuery) ([
 		}
 		keyword = strings.ToLower(strings.TrimSpace(query.Keyword))
 		phaseStatus = strings.ToLower(strings.TrimSpace(query.PhaseStatus))
+		businessStage = strings.ToLower(strings.TrimSpace(query.BusinessStage))
 		hasPendingRisk = query.HasPendingRisk
 	}
 
@@ -94,6 +108,9 @@ func (s *SupervisionService) ListProjects(query *SupervisionProjectListQuery) ([
 			continue
 		}
 		if phaseStatus != "" && strings.ToLower(strings.TrimSpace(item.CurrentPhaseStatus)) != phaseStatus {
+			continue
+		}
+		if businessStage != "" && strings.ToLower(strings.TrimSpace(item.BusinessStage)) != businessStage {
 			continue
 		}
 		if hasPendingRisk != nil {
@@ -144,6 +161,15 @@ func (s *SupervisionService) GetProjectWorkspace(projectID uint64) (*Supervision
 	if err != nil {
 		return nil, err
 	}
+	bridgeSummary := BuildBridgeReadModelByProject(&detail.Project)
+	currentResponsible := ""
+	if currentPhase != nil {
+		currentResponsible = strings.TrimSpace(currentPhase.ResponsiblePerson)
+	}
+	latestLogTitle := ""
+	if bridgeSummary.SupervisorSummary != nil {
+		latestLogTitle = bridgeSummary.SupervisorSummary.LatestLogTitle
+	}
 
 	return &SupervisionProjectWorkspace{
 		ProjectID:          detail.ID,
@@ -151,10 +177,16 @@ func (s *SupervisionService) GetProjectWorkspace(projectID uint64) (*Supervision
 		Address:            detail.Address,
 		OwnerName:          detail.OwnerName,
 		ProviderName:       detail.ProviderName,
+		BusinessStage:      detail.BusinessStage,
+		KickoffStatus:      bridgeSummary.KickoffStatus,
+		PlannedStartDate:   bridgeSummary.PlannedStartDate,
+		CurrentResponsible: currentResponsible,
 		CurrentPhase:       resolvePhaseName(currentPhase),
 		CurrentPhaseStatus: resolvePhaseStatus(currentPhase),
 		LastInspectionAt:   lastLogAt,
+		LatestLogTitle:     latestLogTitle,
 		UnhandledRiskCount: riskCount,
+		SupervisorSummary:  bridgeSummary.SupervisorSummary,
 		RiskWarnings:       riskWarnings,
 	}, nil
 }
@@ -266,6 +298,7 @@ func (s *SupervisionService) CreateRiskWarning(projectID uint64, input *CreateSu
 	if err := repository.DB.Create(warning).Error; err != nil {
 		return nil, err
 	}
+	NewNotificationDispatcher().NotifySupervisionRiskEscalated(projectID, providerUserIDFromProvider(project.ProviderID), warning.Type)
 	return warning, nil
 }
 
@@ -299,9 +332,22 @@ func (s *SupervisionService) buildProjectListItem(project *model.Project) (Super
 	if err != nil {
 		return item, err
 	}
+	var milestones []model.Milestone
+	_ = repository.DB.Where("project_id = ?", project.ID).Order("seq ASC").Find(&milestones).Error
+	flowSummary := s.projectService.resolveProjectFlowSummary(project, milestones)
 	currentPhase := pickCurrentProjectPhase(phases)
+	bridgeSummary := BuildBridgeReadModelByProject(project)
 	item.CurrentPhase = resolvePhaseName(currentPhase)
 	item.CurrentPhaseStatus = resolvePhaseStatus(currentPhase)
+	item.BusinessStage = flowSummary.CurrentStage
+	item.KickoffStatus = bridgeSummary.KickoffStatus
+	item.PlannedStartDate = bridgeSummary.PlannedStartDate
+	if currentPhase != nil {
+		item.CurrentResponsible = strings.TrimSpace(currentPhase.ResponsiblePerson)
+	}
+	if bridgeSummary.SupervisorSummary != nil {
+		item.LatestLogTitle = bridgeSummary.SupervisorSummary.LatestLogTitle
+	}
 
 	lastLogAt, err := getProjectLastLogTime(project.ID)
 	if err != nil {

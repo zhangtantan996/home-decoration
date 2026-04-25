@@ -4,6 +4,7 @@ import { EyeOutlined } from '@ant-design/icons';
 
 import { COMPLAINT_STATUS_META } from '../../constants/statuses';
 import { merchantComplaintApi, type MerchantComplaintItem } from '../../services/merchantApi';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const MerchantComplaints: React.FC = () => {
     const [loading, setLoading] = useState(true);
@@ -19,7 +20,7 @@ const MerchantComplaints: React.FC = () => {
             const data = await merchantComplaintApi.list();
             setItems(data);
         } catch (error) {
-            message.error(error instanceof Error ? error.message : '加载投诉失败');
+            message.error(readSafeErrorMessage(error, '加载投诉失败'));
         } finally {
             setLoading(false);
         }
@@ -43,9 +44,7 @@ const MerchantComplaints: React.FC = () => {
             form.resetFields();
             await loadData();
         } catch (error) {
-            if (error instanceof Error) {
-                message.error(error.message);
-            }
+            message.error(readSafeErrorMessage(error, '提交回应失败'));
         } finally {
             setSubmitting(false);
         }

@@ -75,8 +75,8 @@ const FOREMAN_REQUIRED_CASES = [
 
 export function getMerchantTestEnv(): MerchantTestEnv {
   return {
-    origin: process.env.MERCHANT_ORIGIN || 'http://localhost:5174',
-    apiBaseUrl: process.env.E2E_API_BASE_URL || `${(process.env.API_BASE_URL || 'http://localhost:8080').replace(/\/$/, '')}/api/v1`,
+    origin: process.env.MERCHANT_ORIGIN || 'http://127.0.0.1:5175/merchant',
+    apiBaseUrl: process.env.E2E_API_BASE_URL || `${(process.env.API_BASE_URL || 'http://127.0.0.1:8080').replace(/\/$/, '')}/api/v1`,
     phone: process.env.MERCHANT_PHONE || '13800000001',
     foremanPhone: process.env.MERCHANT_FOREMAN_PHONE || process.env.MERCHANT_PHONE || '13800000001',
     code: process.env.MERCHANT_CODE || '123456',

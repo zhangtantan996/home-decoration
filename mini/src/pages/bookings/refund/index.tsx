@@ -13,7 +13,7 @@ import { getBookingDetail, type BookingDetailResponse } from '@/services/booking
 import { createRefundApplication } from '@/services/refunds';
 import { uploadFile } from '@/services/uploads';
 import { useAuthStore } from '@/store/auth';
-import { showErrorToast } from '@/utils/error';
+import { isUserCancelError, showErrorToast } from '@/utils/error';
 
 const BookingRefundPage: React.FC = () => {
   const auth = useAuthStore();
@@ -77,6 +77,9 @@ const BookingRefundPage: React.FC = () => {
       setEvidence((prev) => [...prev, ...uploaded.map((item) => item.path || item.url)].slice(0, 6));
       Taro.showToast({ title: '证据已上传', icon: 'success' });
     } catch (error) {
+      if (isUserCancelError(error)) {
+        return;
+      }
       showErrorToast(error, '上传失败');
     } finally {
       setUploading(false);

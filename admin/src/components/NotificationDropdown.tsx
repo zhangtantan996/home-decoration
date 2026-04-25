@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Dropdown, Badge, Button, Empty, Spin, message } from 'antd';
-import { BellOutlined, CheckOutlined, DeleteOutlined } from '@ant-design/icons';
+import { Dropdown, Badge, Button, Empty, Spin, Tag, message } from 'antd';
+import { BellOutlined, CheckOutlined, DeleteOutlined, ReloadOutlined } from '@ant-design/icons';
+import { useNavigate } from 'react-router-dom';
 import { getHandledAdminStatus, notificationApi } from '../services/api';
 import { AutoRetryGuard, type AutoRetryPolicy, type TriggerSource } from '../utils/autoRetryGuard';
 import {
@@ -9,17 +10,24 @@ import {
     NotificationWebSocket,
 } from '../utils/notificationWebSocket';
 import { formatServerDate } from '../utils/serverTime';
+import { resolveAdminNotificationNavigation } from '../utils/adminNotificationNavigation';
+import { toSafeNotificationContent } from '../utils/userFacingText';
+import styles from './NotificationDropdown.module.css';
 
 interface Notification {
     id: number;
     title: string;
     content: string;
     type: string;
+    typeLabel?: string;
     relatedId: number;
     relatedType: string;
     isRead: boolean;
     actionUrl: string;
     createdAt: string;
+    actionRequired?: boolean;
+    actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+    actionLabel?: string;
 }
 
 type NotificationListResponse = { data?: { list?: Notification[] } };
@@ -34,7 +42,98 @@ const POLL_POLICY: AutoRetryPolicy = {
     maxDelayMs: 30000,
 };
 
+const ADMIN_NOTIFICATION_TYPE_LABELS: Record<string, string> = {
+    'merchant.application.submitted': '入驻审核',
+    'merchant.application.approved': '入驻审核',
+    'merchant.application.rejected': '入驻审核',
+    'case_audit.approved': '案例审核',
+    'case_audit.rejected': '案例审核',
+    'refund.application.created': '退款审核',
+    'refund.application.approved': '退款处理',
+    'refund.application.rejected': '退款处理',
+    'refund.succeeded': '退款结果',
+    'withdraw.created': '提现审核',
+    'complaint.created': '投诉处理',
+    'complaint.resolved': '投诉处理',
+    'booking.created': '预约提醒',
+    'booking.confirmed': '预约提醒',
+    'booking.cancelled': '预约提醒',
+    'proposal.submitted': '方案提醒',
+    'proposal.confirmed': '方案提醒',
+    'proposal.rejected': '方案提醒',
+    'quote.submitted': '施工报价',
+    'quote.confirmed': '施工报价',
+    'quote.rejected': '施工报价',
+    'quote.awarded': '施工报价',
+    'project.milestone.submitted': '阶段验收',
+    'project.milestone.approved': '阶段验收',
+    'project.milestone.rejected': '阶段验收',
+    'project.completion.submitted': '完工验收',
+    'project.completion.approved': '完工验收',
+    'project.completion.rejected': '完工验收',
+    'project.construction_bridge_pending': '施工桥接',
+    'project.planned_start_updated': '待开工',
+    'project.supervision_risk_escalated': '监理风险',
+    'project.settlement.scheduled': '结算提醒',
+    'project.payout.processing': '出款提醒',
+    'project.payout.paid': '出款提醒',
+    'project.payout.failed': '出款提醒',
+    'case_audit.created': '案例审核',
+    'payment.construction.pending': '施工付款',
+    'payment.construction.stage_pending': '施工付款',
+    'payment.construction.final_pending': '施工付款',
+    'payment.construction.expiring': '施工付款',
+    'payment.construction.expired': '施工付款',
+    'change_order.created': '项目变更',
+    'change_order.confirmed': '项目变更',
+    'change_order.rejected': '项目变更',
+    'change_order.payment_pending': '项目变更',
+    'change_order.settlement_required': '项目变更',
+    'change_order.settled': '项目变更',
+};
+
+const resolveAdminNotificationLabel = (type: string) => ADMIN_NOTIFICATION_TYPE_LABELS[type] || '系统通知';
+
+const resolveAdminNotificationTypeLabel = (item: Notification) =>
+    String(item.typeLabel || '').trim() || resolveAdminNotificationLabel(item.type);
+
+const resolveAdminNotificationActionTag = (item: Notification) => {
+    if (item.actionStatus === 'processed') {
+        return { label: '已处理', color: 'default' as const };
+    }
+    if (item.actionStatus === 'expired') {
+        return { label: '已过期', color: 'orange' as const };
+    }
+    if (item.actionRequired && item.actionLabel) {
+        return { label: item.actionLabel, color: 'blue' as const };
+    }
+    if (item.actionLabel) {
+        return { label: item.actionLabel, color: 'default' as const };
+    }
+    return null;
+};
+
+const resolveAdminNotificationTagColor = (type: string) => {
+    if (type.startsWith('payment.') || type.startsWith('refund.') || type.startsWith('withdraw.')) {
+        return 'gold';
+    }
+    if (type.startsWith('change_order.') || type.startsWith('project.') || type.startsWith('complaint.')) {
+        return 'blue';
+    }
+    if (type.startsWith('quote.') || type.startsWith('proposal.')) {
+        return 'cyan';
+    }
+    if (type.startsWith('booking.')) {
+        return 'purple';
+    }
+    if (type.startsWith('merchant.application.') || type.startsWith('case_audit.')) {
+        return 'geekblue';
+    }
+    return 'default';
+};
+
 const NotificationDropdown: React.FC = () => {
+    const navigate = useNavigate();
     const [notifications, setNotifications] = useState<Notification[]>([]);
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(false);
@@ -42,7 +141,6 @@ const NotificationDropdown: React.FC = () => {
     const [notificationAvailable, setNotificationAvailable] = useState(true);
     const [pollingPaused, setPollingPaused] = useState(false);
     const authErrorNotifiedRef = useRef(false);
-    const pollPauseNotifiedRef = useRef(false);
     const unreadPollGuardRef = useRef(new AutoRetryGuard(POLL_POLICY));
     const websocketRef = useRef<NotificationWebSocket | null>(null);
     const openRef = useRef(false);
@@ -92,14 +190,9 @@ const NotificationDropdown: React.FC = () => {
         if (trigger === 'manual') {
             unreadPollGuardRef.current.resetByManual();
             setPollingPaused(false);
-            pollPauseNotifiedRef.current = false;
         } else {
             if (!unreadPollGuardRef.current.shouldAttempt('auto')) {
                 setPollingPaused(true);
-                if (!pollPauseNotifiedRef.current) {
-                    pollPauseNotifiedRef.current = true;
-                    message.warning('通知自动刷新已暂停，请手动刷新恢复');
-                }
                 const state = unreadPollGuardRef.current.getState();
                 console.warn('[AutoRetry]', {
                     businessKey: POLL_BUSINESS_KEY,
@@ -126,7 +219,6 @@ const NotificationDropdown: React.FC = () => {
             unreadPollGuardRef.current.recordSuccess();
             if (pollingPaused) {
                 setPollingPaused(false);
-                pollPauseNotifiedRef.current = false;
                 console.info('[AutoRetry]', {
                     businessKey: POLL_BUSINESS_KEY,
                     trigger,
@@ -154,10 +246,6 @@ const NotificationDropdown: React.FC = () => {
 
             if (state.paused) {
                 setPollingPaused(true);
-                if (!pollPauseNotifiedRef.current) {
-                    pollPauseNotifiedRef.current = true;
-                    message.warning('通知自动刷新已暂停，请点击“重试刷新”恢复');
-                }
             }
 
             console.error('Failed to load unread count', error);
@@ -169,7 +257,6 @@ const NotificationDropdown: React.FC = () => {
 
         unreadPollGuardRef.current.resetByManual();
         setPollingPaused(false);
-        pollPauseNotifiedRef.current = false;
 
         console.info('[AutoRetry]', {
             businessKey: POLL_BUSINESS_KEY,
@@ -323,9 +410,17 @@ const NotificationDropdown: React.FC = () => {
                 setUnreadCount(prev => Math.max(0, prev - 1));
             }
 
-            // 根据通知类型跳转（可选，根据实际需求扩展）
             if (item.actionUrl) {
-                window.location.href = item.actionUrl;
+                const target = resolveAdminNotificationNavigation(item.actionUrl);
+                if (!target) {
+                    message.warning('该通知暂无可跳转页面');
+                    return;
+                }
+                if (target.type === 'internal') {
+                    navigate(target.path);
+                } else {
+                    window.location.assign(target.href);
+                }
             }
         } catch (error: unknown) {
             const handledStatus = getHandledAdminStatus(error);
@@ -339,112 +434,106 @@ const NotificationDropdown: React.FC = () => {
         }
     };
 
-    // 渲染下拉菜单内容
     const dropdownContent = (
-        <div style={{ width: 380, maxHeight: 500, overflow: 'auto', backgroundColor: '#fff', borderRadius: 8, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
-            {/* Header */}
-            <div style={{ padding: '12px 16px', borderBottom: '1px solid #f0f0f0', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span style={{ fontSize: 16, fontWeight: 600, color: '#262626' }}>通知</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    {pollingPaused && (
-                        <span style={{ fontSize: 12, color: '#fa8c16' }}>自动刷新已暂停</span>
-                    )}
-                    {pollingPaused && (
-                        <Button
-                            type="link"
-                            size="small"
-                            onClick={() => void handleManualRefresh()}
-                            style={{ fontSize: 12 }}
-                        >
-                            重试刷新
-                        </Button>
-                    )}
+        <div className={styles.panel}>
+            <div className={styles.header}>
+                <div>
+                    <div className={styles.title}>通知</div>
+                    <div className={styles.subtitle}>
+                        {unreadCount > 0 ? `${unreadCount} 条未读消息` : '暂无未读消息'}
+                    </div>
+                </div>
+                <div className={styles.headerActions}>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={<ReloadOutlined />}
+                        loading={loading}
+                        onClick={() => void handleManualRefresh()}
+                        title="刷新通知"
+                        aria-label="刷新通知"
+                        className={styles.iconButton}
+                    />
                     {unreadCount > 0 && (
                         <Button
                             type="link"
                             size="small"
                             icon={<CheckOutlined />}
                             onClick={handleMarkAllAsRead}
-                            style={{ fontSize: 12 }}
+                            className={styles.linkButton}
                         >
                             全部已读
                         </Button>
                     )}
+                    <Button
+                        type="link"
+                        size="small"
+                        onClick={() => {
+                            setOpen(false);
+                            navigate('/notifications');
+                        }}
+                        className={styles.linkButton}
+                    >
+                        查看全部
+                    </Button>
                 </div>
             </div>
 
-            {/* Notification List */}
-            <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            <div className={styles.list}>
                 {loading ? (
-                    <div style={{ padding: 40, textAlign: 'center' }}>
+                    <div className={styles.loading}>
                         <Spin />
                     </div>
                 ) : notifications.length === 0 ? (
                     <Empty
                         image={Empty.PRESENTED_IMAGE_SIMPLE}
                         description="暂无通知"
-                        style={{ padding: 40 }}
+                        className={styles.empty}
                     />
                 ) : (
-                    notifications.map(item => (
-                        <div
-                            key={item.id}
-                            onClick={() => handleNotificationClick(item)}
-                            style={{
-                                padding: '12px 16px',
-                                borderBottom: '1px solid #f0f0f0',
-                                cursor: 'pointer',
-                                backgroundColor: item.isRead ? '#fff' : '#f6f9ff',
-                                transition: 'background-color 0.3s',
-                            }}
-                            onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = '#fafafa')}
-                            onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = item.isRead ? '#fff' : '#f6f9ff')}
-                        >
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                                <div style={{ flex: 1, marginRight: 8 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', marginBottom: 4 }}>
-                                        <span style={{
-                                            fontSize: 14,
-                                            fontWeight: item.isRead ? 400 : 600,
-                                            color: item.isRead ? '#595959' : '#262626',
-                                        }}>
-                                            {item.title}
-                                        </span>
-                                        {!item.isRead && (
-                                            <span style={{
-                                                display: 'inline-block',
-                                                width: 6,
-                                                height: 6,
-                                                borderRadius: '50%',
-                                                backgroundColor: '#1890ff',
-                                                marginLeft: 8,
-                                            }} />
-                                        )}
+                    notifications.map(item => {
+                        const actionTag = resolveAdminNotificationActionTag(item);
+                        const typeLabel = resolveAdminNotificationTypeLabel(item);
+                        return (
+                            <div
+                                key={item.id}
+                                onClick={() => handleNotificationClick(item)}
+                                className={`${styles.item} ${item.isRead ? styles.readItem : styles.unreadItem}`}
+                            >
+                                <div className={styles.itemRail} />
+                                <div className={styles.itemMain}>
+                                    <div className={styles.itemHeader}>
+                                        <div className={styles.itemTitle}>{item.title || typeLabel}</div>
+                                        {!item.isRead ? <span className={styles.unreadDot} aria-label="未读" /> : null}
                                     </div>
-                                    <div style={{
-                                        fontSize: 13,
-                                        color: '#8c8c8c',
-                                        marginBottom: 4,
-                                        overflow: 'hidden',
-                                        textOverflow: 'ellipsis',
-                                        display: '-webkit-box',
-                                        WebkitLineClamp: 2,
-                                        WebkitBoxOrient: 'vertical',
-                                    }}>
-                                        {item.content}
+                                    <div className={styles.tagLine}>
+                                        <Tag
+                                            color={resolveAdminNotificationTagColor(item.type)}
+                                            className={styles.tag}
+                                        >
+                                            {typeLabel}
+                                        </Tag>
+                                        {actionTag ? (
+                                            <Tag color={actionTag.color} className={styles.tag}>
+                                                {actionTag.label}
+                                            </Tag>
+                                        ) : null}
                                     </div>
-                                    <div style={{ fontSize: 12, color: '#bfbfbf' }}>
-                                        {formatTime(item.createdAt)}
+                                    <div className={styles.itemContent}>
+                                        {toSafeNotificationContent(item.content, item.type)}
                                     </div>
+                                    <div className={styles.itemTime}>{formatTime(item.createdAt)}</div>
                                 </div>
-                                <div style={{ display: 'flex', gap: 4 }}>
+                                <div className={styles.itemActions}>
                                     {!item.isRead && (
                                         <Button
                                             type="text"
                                             size="small"
                                             icon={<CheckOutlined />}
                                             onClick={(e) => handleMarkAsRead(item.id, e)}
-                                            style={{ padding: '4px 8px' }}
+                                            className={styles.itemButton}
+                                            title="标记已读"
+                                            aria-label="标记已读"
                                         />
                                     )}
                                     <Button
@@ -453,12 +542,14 @@ const NotificationDropdown: React.FC = () => {
                                         danger
                                         icon={<DeleteOutlined />}
                                         onClick={(e) => handleDelete(item.id, e)}
-                                        style={{ padding: '4px 8px' }}
+                                        className={styles.itemButton}
+                                        title="删除通知"
+                                        aria-label="删除通知"
                                     />
                                 </div>
                             </div>
-                        </div>
-                    ))
+                        );
+                    })
                 )}
             </div>
         </div>

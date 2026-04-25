@@ -31,6 +31,8 @@ func AdminListBusinessFlows(c *gin.Context) {
 		ProjectID:         parseUint64(c.Query("projectId")),
 		OrderStatus:       strings.TrimSpace(c.Query("orderStatus")),
 		PaymentPlanStatus: strings.TrimSpace(c.Query("paymentPlanStatus")),
+		SettlementStatus:  strings.TrimSpace(c.Query("settlementStatus")),
+		PayoutStatus:      strings.TrimSpace(c.Query("payoutStatus")),
 		RefundStatus:      strings.TrimSpace(c.Query("refundStatus")),
 		RiskStatus:        strings.TrimSpace(c.Query("riskStatus")),
 		Page:              page,
@@ -75,12 +77,12 @@ func AdminConfirmProposal(c *gin.Context) {
 		return
 	}
 
-	order, err := proposalService.AdminConfirmProposal(adminID, proposalID, req.Reason)
+	proposal, err := proposalService.AdminConfirmProposal(adminID, proposalID, req.Reason)
 	if err != nil {
 		respondDomainMutationError(c, err, "方案确认失败")
 		return
 	}
-	response.SuccessWithMessage(c, "平台已确认方案", gin.H{"order": order})
+	response.SuccessWithMessage(c, "平台已确认方案", gin.H{"proposal": proposal})
 }
 
 func AdminRejectProposal(c *gin.Context) {

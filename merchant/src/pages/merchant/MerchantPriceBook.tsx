@@ -84,14 +84,27 @@ const MerchantPriceBook: React.FC = () => {
         });
     }, [keyword, onlyRequired, onlyUnpriced, rows]);
 
-    const pricedCount = useMemo(() => rows.filter((row) => (row.unitPriceCent || 0) > 0).length, [rows]);
-    const requiredCount = useMemo(() => rows.filter((row) => row.required).length, [rows]);
-    const requiredMissingRows = useMemo(
-        () => rows.filter((row) => row.required && (row.unitPriceCent || 0) <= 0),
+    const applicableRows = useMemo(
+        () => rows.filter((row) => row.applicable !== false),
         [rows],
     );
-    const unpricedCount = useMemo(() => rows.filter((row) => (row.unitPriceCent || 0) <= 0).length, [rows]);
-    const completionRate = rows.length ? Math.round((pricedCount / rows.length) * 100) : 0;
+    const pricedCount = useMemo(
+        () => applicableRows.filter((row) => (row.unitPriceCent || 0) > 0).length,
+        [applicableRows],
+    );
+    const requiredCount = useMemo(
+        () => applicableRows.filter((row) => row.required).length,
+        [applicableRows],
+    );
+    const requiredMissingRows = useMemo(
+        () => applicableRows.filter((row) => row.required && (row.unitPriceCent || 0) <= 0),
+        [applicableRows],
+    );
+    const unpricedCount = useMemo(
+        () => applicableRows.filter((row) => (row.unitPriceCent || 0) <= 0).length,
+        [applicableRows],
+    );
+    const completionRate = applicableRows.length ? Math.round((pricedCount / applicableRows.length) * 100) : 0;
 
     const groupedRows = useMemo(() => {
         const groups = new Map<string, EditablePriceItem[]>();
@@ -123,34 +136,34 @@ const MerchantPriceBook: React.FC = () => {
             percent: 100,
         },
         {
-            label: '标准项总数',
-            value: `${rows.length || 0}`,
-            meta: '平台统一标准施工项',
+            label: '能力范围项',
+            value: `${applicableRows.length || 0}`,
+            meta: '当前工种需维护的标准项',
             tone: 'blue',
             percent: 100,
         },
         {
             label: '已填写项',
             value: `${pricedCount}`,
-            meta: `/ ${rows.length || 0} 项已录价`,
+            meta: `/ ${applicableRows.length || 0} 项已录价`,
             tone: 'green',
             percent: completionRate,
         },
         {
             label: '未填写项',
             value: `${unpricedCount}`,
-            meta: '需尽快补充',
+            meta: '当前能力范围内待补充',
             tone: 'amber',
-            percent: rows.length ? Math.round((unpricedCount / rows.length) * 100) : 0,
+            percent: applicableRows.length ? Math.round((unpricedCount / applicableRows.length) * 100) : 0,
         },
         {
             label: '必填项数量',
             value: `${requiredCount}`,
             meta: '关键报价项',
             tone: 'red',
-            percent: rows.length ? Math.round((requiredCount / rows.length) * 100) : 0,
+            percent: applicableRows.length ? Math.round((requiredCount / applicableRows.length) * 100) : 0,
         },
-    ], [completionRate, detail?.book.status, detail?.book.version, pricedCount, requiredCount, rows.length, unpricedCount]);
+    ], [applicableRows.length, completionRate, detail?.book.status, detail?.book.version, pricedCount, requiredCount, unpricedCount]);
 
     const columns: ColumnsType<EditablePriceItem> = useMemo(() => [
         {
@@ -168,6 +181,7 @@ const MerchantPriceBook: React.FC = () => {
                     <Space size={8} wrap>
                         <Text strong>{record.standardItemName || `标准项 #${record.standardItemId}`}</Text>
                         {record.required ? <Tag color="red">必填</Tag> : <Tag>可选</Tag>}
+                        {record.applicable === false ? <Tag>非当前能力范围</Tag> : null}
                     </Space>
                     <Text type="secondary" style={{ fontSize: 12 }}>
                         {record.standardCode || '-'}
@@ -212,6 +226,58 @@ const MerchantPriceBook: React.FC = () => {
                 />
             ),
         },
+        {
+            title: '最低起收(元)',
+            dataIndex: 'minChargeCent',
+            key: 'minChargeCent',
+            width: 160,
+            render: (_value, record) => (
+                <InputNumber
+                    {...sharedForemanPriceInputProps}
+                    className={styles.priceInput}
+                    value={(record.minChargeCent || 0) / 100}
+                    placeholder="可选"
+                    onChange={(value) => {
+                        const nextCent = normalizePriceCent(value as number | null) ?? 0;
+                        setRows((prev) => prev.map((row) =>
+                            row.standardItemId === record.standardItemId
+                                ? { ...row, minChargeCent: nextCent }
+                                : row
+                        ));
+                    }}
+                    onBlur={(event) => {
+                        const normalizedYuan = normalizePriceYuan(Number(event.target.value || 0));
+                        const nextCent = normalizePriceCent(normalizedYuan ?? 0) ?? 0;
+                        setRows((prev) => prev.map((row) =>
+                            row.standardItemId === record.standardItemId
+                                ? { ...row, minChargeCent: nextCent }
+                                : row
+                        ));
+                    }}
+                />
+            ),
+        },
+        {
+            title: '报价说明',
+            dataIndex: 'remark',
+            key: 'remark',
+            width: 240,
+            render: (_value, record) => (
+                <Input
+                    allowClear
+                    placeholder="如：不含拆除/辅材/特殊施工"
+                    value={record.remark || ''}
+                    onChange={(event) => {
+                        const remark = event.target.value;
+                        setRows((prev) => prev.map((row) =>
+                            row.standardItemId === record.standardItemId
+                                ? { ...row, remark }
+                                : row
+                        ));
+                    }}
+                />
+            ),
+        },
     ], []);
 
     const handleSave = async () => {
@@ -220,13 +286,17 @@ const MerchantPriceBook: React.FC = () => {
             const payload = {
                 remark: detail?.book?.remark || '',
                 items: rows
-                    .filter((row) => (row.unitPriceCent || 0) > 0)
+                    .filter((row) => (
+                        (row.unitPriceCent || 0) > 0
+                        || (row.minChargeCent || 0) > 0
+                        || String(row.remark || '').trim() !== ''
+                    ))
                     .map((row) => ({
                         standardItemId: row.standardItemId,
                         unit: row.unit,
                         unitPriceCent: row.unitPriceCent,
-                        minChargeCent: 0,
-                        remark: '',
+                        minChargeCent: row.minChargeCent || 0,
+                        remark: String(row.remark || '').trim(),
                         status: 1,
                     })),
             };
@@ -243,12 +313,12 @@ const MerchantPriceBook: React.FC = () => {
 
     const handlePublish = async () => {
         if (requiredMissingRows.length > 0) {
-            message.warning(`仍有 ${requiredMissingRows.length} 个必填标准项未填写价格，补齐后才能发布`);
+            message.warning(`当前能力范围内仍有 ${requiredMissingRows.length} 个必填项未填写价格`);
             return;
         }
         Modal.confirm({
             title: '发布价格库',
-            content: '发布后，后续报价草稿将直接使用你当前填写的价格。是否继续？',
+            content: '发布后，系统会优先用你当前能力范围内的价格库生成施工报价草稿。是否继续？',
             okText: '发布',
             cancelText: '取消',
             onOk: async () => {
@@ -271,7 +341,7 @@ const MerchantPriceBook: React.FC = () => {
         <MerchantPageShell>
             <MerchantPageHeader
                 title="工长价格库"
-                description="按平台提供的施工标准录入你的报价，保存后可作为后续项目报价的基础价格。"
+                description="按平台标准录入单价、最低起收和报价说明，发布后作为施工报价草稿的基础价格。"
                 extra={(
                     <>
                         <Button icon={<ReloadOutlined />} onClick={() => void load()} loading={loading}>
@@ -296,7 +366,7 @@ const MerchantPriceBook: React.FC = () => {
                 }))}
             />
 
-            <MerchantFilterBar hint="未填写价格的标准项默认不参与当前价格库发布。">
+            <MerchantFilterBar hint="未填写价格、最低起收或说明的标准项默认不参与当前价格库发布。">
                 <Input
                     allowClear
                     prefix={<SearchOutlined />}
@@ -363,6 +433,7 @@ const MerchantPriceBook: React.FC = () => {
                                         columns={columns}
                                         pagination={false}
                                         className={styles.groupTable}
+                                        scroll={{ x: 980 }}
                                         rowClassName={(record) => {
                                             if (record.required && (record.unitPriceCent || 0) <= 0) return styles.requiredPendingRow;
                                             if ((record.unitPriceCent || 0) <= 0) return styles.pendingRow;

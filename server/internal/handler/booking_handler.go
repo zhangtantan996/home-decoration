@@ -48,49 +48,101 @@ func GetBooking(c *gin.Context) {
 	// 查询关联的方案ID
 	var proposal model.Proposal
 	var proposalID uint64
-	if err := repository.DB.Where("booking_id = ?", booking.ID).First(&proposal).Error; err == nil {
+	if err := repository.DB.Where("booking_id = ?", booking.ID).Order("created_at DESC, id DESC").First(&proposal).Error; err == nil {
 		proposalID = proposal.ID
+	}
+	var deliverableSummary interface{}
+	var deliverable *model.DesignDeliverable
+	var rawDeliverable model.DesignDeliverable
+	if err := repository.DB.Where("booking_id = ?", booking.ID).Order("created_at DESC, id DESC").First(&rawDeliverable).Error; err == nil {
+		deliverable = &rawDeliverable
+		deliverableSummary = gin.H{
+			"id":              rawDeliverable.ID,
+			"status":          rawDeliverable.Status,
+			"submittedAt":     rawDeliverable.SubmittedAt,
+			"acceptedAt":      rawDeliverable.AcceptedAt,
+			"rejectedAt":      rawDeliverable.RejectedAt,
+			"rejectionReason": rawDeliverable.RejectionReason,
+		}
 	}
 	p0Summary, _ := bookingService.GetBookingP0Summary(booking.ID)
 	bookingView := service.BookingLifecycleView{}
 	if booking != nil {
-		bookingView = service.BuildBookingLifecycleView(*booking, p0Summary, proposalID)
+		bookingView = service.BuildBookingLifecycleView(*booking, p0Summary, proposalID, deliverable)
 	}
 	refundSummary, _ := refundApplicationService.BuildBookingRefundSummary(booking.ID)
 	var siteSurveySummary interface{}
 	var budgetConfirmSummary interface{}
+	var designFeeQuoteSummary interface{}
 	var availableActions []string
 	var flowSummary string
 	var currentStage string
 	var currentStageText string
+	var surveyDepositPaymentID uint64
 	surveyDepositPaymentOptions := paymentService.GetSurveyDepositPaymentOptions(booking)
+	if booking != nil {
+		if paymentID, payErr := paymentService.GetLatestSurveyDepositPaymentID(booking.ID); payErr != nil {
+			log.Printf("[GetBooking] load survey deposit payment id failed: booking=%d err=%v", booking.ID, payErr)
+		} else {
+			surveyDepositPaymentID = paymentID
+		}
+	}
 	if p0Summary != nil {
 		siteSurveySummary = p0Summary.SiteSurvey
 		budgetConfirmSummary = p0Summary.BudgetConfirm
 		flowSummary = p0Summary.FlowSummary
 		currentStage = p0Summary.CurrentStage
 	}
+	if quoteView, err := designPaymentService.GetDesignFeeQuoteView(booking.ID); err == nil && quoteView != nil && quoteView.Quote != nil {
+		summary := gin.H{
+			"id":        quoteView.Quote.ID,
+			"status":    quoteView.Quote.Status,
+			"netAmount": quoteView.Quote.NetAmount,
+			"expireAt":  quoteView.Quote.ExpireAt,
+			"orderId":   quoteView.Quote.OrderID,
+		}
+		if quoteView.Order != nil {
+			summary["orderStatus"] = quoteView.Order.Status
+		}
+		designFeeQuoteSummary = summary
+	}
 	availableActions = bookingView.AvailableActions
+	flowSummary = bookingView.FlowSummary
+	currentStage = bookingView.CurrentStage
 	currentStageText = bookingView.CurrentStageText
+	bridgeSummary := service.BuildBridgeReadModelByBookingID(booking.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByBookingID(booking.ID)
 
 	response.Success(c, gin.H{
-		"booking":                     bookingView,
-		"statusGroup":                 bookingView.StatusGroup,
-		"statusText":                  bookingView.StatusText,
-		"provider":                    providerInfo,
-		"proposalId":                  proposalID,
-		"businessStage":               currentStage,
-		"siteSurveySummary":           siteSurveySummary,
-		"budgetConfirmSummary":        budgetConfirmSummary,
-		"availableActions":            availableActions,
-		"flowSummary":                 flowSummary,
-		"currentStage":                currentStage,
-		"currentStageText":            currentStageText,
-		"surveyDepositAmount":         bookingView.SurveyDepositAmount,
-		"surveyDepositPaid":           bookingView.SurveyDepositPaid,
-		"surveyDepositPaidAt":         bookingView.SurveyDepositPaidAt,
-		"refundSummary":               refundSummary,
-		"surveyDepositPaymentOptions": surveyDepositPaymentOptions,
+		"booking":                        bookingView,
+		"statusGroup":                    bookingView.StatusGroup,
+		"statusText":                     bookingView.StatusText,
+		"provider":                       providerInfo,
+		"proposalId":                     proposalID,
+		"businessStage":                  currentStage,
+		"siteSurveySummary":              siteSurveySummary,
+		"budgetConfirmSummary":           budgetConfirmSummary,
+		"designFeeQuoteSummary":          designFeeQuoteSummary,
+		"designDeliverableSummary":       deliverableSummary,
+		"availableActions":               availableActions,
+		"flowSummary":                    flowSummary,
+		"currentStage":                   currentStage,
+		"currentStageText":               currentStageText,
+		"surveyDepositAmount":            bookingView.SurveyDepositAmount,
+		"surveyDepositPaid":              bookingView.SurveyDepositPaid,
+		"surveyDepositPaidAt":            bookingView.SurveyDepositPaidAt,
+		"surveyDepositPaymentId":         surveyDepositPaymentID,
+		"refundSummary":                  refundSummary,
+		"surveyDepositPaymentOptions":    surveyDepositPaymentOptions,
+		"baselineStatus":                 bridgeSummary.BaselineStatus,
+		"baselineSubmittedAt":            bridgeSummary.BaselineSubmittedAt,
+		"constructionSubjectType":        bridgeSummary.ConstructionSubjectType,
+		"constructionSubjectId":          bridgeSummary.ConstructionSubjectID,
+		"constructionSubjectDisplayName": bridgeSummary.ConstructionSubjectDisplayName,
+		"kickoffStatus":                  bridgeSummary.KickoffStatus,
+		"plannedStartDate":               bridgeSummary.PlannedStartDate,
+		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 

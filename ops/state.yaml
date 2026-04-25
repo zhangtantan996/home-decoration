@@ -1,11 +1,11 @@
 {
   "project": "home-decoration",
-  "updated_at": "2026-03-17T12:00:00.000Z",
+  "updated_at": "2026-04-10T05:05:24.643Z",
   "active_session": {
-    "id": "ops-bootstrap-2026-03-17",
+    "id": "engine-web-1775797524581",
     "role": "coordinator",
-    "started_at": "2026-03-17T12:00:00.000Z",
-    "summary": "Bootstrap OpenClaw-first control plane v1"
+    "started_at": "2026-04-10T05:05:24.581Z",
+    "summary": "Engine dispatching local-demo-control-plane-20260410-ops-verify"
   },
   "tasks": [
     {
@@ -80,9 +80,106 @@
         "tests/ops/state-store.test.mjs",
         "tests/ops/remote.test.mjs"
       ]
+    },
+    {
+      "attempt": 1,
+      "children": [],
+      "created_at": "2026-04-10T05:01:45.680Z",
+      "phase": "blocked",
+      "priority": 1,
+      "started_at": "2026-04-10T05:02:09.536Z",
+      "finished_at": null,
+      "summary": "本地 codex worker 在演示中超过 90 秒未返回结构化结果，已人工停止并记录为阻塞。",
+      "verification": {
+        "profile": "web-build",
+        "status": "pending"
+      },
+      "approval": {
+        "required": false,
+        "status": "not_required"
+      },
+      "artifacts": [],
+      "assignee_session": "engine-web-1775797329535",
+      "deps": [],
+      "done_when": "Complete the web slice of the task within: web/",
+      "goal": "在 web/ 新增首页 hero 区文案层级与间距检查说明文档，记录当前问题与建议，不改业务逻辑",
+      "id": "local-demo-web-20260410050145-web-hero",
+      "intake": {
+        "requested_by": "codex-demo",
+        "requested_modules": [
+          "web"
+        ],
+        "requested_via": "local-demo",
+        "routing_reason": "Matched module web via signals: web, web/, Web"
+      },
+      "outputs": [],
+      "owned_paths": [
+        "web/"
+      ],
+      "owner_role": "web",
+      "parent_task_id": null,
+      "risk": "public-web",
+      "status": "blocked",
+      "verify_profile": "web-build",
+      "blockers": [
+        "codex executor stalled and did not produce worker-result.json before manual stop"
+      ]
+    },
+    {
+      "attempt": 1,
+      "children": [],
+      "created_at": "2026-04-10T05:05:13.682Z",
+      "phase": "done",
+      "priority": 0,
+      "started_at": "2026-04-10T05:05:24.595Z",
+      "finished_at": "2026-04-10T05:05:24.641Z",
+      "summary": "Demo executor completed local-demo-control-plane-20260410-ops-verify without modifying repo files.",
+      "verification": {
+        "profile": "ops-validate",
+        "status": "passed",
+        "started_at": "2026-04-10T05:05:24.596Z",
+        "notes": "Used injected demo executor to validate control-plane transitions only.",
+        "stderr": "",
+        "stdout": "Validated control plane for home-decoration\nTasks: 5\nEvents: 12\nRoles: 9\nLegacy ignored: 11",
+        "finished_at": "2026-04-10T05:05:24.641Z"
+      },
+      "id": "local-demo-control-plane-20260410-ops-verify",
+      "goal": "演示低风险任务的控制面闭环：创建、执行、验证、回写，不改业务代码。",
+      "status": "done",
+      "owner_role": "web",
+      "owned_paths": [
+        "web/"
+      ],
+      "deps": [],
+      "risk": "public-web",
+      "verify_profile": "ops-validate",
+      "outputs": [],
+      "done_when": "Engine 能将任务推进到 done，并完成 ops-validate 验证。",
+      "approval": {
+        "required": false,
+        "status": "not_required"
+      },
+      "intake": {
+        "requested_by": "codex-demo",
+        "requested_modules": [
+          "web"
+        ],
+        "requested_via": "local-demo",
+        "routing_reason": "Synthetic low-risk control-plane demonstration task"
+      },
+      "assignee_session": "engine-web-1775797524581"
     }
   ],
-  "blockers": [],
+  "blockers": [
+    {
+      "id": "local-demo-web-20260410050145-web-hero-blocker-1",
+      "task_id": "local-demo-web-20260410050145-web-hero",
+      "reason": "codex executor stalled and did not produce worker-result.json before manual stop",
+      "status": "open",
+      "opened_at": "2026-04-10T05:05:13.679Z",
+      "resolved_at": null
+    }
+  ],
   "next_actions": [
     "Run node ops/server.mjs for the local WebUI control plane.",
     "Set OPS_TELEGRAM_BOT_TOKEN and run node ops/telegram-bot.mjs to enable Telegram control.",

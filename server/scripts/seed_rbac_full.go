@@ -60,6 +60,12 @@ func menuPage(key, parentKey, title, path, component, icon string, sort int, per
 	}
 }
 
+func menuHiddenPage(key, parentKey, title, path, component, icon string, sort int, permission string) menuSpec {
+	spec := menuPage(key, parentKey, title, path, component, icon, sort, permission)
+	spec.Visible = false
+	return spec
+}
+
 func menuButton(key, parentKey, title, permission string, sort int) menuSpec {
 	return menuSpec{
 		Key:        key,
@@ -256,12 +262,15 @@ func menuSpecs() []menuSpec {
 		menuButton("project_edit", "projects_root", "编辑项目", "project:edit", 2),
 		menuButton("project_delete", "projects_root", "删除项目", "project:delete", 3),
 		menuPage("projects_map", "projects_root", "全景地图", "/projects/map", "pages/projects/ProjectMap", "", 2, "project:map"),
-		menuPage("project_quote_library", "projects_root", "报价库", "/projects/quotes/library", "pages/quotes/QuoteLibraryManagement", "FileTextOutlined", 3, "project:list"),
-		menuPage("project_quote_lists", "projects_root", "报价清单", "/projects/quotes/lists", "pages/quotes/QuoteListManagement", "UnorderedListOutlined", 4, "project:edit"),
-		menuPage("project_quote_compare", "projects_root", "报价对比", "/projects/quotes/compare/:id", "pages/quotes/QuoteComparison", "FileSearchOutlined", 5, "project:view"),
-
-		menuPage("order_center", "", "订单控制台", "/orders", "pages/orders/OrderList", "ProjectOutlined", 45, "order:center:list"),
-		menuButton("order_center_view", "order_center", "查看订单控制台", "order:center:view", 1),
+		// 报价 ERP 属于报价经营治理域，不与项目管理 / 监理工作台混挂。
+		menuDir("quote_erp_root", "", "报价ERP", "/projects/quotes", "FileTextOutlined", 44, ""),
+		menuPage("project_quote_library", "quote_erp_root", "标准项库", "/projects/quotes/library", "pages/quotes/QuoteLibraryManagement", "", 1, "project:list"),
+		menuPage("project_quote_templates", "quote_erp_root", "报价模板", "/projects/quotes/templates", "pages/quotes/QuoteTemplateManagement", "", 2, "project:list"),
+		menuPage("project_quote_lists", "quote_erp_root", "施工报价单", "/projects/quotes/lists", "pages/quotes/QuoteListManagement", "", 3, "project:edit"),
+		menuPage("project_quote_price_books", "quote_erp_root", "施工主体价格库巡检", "/projects/quotes/price-books", "pages/quotes/ProviderPriceBookInspection", "", 4, "provider:list"),
+		menuPage("order_center", "quote_erp_root", "变更与结算", "/orders", "pages/orders/OrderList", "", 5, "order:center:list"),
+		menuHiddenPage("project_quote_compare", "quote_erp_root", "报价对比", "/projects/quotes/compare/:id", "pages/quotes/QuoteComparison", "", 6, "project:view"),
+		menuButton("order_center_view", "order_center", "查看变更与结算", "order:center:view", 1),
 		menuButton("proposal_review", "order_center", "审核方案", "proposal:review", 2),
 
 		menuDir("demands_root", "", "需求中心", "/demands", "UnorderedListOutlined", 46, "demand:center"),
@@ -285,6 +294,7 @@ func menuSpecs() []menuSpec {
 		menuButton("case_audit_approve", "cases_manage", "审核通过", "case:audit:approve", 2),
 		menuButton("case_audit_reject", "cases_manage", "审核拒绝", "case:audit:reject", 3),
 
+		// 监理工作台属于履约执行域，只承接项目巡检和监理动作。
 		menuDir("supervision_root", "", "监理工作台", "/supervision", "ProjectOutlined", 58, ""),
 		menuPage("supervision_projects", "supervision_root", "项目巡检", "/supervision/projects", "pages/supervision/WorkbenchList", "", 1, "supervision:workspace:view"),
 		menuButton("supervision_workspace_edit", "supervision_root", "编辑监理工作台", "supervision:workspace:edit", 1),
@@ -292,15 +302,18 @@ func menuSpecs() []menuSpec {
 
 		menuDir("finance_root", "", "资金中心", "/finance", "BankOutlined", 60, ""),
 		menuPage("finance_overview", "finance_root", "资金概览", "/finance/overview", "pages/finance/FinanceOverview", "AccountBookOutlined", 0, "finance:escrow:list"),
-		menuPage("finance_escrow", "finance_root", "托管账户", "/finance/escrow", "pages/finance/EscrowAccountList", "", 1, "finance:escrow:list"),
+		menuPage("finance_payment_orders", "finance_root", "支付单", "/finance/payment-orders", "pages/finance/PaymentOrderList", "", 1, "finance:transaction:list"),
+		menuPage("finance_escrow", "finance_root", "托管账户", "/finance/escrow", "pages/finance/EscrowAccountList", "", 2, "finance:escrow:list"),
 		menuButton("finance_escrow_view", "finance_root", "查看账户", "finance:escrow:view", 1),
 		menuButton("finance_escrow_freeze", "finance_root", "冻结账户", "finance:escrow:freeze", 2),
 		menuButton("finance_escrow_unfreeze", "finance_root", "解冻账户", "finance:escrow:unfreeze", 3),
-		menuPage("finance_transactions", "finance_root", "交易记录", "/finance/transactions", "pages/finance/TransactionList", "", 2, "finance:transaction:list"),
+		menuPage("finance_transactions", "finance_root", "交易记录", "/finance/transactions", "pages/finance/TransactionList", "", 3, "finance:transaction:list"),
 		menuButton("finance_transaction_view", "finance_root", "查看交易", "finance:transaction:view", 4),
 		menuButton("finance_transaction_export", "finance_root", "导出交易", "finance:transaction:export", 5),
 		menuButton("finance_transaction_approve", "finance_root", "审批交易", "finance:transaction:approve", 6),
-		menuPage("refunds", "finance_root", "退款审核", "/refunds", "pages/refunds/RefundList", "AccountBookOutlined", 5, "finance:transaction:list"),
+		menuPage("finance_payouts", "finance_root", "自动出款", "/finance/payouts", "pages/finance/PayoutList", "", 4, "finance:transaction:list"),
+		menuPage("finance_settlements", "finance_root", "结算管理", "/finance/settlements", "pages/finance/SettlementList", "", 5, "finance:transaction:list"),
+		menuPage("refunds", "finance_root", "退款审核", "/refunds", "pages/refunds/RefundList", "AccountBookOutlined", 6, "finance:transaction:list"),
 
 		menuDir("reviews_root", "", "评价管理", "/reviews", "StarOutlined", 70, "review:list"),
 		menuPage("reviews_list", "reviews_root", "评价列表", "/reviews/list", "pages/reviews/ReviewList", "StarOutlined", 0, "review:list"),
@@ -384,7 +397,8 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit", "provider_company_delete",
 		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit", "provider_foreman_delete",
 		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit", "material_shop_delete",
-		"projects_root", "projects_list", "project_view", "project_edit", "projects_map", "project_quote_library", "project_quote_lists", "project_quote_compare",
+		"projects_root", "projects_list", "project_view", "project_edit", "projects_map",
+		"quote_erp_root", "project_quote_library", "project_quote_templates", "project_quote_lists", "project_quote_price_books", "project_quote_compare",
 		"order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_assign",
 		"reviews_root", "reviews_list", "review_view",
@@ -396,6 +410,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
 		"provider_audit", "provider_audit_view", "provider_audit_approve", "provider_audit_reject",
 		"materials_root", "materials_audit", "material_audit_view", "material_audit_approve", "material_audit_reject",
+		"quote_erp_root",
 		"order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_review", "demand_assign",
 		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail", "booking_dispute_resolve",
@@ -406,15 +421,18 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"dashboard",
 		"users_root", "users_list", "user_view",
 		"projects_root", "projects_list", "project_view",
+		"quote_erp_root",
 		"order_center", "order_center_view",
-		"finance_root", "finance_overview", "finance_escrow", "finance_escrow_view", "finance_escrow_freeze", "finance_escrow_unfreeze",
-		"finance_transactions", "finance_transaction_view", "finance_transaction_export", "finance_transaction_approve", "refunds",
+		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_escrow_freeze", "finance_escrow_unfreeze",
+		"finance_transactions", "finance_transaction_view", "finance_transaction_export", "finance_transaction_approve",
+		"finance_payouts", "finance_settlements", "refunds",
 	}, "财务管理", menus)
 
 	assignPermissionsByKeys(roles["risk"].ID, []string{
 		"dashboard",
 		"users_root", "users_list", "user_view",
 		"projects_root", "projects_list", "project_view",
+		"quote_erp_root",
 		"order_center", "order_center_view",
 		"risk_root", "risk_warnings", "risk_warning_view", "risk_warning_handle", "risk_warning_ignore",
 		"risk_arbitration", "risk_arbitration_view", "risk_arbitration_accept", "risk_arbitration_reject", "risk_arbitration_judge",
@@ -425,6 +443,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"dashboard",
 		"users_root", "users_list", "user_view", "user_edit",
 		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
+		"quote_erp_root",
 		"order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_review",
 		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail",
@@ -437,10 +456,12 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
 		"materials_root", "materials_list", "material_shop_view",
 		"projects_root", "projects_list", "project_view", "projects_map",
+		"quote_erp_root",
 		"order_center", "order_center_view",
 		"demands_root", "demands_list",
 		"bookings_root", "bookings_list", "booking_view",
-		"finance_root", "finance_overview", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view", "finance_transaction_export",
+		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view", "finance_transaction_export",
+		"finance_payouts", "finance_settlements",
 		"reviews_root", "reviews_list", "review_view",
 		"risk_root", "risk_warnings", "risk_warning_view", "risk_arbitration", "risk_arbitration_view",
 		"logs_root", "logs_list", "log_view", "audit_logs",

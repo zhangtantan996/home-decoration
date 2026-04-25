@@ -102,3 +102,25 @@ func encryptProjectSensitiveFields(project *model.Project) error {
 
 	return nil
 }
+
+func encryptQuoteInquirySensitiveFields(inquiry *model.QuoteInquiry) error {
+	if inquiry == nil {
+		return nil
+	}
+
+	if encrypted, err := encryptSensitiveString(inquiry.Address); err != nil {
+		return err
+	} else if encrypted != "" {
+		inquiry.AddressEncrypted = encrypted
+		inquiry.Address = maskAddressForStorage(inquiry.Address)
+	}
+
+	if encrypted, err := encryptSensitiveString(inquiry.Phone); err != nil {
+		return err
+	} else if encrypted != "" {
+		inquiry.PhoneEncrypted = encrypted
+		inquiry.Phone = utils.MaskPhone(strings.TrimSpace(inquiry.Phone))
+	}
+
+	return nil
+}

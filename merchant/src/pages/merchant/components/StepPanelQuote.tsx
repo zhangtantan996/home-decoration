@@ -1,30 +1,17 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Alert, Button, Card, Col, Empty, Form, Input, InputNumber, List, message,
-  Modal, Row, Select, Space, Tag, Upload,
-} from 'antd';
-import type { UploadFile, UploadProps } from 'antd';
-import { FileAddOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Empty, Form, InputNumber, Space, Tag, Typography, message } from 'antd';
+import { ReloadOutlined } from '@ant-design/icons';
 import {
   merchantDesignApi,
-  merchantUploadApi,
-  type DesignWorkingDocItem,
   type DesignFeeQuoteItem,
-  type MerchantUploadResult,
 } from '../../../services/merchantApi';
-import { getStoredPathsFromUploadFiles } from '../../../utils/uploadAsset';
 
-const DOC_TYPES = [
-  { value: 'sketch', label: '量房草图' },
-  { value: 'budget_quote', label: '预算报价' },
-  { value: 'site_photo', label: '现场照片' },
-  { value: 'measurement', label: '测量数据' },
-];
+const { Text, Title } = Typography;
 
 const QUOTE_STATUS_MAP: Record<string, { color: string; label: string }> = {
-  pending: { color: 'processing', label: '待确认' },
-  confirmed: { color: 'success', label: '已确认' },
-  rejected: { color: 'error', label: '已拒绝' },
+  pending: { color: 'processing', label: '待用户确认' },
+  confirmed: { color: 'success', label: '已完成' },
+  rejected: { color: 'error', label: '已退回' },
   expired: { color: 'default', label: '已过期' },
 };
 
@@ -32,74 +19,58 @@ interface StepPanelQuoteProps {
   bookingId: number;
   isActive: boolean;
   isPast: boolean;
+  viewOnly?: boolean;
+  initialQuote?: DesignFeeQuoteItem | null;
   onComplete?: () => void;
 }
 
-const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, isPast, onComplete }) => {
-  const [docs, setDocs] = useState<DesignWorkingDocItem[]>([]);
-  const [quote, setQuote] = useState<DesignFeeQuoteItem | null>(null);
-  const [loadingDocs, setLoadingDocs] = useState(false);
+const sectionCardStyle: React.CSSProperties = {
+  borderRadius: 18,
+  borderColor: '#e2e8f0',
+  background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)',
+};
+
+const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({
+  bookingId,
+  isActive,
+  isPast,
+  viewOnly = false,
+  initialQuote = null,
+  onComplete,
+}) => {
+  const [quote, setQuote] = useState<DesignFeeQuoteItem | null>(initialQuote);
   const [loadingQuote, setLoadingQuote] = useState(false);
-  const [docModalOpen, setDocModalOpen] = useState(false);
-  const [quoteModalOpen, setQuoteModalOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [docForm] = Form.useForm();
   const [quoteForm] = Form.useForm();
 
-  const loadDocs = useCallback(async () => {
-    if (!bookingId) return;
-    setLoadingDocs(true);
-    try {
-      const res = await merchantDesignApi.listWorkingDocs(bookingId);
-      setDocs(res.docs || []);
-    } catch { /* silent */ } finally {
-      setLoadingDocs(false);
+  useEffect(() => {
+    setQuote(initialQuote);
+  }, [initialQuote]);
+
+  useEffect(() => {
+    if (quote) {
+      quoteForm.setFieldsValue({ totalFee: quote.totalFee });
+      return;
     }
-  }, [bookingId]);
+    quoteForm.resetFields();
+  }, [quote, quoteForm]);
 
   const loadQuote = useCallback(async () => {
     if (!bookingId) return;
     setLoadingQuote(true);
     try {
       const res = await merchantDesignApi.getDesignFeeQuote(bookingId);
-      setQuote(res.quote || null);
-    } catch { /* silent */ } finally {
+      setQuote(res.quote || initialQuote || null);
+    } catch {
+      if (!initialQuote && !quote) {
+        message.error('设计费报价加载失败，请稍后刷新重试');
+      }
+    } finally {
       setLoadingQuote(false);
     }
-  }, [bookingId]);
+  }, [bookingId, initialQuote]);
 
-  useEffect(() => { void loadDocs(); void loadQuote(); }, [loadDocs, loadQuote]);
-
-  const handleFileUpload: UploadProps['customRequest'] = async (options) => {
-    try {
-      const uploaded = await merchantUploadApi.uploadImageData(options.file as File);
-      options.onSuccess?.(uploaded);
-    } catch {
-      options.onError?.(new Error('上传失败'));
-    }
-  };
-
-  const handleUploadDoc = async () => {
-    setSubmitting(true);
-    try {
-      const values = await docForm.validateFields();
-      const files = getStoredPathsFromUploadFiles((values.fileUrls || []) as Array<UploadFile<MerchantUploadResult>>);
-      await merchantDesignApi.uploadWorkingDoc(bookingId, {
-        docType: values.docType,
-        title: values.title,
-        description: values.description || '',
-        files: JSON.stringify(files),
-      });
-      message.success('文档上传成功');
-      setDocModalOpen(false);
-      docForm.resetFields();
-      void loadDocs();
-    } catch {
-      message.error('上传失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  useEffect(() => { void loadQuote(); }, [loadQuote]);
 
   const handleCreateQuote = async () => {
     setSubmitting(true);
@@ -107,17 +78,14 @@ const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, is
       const values = await quoteForm.validateFields();
       await merchantDesignApi.createDesignFeeQuote(bookingId, {
         totalFee: values.totalFee,
-        depositDeduction: values.depositDeduction || 0,
-        paymentMode: values.paymentMode || 'onetime',
-        description: values.description || '',
       });
-      message.success('报价发送成功');
-      setQuoteModalOpen(false);
+      message.success('报价已发送');
       quoteForm.resetFields();
-      void loadQuote();
+      await loadQuote();
       onComplete?.();
-    } catch {
-      message.error('创建报价失败');
+    } catch (error: any) {
+      if (error?.errorFields) return;
+      message.error(error?.message || '创建报价失败');
     } finally {
       setSubmitting(false);
     }
@@ -125,123 +93,97 @@ const StepPanelQuote: React.FC<StepPanelQuoteProps> = ({ bookingId, isActive, is
 
   const quoteStatus = quote ? QUOTE_STATUS_MAP[quote.status] : null;
 
-  if (isPast && quote?.status === 'confirmed') {
+  const renderHeader = () => (
+    <Card bordered={false} style={{ ...sectionCardStyle, marginBottom: 16 }}>
+      <div style={{ display: 'grid', gap: 10 }}>
+        <Space wrap>
+          {quoteStatus ? <Tag color={quoteStatus.color}>{quoteStatus.label}</Tag> : null}
+          {quote?.rejectionReason ? <Tag color="error">本轮被退回</Tag> : null}
+        </Space>
+        <div>
+          <Title level={5} style={{ margin: 0 }}>设计费报价</Title>
+          <Text type="secondary">清晰展示设计费总额、用户支付金额和当前报价状态，便于快速推进付款确认。</Text>
+        </div>
+        {quote?.rejectionReason ? (
+          <Alert type="warning" showIcon message="用户反馈" description={quote.rejectionReason} />
+        ) : null}
+        {!isActive && !viewOnly ? (
+          <Alert type="info" showIcon message="当前步骤暂不可编辑，请先完成前置步骤。" />
+        ) : null}
+      </div>
+    </Card>
+  );
+
+  if (viewOnly || (isPast && quote?.status === 'confirmed')) {
+    if (!quote) {
+      return <Empty description="暂无设计费报价" image={Empty.PRESENTED_IMAGE_SIMPLE} />;
+    }
     return (
-      <Alert
-        message="设计费报价已完成"
-        description={`总额 ¥${quote.totalFee?.toLocaleString()} · 量房费抵扣 ¥${quote.depositDeduction?.toLocaleString()} · 实付 ¥${quote.netAmount?.toLocaleString()}`}
-        type="success"
-        showIcon
-      />
+      <div>
+        {renderHeader()}
+        <div style={{ display: 'grid', gap: 16 }}>
+          <Card bordered={false} style={{ ...sectionCardStyle, background: 'linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)' }}>
+            <div style={{ display: 'grid', gap: 8 }}>
+              <Text type="secondary">设计费总额</Text>
+              <div style={{ color: '#0f172a', fontSize: 34, fontWeight: 700 }}>¥{quote.totalFee?.toLocaleString()}</div>
+              <Text type="secondary">用户支付 ¥{quote.netAmount?.toLocaleString()}</Text>
+            </div>
+          </Card>
+
+          <Card title="报价说明" bordered={false} style={sectionCardStyle}>
+            <div style={{ display: 'grid', gap: 10 }}>
+              <div>
+                <div style={{ marginBottom: 6, color: '#64748b', fontSize: 13 }}>支付方式</div>
+                <div style={{ color: '#334155', lineHeight: 1.8 }}>{quote.paymentMode || '默认支付方式'}</div>
+              </div>
+              <div>
+                <div style={{ marginBottom: 6, color: '#64748b', fontSize: 13 }}>备注</div>
+                <div style={{ color: '#334155', lineHeight: 1.8 }}>{quote.description || '暂无额外说明'}</div>
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
     );
   }
 
   return (
     <div>
-      <Row gutter={16}>
-        <Col xs={24} lg={12}>
-          <Card
-            title="工作文档"
-            size="small"
-            loading={loadingDocs}
-            extra={
-              isActive && (
-                <Button size="small" icon={<FileAddOutlined />} onClick={() => setDocModalOpen(true)}>
-                  上传文档
-                </Button>
-              )
-            }
-          >
-            {docs.length === 0 ? (
-              <Empty description="暂无工作文档" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <List
-                size="small"
-                dataSource={docs}
-                renderItem={(doc) => (
-                  <List.Item>
-                    <List.Item.Meta
-                      title={doc.title}
-                      description={
-                        <Space>
-                          <Tag>{DOC_TYPES.find((t) => t.value === doc.docType)?.label || doc.docType}</Tag>
-                          <span style={{ color: '#999', fontSize: 12 }}>{doc.createdAt?.slice(0, 10)}</span>
-                        </Space>
-                      }
-                    />
-                  </List.Item>
-                )}
-              />
-            )}
-          </Card>
-        </Col>
+      {renderHeader()}
+      <div style={{ display: 'grid', gap: 16 }}>
+        <Card bordered={false} style={{ ...sectionCardStyle, background: 'linear-gradient(180deg, #eff6ff 0%, #ffffff 100%)' }}>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <Text type="secondary">当前报价</Text>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <span style={{ color: '#0f172a', fontSize: 34, fontWeight: 700 }}>
+                {quote ? `¥${quote.totalFee?.toLocaleString()}` : '尚未报价'}
+              </span>
+              {quoteStatus ? <Tag color={quoteStatus.color}>{quoteStatus.label}</Tag> : null}
+            </div>
+            <Text type="secondary">{quote ? `用户支付 ¥${quote.netAmount?.toLocaleString()}` : '填写价格后即可发送报价'}</Text>
+          </div>
+        </Card>
 
-        <Col xs={24} lg={12}>
-          <Card
-            title="设计费报价"
-            size="small"
-            loading={loadingQuote}
-            extra={
-              <Space>
-                {isActive && (!quote || quote.status === 'rejected' || quote.status === 'expired') && (
-                  <Button size="small" type="primary" icon={<SendOutlined />} onClick={() => setQuoteModalOpen(true)}>
-                    发送报价
-                  </Button>
-                )}
-                <Button size="small" icon={<ReloadOutlined />} onClick={() => { void loadQuote(); }}>刷新</Button>
-              </Space>
-            }
-          >
-            {!quote ? (
-              <Empty description="尚未发送设计费报价" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-            ) : (
-              <>
-                <p>总额: ¥{quote.totalFee?.toLocaleString()}</p>
-                <p>量房费抵扣: ¥{quote.depositDeduction?.toLocaleString()}</p>
-                <p>实付: ¥{quote.netAmount?.toLocaleString()}</p>
-                <p>状态: {quoteStatus && <Tag color={quoteStatus.color}>{quoteStatus.label}</Tag>}</p>
-                {quote.rejectionReason && <p style={{ color: '#ff4d4f' }}>拒绝原因: {quote.rejectionReason}</p>}
-              </>
-            )}
-          </Card>
-        </Col>
-      </Row>
+        <Card title="发送报价" bordered={false} style={sectionCardStyle}>
+          <Form form={quoteForm} layout="vertical">
+            <Form.Item name="totalFee" label="设计费（元）" rules={[{ required: true, message: '请输入设计费' }]}>
+              <InputNumber min={0} precision={2} style={{ width: '100%' }} placeholder="请输入价格" />
+            </Form.Item>
+            <Text type="secondary">报价发送后，用户将进入确认或支付环节。</Text>
+          </Form>
+        </Card>
 
-      <Modal title="上传工作文档" open={docModalOpen} onOk={handleUploadDoc} onCancel={() => setDocModalOpen(false)} confirmLoading={submitting}>
-        <Form form={docForm} layout="vertical">
-          <Form.Item name="docType" label="文档类型" rules={[{ required: true }]}>
-            <Select options={DOC_TYPES} />
-          </Form.Item>
-          <Form.Item name="title" label="标题" rules={[{ required: true }]}>
-            <Input maxLength={100} />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-          <Form.Item name="fileUrls" label="文件">
-            <Upload customRequest={handleFileUpload} listType="picture-card" multiple>
-              <div>上传</div>
-            </Upload>
-          </Form.Item>
-        </Form>
-      </Modal>
-
-      <Modal title="发送设计费报价" open={quoteModalOpen} onOk={handleCreateQuote} onCancel={() => setQuoteModalOpen(false)} confirmLoading={submitting}>
-        <Form form={quoteForm} layout="vertical">
-          <Form.Item name="totalFee" label="设计费总额" rules={[{ required: true }]}>
-            <InputNumber min={0} precision={2} style={{ width: '100%' }} prefix="¥" />
-          </Form.Item>
-          <Form.Item name="depositDeduction" label="量房费抵扣">
-            <InputNumber min={0} precision={2} style={{ width: '100%' }} prefix="¥" />
-          </Form.Item>
-          <Form.Item name="paymentMode" label="支付方式" initialValue="onetime">
-            <Select options={[{ value: 'onetime', label: '一次性' }, { value: 'staged', label: '分阶段' }]} />
-          </Form.Item>
-          <Form.Item name="description" label="备注">
-            <Input.TextArea rows={3} />
-          </Form.Item>
-        </Form>
-      </Modal>
+        <Card title="操作区" bordered={false} style={sectionCardStyle}>
+          <Space wrap>
+            <Button type="primary" loading={submitting} onClick={() => void handleCreateQuote()} disabled={!isActive}>
+              发送设计费报价
+            </Button>
+            <Button icon={<ReloadOutlined />} loading={loadingQuote} onClick={() => { void loadQuote(); }}>
+              刷新内容
+            </Button>
+          </Space>
+        </Card>
+      </div>
     </div>
   );
 };

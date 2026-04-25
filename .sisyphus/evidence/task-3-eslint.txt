@@ -1,5 +1,0 @@
-
-> HomeDecorationApp@0.0.1 lint
-> eslint .
-
-sh: eslint: command not found

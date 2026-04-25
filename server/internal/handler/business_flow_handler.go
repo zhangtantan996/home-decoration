@@ -52,7 +52,13 @@ func GetProposal(c *gin.Context) {
 	var order model.Order
 	var hasOrder bool
 	deliveryUnlocked := false
-	if err := repository.DB.Where("proposal_id = ? AND order_type = ?", proposalID, "design").Order("created_at desc").First(&order).Error; err == nil {
+	query := repository.DB.Where("order_type = ?", model.OrderTypeDesign).Order("created_at desc, id desc")
+	if proposal.BookingID > 0 {
+		query = query.Where("booking_id = ?", proposal.BookingID)
+	} else {
+		query = query.Where("proposal_id = ?", proposalID)
+	}
+	if err := query.First(&order).Error; err == nil {
 		if order.Status == model.OrderStatusPending {
 			if _, syncErr := paymentService.SyncLatestPendingBizPayment(model.PaymentBizTypeOrder, order.ID); syncErr == nil {
 				_ = repository.DB.First(&order, order.ID).Error
@@ -67,15 +73,23 @@ func GetProposal(c *gin.Context) {
 	responseProposal := *proposal
 	responseProposal.InternalDraftJSON = "{}"
 	responseProposal.Attachments = "[]"
-	if !deliveryUnlocked {
-		responseProposal.DeliveryPackageJSON = "{}"
-	}
+	bridgeSummary := service.BuildBridgeReadModelByProposalID(proposal.ID)
+	bridgeConversionSummary := service.BuildBridgeConversionSummaryByProposalID(proposal.ID)
 
 	response.Success(c, gin.H{
-		"proposal":         responseProposal,
-		"order":            order,
-		"hasOrder":         hasOrder,
-		"deliveryUnlocked": deliveryUnlocked,
+		"proposal":                       responseProposal,
+		"order":                          order,
+		"hasOrder":                       hasOrder,
+		"deliveryUnlocked":               deliveryUnlocked,
+		"baselineStatus":                 bridgeSummary.BaselineStatus,
+		"baselineSubmittedAt":            bridgeSummary.BaselineSubmittedAt,
+		"constructionSubjectType":        bridgeSummary.ConstructionSubjectType,
+		"constructionSubjectId":          bridgeSummary.ConstructionSubjectID,
+		"constructionSubjectDisplayName": bridgeSummary.ConstructionSubjectDisplayName,
+		"kickoffStatus":                  bridgeSummary.KickoffStatus,
+		"plannedStartDate":               bridgeSummary.PlannedStartDate,
+		"supervisorSummary":              bridgeSummary.SupervisorSummary,
+		"bridgeConversionSummary":        bridgeConversionSummary,
 	})
 }
 
@@ -92,20 +106,20 @@ func GetProposalByBooking(c *gin.Context) {
 	response.Success(c, proposal)
 }
 
-// ConfirmProposal 用户确认方案 -> 创建设计费订单
+// ConfirmProposal 用户确认正式方案 -> 进入施工桥接
 func ConfirmProposal(c *gin.Context) {
 	userID := c.GetUint64("userId")
 	proposalID := parseUint64(c.Param("id"))
 
-	order, err := proposalService.ConfirmProposal(userID, proposalID)
+	proposal, err := proposalService.ConfirmProposal(userID, proposalID)
 	if err != nil {
 		respondDomainMutationError(c, err, "确认方案失败")
 		return
 	}
 
 	response.Success(c, gin.H{
-		"order":   order,
-		"message": "请在48小时内完成设计费支付",
+		"proposal": proposal,
+		"message":  "方案已确认，下一步进入施工桥接",
 	})
 }
 

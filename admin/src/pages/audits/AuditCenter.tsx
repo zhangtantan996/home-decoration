@@ -19,6 +19,7 @@ import StatusTag from '../../components/StatusTag';
 import { AuditOutlined, CheckCircleOutlined, FileImageOutlined, ShopOutlined } from '@ant-design/icons';
 import { AUDIT_MODULE_OPTIONS, PROVIDER_ROLE_META } from '../../constants/statuses';
 import { formatServerDateTime, getServerTimeMs } from '../../utils/serverTime';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 type AuditModuleKey = 'all' | 'provider' | 'material' | 'identity' | 'case';
 
@@ -58,12 +59,7 @@ const defaultModuleState = <T,>(): AuditModuleState<T> => ({
 
 const formatDateTime = formatServerDateTime;
 
-const readErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error) {
-        return error.message || fallback;
-    }
-    return fallback;
-};
+const readErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const wrapSuccessButtonStyle: React.CSSProperties = {
     background: '#059669',

@@ -5,8 +5,7 @@ API_BASE=${PHASE2_API_BASE:-http://127.0.0.1:8080/api/v1}
 USER_PHONE=${PHASE2_USER_PHONE:-19999100001}
 MERCHANT_PHONE=${PHASE2_MERCHANT_PHONE:-19999100002}
 PROJECT_ID=${PHASE2_PROJECT_ID:-99140}
-REDIS_CONTAINER=${PHASE2_REDIS_CONTAINER:-home_decor_redis_local}
-REDIS_PASSWORD=${PHASE2_REDIS_PASSWORD:-kXTSG3Q7yjug7I60JgOmWo6w9OIJrFUf}
+ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
 json_field() {
   node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{const j=JSON.parse(s); const path=process.argv[1].split('.'); let cur=j; for (const k of path){cur=cur?.[k]} process.stdout.write(String(cur ?? ''))})" "$1"
@@ -24,21 +23,21 @@ assert_code_zero() {
 }
 
 clear_rate_limits() {
-  if ! command -v docker >/dev/null 2>&1; then
-    return
-  fi
-  if ! docker ps --format '{{.Names}}' | grep -qx "$REDIS_CONTAINER"; then
-    return
-  fi
-  local keys
-  keys=$(docker exec "$REDIS_CONTAINER" redis-cli -a "$REDIS_PASSWORD" --raw KEYS 'rate_limit:*' || true)
-  if [[ -z "$keys" ]]; then
-    return
-  fi
-  while IFS= read -r key; do
-    [[ -z "$key" ]] && continue
-    docker exec "$REDIS_CONTAINER" redis-cli -a "$REDIS_PASSWORD" DEL "$key" >/dev/null
-  done <<<"$keys"
+  (
+    if [[ -n "${PHASE2_REDIS_CONTAINER+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_CONTAINER="$PHASE2_REDIS_CONTAINER"
+    fi
+    if [[ -n "${PHASE2_REDIS_HOST+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_HOST="$PHASE2_REDIS_HOST"
+    fi
+    if [[ -n "${PHASE2_REDIS_PORT+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_PORT="$PHASE2_REDIS_PORT"
+    fi
+    if [[ -n "${PHASE2_REDIS_PASSWORD+x}" ]]; then
+      export USER_WEB_FIXTURE_REDIS_PASSWORD="$PHASE2_REDIS_PASSWORD"
+    fi
+    "$ROOT_DIR/scripts/user-web-clear-rate-limit.sh"
+  ) >/dev/null 2>&1 || true
 }
 
 send_login_code() {
@@ -69,7 +68,7 @@ assert_code_zero "$merchant_login" merchant-login
 merchant_token=$(printf '%s' "$merchant_login" | json_field data.token)
 
 echo "[phase2-smoke] create contract"
-contract_create=$(curl -sS -X POST "$API_BASE/contracts" \
+contract_create=$(curl -sS -X POST "$API_BASE/merchant/contracts" \
   -H 'Content-Type: application/json' \
   -H "Authorization: Bearer $merchant_token" \
   -d "{
@@ -87,9 +86,9 @@ contract_create=$(curl -sS -X POST "$API_BASE/contracts" \
 assert_code_zero "$contract_create" contract-create
 contract_id=$(printf '%s' "$contract_create" | json_field data.id)
 
-echo "[phase2-smoke] confirm contract #$contract_id"
-contract_confirm=$(curl -sS -X POST "$API_BASE/contracts/$contract_id/confirm" -H "Authorization: Bearer $user_token")
-assert_code_zero "$contract_confirm" contract-confirm
+echo "[phase2-smoke] get contract #$contract_id"
+contract_detail=$(curl -sS "$API_BASE/contracts/$contract_id" -H "Authorization: Bearer $user_token")
+assert_code_zero "$contract_detail" contract-detail
 
 echo "[phase2-smoke] create complaint"
 complaint_create=$(curl -sS -X POST "$API_BASE/complaints" \

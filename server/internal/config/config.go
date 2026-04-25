@@ -15,6 +15,7 @@ type Config struct {
 	JWT                  JWTConfig                  `mapstructure:"jwt"`
 	AdminAuth            AdminAuthConfig            `mapstructure:"admin_auth"`
 	Log                  LogConfig                  `mapstructure:"log"`
+	Storage              StorageConfig              `mapstructure:"storage"`
 	WechatMini           WechatMiniConfig           `mapstructure:"wechat_mini"`
 	WechatH5             WechatH5Config             `mapstructure:"wechat_h5"`
 	WechatPay            WechatPayConfig            `mapstructure:"wechat_pay"`
@@ -81,6 +82,15 @@ type LogConfig struct {
 	AuditRetentionDays int    `mapstructure:"audit_retention_days"` // 审计日志保留天数（生产环境最少 180 天）
 }
 
+type StorageConfig struct {
+	Driver             string `mapstructure:"driver"` // local | oss
+	OSSEndpoint        string `mapstructure:"oss_endpoint"`
+	OSSAccessKeyID     string `mapstructure:"oss_access_key_id"`
+	OSSAccessKeySecret string `mapstructure:"oss_access_key_secret"`
+	OSSBucket          string `mapstructure:"oss_bucket"`
+	PublicBaseURL      string `mapstructure:"public_base_url"`
+}
+
 // WechatMiniConfig 微信小程序配置
 type WechatMiniConfig struct {
 	AppID                  string `mapstructure:"app_id"`
@@ -125,33 +135,35 @@ type AlipayConfig struct {
 
 // SMSConfig 短信服务配置（生产环境建议使用云短信服务，如阿里云短信）
 type SMSConfig struct {
-	Provider                     string  `mapstructure:"provider"` // mock | aliyun
-	AccessKeyID                  string  `mapstructure:"access_key_id"`
-	AccessKeySecret              string  `mapstructure:"access_key_secret"`
-	SignName                     string  `mapstructure:"sign_name"`
-	TemplateCode                 string  `mapstructure:"template_code"`
-	TemplateCodeLow              string  `mapstructure:"template_code_low"`
-	TemplateCodeMedium           string  `mapstructure:"template_code_medium"`
-	TemplateCodeHigh             string  `mapstructure:"template_code_high"`
-	TemplateCodeLogin            string  `mapstructure:"template_code_login"`
-	TemplateCodeRegister         string  `mapstructure:"template_code_register"`
-	TemplateCodeIdentityApply    string  `mapstructure:"template_code_identity_apply"`
-	TemplateCodeMerchantWithdraw string  `mapstructure:"template_code_merchant_withdraw"`
-	TemplateCodeMerchantBankBind string  `mapstructure:"template_code_merchant_bank_bind"`
-	TemplateCodeChangePhone      string  `mapstructure:"template_code_change_phone"`
-	TemplateCodeDeleteAccount    string  `mapstructure:"template_code_delete_account"`
-	RegionID                     string  `mapstructure:"region_id"` // default: cn-hangzhou
-	DebugBypass                  bool    `mapstructure:"debug_bypass"`
-	RiskEnabled                  bool    `mapstructure:"risk_enabled"`
-	CodeMaxAttempts              int     `mapstructure:"code_max_attempts"`
-	PhoneDailyLimit              int     `mapstructure:"phone_daily_limit"`
-	IPDailyLimit                 int     `mapstructure:"ip_daily_limit"`
-	CaptchaEnabled               bool    `mapstructure:"captcha_enabled"`
-	CaptchaProvider              string  `mapstructure:"captcha_provider"` // turnstile | hcaptcha | recaptcha
-	CaptchaVerifyURL             string  `mapstructure:"captcha_verify_url"`
-	CaptchaSecretKey             string  `mapstructure:"captcha_secret_key"`
-	CaptchaTimeoutMs             int     `mapstructure:"captcha_timeout_ms"`
-	CaptchaMinScore              float64 `mapstructure:"captcha_min_score"`
+	Provider                          string  `mapstructure:"provider"` // mock | aliyun
+	AccessKeyID                       string  `mapstructure:"access_key_id"`
+	AccessKeySecret                   string  `mapstructure:"access_key_secret"`
+	SignName                          string  `mapstructure:"sign_name"`
+	TemplateCode                      string  `mapstructure:"template_code"`
+	TemplateCodeLow                   string  `mapstructure:"template_code_low"`
+	TemplateCodeMedium                string  `mapstructure:"template_code_medium"`
+	TemplateCodeHigh                  string  `mapstructure:"template_code_high"`
+	TemplateCodeLogin                 string  `mapstructure:"template_code_login"`
+	TemplateCodeRegister              string  `mapstructure:"template_code_register"`
+	TemplateCodeIdentityApply         string  `mapstructure:"template_code_identity_apply"`
+	TemplateCodeMerchantWithdraw      string  `mapstructure:"template_code_merchant_withdraw"`
+	TemplateCodeMerchantBankBind      string  `mapstructure:"template_code_merchant_bank_bind"`
+	TemplateCodeMerchantApplyApproved string  `mapstructure:"template_code_merchant_apply_approved"`
+	TemplateCodeMerchantApplyRejected string  `mapstructure:"template_code_merchant_apply_rejected"`
+	TemplateCodeChangePhone           string  `mapstructure:"template_code_change_phone"`
+	TemplateCodeDeleteAccount         string  `mapstructure:"template_code_delete_account"`
+	RegionID                          string  `mapstructure:"region_id"` // default: cn-hangzhou
+	DebugBypass                       bool    `mapstructure:"debug_bypass"`
+	RiskEnabled                       bool    `mapstructure:"risk_enabled"`
+	CodeMaxAttempts                   int     `mapstructure:"code_max_attempts"`
+	PhoneDailyLimit                   int     `mapstructure:"phone_daily_limit"`
+	IPDailyLimit                      int     `mapstructure:"ip_daily_limit"`
+	CaptchaEnabled                    bool    `mapstructure:"captcha_enabled"`
+	CaptchaProvider                   string  `mapstructure:"captcha_provider"` // turnstile | hcaptcha | recaptcha
+	CaptchaVerifyURL                  string  `mapstructure:"captcha_verify_url"`
+	CaptchaSecretKey                  string  `mapstructure:"captcha_secret_key"`
+	CaptchaTimeoutMs                  int     `mapstructure:"captcha_timeout_ms"`
+	CaptchaMinScore                   float64 `mapstructure:"captcha_min_score"`
 }
 
 type NotificationRealtimeConfig struct {
@@ -219,6 +231,17 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("admin_auth.api_ip_enforced", "ADMIN_AUTH_API_IP_ENFORCED")
 	_ = viper.BindEnv("admin_auth.allowed_cidrs", "ADMIN_AUTH_ALLOWED_CIDRS")
 	_ = viper.BindEnv("log.audit_retention_days", "LOG_AUDIT_RETENTION_DAYS")
+	_ = viper.BindEnv("storage.driver", "STORAGE_DRIVER")
+	_ = viper.BindEnv("storage.oss_endpoint", "STORAGE_OSS_ENDPOINT")
+	_ = viper.BindEnv("storage.oss_access_key_id", "STORAGE_OSS_ACCESS_KEY_ID")
+	_ = viper.BindEnv("storage.oss_access_key_secret", "STORAGE_OSS_ACCESS_KEY_SECRET")
+	_ = viper.BindEnv("storage.oss_bucket", "STORAGE_OSS_BUCKET")
+	_ = viper.BindEnv("storage.public_base_url", "STORAGE_PUBLIC_BASE_URL")
+	_ = viper.BindEnv("storage.oss_endpoint", "OSS_ENDPOINT")
+	_ = viper.BindEnv("storage.oss_access_key_id", "OSS_ACCESS_KEY_ID")
+	_ = viper.BindEnv("storage.oss_access_key_secret", "OSS_ACCESS_KEY_SECRET")
+	_ = viper.BindEnv("storage.oss_bucket", "OSS_BUCKET")
+	_ = viper.BindEnv("storage.public_base_url", "OSS_PUBLIC_BASE_URL")
 
 	_ = viper.BindEnv("sms.provider", "SMS_PROVIDER")
 	_ = viper.BindEnv("alipay.enabled", "ALIPAY_ENABLED")
@@ -243,6 +266,8 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("sms.template_code_identity_apply", "SMS_TEMPLATE_CODE_IDENTITY_APPLY")
 	_ = viper.BindEnv("sms.template_code_merchant_withdraw", "SMS_TEMPLATE_CODE_MERCHANT_WITHDRAW")
 	_ = viper.BindEnv("sms.template_code_merchant_bank_bind", "SMS_TEMPLATE_CODE_MERCHANT_BANK_BIND")
+	_ = viper.BindEnv("sms.template_code_merchant_apply_approved", "SMS_TEMPLATE_CODE_MERCHANT_APPLY_APPROVED")
+	_ = viper.BindEnv("sms.template_code_merchant_apply_rejected", "SMS_TEMPLATE_CODE_MERCHANT_APPLY_REJECTED")
 	_ = viper.BindEnv("sms.template_code_change_phone", "SMS_TEMPLATE_CODE_CHANGE_PHONE")
 	_ = viper.BindEnv("sms.template_code_delete_account", "SMS_TEMPLATE_CODE_DELETE_ACCOUNT")
 	_ = viper.BindEnv("sms.region_id", "SMS_REGION_ID")
@@ -304,6 +329,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", "logs/backend.log")
 	viper.SetDefault("log.audit_retention_days", 180)
+	viper.SetDefault("storage.driver", "local")
+	viper.SetDefault("storage.oss_endpoint", "")
+	viper.SetDefault("storage.oss_access_key_id", "")
+	viper.SetDefault("storage.oss_access_key_secret", "")
+	viper.SetDefault("storage.oss_bucket", "")
+	viper.SetDefault("storage.public_base_url", "")
 	viper.SetDefault("wechat_mini.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.bind_token_expire_minutes", 5)
 	viper.SetDefault("wechat_h5.oauth_scope", "snsapi_base")

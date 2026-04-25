@@ -24,9 +24,9 @@ export const ADMIN_BUSINESS_STAGE_META: Record<string, { text: string; color: st
   negotiating: { text: '沟通中', color: 'processing' },
   design_pending_submission: { text: '待设计师提交方案', color: 'gold' },
   design_pending_confirmation: { text: '设计方案待确认', color: 'processing' },
-  construction_party_pending: { text: '待确定施工方（可干预）', color: 'gold' },
+  construction_party_pending: { text: '施工桥接中（可干预）', color: 'gold' },
   construction_quote_pending: { text: '施工报价待确认（可干预）', color: 'processing' },
-  ready_to_start: { text: '待开工', color: 'gold' },
+  ready_to_start: { text: '待监理协调开工', color: 'gold' },
   in_construction: { text: '施工中', color: 'blue' },
   node_acceptance_in_progress: { text: '节点验收中', color: 'orange' },
   completed: { text: '已完工待验收', color: 'success' },
@@ -40,9 +40,9 @@ export const ADMIN_BUSINESS_ACTION_LABELS: Record<string, string> = {
   confirm_proposal: '确认设计方案',
   reject_proposal: '驳回设计方案',
   create_quote_task: '创建施工报价任务',
-  select_constructor: '运营干预施工方',
+  select_constructor: '项目内施工协调',
   submit_construction_quote: '跟进施工报价提交',
-  confirm_construction_quote: '运营干预施工报价',
+  confirm_construction_quote: '项目内报价干预',
   reject_construction_quote: '驳回施工报价',
   start_project: '发起开工',
   submit_milestone: '提交节点验收',
@@ -52,9 +52,9 @@ export const ADMIN_BUSINESS_ACTION_LABELS: Record<string, string> = {
 };
 
 export const ADMIN_PROJECT_STAGE_FILTERS: Array<{ value: string; label: string }> = [
-  { value: 'construction_party_pending', label: '待确定施工方（可干预）' },
+  { value: 'construction_party_pending', label: '施工桥接中（可干预）' },
   { value: 'construction_quote_pending', label: '施工报价待确认（可干预）' },
-  { value: 'ready_to_start', label: '待开工' },
+  { value: 'ready_to_start', label: '待监理协调开工' },
   { value: 'in_construction', label: '施工中' },
   { value: 'node_acceptance_in_progress', label: '节点验收中' },
   { value: 'completed', label: '已完工待验收' },
@@ -522,4 +522,20 @@ export const SETTLED_STATUS_META: Record<string, { text: string; color: string }
 export const SETTLED_FILTER_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'true', label: '已入驻' },
   { value: 'false', label: '未入驻' },
+];
+
+export const ADMIN_QUOTE_INQUIRY_CONVERSION_STATUS_META: Record<string, { text: string; color: string }> = {
+  pending: { text: '待跟进', color: 'default' },
+  contacted: { text: '已联系', color: 'processing' },
+  booking_created: { text: '已预约', color: 'success' },
+  converted: { text: '已转化', color: 'success' },
+  abandoned: { text: '已放弃', color: 'error' },
+};
+
+export const ADMIN_QUOTE_INQUIRY_CONVERSION_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'pending', label: '待跟进' },
+  { value: 'contacted', label: '已联系' },
+  { value: 'booking_created', label: '已预约' },
+  { value: 'converted', label: '已转化' },
+  { value: 'abandoned', label: '已放弃' },
 ];

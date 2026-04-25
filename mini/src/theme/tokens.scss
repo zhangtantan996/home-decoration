@@ -1,25 +1,24 @@
-// Design tokens for mini program
+/**
+ * Mini program SCSS design tokens
+ * Auto-generated from shared/design-tokens/tokens.json.
+ * Do not edit manually.
+ */
 
-// Colors
+$color-brand: #D4AF37;
 $color-primary: #09090B;
 $color-secondary: #71717A;
 $color-placeholder: #A1A1AA;
-$color-disabled: #D4D4D8;
-$color-brand: #D4AF37;
+$color-disabled: #E4E4E7;
+$color-bg-page: #F8F9FA;
+$color-bg-card: #FFFFFF;
+$color-border: #E4E4E7;
+$color-border-soft: #F4F4F5;
 $color-success: #10B981;
 $color-warning: #F59E0B;
 $color-error: #EF4444;
+$color-info: #3B82F6;
+$color-black: #09090B;
 $color-white: #FFFFFF;
-
-// Backgrounds
-$color-bg-page: #FAFAFA;
-$color-bg-card: #FFFFFF;
-
-// Borders
-$color-border: #E4E4E7;
-$color-border-soft: #F4F4F5;
-
-// Grays
 $color-gray-50: #FAFAFA;
 $color-gray-100: #F4F4F5;
 $color-gray-200: #E4E4E7;
@@ -31,30 +30,26 @@ $color-gray-700: #3F3F46;
 $color-gray-800: #27272A;
 $color-gray-900: #18181B;
 
-// Typography (rpx)
 $font-xs: 20rpx;
 $font-caption: 24rpx;
 $font-body: 28rpx;
 $font-h3: 32rpx;
-$font-h2: 36rpx;
+$font-h2: 34rpx;
 $font-h1: 40rpx;
 
-// Spacing (rpx)
 $spacing-xs: 8rpx;
 $spacing-sm: 12rpx;
 $spacing-md: 16rpx;
-$spacing-lg: 24rpx;
-$spacing-xl: 32rpx;
-$spacing-xxl: 48rpx;
+$spacing-lg: 20rpx;
+$spacing-xl: 24rpx;
+$spacing-xxl: 32rpx;
 
-// Border radius
-$radius-xs: 4rpx;
-$radius-sm: 8rpx;
-$radius-md: 12rpx;
-$radius-lg: 16rpx;
+$radius-xs: 8rpx;
+$radius-sm: 12rpx;
+$radius-md: 16rpx;
+$radius-lg: 20rpx;
 $radius-full: 9999rpx;
 
-// Shadows
 $shadow-sm: 0 2rpx 8rpx rgba(0, 0, 0, 0.05);
 $shadow-md: 0 4rpx 16rpx rgba(0, 0, 0, 0.1);
 $shadow-lg: 0 8rpx 24rpx rgba(0, 0, 0, 0.15);

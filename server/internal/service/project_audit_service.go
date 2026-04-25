@@ -460,10 +460,14 @@ func resolveAuditCloseTx(tx *gorm.DB, audit *model.ProjectAudit, project *model.
 	if err := clearProjectDisputeStateTx(tx, project.ID); err != nil {
 		return err
 	}
+	now := time.Now()
 	if err := tx.Model(project).Updates(map[string]interface{}{
 		"current_phase":   "仲裁关闭",
 		"status":          model.ProjectStatusClosed,
 		"business_status": model.ProjectBusinessStatusCancelled,
+		"closed_reason":   conclusionReason,
+		"closed_at":       now,
+		"closure_type":    "abnormal",
 	}).Error; err != nil {
 		return err
 	}
@@ -474,6 +478,114 @@ func resolveAuditCloseTx(tx *gorm.DB, audit *model.ProjectAudit, project *model.
 		return err
 	}
 	return resolveLinkedComplaintTx(tx, audit.ComplaintID, adminID, conclusionReason, false)
+}
+
+// CloseProject 关闭项目（正常关闭或异常关闭）
+func (s *ProjectAuditService) CloseProject(projectID, adminID uint64, closureType, reason string) error {
+	if closureType != "normal" && closureType != "abnormal" {
+		return errors.New("无效的关闭类型")
+	}
+	if strings.TrimSpace(reason) == "" {
+		return errors.New("请填写关闭原因")
+	}
+
+	var notifyUserID uint64
+	var notifyProviderUserID uint64
+	auditService := &AuditLogService{}
+
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := lockProjectByID(tx, projectID)
+		if err != nil {
+			return err
+		}
+		if project.Status == model.ProjectStatusClosed {
+			return errors.New("项目已关闭")
+		}
+
+		notifyUserID = project.OwnerID
+		notifyProviderUserID = getProviderUserIDTx(tx, project.ProviderID)
+
+		beforeState := financeSnapshot(project, nil)
+		now := time.Now()
+
+		// 更新项目状态
+		updates := map[string]interface{}{
+			"status":          model.ProjectStatusClosed,
+			"business_status": model.ProjectBusinessStatusCancelled,
+			"closed_reason":   reason,
+			"closed_at":       now,
+			"closure_type":    closureType,
+		}
+
+		if closureType == "normal" {
+			updates["current_phase"] = "正常关闭"
+		} else {
+			updates["current_phase"] = "异常关闭"
+		}
+
+		if err := tx.Model(project).Updates(updates).Error; err != nil {
+			return err
+		}
+
+		// 处理资金
+		if closureType == "abnormal" {
+			// 异常关闭：冻结托管账户
+			if _, err := setProjectEscrowStatusTx(tx, project.ID, 2); err != nil {
+				return err
+			}
+		} else {
+			// 正常关闭：结算剩余资金
+			escrow, err := loadProjectEscrowTx(tx, project.ID)
+			if err == nil && escrow != nil && escrow.AvailableAmount > 0 {
+				// 将剩余资金放款给商家
+				if err := releaseEscrowBalanceTx(tx, project.ID, escrow.AvailableAmount, "项目正常关闭结算"); err != nil {
+					return err
+				}
+			}
+		}
+
+		// 更新业务流程状态
+		if err := businessFlowSvc.AdvanceByProject(tx, project.ID, map[string]interface{}{
+			"current_stage": model.BusinessFlowStageCancelled,
+			"closed_reason": reason,
+		}); err != nil {
+			return err
+		}
+
+		// 记录审计日志
+		return auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "close_project",
+			ResourceType:  "project",
+			ResourceID:    project.ID,
+			Reason:        reason,
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"project": map[string]interface{}{
+					"id":            project.ID,
+					"status":        model.ProjectStatusClosed,
+					"businessStatus": model.ProjectBusinessStatusCancelled,
+					"closedReason":  reason,
+					"closedAt":      now,
+					"closureType":   closureType,
+				},
+			},
+			Metadata: map[string]interface{}{
+				"projectName": project.Name,
+				"closureType": closureType,
+			},
+		})
+	})
+
+	if err != nil {
+		return err
+	}
+
+	// 发送通知
+	NewNotificationDispatcher().NotifyProjectClosed(projectID, notifyUserID, notifyProviderUserID, closureType, reason)
+	return nil
 }
 
 func resolveLinkedComplaintTx(tx *gorm.DB, complaintID, adminID uint64, resolution string, freezePayment bool) error {

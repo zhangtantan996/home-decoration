@@ -198,6 +198,54 @@ func unfreezeEscrowBalanceTx(tx *gorm.DB, projectID uint64, amount float64) (*mo
 	return escrow, nil
 }
 
+// releaseEscrowBalanceTx 将可用余额放款给商家
+func releaseEscrowBalanceTx(tx *gorm.DB, projectID uint64, amount float64, remark string) error {
+	escrow, err := loadProjectEscrowTx(tx, projectID)
+	if err != nil {
+		return err
+	}
+	if escrow == nil {
+		return errors.New("托管账户不存在")
+	}
+	if escrow.AvailableAmount < amount {
+		return errors.New("可用余额不足")
+	}
+
+	// 更新托管账户余额
+	if err := tx.Model(escrow).Updates(map[string]interface{}{
+		"available_amount": gorm.Expr("available_amount - ?", amount),
+		"released_amount":  gorm.Expr("released_amount + ?", amount),
+	}).Error; err != nil {
+		return err
+	}
+
+	// 获取项目信息
+	var project model.Project
+	if err := tx.Select("id, provider_id").First(&project, projectID).Error; err != nil {
+		return err
+	}
+
+	// 获取商家用户ID
+	providerUserID := getProviderUserIDTx(tx, project.ProviderID)
+	if providerUserID == 0 {
+		return errors.New("商家用户不存在")
+	}
+
+	// 创建交易记录
+	transaction := &model.Transaction{
+		OrderID:     fmt.Sprintf("RELEASE-%d-%d", projectID, time.Now().Unix()),
+		EscrowID:    escrow.ID,
+		Type:        "release",
+		Amount:      amount,
+		FromUserID:  escrow.UserID,
+		ToUserID:    providerUserID,
+		Status:      1, // 成功
+		Remark:      remark,
+		CompletedAt: timePtr(time.Now()),
+	}
+	return tx.Create(transaction).Error
+}
+
 func loadProjectEscrowTx(tx *gorm.DB, projectID uint64) (*model.EscrowAccount, error) {
 	var escrow model.EscrowAccount
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("project_id = ?", projectID).First(&escrow).Error; err != nil {
@@ -438,7 +486,7 @@ func normalizeAmount(amount float64) float64 {
 	if amount < 0 {
 		return 0
 	}
-	return amount
+	return NormalizeMoneyAmount(amount)
 }
 
 func clearProjectDisputeStateTx(tx *gorm.DB, projectID uint64) error {
@@ -468,4 +516,9 @@ func buildAdminRefundActionURL(refundApplicationID uint64) string {
 
 func buildBookingRefundActionURL(bookingID uint64) string {
 	return fmt.Sprintf("/bookings/%d/refund", bookingID)
+}
+
+// timePtr 返回时间指针
+func timePtr(t time.Time) *time.Time {
+	return &t
 }

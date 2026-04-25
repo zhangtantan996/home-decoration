@@ -1,19 +1,37 @@
 package model
 
+import "time"
+
+const (
+	ChangeOrderStatusPendingUserConfirm      = "pending_user_confirm"
+	ChangeOrderStatusUserConfirmed           = "user_confirmed"
+	ChangeOrderStatusUserRejected            = "user_rejected"
+	ChangeOrderStatusAdminSettlementRequired = "admin_settlement_required"
+	ChangeOrderStatusSettled                 = "settled"
+	ChangeOrderStatusCancelled               = "cancelled"
+)
+
 type ChangeOrder struct {
 	Base
-	ProjectID      uint64  `json:"projectId" gorm:"index"`
-	ContractID     uint64  `json:"contractId" gorm:"index"`
-	InitiatorType  string  `json:"initiatorType" gorm:"size:20"`
-	InitiatorID    uint64  `json:"initiatorId" gorm:"index"`
-	Title          string  `json:"title" gorm:"size:200"`
-	Reason         string  `json:"reason" gorm:"type:text"`
-	Items          string  `json:"items" gorm:"type:jsonb;default:'[]'"`
-	AmountImpact   float64 `json:"amountImpact"`
-	TimelineImpact int     `json:"timelineImpact"`
-	EvidenceURLs   string  `json:"evidenceUrls" gorm:"type:jsonb;default:'[]'"`
-	Status         string  `json:"status" gorm:"size:30;default:'pending';index"`
-	ResolvedBy     uint64  `json:"resolvedBy" gorm:"index"`
+	ProjectID        uint64     `json:"projectId" gorm:"index"`
+	ContractID       uint64     `json:"contractId" gorm:"index"`
+	InitiatorType    string     `json:"initiatorType" gorm:"size:20"`
+	InitiatorID      uint64     `json:"initiatorId" gorm:"index"`
+	ChangeType       string     `json:"changeType" gorm:"size:30;default:'scope'"`
+	Title            string     `json:"title" gorm:"size:200"`
+	Reason           string     `json:"reason" gorm:"type:text"`
+	Description      string     `json:"description" gorm:"type:text"`
+	Items            string     `json:"items" gorm:"type:jsonb;default:'[]'"`
+	AmountImpact     float64    `json:"amountImpact"`
+	TimelineImpact   int        `json:"timelineImpact"`
+	EvidenceURLs     string     `json:"evidenceUrls" gorm:"type:jsonb;default:'[]'"`
+	Status           string     `json:"status" gorm:"size:40;default:'pending_user_confirm';index"`
+	UserConfirmedAt  *time.Time `json:"userConfirmedAt"`
+	UserRejectedAt   *time.Time `json:"userRejectedAt"`
+	UserRejectReason string     `json:"userRejectReason" gorm:"type:text"`
+	SettledAt        *time.Time `json:"settledAt"`
+	SettlementReason string     `json:"settlementReason" gorm:"type:text"`
+	ResolvedBy       uint64     `json:"resolvedBy" gorm:"index"`
 }
 
 func (ChangeOrder) TableName() string {

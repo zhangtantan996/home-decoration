@@ -183,6 +183,8 @@ func autoMigrate() error {
 		&model.UserFeedback{},
 		&model.QuoteLibraryItem{},
 		&model.QuoteCategory{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
 		&model.QuoteList{},
 		&model.QuoteListItem{},
 		&model.QuoteInvitation{},
@@ -195,10 +197,17 @@ func autoMigrate() error {
 		&model.QuoteCategoryRule{},
 		&model.QuoteTemplate{},
 		&model.QuoteTemplateItem{},
+		&model.QuoteEstimateTemplate{},
 		// 设计服务支付体系 (v1.12.0)
 		&model.DesignWorkingDoc{},
 		&model.DesignFeeQuote{},
 		&model.DesignDeliverable{},
+		// 验收清单系统 (v1.13.0)
+		&model.InspectionChecklist{},
+		&model.InspectionTemplate{},
+		// 对账系统
+		&model.ReconciliationRecord{},
+		&model.ReconciliationDifference{},
 	)
 }
 
@@ -215,6 +224,27 @@ func ensureRuntimeSchemaColumns() error {
 		{name: "user_verifications", model: &model.UserVerification{}},
 		{name: "user_login_devices", model: &model.UserLoginDevice{}},
 		{name: "user_feedbacks", model: &model.UserFeedback{}},
+		{name: "quote_inquiries", model: &model.QuoteInquiry{}},
+		{name: "quantity_bases", model: &model.QuantityBase{}},
+		{name: "quantity_base_items", model: &model.QuantityBaseItem{}},
+		{name: "quote_categories", model: &model.QuoteCategory{}},
+		{name: "quote_library_items", model: &model.QuoteLibraryItem{}},
+		{name: "quote_price_books", model: &model.QuotePriceBook{}},
+		{name: "quote_price_book_items", model: &model.QuotePriceBookItem{}},
+		{name: "quote_price_tiers", model: &model.QuotePriceTier{}},
+		{name: "quote_category_rules", model: &model.QuoteCategoryRule{}},
+		{name: "quote_templates", model: &model.QuoteTemplate{}},
+		{name: "quote_template_items", model: &model.QuoteTemplateItem{}},
+		{name: "quote_lists", model: &model.QuoteList{}},
+		{name: "quote_list_items", model: &model.QuoteListItem{}},
+		{name: "quote_invitations", model: &model.QuoteInvitation{}},
+		{name: "quote_submissions", model: &model.QuoteSubmission{}},
+		{name: "quote_submission_items", model: &model.QuoteSubmissionItem{}},
+		{name: "quote_submission_revisions", model: &model.QuoteSubmissionRevision{}},
+	}
+
+	if err := alignLegacyQuoteInquirySchema(); err != nil {
+		return err
 	}
 
 	for _, runtimeTable := range runtimeTables {
@@ -378,7 +408,38 @@ func ensureRuntimeSchemaColumns() error {
 
 	for _, alignment := range []runtimeColumnAlignment{
 		{model: &model.PaymentOrder{}, field: "FundScene", label: "payment_orders.fund_scene", index: "CREATE INDEX IF NOT EXISTS idx_payment_orders_fund_scene ON payment_orders(fund_scene)"},
+		{model: &model.PaymentOrder{}, field: "AmountCent", label: "payment_orders.amount_cent", index: ""},
+		{model: &model.PaymentOrder{}, field: "RefundedAmount", label: "payment_orders.refunded_amount", index: ""},
+		{model: &model.PaymentOrder{}, field: "RefundedAmountCent", label: "payment_orders.refunded_amount_cent", index: ""},
+		{model: &model.PaymentOrder{}, field: "RefundStatus", label: "payment_orders.refund_status", index: "CREATE INDEX IF NOT EXISTS idx_payment_orders_refund_status ON payment_orders(refund_status)"},
 		{model: &model.RefundOrder{}, field: "FundScene", label: "refund_orders.fund_scene", index: "CREATE INDEX IF NOT EXISTS idx_refund_orders_fund_scene ON refund_orders(fund_scene)"},
+		{model: &model.RefundOrder{}, field: "AmountCent", label: "refund_orders.amount_cent", index: ""},
+		{model: &model.PaymentPlan{}, field: "AmountCent", label: "payment_plans.amount_cent", index: ""},
+		{model: &model.PaymentPlan{}, field: "RefundedAmount", label: "payment_plans.refunded_amount", index: ""},
+		{model: &model.PaymentPlan{}, field: "RefundedAmountCent", label: "payment_plans.refunded_amount_cent", index: ""},
+		{model: &model.PaymentPlan{}, field: "RefundStatus", label: "payment_plans.refund_status", index: "CREATE INDEX IF NOT EXISTS idx_payment_plans_refund_status ON payment_plans(refund_status)"},
+		{model: &model.PaymentPlan{}, field: "ChangeOrderID", label: "payment_plans.change_order_id", index: "CREATE INDEX IF NOT EXISTS idx_payment_plans_change_order_id ON payment_plans(change_order_id)"},
+		{model: &model.SettlementOrder{}, field: "GrossAmountCent", label: "settlement_orders.gross_amount_cent", index: ""},
+		{model: &model.SettlementOrder{}, field: "PlatformFeeCent", label: "settlement_orders.platform_fee_cent", index: ""},
+		{model: &model.SettlementOrder{}, field: "MerchantNetAmountCent", label: "settlement_orders.merchant_net_amount_cent", index: ""},
+		{model: &model.SettlementOrder{}, field: "RecoveryAmountCent", label: "settlement_orders.recovery_amount_cent", index: ""},
+		{model: &model.PayoutOrder{}, field: "AmountCent", label: "payout_orders.amount_cent", index: ""},
+		{model: &model.MerchantIncome{}, field: "AmountCent", label: "merchant_incomes.amount_cent", index: ""},
+		{model: &model.MerchantIncome{}, field: "PlatformFeeCent", label: "merchant_incomes.platform_fee_cent", index: ""},
+		{model: &model.MerchantIncome{}, field: "NetAmountCent", label: "merchant_incomes.net_amount_cent", index: ""},
+		{model: &model.MerchantWithdraw{}, field: "AmountCent", label: "merchant_withdraws.amount_cent", index: ""},
+		{model: &model.QuoteList{}, field: "QuantityBaseID", label: "quote_lists.quantity_base_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_lists_quantity_base_id ON quote_lists(quantity_base_id)"},
+		{model: &model.QuoteLibraryItem{}, field: "CategoryID", label: "quote_library_items.category_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_library_items_category_id ON quote_library_items(category_id)"},
+		{model: &model.QuoteLibraryItem{}, field: "StandardCode", label: "quote_library_items.standard_code", index: "CREATE INDEX IF NOT EXISTS idx_quote_library_items_standard_code ON quote_library_items(standard_code)"},
+		{model: &model.QuoteLibraryItem{}, field: "CategoryL3", label: "quote_library_items.category_l3", index: "CREATE INDEX IF NOT EXISTS idx_quote_library_items_category_l3 ON quote_library_items(category_l3)"},
+		{model: &model.QuotePriceBookItem{}, field: "PriceTierID", label: "quote_price_book_items.price_tier_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_price_book_items_tier ON quote_price_book_items(price_tier_id)"},
+		{model: &model.QuoteListItem{}, field: "MatchedStandardItemID", label: "quote_list_items.matched_standard_item_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_list_items_matched_standard_item_id ON quote_list_items(matched_standard_item_id)"},
+		{model: &model.QuoteListItem{}, field: "SelectedTierID", label: "quote_list_items.selected_tier_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_list_items_tier ON quote_list_items(selected_tier_id)"},
+		{model: &model.QuoteSubmission{}, field: "TaskStatus", label: "quote_submissions.task_status", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_task_status ON quote_submissions(task_status)"},
+		{model: &model.QuoteSubmission{}, field: "GenerationStatus", label: "quote_submissions.generation_status", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_generation_status ON quote_submissions(generation_status)"},
+		{model: &model.QuoteSubmission{}, field: "GeneratedFromPriceBookID", label: "quote_submissions.generated_from_price_book_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_generated_from_price_book_id ON quote_submissions(generated_from_price_book_id)"},
+		{model: &model.QuoteSubmission{}, field: "SupersededBy", label: "quote_submissions.superseded_by", index: "CREATE INDEX IF NOT EXISTS idx_quote_submissions_superseded_by ON quote_submissions(superseded_by)"},
+		{model: &model.QuoteSubmissionItem{}, field: "PriceTierID", label: "quote_submission_items.price_tier_id", index: "CREATE INDEX IF NOT EXISTS idx_quote_submission_items_tier ON quote_submission_items(price_tier_id)"},
 	} {
 		if !DB.Migrator().HasTable(alignment.model) {
 			continue
@@ -412,6 +473,26 @@ func ensureRuntimeSchemaColumns() error {
 		if err := ensureTableColumns(onboardingTable.name, onboardingTable.model); err != nil {
 			return fmt.Errorf("align onboarding runtime schema %s: %w", onboardingTable.name, err)
 		}
+	}
+
+	return nil
+}
+
+func alignLegacyQuoteInquirySchema() error {
+	if DB == nil || !DB.Migrator().HasTable(&model.QuoteInquiry{}) {
+		return nil
+	}
+
+	if DB.Migrator().HasColumn(&model.QuoteInquiry{}, "OpenID") {
+		return nil
+	}
+
+	if !DB.Migrator().HasColumn("quote_inquiries", "openid") {
+		return nil
+	}
+
+	if err := DB.Exec(`ALTER TABLE quote_inquiries RENAME COLUMN openid TO open_id`).Error; err != nil {
+		return fmt.Errorf("rename quote_inquiries.openid to open_id: %w", err)
 	}
 
 	return nil

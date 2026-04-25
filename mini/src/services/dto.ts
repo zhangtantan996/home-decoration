@@ -10,7 +10,6 @@ export interface ProviderPriceDisplayDTO {
 
 export interface ProviderDTO {
   id: number;
-  userId: number;
   providerType: number;
   companyName: string;
   nickname: string;
@@ -20,8 +19,6 @@ export interface ProviderDTO {
   budgetControl: number;
   completedCnt: number;
   verified: boolean;
-  latitude: number;
-  longitude: number;
   distance?: number;
   subType: string;
   entityType?: 'personal' | 'company';
@@ -45,7 +42,6 @@ export interface ProviderDTO {
 export interface ProviderDetailDTO {
   provider?: {
     id?: number;
-    userId?: number;
     providerType?: number;
     displayName?: string;
     companyName?: string;
@@ -64,7 +60,6 @@ export interface ProviderDetailDTO {
     teamSize?: number;
     establishedYear?: number;
     followersCount?: number;
-    officeAddress?: string;
     certifications?: StringListValue;
     companyAlbumJson?: StringListValue;
     priceMin?: number;
@@ -75,13 +70,10 @@ export interface ProviderDetailDTO {
     isSettled?: boolean;
   };
   user?: {
-    id?: number;
-    publicId?: string;
     nickname?: string;
     avatar?: string;
   };
   id: number;
-  userId: number;
   providerType: number;
   displayName?: string;
   companyName?: string;
@@ -96,7 +88,6 @@ export interface ProviderDetailDTO {
   establishedYear?: number;
   certifications?: StringListValue;
   serviceArea?: StringListValue;
-  officeAddress?: string;
   companyAlbumJson?: StringListValue;
   specialty?: string;
   highlightTags?: StringListValue;
@@ -235,12 +226,194 @@ export interface ProjectPhaseDTO {
   tasks?: ProjectPhaseTaskDTO[];
 }
 
+export interface BridgeConversionSubjectComparisonDTO {
+  providerId?: number;
+  subjectType?: string;
+  displayName?: string;
+  rating?: number;
+  reviewCount?: number;
+  completedCnt?: number;
+  caseCount?: number;
+  highlightTags?: string[];
+  priceHint?: string;
+  deliveryHint?: string;
+  trustSummary?: string;
+  selected?: boolean;
+}
+
+export interface BridgeConversionQuoteBaselineSummaryDTO {
+  title?: string;
+  sourceStage?: string;
+  submittedAt?: string;
+  itemCount?: number;
+  highlights?: string[];
+  readyForUser?: boolean;
+}
+
+export interface BridgeConversionSectionDTO {
+  title?: string;
+  items?: string[];
+}
+
+export interface BridgeConversionTrustSignalsDTO {
+  rating?: number;
+  reviewCount?: number;
+  completedCnt?: number;
+  caseCount?: number;
+  highlightTags?: string[];
+  officialReviewHint?: string;
+}
+
+export interface BridgeNextStepDTO {
+  actionKey?: string;
+  actionText?: string;
+  title?: string;
+  owner?: string;
+  reason?: string;
+  actionHint?: string;
+  blockingHint?: string;
+}
+
+export interface BridgeConversionSummaryDTO {
+  constructionSubjectComparison?: BridgeConversionSubjectComparisonDTO[];
+  quoteBaselineSummary?: BridgeConversionQuoteBaselineSummaryDTO;
+  responsibilityBoundarySummary?: BridgeConversionSectionDTO;
+  scheduleAndAcceptanceSummary?: BridgeConversionSectionDTO;
+  platformGuaranteeSummary?: BridgeConversionSectionDTO;
+  trustSignals?: BridgeConversionTrustSignalsDTO;
+  bridgeNextStep?: BridgeNextStepDTO;
+}
+
 export interface ProjectDetailDTO extends ProjectDTO {
   selectedQuoteTaskId?: number;
+  bridgeConversionSummary?: BridgeConversionSummaryDTO;
+  closureSummary?: {
+    completionStatus?: string;
+    archiveStatus?: string;
+    settlementStatus?: string;
+    payoutStatus?: string;
+    caseDraftStatus?: string;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
+  };
+  quoteTruthSummary?: {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+  };
+  commercialExplanation?: {
+    baselineSummary?: BridgeConversionQuoteBaselineSummaryDTO;
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+    paymentPlanSummary?: Array<{
+      id: number;
+      orderId: number;
+      milestoneId?: number;
+      type: string;
+      seq: number;
+      name: string;
+      amount?: number;
+      status: number;
+      dueAt?: string;
+      paidAt?: string;
+    }>;
+  };
+  changeOrderSummary?: {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent?: number;
+    latestChangeOrderId?: number;
+  };
+  settlementSummary?: {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    totalGrossAmount?: number;
+    totalNetAmount?: number;
+    settledAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+  };
+  payoutSummary?: {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    totalAmount?: number;
+    paidAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
+  };
+  financialClosureStatus?: string;
+  nextPendingAction?: string;
   milestones?: Array<Record<string, unknown>>;
   logs?: Array<Record<string, unknown>>;
   escrow?: Record<string, unknown>;
   riskSummary?: ProjectRiskSummaryDTO;
+  paymentPlans?: Array<{
+    id: number;
+    orderId?: number;
+    seq?: number;
+    name?: string;
+    amount?: number;
+    status?: number;
+    activatedAt?: string;
+    dueAt?: string;
+    expiresAt?: string;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+  }>;
+  nextPayablePlan?: {
+    id: number;
+    orderId?: number;
+    seq?: number;
+    name?: string;
+    amount?: number;
+    status?: number;
+    activatedAt?: string;
+    dueAt?: string;
+    expiresAt?: string;
+    payable?: boolean;
+    payableReason?: string;
+    planType?: string;
+  } | null;
+  changeOrders?: Array<{
+    id: number;
+    projectId: number;
+    title?: string;
+    changeType?: string;
+    reason?: string;
+    description?: string;
+    amountImpact?: number;
+    timelineImpact?: number;
+    status?: string;
+    evidenceUrls?: string[];
+    createdAt?: string;
+    updatedAt?: string;
+    userRejectReason?: string;
+    settlementReason?: string;
+    payablePlanId?: number;
+  }>;
 }
 
 export interface RefundTypeEstimateDTO {
@@ -304,9 +477,18 @@ export interface NotificationDTO {
   title: string;
   content: string;
   type: string;
+  typeLabel?: string;
   isRead: boolean;
   createdAt?: string;
   actionUrl?: string;
+  category?: 'system' | 'project' | 'payment';
+  kind?: 'info' | 'todo' | 'risk' | 'result' | 'governance';
+  priority?: 'normal' | 'high' | 'urgent';
+  actionRequired?: boolean;
+  actionStatus?: 'none' | 'pending' | 'processed' | 'expired';
+  actionLabel?: string;
+  supportsWeb?: boolean;
+  supportsMini?: boolean;
 }
 
 export interface InspirationAuthorDTO {

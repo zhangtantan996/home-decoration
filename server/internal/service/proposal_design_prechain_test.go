@@ -43,6 +43,8 @@ func setupProposalDesignPrechainTestDB(t *testing.T) *gorm.DB {
 		&model.SystemConfig{},
 		&model.PaymentPlan{},
 		&model.RefundApplication{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
 	); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
@@ -187,18 +189,8 @@ func TestRefundApplicationCreate_MarksBookingFlowDisputed(t *testing.T) {
 	}
 }
 
-func TestConfirmProposalCreatesConfiguredDesignStages(t *testing.T) {
+func TestConfirmProposalRequiresPaidDesignOrderAndAdvancesToConstructionBridge(t *testing.T) {
 	db := setupProposalDesignPrechainTestDB(t)
-	configSvc.ClearCache()
-
-	for _, cfg := range []model.SystemConfig{
-		{Key: model.ConfigKeyDesignFeePaymentMode, Value: "staged", Editable: true},
-		{Key: model.ConfigKeyDesignFeeStages, Value: `[{"name":"签约款","percentage":40},{"name":"终稿款","percentage":60}]`, Editable: true},
-	} {
-		if err := db.Create(&cfg).Error; err != nil {
-			t.Fatalf("seed config: %v", err)
-		}
-	}
 	configSvc.ClearCache()
 
 	user := model.User{Base: model.Base{ID: 121}, Phone: "13800138121", Nickname: "业主C", Status: 1}
@@ -206,40 +198,55 @@ func TestConfirmProposalCreatesConfiguredDesignStages(t *testing.T) {
 	provider := model.Provider{Base: model.Base{ID: 221}, UserID: providerUser.ID, ProviderType: 1, Status: 1}
 	booking := model.Booking{Base: model.Base{ID: 321}, UserID: user.ID, ProviderID: provider.ID, Address: "设计费测试地址", IntentFee: 500, IntentFeePaid: true, Status: 2}
 	proposal := model.Proposal{Base: model.Base{ID: 521}, BookingID: booking.ID, DesignerID: provider.ID, Summary: "正式方案", DesignFee: 10000, Status: model.ProposalStatusPending, Version: 1}
+	order := model.Order{
+		Base:        model.Base{ID: 621},
+		BookingID:   booking.ID,
+		OrderNo:     "DESIGN-PAID-321",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 9500,
+		PaidAmount:  9500,
+		Status:      model.OrderStatusPaid,
+		PaidAt:      ptrProposalTestTime(time.Now()),
+	}
 	flow := model.BusinessFlow{
 		Base:               model.Base{ID: 721},
 		SourceType:         model.BusinessFlowSourceBooking,
 		SourceID:           booking.ID,
 		CustomerUserID:     user.ID,
 		DesignerProviderID: provider.ID,
-		CurrentStage:       model.BusinessFlowStageDesignPendingConfirmation,
+		CurrentStage:       model.BusinessFlowStageDesignDeliveryPending,
 	}
-	for _, value := range []interface{}{&user, &providerUser, &provider, &booking, &proposal, &flow} {
+	for _, value := range []interface{}{&user, &providerUser, &provider, &booking, &proposal, &order, &flow} {
 		if err := db.Create(value).Error; err != nil {
 			t.Fatalf("seed fixture: %v", err)
 		}
 	}
 
-	order, err := (&ProposalService{}).ConfirmProposal(user.ID, proposal.ID)
+	confirmed, err := (&ProposalService{}).ConfirmProposal(user.ID, proposal.ID)
 	if err != nil {
 		t.Fatalf("ConfirmProposal: %v", err)
 	}
-	if order.TotalAmount != 9500 {
-		t.Fatalf("expected discounted design amount 9500, got %.2f", order.TotalAmount)
+	if confirmed.Status != model.ProposalStatusConfirmed {
+		t.Fatalf("expected confirmed proposal status, got %d", confirmed.Status)
+	}
+	if confirmed.ConfirmedAt == nil {
+		t.Fatalf("expected confirmed_at to be populated")
 	}
 
-	var plans []model.PaymentPlan
-	if err := db.Where("order_id = ?", order.ID).Order("seq ASC").Find(&plans).Error; err != nil {
-		t.Fatalf("load payment plans: %v", err)
+	var orderCount int64
+	if err := db.Model(&model.Order{}).Where("booking_id = ? AND order_type = ?", booking.ID, model.OrderTypeDesign).Count(&orderCount).Error; err != nil {
+		t.Fatalf("count design orders: %v", err)
 	}
-	if len(plans) != 2 {
-		t.Fatalf("expected 2 payment plans, got %d", len(plans))
+	if orderCount != 1 {
+		t.Fatalf("expected no extra design order created, got %d", orderCount)
 	}
-	if plans[0].Name != "签约款" || plans[0].Amount != 3800 {
-		t.Fatalf("unexpected first plan: %+v", plans[0])
+
+	var planCount int64
+	if err := db.Model(&model.PaymentPlan{}).Where("order_id = ?", order.ID).Count(&planCount).Error; err != nil {
+		t.Fatalf("count payment plans: %v", err)
 	}
-	if plans[1].Name != "终稿款" || plans[1].Amount != 5700 {
-		t.Fatalf("unexpected second plan: %+v", plans[1])
+	if planCount != 0 {
+		t.Fatalf("expected proposal confirmation not to create payment plans, got %d", planCount)
 	}
 
 	var updatedFlow model.BusinessFlow
@@ -260,4 +267,92 @@ func TestConfirmProposalCreatesConfiguredDesignStages(t *testing.T) {
 	if projectCount != 0 {
 		t.Fatalf("expected zero projects after proposal confirmation, got %d", projectCount)
 	}
+
+	var quantityBase model.QuantityBase
+	if err := db.Where("proposal_id = ? AND status = ?", proposal.ID, model.QuantityBaseStatusActive).First(&quantityBase).Error; err != nil {
+		t.Fatalf("expected quantity base created after proposal confirmation: %v", err)
+	}
+	if quantityBase.SourceType != model.QuantitySourceTypeProposal || quantityBase.SourceID != proposal.ID {
+		t.Fatalf("unexpected quantity base source: %+v", quantityBase)
+	}
+
+	var quantityItemCount int64
+	if err := db.Model(&model.QuantityBaseItem{}).Where("quantity_base_id = ?", quantityBase.ID).Count(&quantityItemCount).Error; err != nil {
+		t.Fatalf("count quantity base items: %v", err)
+	}
+	if quantityItemCount == 0 {
+		t.Fatalf("expected quantity base items created after proposal confirmation")
+	}
+}
+
+func TestConfirmProposalRequiresPaidDesignOrder(t *testing.T) {
+	db := setupProposalDesignPrechainTestDB(t)
+
+	user := model.User{Base: model.Base{ID: 131}, Phone: "13800138131", Nickname: "业主D", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 231}, UserID: 331, ProviderType: 1, Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 331}, UserID: user.ID, ProviderID: provider.ID, Address: "未支付设计费", IntentFee: 500, IntentFeePaid: true, Status: 2}
+	proposal := model.Proposal{Base: model.Base{ID: 531}, BookingID: booking.ID, DesignerID: provider.ID, Summary: "待支付方案", Status: model.ProposalStatusPending, Version: 1}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 731},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     user.ID,
+		DesignerProviderID: provider.ID,
+		CurrentStage:       model.BusinessFlowStageDesignFeePaying,
+	}
+	for _, value := range []interface{}{&user, &provider, &booking, &proposal, &flow} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+
+	if _, err := (&ProposalService{}).ConfirmProposal(user.ID, proposal.ID); err == nil || err.Error() != "请先完成设计费支付" {
+		t.Fatalf("expected paid design fee requirement, got %v", err)
+	}
+}
+
+func TestConfirmProposalReturnsFriendlyErrorWhenQuantityBaseSchemaMissing(t *testing.T) {
+	db := setupProposalDesignPrechainTestDB(t)
+	configSvc.ClearCache()
+
+	user := model.User{Base: model.Base{ID: 141}, Phone: "13800138141", Nickname: "业主E", Status: 1}
+	providerUser := model.User{Base: model.Base{ID: 142}, Phone: "13800138142", Nickname: "设计师E", Status: 1}
+	provider := model.Provider{Base: model.Base{ID: 241}, UserID: providerUser.ID, ProviderType: 1, Status: 1}
+	booking := model.Booking{Base: model.Base{ID: 341}, UserID: user.ID, ProviderID: provider.ID, Address: "施工桥接测试地址", IntentFee: 500, IntentFeePaid: true, Status: 2}
+	proposal := model.Proposal{Base: model.Base{ID: 541}, BookingID: booking.ID, DesignerID: provider.ID, Summary: "正式方案", DesignFee: 10000, Status: model.ProposalStatusPending, Version: 1}
+	order := model.Order{
+		Base:        model.Base{ID: 641},
+		BookingID:   booking.ID,
+		OrderNo:     "DESIGN-PAID-341",
+		OrderType:   model.OrderTypeDesign,
+		TotalAmount: 9500,
+		PaidAmount:  9500,
+		Status:      model.OrderStatusPaid,
+		PaidAt:      ptrProposalTestTime(time.Now()),
+	}
+	flow := model.BusinessFlow{
+		Base:               model.Base{ID: 741},
+		SourceType:         model.BusinessFlowSourceBooking,
+		SourceID:           booking.ID,
+		CustomerUserID:     user.ID,
+		DesignerProviderID: provider.ID,
+		CurrentStage:       model.BusinessFlowStageDesignDeliveryPending,
+	}
+	for _, value := range []interface{}{&user, &providerUser, &provider, &booking, &proposal, &order, &flow} {
+		if err := db.Create(value).Error; err != nil {
+			t.Fatalf("seed fixture: %v", err)
+		}
+	}
+
+	if err := db.Migrator().DropTable(&model.QuantityBaseItem{}, &model.QuantityBase{}); err != nil {
+		t.Fatalf("drop quantity base tables: %v", err)
+	}
+
+	if _, err := (&ProposalService{}).ConfirmProposal(user.ID, proposal.ID); err == nil || err.Error() != "施工桥接资料暂未就绪，请稍后重试" {
+		t.Fatalf("expected friendly schema error, got %v", err)
+	}
+}
+
+func ptrProposalTestTime(v time.Time) *time.Time {
+	return &v
 }

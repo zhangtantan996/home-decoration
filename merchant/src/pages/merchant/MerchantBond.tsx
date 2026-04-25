@@ -17,21 +17,9 @@ import MerchantContentPanel from '../../components/MerchantContentPanel';
 import sharedStyles from '../../components/MerchantPage.module.css';
 import { formatServerDateTime } from '../../utils/serverTime';
 import { buildAppPath } from '../../utils/env';
+import { readSafeErrorMessage } from '../../utils/userFacingText';
 
-const getErrorMessage = (error: unknown, fallback: string) => {
-    if (error instanceof Error && error.message) {
-        return error.message;
-    }
-
-    const maybeAxiosError = error as {
-        response?: {
-            data?: {
-                message?: string;
-            };
-        };
-    };
-    return maybeAxiosError.response?.data?.message || fallback;
-};
+const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const MerchantBond: React.FC = () => {
     const navigate = useNavigate();

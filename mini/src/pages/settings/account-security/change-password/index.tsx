@@ -58,13 +58,6 @@ export default function ChangePasswordPage() {
         </Button>
       }
     >
-      <SettingsGroup title="密码更新">
-        <View className="security-form-page__summary">
-          <Text className="security-form-page__summary-title">设置新的登录密码</Text>
-          <Text className="security-form-page__summary-copy">建议使用 6 位以上字母和数字组合，提高账号安全性。</Text>
-        </View>
-      </SettingsGroup>
-
       <SettingsGroup title="填写信息">
         <View className="security-form-page__form">
           <View className="security-form-page__field">

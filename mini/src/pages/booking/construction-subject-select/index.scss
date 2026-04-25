@@ -1,0 +1,124 @@
+.construction-select-page {
+  &__header {
+    margin-bottom: 24px;
+  }
+
+  &__title {
+    font-size: 24px;
+    font-weight: 600;
+    color: #111;
+    display: block;
+    margin-bottom: 8px;
+  }
+
+  &__subtitle {
+    font-size: 14px;
+    color: #71717a;
+    display: block;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  &__card {
+    background: #fff;
+    border-radius: 12px;
+    padding: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  }
+
+  &__card-header {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  &__avatar {
+    width: 56px;
+    height: 56px;
+    border-radius: 8px;
+    flex-shrink: 0;
+
+    &--fallback {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  &__avatar-text {
+    font-size: 20px;
+    font-weight: 600;
+    color: #fff;
+  }
+
+  &__card-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+
+  &__name {
+    font-size: 16px;
+    font-weight: 600;
+    color: #111;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__tags {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  &__specialty {
+    margin-bottom: 12px;
+    padding: 8px 12px;
+    background: #f4f4f5;
+    border-radius: 8px;
+  }
+
+  &__specialty-text {
+    font-size: 14px;
+    color: #52525b;
+    line-height: 1.5;
+  }
+
+  &__service-area {
+    margin-bottom: 12px;
+    display: flex;
+    gap: 4px;
+  }
+
+  &__label {
+    font-size: 14px;
+    color: #71717a;
+  }
+
+  &__value {
+    font-size: 14px;
+    color: #111;
+    flex: 1;
+  }
+
+  &__card-footer {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__select-btn {
+    min-width: 100px;
+  }
+}

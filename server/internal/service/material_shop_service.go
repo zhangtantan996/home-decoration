@@ -58,6 +58,11 @@ type MaterialShopProductItem struct {
 	CoverImage  string   `json:"coverImage"`
 }
 
+func buildPublicMaterialShopDescription(_ *model.MaterialShop) string {
+	// 公开门店描述暂不复用后台原始 description，避免把招商/审核备注直接暴露到消费者端。
+	return ""
+}
+
 // ListMaterialShops 获取门店列表
 func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]MaterialShopListItem, int64, error) {
 	// 默认分页
@@ -156,7 +161,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			Name:              shop.Name,
 			Cover:             imgutil.GetFullImageURL(shop.Cover),
 			BrandLogo:         imgutil.GetFullImageURL(shop.BrandLogo),
-			Description:       shop.Description,
+			Description:       buildPublicMaterialShopDescription(&shop),
 			Rating:            shop.Rating,
 			ReviewCount:       shop.ReviewCount,
 			MainProducts:      mainProducts,
@@ -231,7 +236,7 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		Name:              shop.Name,
 		Cover:             imgutil.GetFullImageURL(resolvedCover),
 		BrandLogo:         imgutil.GetFullImageURL(shop.BrandLogo),
-		Description:       shop.Description,
+		Description:       buildPublicMaterialShopDescription(&shop),
 		Rating:            shop.Rating,
 		ReviewCount:       shop.ReviewCount,
 		MainProducts:      mainProducts,

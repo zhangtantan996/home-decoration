@@ -43,6 +43,7 @@ func GenerateCaseDraftFromProject(projectID, providerID uint64, req *ProjectCase
 	if err != nil {
 		return nil, nil, err
 	}
+	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserIDFromProvider(providerID), projectID, audit.ID)
 	return project, audit, nil
 }
 

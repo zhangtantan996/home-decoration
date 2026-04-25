@@ -1,4 +1,5 @@
 import api, { MerchantRequestError } from './api';
+import { toSafeUserFacingText } from '../utils/userFacingText';
 
 const quoteApi = api;
 
@@ -39,7 +40,7 @@ const unwrapData = <T,>(payload: unknown, fallbackMessage: string): T => {
         const errorCode = isRecord(envelope.data) && 'errorCode' in envelope.data
             ? String(envelope.data.errorCode || '')
             : undefined;
-        throw new QuoteApiError(envelope.code, envelope.message || fallbackMessage, envelope.data, 200, errorCode);
+        throw new QuoteApiError(envelope.code, toSafeUserFacingText(envelope.message, fallbackMessage), envelope.data, 200, errorCode);
     }
     return (envelope.data as T) ?? ({} as T);
 };
@@ -48,6 +49,16 @@ export interface QuoteListSummary {
     id: number;
     title: string;
     status: string;
+    projectId?: number;
+    proposalId?: number;
+    proposalVersion?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
+    pricingMode?: string;
+    materialIncluded?: boolean;
+    paymentPlanGeneratedFlag?: boolean;
     deadlineAt?: string;
     currency?: string;
     updatedAt?: string;
@@ -58,18 +69,115 @@ export interface QuoteListSummary {
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
+    submissionHealth?: SubmissionHealthSummary;
+    quoteTruthSummary?: QuoteTruthSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
+}
+
+export interface QuoteTruthSummary {
+    quoteListId: number;
+    sourceType?: string;
+    sourceId?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    activeSubmissionId?: number;
+    awardedProviderId?: number;
+    confirmedAt?: string;
+    totalCent?: number;
+    estimatedDays?: number;
+    revisionCount?: number;
+}
+
+export interface CommercialExplanation {
+    baselineSummary?: {
+        title?: string;
+        sourceStage?: string;
+        submittedAt?: string;
+        itemCount?: number;
+        highlights?: string[];
+        readyForUser?: boolean;
+    };
+    scopeIncluded?: string[];
+    scopeExcluded?: string[];
+    teamSize?: number;
+    workTypes?: string[];
+    constructionMethodNote?: string;
+    siteVisitRequired?: boolean;
+    paymentPlanSummary?: Array<{
+        id: number;
+        orderId: number;
+        milestoneId?: number;
+        type: string;
+        seq: number;
+        name: string;
+        amount: number;
+        status: number;
+        dueAt?: string;
+        paidAt?: string;
+    }>;
+}
+
+export interface SubmissionHealthSummary {
+    missingPriceCount: number;
+    deviationItemCount: number;
+    platformReviewStatus?: string;
+    lastRevisionNo?: number;
+    lastChangeReason?: string;
+    canSubmit: boolean;
+    blockingReasons?: string[];
+}
+
+export interface ChangeOrderSummary {
+    totalCount: number;
+    pendingUserConfirmCount: number;
+    pendingSettlementCount: number;
+    settledCount: number;
+    netAmountCent: number;
+    latestChangeOrderId?: number;
+}
+
+export interface SettlementSummary {
+    latestSettlementId?: number;
+    status?: string;
+    grossAmount?: number;
+    netAmount?: number;
+    totalGrossAmount?: number;
+    totalNetAmount?: number;
+    settledAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+}
+
+export interface PayoutSummary {
+    latestPayoutId?: number;
+    status?: string;
+    channel?: string;
+    totalAmount?: number;
+    paidAmount?: number;
+    pendingAmount?: number;
+    failedAmount?: number;
+    scheduledAt?: string;
+    paidAt?: string;
+    failureReason?: string;
 }
 
 export interface QuoteListItem {
     id: number;
+    quantityBaseItemId?: number;
     lineNo?: number;
     categoryL1?: string;
     categoryL2?: string;
     name: string;
     unit: string;
     quantity: number;
+    baselineQuantity?: number;
     pricingNote?: string;
     sortOrder?: number;
+    sourceStage?: string;
+    quantityAdjustableFlag?: boolean;
     missingMappingFlag?: boolean;
     extensionsJson?: string;
     required?: boolean;
@@ -80,11 +188,19 @@ export interface QuoteSubmissionItem {
     quoteListItemId: number;
     generatedUnitPriceCent?: number;
     unitPriceCent?: number;
+    quotedQuantity?: number;
     amountCent?: number;
     adjustedFlag?: boolean;
     missingPriceFlag?: boolean;
     missingMappingFlag?: boolean;
     minChargeAppliedFlag?: boolean;
+    quantityChangeReason?: string;
+    deviationFlag?: boolean;
+    requiresUserConfirmation?: boolean;
+    platformReviewFlag?: boolean;
+    baselineQuantity?: number;
+    itemName?: string;
+    unit?: string;
     remark?: string;
 }
 
@@ -92,6 +208,7 @@ export interface QuoteSubmission {
     status: string;
     taskStatus?: string;
     generationStatus?: string;
+    reviewStatus?: string;
     totalCent?: number;
     currency?: string;
     generatedFromPriceBookId?: number;
@@ -100,22 +217,121 @@ export interface QuoteSubmission {
     remark?: string;
 }
 
+export interface QuantityBaseSnapshot {
+    id: number;
+    proposalId?: number;
+    proposalVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
+    status?: string;
+    version: number;
+    title?: string;
+    activatedAt?: string;
+}
+
+export interface QuantityBaseItemSnapshot {
+    id: number;
+    quantityBaseId: number;
+    standardItemId?: number;
+    sourceLineNo?: number;
+    sourceItemCode?: string;
+    sourceItemName: string;
+    unit: string;
+    quantity: number;
+    baselineNote?: string;
+    categoryL1?: string;
+    categoryL2?: string;
+    sortOrder?: number;
+}
+
 export interface MerchantQuoteListDetail {
   quoteList: {
     id: number;
     projectId?: number;
+    proposalId?: number;
+    proposalVersion?: number;
+    quantityBaseId?: number;
+    quantityBaseVersion?: number;
+    sourceType?: string;
+    sourceId?: number;
     title: string;
     status: string;
-        deadlineAt?: string;
-        currency?: string;
-        updatedAt?: string;
+    pricingMode?: string;
+    materialIncluded?: boolean;
+    paymentPlanGeneratedFlag?: boolean;
+    deadlineAt?: string;
+    currency?: string;
+    updatedAt?: string;
     };
     items: QuoteListItem[];
     invitation?: { status?: string; invitedAt?: string };
     submission?: QuoteSubmission;
+    quantityBase?: QuantityBaseSnapshot;
+    quantityItems: QuantityBaseItemSnapshot[];
+    paymentPlanSummary?: Array<{
+        id: number;
+        orderId: number;
+        milestoneId?: number;
+        type: string;
+        seq: number;
+        name: string;
+        amount: number;
+        status: number;
+        dueAt?: string;
+        paidAt?: string;
+    }>;
     businessStage?: string;
     flowSummary?: string;
     availableActions?: string[];
+    bridgeConversionSummary?: {
+        constructionSubjectComparison?: Array<{
+            providerId?: number;
+            subjectType?: string;
+            displayName?: string;
+            rating?: number;
+            reviewCount?: number;
+            completedCnt?: number;
+            caseCount?: number;
+            highlightTags?: string[];
+            priceHint?: string;
+            deliveryHint?: string;
+            trustSummary?: string;
+            selected?: boolean;
+        }>;
+        quoteBaselineSummary?: {
+            title?: string;
+            sourceStage?: string;
+            submittedAt?: string;
+            itemCount?: number;
+            highlights?: string[];
+            readyForUser?: boolean;
+        };
+        responsibilityBoundarySummary?: { title?: string; items?: string[] };
+        scheduleAndAcceptanceSummary?: { title?: string; items?: string[] };
+        platformGuaranteeSummary?: { title?: string; items?: string[] };
+        trustSignals?: {
+            rating?: number;
+            reviewCount?: number;
+            completedCnt?: number;
+            caseCount?: number;
+            highlightTags?: string[];
+            officialReviewHint?: string;
+        };
+        bridgeNextStep?: {
+            title?: string;
+            owner?: string;
+            reason?: string;
+            actionHint?: string;
+        };
+    };
+    quoteTruthSummary?: QuoteTruthSummary;
+    commercialExplanation?: CommercialExplanation;
+    submissionHealth?: SubmissionHealthSummary;
+    changeOrderSummary?: ChangeOrderSummary;
+    settlementSummary?: SettlementSummary;
+    payoutSummary?: PayoutSummary;
+    financialClosureStatus?: string;
+    nextPendingAction?: string;
 }
 
 export interface QuotePriceBookItem {
@@ -132,6 +348,7 @@ export interface QuotePriceBookItem {
     remark?: string;
     status?: number;
     required?: boolean;
+    applicable?: boolean;
 }
 
 export interface QuotePriceBookDetail {

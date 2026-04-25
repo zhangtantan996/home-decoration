@@ -112,6 +112,22 @@ func (s *WechatAuthService) Login(code, clientIP string, jwtCfg *config.JWTConfi
 	}, nil
 }
 
+// ResolveOpenID 使用 wx.login code 解析匿名用户 OpenID
+func (s *WechatAuthService) ResolveOpenID(code string) (string, error) {
+	if s.client == nil || s.client.unconfigured() {
+		return "", errors.New("微信小程序未配置")
+	}
+
+	session, err := s.client.code2Session(code)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(session.OpenID) == "" {
+		return "", errors.New("未获取到微信 OpenID")
+	}
+	return strings.TrimSpace(session.OpenID), nil
+}
+
 // BindPhone 绑定手机号并登录
 func (s *WechatAuthService) BindPhone(bindToken, phoneCode, clientIP string, jwtCfg *config.JWTConfig) (*TokenResponse, *model.User, error) {
 	if s.client == nil || s.client.unconfigured() {
