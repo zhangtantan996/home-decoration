@@ -346,13 +346,14 @@ type Booking struct {
 	MerchantResponseDeadline *time.Time `json:"merchantResponseDeadline"` // 商家响应截止时间 (48小时)
 
 	// 量房定金（替代意向金的新流程）
-	SurveyDeposit          float64    `json:"surveyDeposit" gorm:"default:0"`              // 量房定金金额
-	SurveyDepositPaid      bool       `json:"surveyDepositPaid" gorm:"default:false"`      // 是否已支付
-	SurveyDepositPaidAt    *time.Time `json:"surveyDepositPaidAt"`                         // 支付时间
-	SurveyDepositConverted bool       `json:"surveyDepositConverted" gorm:"default:false"` // 是否已转化为设计费抵扣
-	SurveyDepositRefunded  bool       `json:"surveyDepositRefunded" gorm:"default:false"`  // 是否已退款
-	SurveyDepositRefundAmt float64    `json:"surveyDepositRefundAmt" gorm:"default:0"`     // 退款金额
-	SurveyDepositRefundAt  *time.Time `json:"surveyDepositRefundAt"`                       // 退款时间
+	SurveyDeposit          float64    `json:"surveyDeposit" gorm:"default:0"`                              // 量房定金金额
+	SurveyDepositStatus    string     `json:"surveyDepositStatus" gorm:"size:30;default:pending;not null"` // pending, paid, refunded, cancelled
+	SurveyDepositPaid      bool       `json:"surveyDepositPaid" gorm:"default:false"`                      // 是否已支付
+	SurveyDepositPaidAt    *time.Time `json:"surveyDepositPaidAt"`                                         // 支付时间
+	SurveyDepositConverted bool       `json:"surveyDepositConverted" gorm:"default:false"`                 // 是否已转化为设计费抵扣
+	SurveyDepositRefunded  bool       `json:"surveyDepositRefunded" gorm:"default:false"`                  // 是否已退款
+	SurveyDepositRefundAmt float64    `json:"surveyDepositRefundAmt" gorm:"default:0"`                     // 退款金额
+	SurveyDepositRefundAt  *time.Time `json:"surveyDepositRefundAt"`                                       // 退款时间
 }
 
 // ProjectPhase 项目工程阶段
