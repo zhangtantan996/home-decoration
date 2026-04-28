@@ -28,6 +28,7 @@ const (
 	SystemAlertTypeSettlementFailed                = "settlement_failed"
 	SystemAlertTypeSettlementReconciliationDiff    = "settlement_reconciliation_difference"
 	SystemAlertTypeOutboxEventDead                 = "outbox_event_dead"
+	SystemAlertTypeProviderGovernanceRisk          = "provider_governance_risk"
 )
 
 type CreateSystemAlertInput struct {

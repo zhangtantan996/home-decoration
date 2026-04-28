@@ -19,7 +19,24 @@ func setupOutboxEventTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.OutboxEvent{}, &model.Notification{}, &model.RiskWarning{}, &model.AuditLog{}); err != nil {
+	if err := db.AutoMigrate(
+		&model.OutboxEvent{},
+		&model.Notification{},
+		&model.RiskWarning{},
+		&model.AuditLog{},
+		&model.SMSAuditLog{},
+		&model.User{},
+		&model.Provider{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Project{},
+		&model.Milestone{},
+		&model.ProviderCase{},
+		&model.ProviderReview{},
+		&model.RefundApplication{},
+		&model.Complaint{},
+		&model.ProjectAudit{},
+	); err != nil {
 		t.Fatalf("migrate sqlite db: %v", err)
 	}
 	previousDB := repository.DB

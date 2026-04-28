@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
-	"log"
+	"strconv"
 	"strings"
 )
 
@@ -26,9 +26,9 @@ func NewOutboxHandlerRegistry() *OutboxHandlerRegistry {
 	registry := &OutboxHandlerRegistry{handlers: map[string]OutboxHandler{}}
 	registry.Register(OutboxHandlerNotification, OutboxHandlerFunc(handleOutboxNotification))
 	registry.Register(OutboxHandlerAudit, OutboxHandlerFunc(handleOutboxAudit))
-	registry.Register(OutboxHandlerSMS, OutboxHandlerFunc(handleOutboxNoop))
-	registry.Register(OutboxHandlerStats, OutboxHandlerFunc(handleOutboxNoop))
-	registry.Register(OutboxHandlerGovernance, OutboxHandlerFunc(handleOutboxNoop))
+	registry.Register(OutboxHandlerSMS, OutboxHandlerFunc(handleOutboxSMS))
+	registry.Register(OutboxHandlerStats, OutboxHandlerFunc(handleOutboxStats))
+	registry.Register(OutboxHandlerGovernance, OutboxHandlerFunc(handleOutboxGovernance))
 	return registry
 }
 
@@ -211,7 +211,208 @@ func auditExistsForOutboxEvent(eventKey string) (bool, error) {
 	return count > 0, err
 }
 
-func handleOutboxNoop(event model.OutboxEvent) error {
-	log.Printf("[Outbox] handler=%s event=%s eventKey=%s marked as no-op in V1", event.HandlerKey, event.EventType, event.EventKey)
+type outboxSMSPayload struct {
+	Phone          string            `json:"phone"`
+	UserID         uint64            `json:"userId"`
+	ProviderUserID uint64            `json:"providerUserId"`
+	Purpose        string            `json:"purpose"`
+	TemplateKey    string            `json:"templateKey"`
+	TemplateCode   string            `json:"templateCode"`
+	Params         map[string]string `json:"params"`
+	ClientIP       string            `json:"clientIp"`
+}
+
+func handleOutboxSMS(event model.OutboxEvent) error {
+	var payload outboxSMSPayload
+	if strings.TrimSpace(event.Payload) != "" {
+		if err := json.Unmarshal([]byte(event.Payload), &payload); err != nil {
+			return fmt.Errorf("解析短信 payload 失败: %w", err)
+		}
+	}
+	if exists, err := smsAuditExistsForOutboxEvent(event.EventKey); err != nil {
+		return err
+	} else if exists {
+		return nil
+	}
+	phone := strings.TrimSpace(payload.Phone)
+	if phone == "" {
+		phone = lookupOutboxSMSPhone(payload.UserID, payload.ProviderUserID)
+	}
+	purpose := SMSPurpose(firstNonBlank(payload.Purpose, event.EventType))
+	templateCtx := SMSTemplateContext{
+		Purpose:      purpose,
+		RiskTier:     SMSRiskTierHigh,
+		TemplateKey:  strings.TrimSpace(payload.TemplateKey),
+		TemplateCode: strings.TrimSpace(payload.TemplateCode),
+	}
+	if phone == "" {
+		logSMSAudit(event.EventKey, purpose, "", firstNonBlank(payload.ClientIP, "outbox"), templateCtx, SMSProviderResult{Provider: "outbox"}, "skipped_missing_phone", "MISSING_PHONE", "短信接收人手机号缺失")
+		return nil
+	}
+	if templateCtx.TemplateCode == "" {
+		logSMSAudit(event.EventKey, purpose, phone, firstNonBlank(payload.ClientIP, "outbox"), templateCtx, SMSProviderResult{Provider: "outbox"}, "skipped_missing_template", "MISSING_TEMPLATE", "短信模板未配置")
+		return nil
+	}
+	provider, err := GetSMSProvider()
+	if err != nil {
+		logSMSAudit(event.EventKey, purpose, phone, firstNonBlank(payload.ClientIP, "outbox"), templateCtx, SMSProviderResult{Provider: "unknown"}, "send_failed", ExtractSMSProviderErrorCode(err), err.Error())
+		return err
+	}
+	messageProvider, ok := provider.(SMSMessageProvider)
+	if !ok {
+		err := errors.New("短信 provider 不支持模板消息")
+		logSMSAudit(event.EventKey, purpose, phone, firstNonBlank(payload.ClientIP, "outbox"), templateCtx, SMSProviderResult{Provider: "unknown"}, "send_failed", "PROVIDER_UNSUPPORTED", err.Error())
+		return err
+	}
+	result, err := messageProvider.SendTemplateMessage(SMSTemplateMessageRequest{
+		Phone:        phone,
+		TemplateKey:  templateCtx.TemplateKey,
+		TemplateCode: templateCtx.TemplateCode,
+		Params:       payload.Params,
+	})
+	if err != nil {
+		logSMSAudit(event.EventKey, purpose, phone, firstNonBlank(payload.ClientIP, "outbox"), templateCtx, result, "send_failed", ExtractSMSProviderErrorCode(err), err.Error())
+		return err
+	}
+	logSMSAudit(event.EventKey, purpose, phone, firstNonBlank(payload.ClientIP, "outbox"), templateCtx, result, "sent", "", "")
 	return nil
+}
+
+func smsAuditExistsForOutboxEvent(eventKey string) (bool, error) {
+	eventKey = strings.TrimSpace(eventKey)
+	if eventKey == "" {
+		return false, nil
+	}
+	var count int64
+	err := repository.DB.Model(&model.SMSAuditLog{}).Where("request_id = ?", trimToMax(eventKey, 64)).Count(&count).Error
+	return count > 0, err
+}
+
+func lookupOutboxSMSPhone(userID, providerUserID uint64) string {
+	targetUserID := firstNonZero(userID, providerUserID)
+	if targetUserID == 0 || repository.DB == nil {
+		return ""
+	}
+	var user model.User
+	if err := repository.DB.Select("phone").First(&user, targetUserID).Error; err != nil {
+		return ""
+	}
+	return strings.TrimSpace(user.Phone)
+}
+
+func handleOutboxStats(event model.OutboxEvent) error {
+	if exists, err := auditExistsForOutboxEvent(event.EventKey); err != nil {
+		return err
+	} else if exists {
+		return nil
+	}
+	return (&AuditLogService{}).CreateBusinessRecord(&CreateAuditRecordInput{
+		OperatorType:  "system",
+		OperationType: "outbox.stats.refresh",
+		ResourceType:  event.AggregateType,
+		ResourceID:    event.AggregateID,
+		Result:        "success",
+		Metadata: map[string]interface{}{
+			"eventKey":      event.EventKey,
+			"handlerKey":    event.HandlerKey,
+			"eventType":     event.EventType,
+			"aggregateType": event.AggregateType,
+			"aggregateId":   event.AggregateID,
+		},
+	})
+}
+
+func handleOutboxGovernance(event model.OutboxEvent) error {
+	providerID := resolveOutboxGovernanceProviderID(event)
+	if providerID == 0 {
+		return handleOutboxGovernanceAudit(event, "skipped_no_provider", nil)
+	}
+	summary := (&ProviderGovernanceService{}).BuildSummary(providerID)
+	if summary == nil {
+		return handleOutboxGovernanceAudit(event, "skipped_no_summary", map[string]interface{}{"providerId": providerID})
+	}
+	metadata := map[string]interface{}{
+		"providerId":        providerID,
+		"governanceTier":    summary.GovernanceTier,
+		"riskFlags":         summary.RiskFlags,
+		"recommendedAction": summary.RecommendedAction,
+	}
+	if len(summary.RiskFlags) > 0 {
+		_, _, err := (&SystemAlertService{}).UpsertAlert(&CreateSystemAlertInput{
+			Type:        SystemAlertTypeProviderGovernanceRisk,
+			Level:       "medium",
+			Scope:       fmt.Sprintf("服务商#%d", providerID),
+			Description: fmt.Sprintf("服务商治理进入风险观察：%s", strings.Join(summary.RiskFlags, "、")),
+			ActionURL:   fmt.Sprintf("/providers/%d", providerID),
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return handleOutboxGovernanceAudit(event, "success", metadata)
+}
+
+func handleOutboxGovernanceAudit(event model.OutboxEvent, result string, metadata map[string]interface{}) error {
+	if exists, err := auditExistsForOutboxEvent(event.EventKey); err != nil {
+		return err
+	} else if exists {
+		return nil
+	}
+	if metadata == nil {
+		metadata = map[string]interface{}{}
+	}
+	metadata["eventKey"] = event.EventKey
+	metadata["handlerKey"] = event.HandlerKey
+	metadata["eventType"] = event.EventType
+	return (&AuditLogService{}).CreateBusinessRecord(&CreateAuditRecordInput{
+		OperatorType:  "system",
+		OperationType: "outbox.governance.refresh",
+		ResourceType:  event.AggregateType,
+		ResourceID:    event.AggregateID,
+		Result:        result,
+		Metadata:      metadata,
+	})
+}
+
+func resolveOutboxGovernanceProviderID(event model.OutboxEvent) uint64 {
+	payload := map[string]interface{}{}
+	if json.Valid([]byte(event.Payload)) {
+		_ = json.Unmarshal([]byte(event.Payload), &payload)
+	}
+	for _, key := range []string{"providerId", "providerID", "awardedProviderId"} {
+		if id := uint64FromOutboxPayload(payload[key]); id > 0 {
+			return id
+		}
+	}
+	if event.AggregateType == "project" && event.AggregateID > 0 {
+		var project model.Project
+		if err := repository.DB.Select("provider_id", "construction_provider_id").First(&project, event.AggregateID).Error; err == nil {
+			return effectiveProjectProviderID(&project)
+		}
+	}
+	return 0
+}
+
+func uint64FromOutboxPayload(value interface{}) uint64 {
+	switch typed := value.(type) {
+	case float64:
+		if typed > 0 {
+			return uint64(typed)
+		}
+	case int:
+		if typed > 0 {
+			return uint64(typed)
+		}
+	case uint64:
+		return typed
+	case json.Number:
+		parsed, _ := typed.Int64()
+		if parsed > 0 {
+			return uint64(parsed)
+		}
+	case string:
+		parsed, _ := strconv.ParseUint(strings.TrimSpace(typed), 10, 64)
+		return parsed
+	}
+	return 0
 }
