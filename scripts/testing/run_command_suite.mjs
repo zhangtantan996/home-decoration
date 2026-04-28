@@ -77,6 +77,7 @@ async function runCommand(command, logPath) {
     child.stderr.on('data', append);
 
     child.on('close', async (code, signal) => {
+      await fs.mkdir(path.dirname(logPath), { recursive: true });
       await fs.writeFile(logPath, output, 'utf8');
       resolve({ exitCode: code ?? 1, signal: signal ?? null });
     });

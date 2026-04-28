@@ -86,7 +86,11 @@ const router = createBrowserRouter(
     },
   {
     path: '/',
-    element: <PublicAppLayout />,
+    element: (
+      <ProtectedRoute>
+        <PublicAppLayout />
+      </ProtectedRoute>
+    ),
     errorElement,
     children: [
       { index: true, element: <HomePage /> },

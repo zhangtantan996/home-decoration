@@ -44,6 +44,9 @@ wait_for_url() {
   return 1
 }
 
+npm run fixture:user-web
+npm run reset:user-web:rate-limit
+
 APP_ENV=local \
 DATABASE_HOST="${DATABASE_HOST:-127.0.0.1}" \
 DATABASE_PORT="${DATABASE_PORT:-5432}" \
@@ -79,9 +82,6 @@ wait_for_url "http://127.0.0.1:5173/admin" "admin"
 wait_for_url "http://127.0.0.1:5174/merchant" "merchant"
 wait_for_url "http://127.0.0.1:5176/app" "web"
 wait_for_url "http://127.0.0.1:5175/app" "gateway"
-
-npm run fixture:user-web
-npm run reset:user-web:rate-limit
 
 E2E_API_BASE_URL="${E2E_API_BASE_URL:-http://127.0.0.1:8080/api/v1}" \
 E2E_ADMIN_ORIGIN="${E2E_ADMIN_ORIGIN:-http://127.0.0.1:5175/admin}" \

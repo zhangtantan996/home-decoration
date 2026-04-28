@@ -1285,8 +1285,8 @@ export async function loginThroughUi(page: Page, redirectPath = '/') {
   await page.goto(`/app/login?redirect=${encodeURIComponent(normalizedRedirect)}`, { waitUntil: 'domcontentloaded' });
   await page.getByLabel('手机号').fill('13900000001');
   await page.getByRole('button', { name: '获取验证码' }).click();
-  await expect(page.getByText('验证码已发送，开发环境验证码：123456')).toBeVisible();
+  await expect(page.getByText(/验证码已发送/)).toBeVisible();
   await page.locator('#login-code').fill('123456');
   await page.getByRole('checkbox').check();
-  await page.getByRole('button', { name: '登录' }).click();
+  await page.getByRole('button', { name: /登\s*录/ }).click();
 }

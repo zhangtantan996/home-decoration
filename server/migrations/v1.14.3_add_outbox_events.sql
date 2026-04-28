@@ -65,6 +65,10 @@ INSERT INTO system_configs (key, value, type, description, editable, created_at,
 SELECT 'outbox.worker.max_retries', '3', 'number', '事件任务默认最大重试次数', TRUE, NOW(), NOW()
 WHERE NOT EXISTS (SELECT 1 FROM system_configs WHERE key = 'outbox.worker.max_retries');
 
+ALTER TABLE sys_role_menus
+    ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW(),
+    ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
 DO $$
 DECLARE
     settings_root_id BIGINT;

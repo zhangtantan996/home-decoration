@@ -14,7 +14,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   webServer: {
-    command: 'cd web && VITE_API_URL=http://127.0.0.1:8080/api/v1 VITE_ROUTER_BASENAME=/ npm run dev -- --host 127.0.0.1 --port 5176',
+    command: 'cd web && VITE_API_URL=http://127.0.0.1:8080/api/v1 VITE_ROUTER_BASENAME=/app npm run dev -- --host 127.0.0.1 --port 5176',
     url: 'http://127.0.0.1:5176',
     reuseExistingServer: false,
     stdout: 'ignore',

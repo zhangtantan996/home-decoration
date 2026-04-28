@@ -17,9 +17,9 @@ CREATE TABLE IF NOT EXISTS user_identities (
   CONSTRAINT uq_user_identity_type UNIQUE(user_id, identity_type)
 );
 
-CREATE INDEX idx_user_identities_user_id ON user_identities(user_id);
-CREATE INDEX idx_user_identities_status ON user_identities(status);
-CREATE INDEX idx_user_identities_type ON user_identities(identity_type);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON user_identities(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_identities_status ON user_identities(status);
+CREATE INDEX IF NOT EXISTS idx_user_identities_type ON user_identities(identity_type);
 
 COMMENT ON TABLE user_identities IS '用户身份表 - 支持多身份';
 COMMENT ON COLUMN user_identities.identity_type IS '身份类型: owner(业主), designer(设计师), worker(工人), company(公司), supplier(主材商)';
@@ -41,9 +41,9 @@ CREATE TABLE IF NOT EXISTS identity_applications (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_identity_applications_user_id ON identity_applications(user_id);
-CREATE INDEX idx_identity_applications_status ON identity_applications(status);
-CREATE INDEX idx_identity_applications_applied_at ON identity_applications(applied_at);
+CREATE INDEX IF NOT EXISTS idx_identity_applications_user_id ON identity_applications(user_id);
+CREATE INDEX IF NOT EXISTS idx_identity_applications_status ON identity_applications(status);
+CREATE INDEX IF NOT EXISTS idx_identity_applications_applied_at ON identity_applications(applied_at);
 
 COMMENT ON TABLE identity_applications IS '身份申请表 - 记录用户申请新身份的流程';
 COMMENT ON COLUMN identity_applications.application_data IS 'JSONB格式存储申请材料';
@@ -61,9 +61,9 @@ CREATE TABLE IF NOT EXISTS identity_audit_logs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_identity_audit_logs_user_id ON identity_audit_logs(user_id);
-CREATE INDEX idx_identity_audit_logs_action ON identity_audit_logs(action);
-CREATE INDEX idx_identity_audit_logs_created_at ON identity_audit_logs(created_at);
+CREATE INDEX IF NOT EXISTS idx_identity_audit_logs_user_id ON identity_audit_logs(user_id);
+CREATE INDEX IF NOT EXISTS idx_identity_audit_logs_action ON identity_audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_identity_audit_logs_created_at ON identity_audit_logs(created_at);
 
 COMMENT ON TABLE identity_audit_logs IS '身份审计日志表 - 记录所有身份相关操作';
 COMMENT ON COLUMN identity_audit_logs.action IS '操作类型: switch(切换), apply(申请), approve(批准), reject(拒绝), suspend(暂停)';
