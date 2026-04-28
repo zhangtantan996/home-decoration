@@ -662,6 +662,12 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 			}).Error; err != nil {
 				return err
 			}
+			current.Status = nextStatus
+			current.ProviderTradeNo = firstNonEmpty(current.ProviderTradeNo, result.ProviderTradeNo)
+			current.RawResponseDigest = digestString(result.RawJSON)
+			if err := enqueuePaymentClosedOutboxTx(tx, &current, nextStatus); err != nil {
+				return err
+			}
 		default:
 			updates := map[string]any{
 				"status":              nextStatus,
@@ -727,6 +733,12 @@ func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
 				}).Error; err != nil {
 					return err
 				}
+				payment.Status = model.PaymentStatusClosed
+				payment.ProviderTradeNo = firstNonEmpty(payment.ProviderTradeNo, payload["trade_no"])
+				payment.RawResponseDigest = digestString(mustMarshalJSON(payload))
+				if err := enqueuePaymentClosedOutboxTx(tx, &payment, alipayTradeClosed); err != nil {
+					return err
+				}
 			}
 		default:
 			if payment.Status == model.PaymentStatusCreated || payment.Status == model.PaymentStatusLaunching {
@@ -790,11 +802,18 @@ func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
 			}
 		case model.PaymentStatusClosed, model.PaymentStatusFailed:
 			if payment.Status != model.PaymentStatusPaid {
+				nextStatus := interpretPaymentTradeState(payment.Channel, notifyResult.TradeStatus)
 				if err := tx.Model(&payment).Updates(map[string]any{
-					"status":              interpretPaymentTradeState(payment.Channel, notifyResult.TradeStatus),
+					"status":              nextStatus,
 					"provider_trade_no":   firstNonEmpty(payment.ProviderTradeNo, notifyResult.ProviderTradeNo),
 					"raw_response_digest": digestString(notifyResult.RawJSON),
 				}).Error; err != nil {
+					return err
+				}
+				payment.Status = nextStatus
+				payment.ProviderTradeNo = firstNonEmpty(payment.ProviderTradeNo, notifyResult.ProviderTradeNo)
+				payment.RawResponseDigest = digestString(notifyResult.RawJSON)
+				if err := enqueuePaymentClosedOutboxTx(tx, &payment, notifyResult.TradeStatus); err != nil {
 					return err
 				}
 			}
@@ -896,6 +915,12 @@ func (s *PaymentService) HandleWechatRefundNotify(request *http.Request) error {
 		}
 		if refund.Status == model.RefundOrderStatusSucceeded {
 			if err := s.refreshRefundProjectionTx(tx, refund.PaymentOrderID); err != nil {
+				_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
+				return err
+			}
+		} else if refund.Status == model.RefundOrderStatusFailed {
+			userID, providerUserID := resolveRefundParticipantUsersTx(tx, &refund)
+			if err := enqueueRefundFailedOutboxTx(tx, &refund, userID, providerUserID); err != nil {
 				_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
 				return err
 			}
@@ -1015,13 +1040,24 @@ func (s *PaymentService) ExecuteRefundOrder(refundOrderID uint64) (*model.Refund
 	}
 	refund.ProviderResponseJSON = result.RawJSON
 	refund.FailureReason = result.FailureReason
-	if err := repository.DB.Model(&refund).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if refund.Status == model.RefundOrderStatusSucceeded {
-		if err := s.refreshRefundProjectionByRefundOrderID(refund.ID); err != nil {
-			return nil, err
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&refund).Updates(updates).Error; err != nil {
+			return err
 		}
+		if refund.Status == model.RefundOrderStatusSucceeded {
+			if err := s.refreshRefundProjectionTx(tx, refund.PaymentOrderID); err != nil {
+				return err
+			}
+		}
+		if refund.Status == model.RefundOrderStatusFailed {
+			userID, providerUserID := resolveRefundParticipantUsersTx(tx, &refund)
+			if err := enqueueRefundFailedOutboxTx(tx, &refund, userID, providerUserID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	if refund.RefundApplicationID > 0 && refund.Status == model.RefundOrderStatusFailed {
 		_ = s.writeRefundExecutionFailureAudit(refund.RefundApplicationID, result.FailureReason, []model.RefundOrder{refund})
@@ -1076,13 +1112,24 @@ func (s *PaymentService) SyncRefundOrder(refundOrderID uint64) (*model.RefundOrd
 	}
 	refund.ProviderResponseJSON = result.RawJSON
 	refund.FailureReason = result.FailureReason
-	if err := repository.DB.Model(&refund).Updates(updates).Error; err != nil {
-		return nil, err
-	}
-	if refund.Status == model.RefundOrderStatusSucceeded {
-		if err := s.refreshRefundProjectionByRefundOrderID(refund.ID); err != nil {
-			return nil, err
+	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&refund).Updates(updates).Error; err != nil {
+			return err
 		}
+		if refund.Status == model.RefundOrderStatusSucceeded {
+			if err := s.refreshRefundProjectionTx(tx, refund.PaymentOrderID); err != nil {
+				return err
+			}
+		}
+		if refund.Status == model.RefundOrderStatusFailed {
+			userID, providerUserID := resolveRefundParticipantUsersTx(tx, &refund)
+			if err := enqueueRefundFailedOutboxTx(tx, &refund, userID, providerUserID); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	if refund.RefundApplicationID > 0 && refund.Status == model.RefundOrderStatusFailed {
 		_ = s.writeRefundExecutionFailureAudit(refund.RefundApplicationID, result.FailureReason, []model.RefundOrder{refund})
@@ -1213,21 +1260,20 @@ func (s *PaymentService) FinalizeRefundApplicationIfReady(applicationID uint64) 
 		if err := createRefundExecutionAuditTx(tx, "system", 0, &application, bookingScope, projectScope, refundOrders, beforeState, "success", application.AdminNotes); err != nil {
 			return err
 		}
+		providerID := uint64(0)
+		if projectScope != nil {
+			providerID = effectiveProjectProviderID(projectScope)
+		}
+		if providerID == 0 && bookingScope != nil {
+			providerID = bookingScope.ProviderID
+		}
+		if err := enqueueRefundSucceededOutboxTx(tx, &application, application.UserID, getProviderUserIDTx(tx, providerID)); err != nil {
+			return err
+		}
 		completed = true
 		return nil
 	})
-	if err == nil && completedNow {
-		if view, detailErr := (&RefundApplicationService{}).GetApplicationDetail(applicationID); detailErr == nil && view != nil {
-			NewNotificationDispatcher().NotifyRefundCompleted(
-				view.UserID,
-				resolveRefundProviderUserID(view),
-				view.ID,
-				view.BookingID,
-				view.ProjectID,
-				view.ApprovedAmount,
-			)
-		}
-	}
+	_ = completedNow
 	return completed, err
 }
 
@@ -1244,6 +1290,28 @@ func (s *PaymentService) writeRefundExecutionFailureAudit(applicationID uint64, 
 		return err
 	}
 	return createRefundExecutionAuditTx(repository.DB, "system", 0, &application, bookingScope, projectScope, refundOrders, nil, "failed", reason)
+}
+
+func resolveRefundParticipantUsersTx(tx *gorm.DB, refund *model.RefundOrder) (uint64, uint64) {
+	if tx == nil || refund == nil || refund.RefundApplicationID == 0 {
+		return 0, 0
+	}
+	var application model.RefundApplication
+	if err := tx.First(&application, refund.RefundApplicationID).Error; err != nil {
+		return 0, 0
+	}
+	bookingScope, projectScope, err := loadRefundExecutionScopeTx(tx, &application)
+	if err != nil {
+		return application.UserID, 0
+	}
+	providerID := uint64(0)
+	if projectScope != nil {
+		providerID = effectiveProjectProviderID(projectScope)
+	}
+	if providerID == 0 && bookingScope != nil {
+		providerID = bookingScope.ProviderID
+	}
+	return application.UserID, getProviderUserIDTx(tx, providerID)
 }
 
 func (s *PaymentService) finalizeSurveyDepositRefundIfReady(refundOrderID uint64) (bool, error) {
@@ -1348,6 +1416,10 @@ func (s *PaymentService) createOrReusePaymentOrderTx(tx *gorm.DB, spec *paymentC
 	if err == nil {
 		if existing.ExpiredAt != nil && existing.ExpiredAt.Before(now) {
 			if err := tx.Model(&existing).Update("status", model.PaymentStatusClosed).Error; err != nil {
+				return nil, err
+			}
+			existing.Status = model.PaymentStatusClosed
+			if err := enqueuePaymentClosedOutboxTx(tx, &existing, "expired_before_relaunch"); err != nil {
 				return nil, err
 			}
 		} else {
@@ -1720,6 +1792,9 @@ func (s *PaymentService) confirmPaymentSuccessTx(tx *gorm.DB, payment *model.Pay
 	if err := s.recordPaymentSuccessProjectionTx(tx, payment, effect); err != nil {
 		return nil, err
 	}
+	if err := enqueuePaymentPaidOutboxTx(tx, payment, effect); err != nil {
+		return nil, err
+	}
 	return effect, nil
 }
 
@@ -1727,40 +1802,9 @@ func (s *PaymentService) runPaymentSideEffect(effect *paymentSideEffect) {
 	if effect == nil {
 		return
 	}
-	notifService := &NotificationService{}
 	incomeService := &MerchantIncomeService{}
 	switch effect.Kind {
-	case model.PaymentBizTypeBookingIntent:
-		if effect.UserID > 0 && effect.BookingID > 0 {
-			_ = notifService.NotifySurveyDepositPaidReceipt(effect.BookingID, effect.UserID, effect.Amount)
-		}
-		if effect.ProviderUserID > 0 && effect.BookingID > 0 {
-			var booking model.Booking
-			if err := repository.DB.First(&booking, effect.BookingID).Error; err == nil {
-				_ = notifService.NotifyBookingIntentPaid(&booking, effect.ProviderUserID)
-			}
-		}
-	case model.PaymentBizTypeBookingSurveyDeposit:
-		if effect.UserID > 0 && effect.BookingID > 0 {
-			_ = notifService.NotifySurveyDepositPaidReceipt(effect.BookingID, effect.UserID, effect.Amount)
-		}
-		if effect.ProviderUserID > 0 && effect.BookingID > 0 {
-			var booking model.Booking
-			if err := repository.DB.First(&booking, effect.BookingID).Error; err == nil {
-				_ = notifService.NotifyBookingIntentPaid(&booking, effect.ProviderUserID)
-			}
-		}
 	case model.PaymentBizTypeOrder:
-		if effect.UserID > 0 && effect.OrderID > 0 {
-			title, content := buildPaidOrderReceiptCopy(effect.OrderType, effect.Amount, "")
-			_ = notifService.NotifyUserOrderPaidReceipt(effect.OrderID, effect.UserID, effect.Amount, title, content, map[string]interface{}{
-				"bookingId": effect.BookingID,
-				"projectId": effect.ProjectID,
-			})
-		}
-		if effect.ProviderUserID > 0 && effect.OrderID > 0 {
-			_ = notifService.NotifyOrderPaid(map[string]any{"id": effect.OrderID, "amount": effect.Amount}, effect.ProviderUserID)
-		}
 		if effect.ProviderID > 0 && effect.OrderType == model.OrderTypeMaterial {
 			_, _ = incomeService.CreateIncome(&CreateIncomeInput{
 				ProviderID:  effect.ProviderID,
@@ -1769,14 +1813,6 @@ func (s *PaymentService) runPaymentSideEffect(effect *paymentSideEffect) {
 				Type:        effect.OrderType,
 				Amount:      effect.Amount,
 				Description: "订单支付",
-			})
-		}
-	case model.PaymentBizTypePaymentPlan:
-		if effect.UserID > 0 && effect.OrderID > 0 {
-			title, content := buildPaidOrderReceiptCopy(effect.OrderType, effect.Amount, effect.PlanName)
-			_ = notifService.NotifyUserOrderPaidReceipt(effect.OrderID, effect.UserID, effect.Amount, title, content, map[string]interface{}{
-				"projectId": effect.ProjectID,
-				"planName":  effect.PlanName,
 			})
 		}
 	}

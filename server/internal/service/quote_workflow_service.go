@@ -1555,14 +1555,29 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 		}).Error; err != nil {
 			return err
 		}
-		return tx.Model(&quoteList).Updates(map[string]interface{}{
+		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
 			"status":                      model.QuoteListStatusSubmittedToUser,
 			"user_confirmation_status":    model.QuoteUserConfirmationPending,
 			"active_submission_id":        submission.ID,
 			"submitted_to_user_at":        &now,
 			"awarded_quote_submission_id": submission.ID,
 			"awarded_provider_id":         submission.ProviderID,
-		}).Error
+		}).Error; err != nil {
+			return err
+		}
+		var provider model.Provider
+		_ = tx.Select("id", "user_id", "company_name").First(&provider, submission.ProviderID).Error
+		var providerUser model.User
+		if provider.UserID > 0 {
+			_ = tx.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
+		}
+		providerName := ResolveProviderDisplayName(provider, func() *model.User {
+			if provider.UserID > 0 {
+				return &providerUser
+			}
+			return nil
+		}())
+		return enqueueQuoteSubmittedOutboxTx(tx, &quoteList, &submission, providerName)
 	}); err != nil {
 		return nil, fmt.Errorf("提交给用户确认失败: %w", err)
 	}
@@ -1572,23 +1587,6 @@ func (s *QuoteService) SubmitTaskToUser(quoteListID, submissionID uint64) (*mode
 	quoteList.SubmittedToUserAt = &now
 	quoteList.AwardedQuoteSubmissionID = submission.ID
 	quoteList.AwardedProviderID = submission.ProviderID
-	var provider model.Provider
-	_ = repository.DB.Select("id", "user_id", "company_name").First(&provider, submission.ProviderID).Error
-	var providerUser model.User
-	if provider.UserID > 0 {
-		_ = repository.DB.Select("nickname", "phone").First(&providerUser, provider.UserID).Error
-	}
-	NewNotificationDispatcher().NotifyQuoteSubmittedToUser(
-		quoteList.OwnerUserID,
-		quoteList.ID,
-		quoteList.ProjectID,
-		ResolveProviderDisplayName(provider, func() *model.User {
-			if provider.UserID > 0 {
-				return &providerUser
-			}
-			return nil
-		}()),
-	)
 	return &quoteList, nil
 }
 
@@ -1837,21 +1835,8 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	now := time.Now()
 	var projectID uint64
 	var orderBundle *ConstructionOrderPlanBundle
-	auditService := &AuditLogService{}
-	beforeState := map[string]interface{}{
-		"quoteList": map[string]interface{}{
-			"id":                     quoteList.ID,
-			"status":                 quoteList.Status,
-			"userConfirmationStatus": quoteList.UserConfirmationStatus,
-			"projectId":              quoteList.ProjectID,
-		},
-		"submission": map[string]interface{}{
-			"id":         submission.ID,
-			"providerId": submission.ProviderID,
-			"status":     submission.Status,
-			"totalCent":  submission.TotalCent,
-		},
-	}
+	var awardedProviderUserID uint64
+	var constructionOrderID uint64
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		projectParticipantUpdates, err := buildQuoteConfirmationProjectParticipantUpdatesTx(tx, submission)
 		if err != nil {
@@ -1889,6 +1874,9 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 		orderBundle, err = (&OrderService{}).EnsureConstructionOrderAndPaymentPlansTx(tx, projectID, &quoteList, &submission)
 		if err != nil {
 			return err
+		}
+		if orderBundle != nil {
+			constructionOrderID = orderBundle.Order.ID
 		}
 		if err := tx.Model(&quoteList).Updates(map[string]interface{}{
 			"payment_plan_generated_flag": orderBundle != nil && len(orderBundle.Plans) > 0,
@@ -1930,37 +1918,11 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 			return err
 		}
 
-		return auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
-			OperatorType:  "user",
-			OperatorID:    userID,
-			OperationType: "confirm_construction_quote",
-			ResourceType:  "quote_list",
-			ResourceID:    quoteList.ID,
-			Result:        "success",
-			BeforeState:   beforeState,
-			AfterState: map[string]interface{}{
-				"quoteList": map[string]interface{}{
-					"id":                     quoteList.ID,
-					"status":                 model.QuoteListStatusUserConfirmed,
-					"userConfirmationStatus": model.QuoteUserConfirmationConfirmed,
-					"projectId":              projectID,
-				},
-				"submission": map[string]interface{}{
-					"id":              submission.ID,
-					"providerId":      submission.ProviderID,
-					"userConfirmedAt": now,
-					"taskStatus":      model.QuoteListStatusUserConfirmed,
-				},
-			},
-			Metadata: map[string]interface{}{
-				"projectId":     projectID,
-				"sourceType":    sourceType,
-				"sourceId":      sourceID,
-				"submissionId":  submission.ID,
-				"providerId":    submission.ProviderID,
-				"submissionFee": float64(submission.TotalCent) / 100,
-			},
-		})
+		var provider model.Provider
+		if err := tx.Select("user_id").First(&provider, submission.ProviderID).Error; err == nil {
+			awardedProviderUserID = provider.UserID
+		}
+		return enqueueQuoteAwardedOutboxTx(tx, &quoteList, &submission, projectID, constructionOrderID, awardedProviderUserID, userID)
 	}); err != nil {
 		return nil, fmt.Errorf("确认报价失败: %w", err)
 	}
@@ -1971,12 +1933,9 @@ func (s *QuoteService) UserConfirmQuoteSubmission(submissionID, userID uint64) (
 	quoteList.ProjectID = projectID
 	quoteList.PaymentPlanGeneratedFlag = orderBundle != nil && len(orderBundle.Plans) > 0
 	if orderBundle != nil {
-		NewNotificationDispatcher().NotifyConstructionQuoteAwarded(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, orderBundle.Order.ID)
 		if len(orderBundle.Plans) > 0 {
 			NewNotificationDispatcher().NotifyConstructionPaymentPlanCreated(quoteList.OwnerUserID, quoteList.ID, projectID, orderBundle.Order.ID, orderBundle.Plans[0])
 		}
-	} else {
-		NewNotificationDispatcher().NotifyConstructionQuoteAwarded(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, projectID, 0)
 	}
 	return &quoteList, nil
 }
@@ -2192,7 +2151,7 @@ func (s *QuoteService) UserRejectQuoteSubmission(submissionID, userID uint64, re
 		}); err != nil {
 			return err
 		}
-		return auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+		if err := auditService.CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
 			OperatorType:  "user",
 			OperatorID:    userID,
 			OperationType: "reject_construction_quote",
@@ -2221,14 +2180,16 @@ func (s *QuoteService) UserRejectQuoteSubmission(submissionID, userID uint64, re
 				"submissionId": submission.ID,
 				"providerId":   submission.ProviderID,
 			},
-		})
+		}); err != nil {
+			return err
+		}
+		return enqueueQuoteRejectedOutboxTx(tx, &quoteList, &submission, providerUserIDFromProvider(submission.ProviderID), reason)
 	}); err != nil {
 		return nil, fmt.Errorf("拒绝报价失败: %w", err)
 	}
 	quoteList.Status = model.QuoteListStatusRejected
 	quoteList.UserConfirmationStatus = model.QuoteUserConfirmationRejected
 	quoteList.RejectedAt = &now
-	NewNotificationDispatcher().NotifyQuoteDecision(providerUserIDFromProvider(submission.ProviderID), quoteList.ID, quoteList.ProjectID, false, reason)
 	return &quoteList, nil
 }
 

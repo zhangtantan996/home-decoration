@@ -41,6 +41,7 @@ import TransactionList from './pages/finance/TransactionList';
 import RiskWarningList from './pages/risk/RiskWarningList';
 import ArbitrationCenter from './pages/risk/ArbitrationCenter';
 import SystemSettings from './pages/settings/SystemSettings';
+import OutboxEventList from './pages/settings/OutboxEventList';
 import RoleList from './pages/permissions/RoleList';
 import MenuList from './pages/permissions/MenuList';
 import CaseManagement from './pages/cases/CaseManagement';
@@ -180,6 +181,7 @@ const router = createBrowserRouter([
             { path: 'audit-logs', element: <ProtectedRoute permission="system:log:list"><AuditLogList /></ProtectedRoute> },
             { path: 'settings', element: <Navigate to="/settings/config" replace /> },
             { path: 'settings/config', element: <ProtectedRoute permission="system:setting:list"><SystemSettings /></ProtectedRoute> },
+            { path: 'settings/outbox-events', element: <ProtectedRoute permission="system:log:list"><OutboxEventList /></ProtectedRoute> },
             { path: 'settings/regions', element: <ProtectedRoute permission="system:setting:list"><RegionManagement /></ProtectedRoute> },
             { path: 'security/settings', element: <ProtectedRoute><AdminSecuritySettings /></ProtectedRoute> },
 

@@ -739,6 +739,7 @@ func TestRefundApplicationApproveIntentFee(t *testing.T) {
 	if approved.Status != model.RefundApplicationStatusCompleted {
 		t.Fatalf("expected completed application, got %+v", approved)
 	}
+	NewOutboxWorker("refund-application-test").ProcessOnce()
 	var createdNotification model.Notification
 	if err := db.Where("user_id = ? AND type = ?", provider.UserID, "refund.application.created").Order("id DESC").First(&createdNotification).Error; err != nil {
 		t.Fatalf("expected provider refund created notification: %v", err)

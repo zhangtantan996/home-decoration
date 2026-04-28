@@ -70,6 +70,11 @@ const (
 	ConfigKeyPaymentChannelWechatEnabled = "payment.channel.wechat.enabled"
 	ConfigKeyPaymentChannelAlipayEnabled = "payment.channel.alipay.enabled"
 	ConfigKeyMiniHomePopup               = "mini.home_popup.config"
+	ConfigKeyOutboxWorkerEnabled         = "outbox.worker.enabled"
+	ConfigKeyOutboxWorkerBatchSize       = "outbox.worker.batch_size"
+	ConfigKeyOutboxWorkerPollIntervalSec = "outbox.worker.poll_interval_seconds"
+	ConfigKeyOutboxWorkerLockTTLSec      = "outbox.worker.lock_ttl_seconds"
+	ConfigKeyOutboxWorkerMaxRetries      = "outbox.worker.max_retries"
 )
 
 // Proposal 设计方案

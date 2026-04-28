@@ -8,6 +8,8 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
+
+	"gorm.io/gorm"
 )
 
 type ComplaintService struct{}
@@ -42,30 +44,36 @@ func (s *ComplaintService) CreateComplaint(userID uint64, input *CreateComplaint
 		return nil, errors.New("投诉说明不能为空")
 	}
 
-	var project model.Project
-	if err := repository.DB.First(&project, input.ProjectID).Error; err != nil {
-		return nil, errors.New("项目不存在")
-	}
-	if project.OwnerID != userID {
-		return nil, errors.New("无权对该项目发起投诉")
-	}
+	var complaint *model.Complaint
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var project model.Project
+		if err := tx.First(&project, input.ProjectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		if project.OwnerID != userID {
+			return errors.New("无权对该项目发起投诉")
+		}
 
-	complaint := &model.Complaint{
-		ProjectID:        input.ProjectID,
-		UserID:           userID,
-		ProviderID:       project.ProviderID,
-		Category:         input.Category,
-		Title:            input.Title,
-		Description:      input.Description,
-		EvidenceURLs:     marshalStringList(input.EvidenceURLs),
-		Status:           "submitted",
-		FreezePayment:    false,
-		MerchantResponse: "",
-	}
-	if err := repository.DB.Create(complaint).Error; err != nil {
+		complaint = &model.Complaint{
+			ProjectID:        input.ProjectID,
+			UserID:           userID,
+			ProviderID:       project.ProviderID,
+			Category:         input.Category,
+			Title:            input.Title,
+			Description:      input.Description,
+			EvidenceURLs:     marshalStringList(input.EvidenceURLs),
+			Status:           "submitted",
+			FreezePayment:    false,
+			MerchantResponse: "",
+		}
+		if err := tx.Create(complaint).Error; err != nil {
+			return err
+		}
+		return enqueueProjectDisputeCreatedOutboxTx(tx, &project, getProviderUserIDTx(tx, project.ProviderID), 0, complaint.Title)
+	})
+	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyComplaintCreated(providerUserIDFromProvider(project.ProviderID), complaint.ID, complaint.ProjectID, complaint.Title)
 	return complaint, nil
 }
 

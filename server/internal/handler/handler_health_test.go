@@ -87,6 +87,13 @@ type healthCheckDetailedResponse struct {
 				RequiredMigration string   `json:"requiredMigration"`
 				Missing           []string `json:"missing"`
 			} `json:"commerceRuntimeSchema"`
+			OutboxRuntimeSchema struct {
+				Status            string   `json:"status"`
+				Component         string   `json:"component"`
+				MigrationRequired bool     `json:"migrationRequired"`
+				RequiredMigration string   `json:"requiredMigration"`
+				Missing           []string `json:"missing"`
+			} `json:"outboxRuntimeSchema"`
 		} `json:"checks"`
 	} `json:"data"`
 }
@@ -143,6 +150,7 @@ func newHealthTestDB(t *testing.T, withSMSAudit bool) *gorm.DB {
 		&model.PayoutOrder{},
 		&model.MerchantIncome{},
 		&model.MerchantWithdraw{},
+		&model.OutboxEvent{},
 	}
 	if withSMSAudit {
 		models = append(models, &model.SMSAuditLog{})
@@ -241,6 +249,9 @@ func TestHealthCheckDetailedReportsOKWhenSMSAuditTableExists(t *testing.T) {
 	}
 	if payload.Data.Checks.CommerceRuntimeSchema.Status != "ok" {
 		t.Fatalf("expected commerce runtime schema ok, got %s", payload.Data.Checks.CommerceRuntimeSchema.Status)
+	}
+	if payload.Data.Checks.OutboxRuntimeSchema.Status != "ok" {
+		t.Fatalf("expected outbox runtime schema ok, got %s", payload.Data.Checks.OutboxRuntimeSchema.Status)
 	}
 	if payload.Data.AlertCount != 0 {
 		t.Fatalf("expected alertCount=0, got %d", payload.Data.AlertCount)

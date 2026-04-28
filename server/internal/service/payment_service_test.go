@@ -189,6 +189,8 @@ func setupPaymentServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Transaction{},
 		&model.MerchantIncome{},
 		&model.Notification{},
+		&model.OutboxEvent{},
+		&model.AuditLog{},
 		&model.SystemConfig{},
 		&model.PaymentOrder{},
 		&model.PaymentCallback{},
@@ -1052,6 +1054,13 @@ func TestPaymentServiceHandleAlipayNotifyIsIdempotent(t *testing.T) {
 	if callbackCount != 1 {
 		t.Fatalf("expected one callback record, got %d", callbackCount)
 	}
+	var outboxCount int64
+	if err := db.Model(&model.OutboxEvent{}).Where("event_type = ? AND aggregate_id = ?", OutboxEventPaymentPaid, payment.ID).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count outbox events: %v", err)
+	}
+	if outboxCount == 0 {
+		t.Fatalf("expected payment paid outbox events")
+	}
 }
 
 func TestPaymentServiceHandleAlipayNotifyCreatesUserPaidReceipt(t *testing.T) {
@@ -1088,6 +1097,12 @@ func TestPaymentServiceHandleAlipayNotifyCreatesUserPaidReceipt(t *testing.T) {
 	if err := svc.HandleAlipayNotify(url.Values{}); err != nil {
 		t.Fatalf("HandleAlipayNotify: %v", err)
 	}
+
+	var outboxNotification model.OutboxEvent
+	if err := db.Where("event_type = ? AND aggregate_id = ? AND handler_key = ?", OutboxEventPaymentPaid, payment.ID, OutboxHandlerNotification).Order("id DESC").First(&outboxNotification).Error; err != nil {
+		t.Fatalf("expected user paid receipt outbox notification: %v", err)
+	}
+	NewOutboxWorker("payment-test-worker").ProcessOnce()
 
 	var notification model.Notification
 	if err := db.Where("user_id = ? AND type = ?", userID, NotificationTypePaymentOrderPaid).Order("id DESC").First(&notification).Error; err != nil {

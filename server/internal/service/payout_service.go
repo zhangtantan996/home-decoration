@@ -365,6 +365,9 @@ func (s *PayoutService) ExecutePayoutTx(tx *gorm.DB, payoutID uint64) (*model.Pa
 		payout.Status = model.PayoutStatusProcessing
 		payout.ProcessingAt = &now
 		payout.RetryCount++
+		if err := enqueuePayoutOutboxTx(tx, OutboxEventPayoutProcessing, &payout, ""); err != nil {
+			return nil, err
+		}
 	}
 
 	execResult, err := s.gateway.CreatePayout(context.Background(), &payout)
@@ -423,7 +426,7 @@ func (s *PayoutService) markPayoutPaidTx(tx *gorm.DB, payout *model.PayoutOrder,
 	payout.PaidAt = paidAt
 	payout.FailureReason = ""
 	payout.RawResponseJSON = result.RawJSON
-	return nil
+	return enqueuePayoutOutboxTx(tx, OutboxEventPayoutPaid, payout, "")
 }
 
 func (s *PayoutService) markPayoutFailedTx(tx *gorm.DB, payout *model.PayoutOrder, reason, rawJSON string) error {
@@ -461,7 +464,7 @@ func (s *PayoutService) markPayoutFailedTx(tx *gorm.DB, payout *model.PayoutOrde
 			return err
 		}
 	}
-	return nil
+	return enqueuePayoutOutboxTx(tx, OutboxEventPayoutFailed, payout, reason)
 }
 
 func (s *PayoutService) applyPayoutProjectionTx(tx *gorm.DB, payout *model.PayoutOrder) error {

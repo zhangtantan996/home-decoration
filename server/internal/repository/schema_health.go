@@ -20,6 +20,7 @@ const (
 	ProjectRiskHealthComponent       = "project_risk_schema"
 	AuditLogHealthComponent          = "audit_log_schema"
 	CommerceRuntimeHealthComponent   = "commerce_runtime_schema"
+	OutboxRuntimeHealthComponent     = "outbox_runtime_schema"
 	BookingP0MigrationPath           = "server/migrations/v1.13.5_align_booking_budget_bridge_schema.sql"
 	ProjectRiskMigrationPath         = "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
 	AuditLogMigrationPath            = "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
@@ -27,6 +28,7 @@ const (
 	QuoteRuntimeMigrationPath        = "server/migrations/v1.13.6_reconcile_quote_runtime_schema.sql"
 	FinancialRuntimeMigrationPath    = "server/migrations/v1.12.12_add_payment_central_runtime.sql,server/migrations/v1.12.13_add_settlement_and_bond_domains.sql,server/migrations/v1.14.2_payment_refund_projection_and_money_cents.sql"
 	ChangeOrderLinkMigrationPath     = "server/migrations/v1.13.7_link_change_orders_to_payment_plans.sql"
+	OutboxRuntimeMigrationPath       = "server/migrations/v1.14.3_add_outbox_events.sql"
 	CommerceRuntimeMigrationPath     = CommerceRuntimeBaseMigrationPath + "," + QuoteRuntimeMigrationPath + "," + FinancialRuntimeMigrationPath + "," + ChangeOrderLinkMigrationPath
 )
 
@@ -182,6 +184,19 @@ var commerceRuntimeHealthStore = struct {
 	},
 }
 
+var outboxRuntimeHealthStore = struct {
+	sync.Mutex
+	snapshot CriticalSchemaHealthSnapshot
+}{
+	snapshot: CriticalSchemaHealthSnapshot{
+		Status:            SMSAuditHealthStatusDegraded,
+		Component:         OutboxRuntimeHealthComponent,
+		MigrationRequired: true,
+		RequiredMigration: OutboxRuntimeMigrationPath,
+		Missing:           []string{"outbox_events"},
+	},
+}
+
 var userAuthRequirements = map[string][]string{
 	"users": {"public_id", "last_login_at", "last_login_ip"},
 }
@@ -245,6 +260,10 @@ var commerceRuntimeRequirements = map[string][]string{
 	"quote_submissions":          {"quote_list_id", "provider_id", "status", "task_status", "generation_status", "generated_from_price_book_id", "submitted_to_user", "review_status", "reviewed_by", "superseded_by"},
 	"quote_submission_items":     {"quote_submission_id", "quote_list_item_id", "price_tier_id", "generated_unit_price_cent", "unit_price_cent", "quoted_quantity", "amount_cent", "adjusted_flag", "missing_price_flag", "quantity_change_reason", "deviation_flag", "requires_user_confirmation", "platform_review_flag", "remark"},
 	"quote_submission_revisions": {"quote_submission_id", "quote_list_id", "provider_id", "revision_no", "action", "previous_items_json", "next_items_json", "change_reason"},
+}
+
+var outboxRuntimeRequirements = map[string][]string{
+	"outbox_events": {"event_type", "aggregate_type", "aggregate_id", "handler_key", "event_key", "payload", "status", "retry_count", "max_retries", "next_retry_at", "locked_by", "locked_until", "processed_at", "last_error", "ignored_by", "ignored_reason", "ignored_at"},
 }
 
 func recordSMSAuditSchemaCheck(tableExists bool, err error) {
@@ -444,6 +463,30 @@ func RefreshCommerceRuntimeSchemaHealth() CriticalSchemaHealthSnapshot {
 	return snapshotCriticalSchemaHealth(&commerceRuntimeHealthStore)
 }
 
+func RefreshOutboxRuntimeSchemaHealth() CriticalSchemaHealthSnapshot {
+	missing, err := checkSchemaRequirements(outboxRuntimeRequirements)
+	if len(missing) == 0 && err == nil {
+		if indexMissing := checkOutboxRuntimeIndexes(); len(indexMissing) > 0 {
+			missing = append(missing, indexMissing...)
+		}
+	}
+	recordCriticalSchemaCheck(&outboxRuntimeHealthStore, OutboxRuntimeHealthComponent, OutboxRuntimeMigrationPath, missing, err)
+	return snapshotCriticalSchemaHealth(&outboxRuntimeHealthStore)
+}
+
+func checkOutboxRuntimeIndexes() []string {
+	if DB == nil || !DB.Migrator().HasTable("outbox_events") {
+		return nil
+	}
+	missing := make([]string, 0, 2)
+	for _, idx := range []string{"idx_outbox_events_event_handler", "idx_outbox_events_status_retry"} {
+		if !DB.Migrator().HasIndex("outbox_events", idx) {
+			missing = append(missing, "outbox_events."+idx)
+		}
+	}
+	return missing
+}
+
 func resolveCommerceRuntimeMigrationPath(missing []string) string {
 	if len(missing) == 0 {
 		return CommerceRuntimeMigrationPath
@@ -567,6 +610,11 @@ func CurrentOperationalAlerts() []OpsAlert {
 		alerts = append(alerts, newCriticalSchemaAlert(commerceRuntimeSnapshot, "commerce_runtime_schema_missing", "公开列表/设计支付运行时结构缺失，用户侧列表、退款与托管链路可能异常"))
 	}
 
+	outboxRuntimeSnapshot := RefreshOutboxRuntimeSchemaHealth()
+	if outboxRuntimeSnapshot.Status != SMSAuditHealthStatusOK {
+		alerts = append(alerts, newCriticalSchemaAlert(outboxRuntimeSnapshot, "outbox_runtime_schema_missing", "事件任务表结构缺失，通知、审计、统计等异步副作用不可用"))
+	}
+
 	return alerts
 }
 
@@ -641,9 +689,10 @@ func EnsureCriticalSchema(mode string) error {
 	projectRiskSnapshot := RefreshProjectRiskSchemaHealth()
 	auditLogSnapshot := RefreshAuditLogSchemaHealth()
 	commerceRuntimeSnapshot := RefreshCommerceRuntimeSchemaHealth()
+	outboxRuntimeSnapshot := RefreshOutboxRuntimeSchemaHealth()
 
 	if !strings.EqualFold(strings.TrimSpace(mode), "release") {
-		logCriticalSchemaHealth(userAuthSnapshot, merchantSnapshot, bookingP0Snapshot, projectRiskSnapshot, auditLogSnapshot, commerceRuntimeSnapshot)
+		logCriticalSchemaHealth(userAuthSnapshot, merchantSnapshot, bookingP0Snapshot, projectRiskSnapshot, auditLogSnapshot, commerceRuntimeSnapshot, outboxRuntimeSnapshot)
 		if smsSnapshot.Status != SMSAuditHealthStatusOK {
 			logSMSAuditSchemaHealthAtStartup()
 		}
@@ -679,6 +728,10 @@ func EnsureCriticalSchema(mode string) error {
 	if commerceRuntimeSnapshot.Status != SMSAuditHealthStatusOK {
 		problems = append(problems, commerceRuntimeSnapshot.Missing...)
 		requiredMigrations = append(requiredMigrations, commerceRuntimeSnapshot.RequiredMigration)
+	}
+	if outboxRuntimeSnapshot.Status != SMSAuditHealthStatusOK {
+		problems = append(problems, outboxRuntimeSnapshot.Missing...)
+		requiredMigrations = append(requiredMigrations, outboxRuntimeSnapshot.RequiredMigration)
 	}
 	if len(problems) == 0 {
 		return nil

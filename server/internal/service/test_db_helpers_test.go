@@ -23,6 +23,9 @@ func withPaymentCentralTestModels(models ...any) []any {
 		&model.MerchantBondRule{},
 		&model.MerchantBondAccount{},
 		&model.UserSettings{},
+		&model.Notification{},
+		&model.AuditLog{},
+		&model.OutboxEvent{},
 	}
 	all := make([]any, 0, len(models)+len(extra))
 	all = append(all, models...)

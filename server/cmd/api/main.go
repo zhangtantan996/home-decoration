@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"log"
 
 	"home-decoration-server/internal/config"
@@ -69,6 +70,8 @@ func main() {
 		service.SetNotificationPublisher(nil)
 		log.Println("Notification realtime gateway disabled")
 	}
+
+	service.StartOutboxWorker(context.Background(), service.BuildOutboxWorkerID("api"))
 
 	// 初始化数据字典相关
 	dictRepo := repository.NewDictionaryRepository(repository.DB)

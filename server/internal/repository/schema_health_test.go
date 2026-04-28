@@ -100,6 +100,30 @@ func TestRefreshCommerceRuntimeSchemaHealthReportsMissingTables(t *testing.T) {
 	}
 }
 
+func TestRefreshOutboxRuntimeSchemaHealthReportsMissingTable(t *testing.T) {
+	setupSchemaHealthDB(t)
+
+	snapshot := RefreshOutboxRuntimeSchemaHealth()
+	if snapshot.Status != SMSAuditHealthStatusDegraded {
+		t.Fatalf("expected degraded status, got %s", snapshot.Status)
+	}
+	if !containsString(snapshot.Missing, "outbox_events") {
+		t.Fatalf("expected missing outbox_events, got %+v", snapshot.Missing)
+	}
+	if snapshot.RequiredMigration != OutboxRuntimeMigrationPath {
+		t.Fatalf("unexpected migration path: %s", snapshot.RequiredMigration)
+	}
+}
+
+func TestRefreshOutboxRuntimeSchemaHealthPassesWithTableAndIndexes(t *testing.T) {
+	setupSchemaHealthDB(t, &model.OutboxEvent{})
+
+	snapshot := RefreshOutboxRuntimeSchemaHealth()
+	if snapshot.Status != SMSAuditHealthStatusOK {
+		t.Fatalf("expected ok status, got %+v", snapshot)
+	}
+}
+
 func TestResolveCommerceRuntimeMigrationPath(t *testing.T) {
 	if got := resolveCommerceRuntimeMigrationPath([]string{"providers.is_settled"}); got != CommerceRuntimeBaseMigrationPath {
 		t.Fatalf("expected base runtime migration path, got %s", got)

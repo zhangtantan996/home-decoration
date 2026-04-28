@@ -2364,3 +2364,45 @@ export const adminQuoteInquiryApi = {
 };
 
 export default api;
+
+export interface AdminOutboxEventRecord {
+  id: number;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: number;
+  handlerKey: string;
+  eventKey: string;
+  payload?: Record<string, unknown>;
+  status: string;
+  retryCount: number;
+  maxRetries: number;
+  nextRetryAt: string;
+  lockedBy?: string;
+  lockedUntil?: string;
+  processedAt?: string;
+  lastError?: string;
+  ignoredBy?: number;
+  ignoredReason?: string;
+  ignoredAt?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AdminOutboxEventQuery {
+  page?: number;
+  pageSize?: number;
+  status?: string;
+  eventType?: string;
+  handlerKey?: string;
+  aggregateType?: string;
+  aggregateId?: number;
+  startTime?: string;
+  endTime?: string;
+}
+
+export const adminOutboxEventApi = {
+  list: (params?: AdminOutboxEventQuery) => api.get('/admin/outbox-events', { params }),
+  detail: (id: number) => api.get(`/admin/outbox-events/${id}`),
+  retry: (id: number, reason: string, recentReauthProof?: string) => api.post(`/admin/outbox-events/${id}/retry`, { reason, recentReauthProof }),
+  ignore: (id: number, reason: string) => api.post(`/admin/outbox-events/${id}/ignore`, { reason }),
+};

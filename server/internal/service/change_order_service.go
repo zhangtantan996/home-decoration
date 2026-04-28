@@ -95,13 +95,12 @@ func (s *ChangeOrderService) CreateByProvider(projectID, providerID uint64, inpu
 	if input == nil {
 		return nil, errors.New("参数不能为空")
 	}
-	view, providerUserID, ownerUserID, err := s.create(projectID, "provider", providerID, 0, func(tx *gorm.DB) (*model.Project, error) {
+	view, _, _, err := s.create(projectID, "provider", providerID, 0, func(tx *gorm.DB) (*model.Project, error) {
 		return (&ProjectService{}).getProviderProjectForUpdate(tx, projectID, providerID)
 	}, input)
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyChangeOrderCreated(ownerUserID, providerUserID, projectID, view.ID, view.Title)
 	return view, nil
 }
 
@@ -109,7 +108,7 @@ func (s *ChangeOrderService) CreateByAdmin(projectID, adminID uint64, input *Cha
 	if input == nil {
 		return nil, errors.New("参数不能为空")
 	}
-	view, providerUserID, ownerUserID, err := s.create(projectID, "admin", adminID, adminID, func(tx *gorm.DB) (*model.Project, error) {
+	view, _, _, err := s.create(projectID, "admin", adminID, adminID, func(tx *gorm.DB) (*model.Project, error) {
 		var project model.Project
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&project, projectID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -122,7 +121,6 @@ func (s *ChangeOrderService) CreateByAdmin(projectID, adminID uint64, input *Cha
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyChangeOrderCreated(ownerUserID, providerUserID, projectID, view.ID, view.Title)
 	return view, nil
 }
 
@@ -175,6 +173,9 @@ func (s *ChangeOrderService) ConfirmByOwner(changeOrderID, userID uint64) (*Chan
 			projectID = project.ID
 			orderID = order.ID
 			title = changeOrder.Title
+			if err := enqueueChangeOrderOutboxTx(tx, OutboxEventChangeOrderConfirmed, changeOrder, project, ownerUserID, providerUserID, "", plan, orderID); err != nil {
+				return err
+			}
 			return nil
 		}
 
@@ -202,18 +203,24 @@ func (s *ChangeOrderService) ConfirmByOwner(changeOrderID, userID uint64) (*Chan
 		if err != nil {
 			return err
 		}
+		if err := enqueueChangeOrderOutboxTx(tx, OutboxEventChangeOrderConfirmed, changeOrder, project, ownerUserID, providerUserID, "", nil, 0); err != nil {
+			return err
+		}
+		if changeOrder.Status == model.ChangeOrderStatusAdminSettlementRequired {
+			if err := enqueueChangeOrderOutboxTx(tx, OutboxEventChangeOrderSettlementRequired, changeOrder, project, ownerUserID, providerUserID, "", nil, 0); err != nil {
+				return err
+			}
+		}
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyChangeOrderDecision(ownerUserID, providerUserID, projectID, changeOrderID, true, "")
-	if planToNotify != nil {
-		NewNotificationDispatcher().NotifyChangeOrderPaymentActivated(ownerUserID, providerUserID, projectID, orderID, *planToNotify, title)
-	}
-	if view != nil && view.Status == model.ChangeOrderStatusAdminSettlementRequired {
-		NewNotificationDispatcher().NotifyChangeOrderSettlementRequired(projectID, changeOrderID, title)
-	}
+	_ = planToNotify
+	_ = ownerUserID
+	_ = projectID
+	_ = orderID
+	_ = title
 	return view, nil
 }
 
@@ -249,12 +256,15 @@ func (s *ChangeOrderService) RejectByOwner(changeOrderID, userID uint64, input *
 		providerUserID = getProviderUserIDTx(tx, effectiveProjectProviderID(project))
 		projectID = project.ID
 		view, err = s.toViewTx(tx, changeOrder)
-		return err
+		if err != nil {
+			return err
+		}
+		return enqueueChangeOrderOutboxTx(tx, OutboxEventChangeOrderRejected, changeOrder, project, userID, providerUserID, reason, nil, 0)
 	})
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyChangeOrderDecision(userID, providerUserID, projectID, changeOrderID, false, reason)
+	_ = projectID
 	return view, nil
 }
 
@@ -310,12 +320,11 @@ func (s *ChangeOrderService) SettleByAdmin(changeOrderID, adminID uint64, input 
 			return viewErr
 		}
 		view = viewResult
-		return nil
+		return enqueueChangeOrderOutboxTx(tx, OutboxEventChangeOrderSettled, &changeOrder, nil, 0, 0, reason, nil, 0)
 	})
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyChangeOrderSettled(view.ProjectID, view.ID, view.Title)
 	return view, nil
 }
 
@@ -362,7 +371,10 @@ func (s *ChangeOrderService) create(projectID uint64, initiatorType string, init
 			return err
 		}
 		view, err = s.toViewTx(tx, changeOrder)
-		return err
+		if err != nil {
+			return err
+		}
+		return enqueueChangeOrderOutboxTx(tx, OutboxEventChangeOrderCreated, changeOrder, project, ownerUserID, providerUserID, input.Reason, nil, 0)
 	})
 	if err != nil {
 		return nil, 0, 0, err

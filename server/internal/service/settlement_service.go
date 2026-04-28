@@ -571,21 +571,33 @@ func notifySettlementLifecycle(settlement *model.SettlementOrder) {
 	if settlement == nil || settlement.ID == 0 {
 		return
 	}
+	if settlement.Status != model.SettlementStatusScheduled {
+		return
+	}
 	providerUserID := providerUserIDFromProvider(settlement.ProviderID)
 	if providerUserID == 0 {
 		return
 	}
-	dispatcher := NewNotificationDispatcher()
-	switch settlement.Status {
-	case model.SettlementStatusScheduled:
-		dispatcher.NotifyProjectSettlementScheduled(providerUserID, settlement.ProjectID, settlement.ID, settlement.DueAt)
-	case model.SettlementStatusPayoutProcessing:
-		dispatcher.NotifyProjectPayoutProcessing(providerUserID, settlement.ProjectID, settlement.PayoutOrderID)
-	case model.SettlementStatusPaid:
-		dispatcher.NotifyProjectPayoutPaid(providerUserID, settlement.ProjectID, settlement.PayoutOrderID)
-	case model.SettlementStatusPayoutFailed:
-		dispatcher.NotifyProjectPayoutFailed(providerUserID, settlement.ProjectID, settlement.PayoutOrderID, settlement.FailureReason)
+	eventKey := fmt.Sprintf("settlement.scheduled:%d", settlement.ID)
+	payload := map[string]interface{}{
+		"settlementId":   settlement.ID,
+		"projectId":      settlement.ProjectID,
+		"providerId":     settlement.ProviderID,
+		"providerUserId": providerUserID,
+		"dueAt":          settlement.DueAt,
 	}
+	_ = enqueueOutboxNotificationTx(repository.DB, "settlement.scheduled", "settlement_order", settlement.ID, eventKey+":provider", map[string]interface{}{
+		"userId":      providerUserID,
+		"userType":    "provider",
+		"title":       "项目已进入待结算",
+		"content":     "项目已进入待结算，请在资金中心查看预计出款安排。",
+		"type":        NotificationTypeProjectSettlementScheduled,
+		"relatedId":   settlement.ID,
+		"relatedType": "settlement_order",
+		"actionUrl":   buildProviderClosureActionURL(settlement.ProjectID),
+		"category":    NotificationCategoryPayment,
+		"extra":       payload,
+	})
 }
 
 func (s *SettlementService) validateMilestoneSettlementScopeTx(tx *gorm.DB, input *ReleaseMilestoneInput) (*model.Project, *model.Milestone, *model.EscrowAccount, uint64, error) {

@@ -799,6 +799,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/system-configs", settingListPerm, handler.AdminGetSystemConfigs)
 			admin.PUT("/system-configs/:key", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSystemConfig)
 			admin.PUT("/system-configs/batch", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminBatchUpdateSystemConfigs)
+			admin.GET("/outbox-events", logListPerm, handler.AdminListOutboxEvents)
+			admin.GET("/outbox-events/:id", logListPerm, handler.AdminGetOutboxEvent)
+			admin.POST("/outbox-events/:id/retry", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminRetryOutboxEvent)
+			admin.POST("/outbox-events/:id/ignore", settingEditPerm, middleware.RequireAdminReason(), handler.AdminIgnoreOutboxEvent)
 
 			// 提现审核管理
 			admin.GET("/withdraws", financeTransactionListPerm, handler.AdminWithdrawList)

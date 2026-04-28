@@ -1,0 +1,24 @@
+.filterCompact {
+  width: 140px;
+}
+
+.filterEventType {
+  width: 180px;
+}
+
+.filterAggregateType {
+  width: 160px;
+}
+
+.filterAggregateId {
+  width: 120px;
+}
+
+.detailStack {
+  width: 100%;
+}
+
+.payloadPre {
+  margin: 0;
+  white-space: pre-wrap;
+}

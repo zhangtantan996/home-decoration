@@ -36,6 +36,7 @@ func setupQuoteServiceDB(t *testing.T) *gorm.DB {
 		&model.User{},
 		&model.Notification{},
 		&model.AuditLog{},
+		&model.OutboxEvent{},
 		&model.Provider{},
 		&model.QuoteTask{},
 		&model.QuotePKSubmission{},
@@ -141,6 +142,16 @@ func setupQuoteServiceDBWithoutAuditLog(t *testing.T) *gorm.DB {
 	db := setupQuoteServiceDB(t)
 	if err := db.Migrator().DropTable(&model.AuditLog{}); err != nil {
 		t.Fatalf("drop audit_logs: %v", err)
+	}
+	return db
+}
+
+func setupQuoteServiceDBWithoutOutboxEvent(t *testing.T) *gorm.DB {
+	t.Helper()
+
+	db := setupQuoteServiceDB(t)
+	if err := db.Migrator().DropTable(&model.OutboxEvent{}); err != nil {
+		t.Fatalf("drop outbox_events: %v", err)
 	}
 	return db
 }
@@ -3533,14 +3544,14 @@ func TestUserConfirmQuoteSubmissionDoesNotCreateSecondProjectOnRepeatOrInvalidSt
 	})
 }
 
-func TestUserConfirmQuoteSubmissionRollsBackProjectArtifactsWhenAuditWriteFails(t *testing.T) {
-	db := setupQuoteServiceDBWithoutAuditLog(t)
+func TestUserConfirmQuoteSubmissionRollsBackProjectArtifactsWhenOutboxWriteFails(t *testing.T) {
+	db := setupQuoteServiceDBWithoutOutboxEvent(t)
 	svc := &QuoteService{}
 	fixture := seedQuoteConfirmationFixture(t, db, model.QuoteListStatusSubmittedToUser)
 
 	_, err := svc.UserConfirmQuoteSubmission(fixture.submission.ID, fixture.owner.ID)
 	if err == nil {
-		t.Fatalf("expected confirmation to fail when audit_logs table is missing")
+		t.Fatalf("expected confirmation to fail when outbox_events table is missing")
 	}
 
 	var projectCount int64

@@ -153,16 +153,15 @@ func (s *RefundApplicationService) CreateApplication(bookingID, userID uint64, i
 		if err != nil {
 			return err
 		}
+		if err := enqueueRefundCreatedOutboxTx(tx, application, resolveRefundProviderUserIDTx(tx, application)); err != nil {
+			return err
+		}
 		view = loaded
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-
-	dispatcher := NewNotificationDispatcher()
-	dispatcher.NotifyAdminRefundApplicationCreated(view.ID, view.BookingID, view.ProjectID)
-	dispatcher.NotifyProviderRefundApplicationCreated(resolveRefundProviderUserID(view), view.ID, view.ProjectID, view.BookingID)
 
 	return view, nil
 }
@@ -477,6 +476,25 @@ func resolveRefundProviderUserID(view *RefundApplicationView) uint64 {
 		var booking model.Booking
 		if err := repository.DB.Select("provider_id").First(&booking, view.BookingID).Error; err == nil {
 			return providerUserIDFromProvider(booking.ProviderID)
+		}
+	}
+	return 0
+}
+
+func resolveRefundProviderUserIDTx(tx *gorm.DB, application *model.RefundApplication) uint64 {
+	if tx == nil || application == nil {
+		return 0
+	}
+	if application.ProjectID > 0 {
+		var project model.Project
+		if err := tx.Select("provider_id", "construction_provider_id").First(&project, application.ProjectID).Error; err == nil {
+			return getProviderUserIDTx(tx, effectiveProjectProviderID(&project))
+		}
+	}
+	if application.BookingID > 0 {
+		var booking model.Booking
+		if err := tx.Select("provider_id").First(&booking, application.BookingID).Error; err == nil {
+			return getProviderUserIDTx(tx, booking.ProviderID)
 		}
 	}
 	return 0

@@ -342,6 +342,7 @@ func menuSpecs() []menuSpec {
 		menuDir("settings_root", "", "系统设置", "/settings", "SettingOutlined", 100, "system:setting:list"),
 		menuPage("settings_config", "settings_root", "系统配置", "/settings/config", "pages/settings/SystemSettings", "SettingOutlined", 0, "system:setting:list"),
 		menuButton("setting_edit", "settings_config", "编辑设置", "system:setting:edit", 1),
+		menuPage("settings_outbox_events", "settings_root", "事件任务", "/settings/outbox-events", "pages/settings/OutboxEventList", "ClockCircleOutlined", 5, "system:log:list"),
 		menuPage("settings_regions", "settings_root", "行政区划管理", "/settings/regions", "pages/settings/RegionManagement", "EnvironmentOutlined", 10, ""),
 		menuPage("dictionary", "settings_root", "字典管理", "/system/dictionary", "pages/settings/DictionaryManagement", "UnorderedListOutlined", 11, ""),
 		menuButton("dictionary_view", "dictionary", "查看字典", "dict:view", 1),
@@ -464,7 +465,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"finance_payouts", "finance_settlements",
 		"reviews_root", "reviews_list", "review_view",
 		"risk_root", "risk_warnings", "risk_warning_view", "risk_arbitration", "risk_arbitration_view",
-		"logs_root", "logs_list", "log_view", "audit_logs",
+		"logs_root", "logs_list", "log_view", "audit_logs", "settings_root", "settings_outbox_events",
 	}, "只读用户", menus)
 
 	assignPermissionsByKeys(roles["project_supervisor"].ID, []string{

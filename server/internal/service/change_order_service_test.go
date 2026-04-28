@@ -112,6 +112,7 @@ func ptrTimeChangeOrder(value time.Time) *time.Time {
 
 func findNotification(t *testing.T, db *gorm.DB, userID uint64, userType, notificationType string) *model.Notification {
 	t.Helper()
+	NewOutboxWorker("change-order-test").ProcessOnce()
 
 	var notification model.Notification
 	err := db.Where("user_id = ? AND user_type = ? AND type = ?", userID, userType, notificationType).

@@ -413,10 +413,10 @@ func (s *InspectionService) ResubmitInspection(milestoneID, providerID uint64, n
 			Reason:        notes,
 			Result:        "success",
 			Metadata: map[string]any{
-				"projectId":      milestone.ProjectID,
-				"milestoneId":    milestoneID,
-				"resubmitCount":  checklist.ResubmitCount,
-				"notes":          notes,
+				"projectId":     milestone.ProjectID,
+				"milestoneId":   milestoneID,
+				"resubmitCount": checklist.ResubmitCount,
+				"notes":         notes,
 			},
 		}); err != nil {
 			return err
@@ -505,9 +505,10 @@ func (s *InspectionService) AcceptAllMilestones(projectID, userID uint64) error 
 			return err
 		}
 
-		// 9. 发送通知
-		dispatcher := NewNotificationDispatcher()
-		dispatcher.NotifyProjectCompletionSubmitted(userID, projectID)
+		// 9. 完工提交副作用通过 outbox 异步处理
+		if err := enqueueProjectCompletionSubmittedOutboxTx(tx, &project, getProviderUserIDTx(tx, effectiveProjectProviderID(&project))); err != nil {
+			return err
+		}
 
 		// 10. 记录审计日志
 		auditSvc := &AuditLogService{}
@@ -520,8 +521,8 @@ func (s *InspectionService) AcceptAllMilestones(projectID, userID uint64) error 
 			Reason:        "整体验收一次性放款",
 			Result:        "success",
 			Metadata: map[string]any{
-				"projectId":     projectID,
-				"totalAmount":   totalAmount,
+				"projectId":      projectID,
+				"totalAmount":    totalAmount,
 				"milestoneCount": len(milestones),
 			},
 		}); err != nil {

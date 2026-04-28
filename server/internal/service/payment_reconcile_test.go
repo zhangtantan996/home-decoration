@@ -69,7 +69,7 @@ func setupPaymentReconcileDB(t *testing.T) *gorm.DB {
 		t.Fatalf("open sqlite db: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.Order{}, &model.PaymentOrder{}, &model.PaymentPlan{}); err != nil {
+	if err := db.AutoMigrate(&model.Order{}, &model.PaymentOrder{}, &model.PaymentPlan{}, &model.OutboxEvent{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 

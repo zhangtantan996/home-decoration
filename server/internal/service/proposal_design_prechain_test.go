@@ -43,6 +43,7 @@ func setupProposalDesignPrechainTestDB(t *testing.T) *gorm.DB {
 		&model.SystemConfig{},
 		&model.PaymentPlan{},
 		&model.RefundApplication{},
+		&model.OutboxEvent{},
 		&model.QuantityBase{},
 		&model.QuantityBaseItem{},
 	); err != nil {

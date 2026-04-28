@@ -225,6 +225,11 @@ func (s *ConfigService) InitDefaultConfigs() error {
 		{model.ConfigKeyPaymentChannelWechatEnabled, "false", "是否启用微信支付"},
 		{model.ConfigKeyPaymentChannelAlipayEnabled, strconv.FormatBool(appconfig.GetConfig().Alipay.Enabled), "是否启用支付宝"},
 		{model.ConfigKeyMiniHomePopup, defaultMiniHomePopupConfigJSON(), "小程序首页运营弹窗配置"},
+		{model.ConfigKeyOutboxWorkerEnabled, "true", "是否启用事件任务 worker"},
+		{model.ConfigKeyOutboxWorkerBatchSize, "20", "事件任务 worker 单批处理数量"},
+		{model.ConfigKeyOutboxWorkerPollIntervalSec, "5", "事件任务 worker 轮询间隔秒数"},
+		{model.ConfigKeyOutboxWorkerLockTTLSec, "60", "事件任务 worker 锁定超时秒数"},
+		{model.ConfigKeyOutboxWorkerMaxRetries, "3", "事件任务默认最大重试次数"},
 	}
 
 	for _, d := range defaults {
@@ -523,6 +528,58 @@ func (s *ConfigService) GetPaymentPayoutAutoEnabled() bool {
 	val, err := s.GetConfigBool(model.ConfigKeyPaymentPayoutAutoEnabled)
 	if err != nil {
 		return false
+	}
+	return val
+}
+
+func (s *ConfigService) GetOutboxWorkerEnabled() bool {
+	val, err := s.GetConfigBool(model.ConfigKeyOutboxWorkerEnabled)
+	if err != nil {
+		return true
+	}
+	return val
+}
+
+func (s *ConfigService) GetOutboxWorkerBatchSize() int {
+	val, err := s.GetConfigInt(model.ConfigKeyOutboxWorkerBatchSize)
+	if err != nil || val <= 0 {
+		return 20
+	}
+	if val > 200 {
+		return 200
+	}
+	return val
+}
+
+func (s *ConfigService) GetOutboxWorkerPollInterval() time.Duration {
+	val, err := s.GetConfigInt(model.ConfigKeyOutboxWorkerPollIntervalSec)
+	if err != nil || val <= 0 {
+		return 5 * time.Second
+	}
+	if val > 300 {
+		val = 300
+	}
+	return time.Duration(val) * time.Second
+}
+
+func (s *ConfigService) GetOutboxWorkerLockTTL() time.Duration {
+	val, err := s.GetConfigInt(model.ConfigKeyOutboxWorkerLockTTLSec)
+	if err != nil || val <= 0 {
+		return time.Minute
+	}
+	if val > 3600 {
+		val = 3600
+	}
+	return time.Duration(val) * time.Second
+}
+
+func (s *ConfigService) GetOutboxWorkerMaxRetries() int {
+	val, err := s.GetConfigInt(model.ConfigKeyOutboxWorkerMaxRetries)
+	if err != nil || val <= 0 {
+		return defaultOutboxMaxRetries
+	}
+	if val > 20 {
+		return 20
 	}
 	return val
 }

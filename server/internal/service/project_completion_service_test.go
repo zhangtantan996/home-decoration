@@ -95,6 +95,7 @@ func TestProjectCompletionSubmitRejectApprove(t *testing.T) {
 	if submitted.BusinessStage != model.BusinessFlowStageCompleted {
 		t.Fatalf("expected completed stage after submit, got %s", submitted.BusinessStage)
 	}
+	NewOutboxWorker("project-completion-submit-test").ProcessOnce()
 	var submitNotification model.Notification
 	if err := db.Where("user_id = ? AND type = ?", user.ID, "project.completion.submitted").Order("id DESC").First(&submitNotification).Error; err != nil {
 		t.Fatalf("expected completion submitted notification: %v", err)
@@ -131,6 +132,7 @@ func TestProjectCompletionSubmitRejectApprove(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ApproveProjectCompletion: %v", err)
 	}
+	NewOutboxWorker("project-completion-approve-test").ProcessOnce()
 	if approved.AuditID == 0 {
 		t.Fatalf("expected generated case audit id")
 	}

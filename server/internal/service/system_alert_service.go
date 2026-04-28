@@ -27,6 +27,7 @@ const (
 	SystemAlertTypeRefundReconciliationDifference  = "refund_reconciliation_difference"
 	SystemAlertTypeSettlementFailed                = "settlement_failed"
 	SystemAlertTypeSettlementReconciliationDiff    = "settlement_reconciliation_difference"
+	SystemAlertTypeOutboxEventDead                 = "outbox_event_dead"
 )
 
 type CreateSystemAlertInput struct {
@@ -52,6 +53,27 @@ type HandleRiskWarningInput struct {
 }
 
 type SystemAlertService struct{}
+
+func (s *SystemAlertService) UpsertOutboxDeadEventAlert(eventID uint64, eventType, handlerKey, reason string) error {
+	scope := fmt.Sprintf("事件任务#%d", eventID)
+	description := fmt.Sprintf("事件任务处理失败并进入死信，事件：%s，处理器：%s，原因：%s", strings.TrimSpace(eventType), strings.TrimSpace(handlerKey), sanitizeSystemAlertDescription(reason))
+	_, created, err := s.UpsertAlert(&CreateSystemAlertInput{
+		Type:        SystemAlertTypeOutboxEventDead,
+		Level:       "high",
+		Scope:       scope,
+		ProjectID:   0,
+		Description: description,
+		ActionURL:   fmt.Sprintf("/settings/outbox-events?id=%d", eventID),
+	})
+	if err != nil {
+		log.Printf("[SystemAlert] outbox 死信告警发送失败: eventID=%d, error=%v", eventID, err)
+		return err
+	}
+	if created {
+		log.Printf("[SystemAlert] outbox 死信告警已发送: eventID=%d eventType=%s handler=%s", eventID, eventType, handlerKey)
+	}
+	return nil
+}
 
 func (s *SystemAlertService) UpsertAlert(input *CreateSystemAlertInput) (*model.RiskWarning, bool, error) {
 	if input == nil {

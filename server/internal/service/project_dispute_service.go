@@ -489,6 +489,9 @@ func (s *ProjectDisputeService) SubmitProjectDispute(projectID, userID uint64, i
 		if err := tx.First(&updatedProject, projectID).Error; err != nil {
 			return err
 		}
+		if err := enqueueProjectDisputeCreatedOutboxTx(tx, &updatedProject, providerUserID, audit.ID, reason); err != nil {
+			return err
+		}
 		result.Project = &updatedProject
 		result.ComplaintID = complaint.ID
 		result.AuditID = audit.ID
@@ -497,9 +500,6 @@ func (s *ProjectDisputeService) SubmitProjectDispute(projectID, userID uint64, i
 	if err != nil {
 		return nil, err
 	}
-
-	NewNotificationDispatcher().NotifyProjectDisputeCreated(providerUserID, result.AuditID, projectID)
-
 	return result, nil
 }
 

@@ -95,6 +95,10 @@ func (j *PaymentTimeoutJob) closeExpiredPayment(payment *model.PaymentOrder) err
 		}).Error; err != nil {
 			return err
 		}
+		payment.Status = model.PaymentStatusClosed
+		if err := service.EnqueuePaymentClosedOutboxTx(tx, payment, "timeout"); err != nil {
+			return err
+		}
 
 		// 释放关联业务对象的锁定状态（如果有的话）
 		if err := j.releaseBusinessLock(tx, payment); err != nil {

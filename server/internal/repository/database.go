@@ -173,6 +173,7 @@ func autoMigrate() error {
 		// 安全审计 (2025-12-29)
 		&model.AuditLog{},
 		&model.SMSAuditLog{},
+		&model.OutboxEvent{},
 		// 社交功能 (2026-01-21)
 		&model.UserLike{},
 		&model.CaseComment{},
@@ -241,6 +242,7 @@ func ensureRuntimeSchemaColumns() error {
 		{name: "quote_submissions", model: &model.QuoteSubmission{}},
 		{name: "quote_submission_items", model: &model.QuoteSubmissionItem{}},
 		{name: "quote_submission_revisions", model: &model.QuoteSubmissionRevision{}},
+		{name: "outbox_events", model: &model.OutboxEvent{}},
 	}
 
 	if err := alignLegacyQuoteInquirySchema(); err != nil {

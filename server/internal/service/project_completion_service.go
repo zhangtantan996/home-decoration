@@ -80,7 +80,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 	}
 
 	var detail *ProjectCompletionDetail
-	var ownerUserID uint64
+	var providerUserID uint64
 	now := time.Now()
 	err := repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
@@ -103,7 +103,7 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 		if !ready {
 			return errors.New("仍有未完成验收节点，不能提交完工")
 		}
-		ownerUserID = project.OwnerID
+		providerUserID = getProviderUserIDTx(tx, providerID)
 
 		photosJSON, err := json.Marshal(normalizeStoredAssetSlice(req.Photos))
 		if err != nil {
@@ -131,13 +131,15 @@ func (s *ProjectService) SubmitProjectCompletion(projectID, providerID uint64, r
 		if err != nil {
 			return err
 		}
+		if err := enqueueProjectCompletionSubmittedOutboxTx(tx, &project, providerUserID); err != nil {
+			return err
+		}
 		detail = reloaded
 		return nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyProjectCompletionSubmitted(ownerUserID, projectID)
 	return detail, nil
 }
 
@@ -203,13 +205,19 @@ func (s *ProjectService) ApproveProjectCompletion(projectID, userID uint64) (*Pr
 		if err != nil {
 			return err
 		}
+		activatedPlanID := uint64(0)
+		if activatedPlan != nil {
+			activatedPlanID = activatedPlan.ID
+		}
+		if err := enqueueProjectAcceptedOutboxTx(tx, generatedProject, providerUserID, audit.ID, activatedPlanID); err != nil {
+			return err
+		}
 		detail, err = s.getProjectCompletionDetailTx(tx, projectID)
 		return err
 	})
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
 	NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserID, projectID, 0, nil)
 	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserID, projectID, audit.ID)
 	if activatedPlan != nil {
@@ -318,6 +326,13 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 		if err != nil {
 			return err
 		}
+		activatedPlanID := uint64(0)
+		if activatedPlan != nil {
+			activatedPlanID = activatedPlan.ID
+		}
+		if err := enqueueProjectAcceptedOutboxTx(tx, generatedProject, providerUserID, audit.ID, activatedPlanID); err != nil {
+			return err
+		}
 		if err := (&AuditLogService{}).CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
 			OperatorType:  "admin",
 			OperatorID:    adminID,
@@ -353,7 +368,6 @@ func (s *ProjectService) AdminApproveProjectCompletion(projectID, adminID uint64
 	if err != nil {
 		return nil, err
 	}
-	NewNotificationDispatcher().NotifyProjectCompletionDecision(providerUserID, projectID, true, "")
 	NewNotificationDispatcher().NotifyProjectSettlementScheduled(providerUserID, projectID, 0, nil)
 	NewNotificationDispatcher().NotifyProjectCaseDraftGenerated(providerUserID, projectID, audit.ID)
 	if activatedPlan != nil {
