@@ -4,7 +4,6 @@ import (
 	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
-	imgutil "home-decoration-server/internal/utils/image"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -53,37 +52,24 @@ func (s *UserSettingsService) DeleteAccount(userID uint64) error {
 }
 
 // GetVerification 获取实名认证信息
-func (s *UserSettingsService) GetVerification(userID uint64) (*model.UserVerification, error) {
+func (s *UserSettingsService) GetVerification(userID uint64) (*UserVerificationView, error) {
 	var v model.UserVerification
 	err := repository.DB.Where("user_id = ?", userID).Order("created_at DESC").First(&v).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, nil // 未提交过认证
+		view := BuildUserVerificationView(nil)
+		return &view, nil
 	}
-	if err == nil {
-		v.IDFrontImage = imgutil.GetFullImageURL(v.IDFrontImage)
-		v.IDBackImage = imgutil.GetFullImageURL(v.IDBackImage)
+	if err != nil {
+		return nil, err
 	}
-	return &v, err
+	view := BuildUserVerificationView(&v)
+	return &view, nil
 }
 
 // SubmitVerification 提交实名认证
 func (s *UserSettingsService) SubmitVerification(userID uint64, realName, idCard, frontImage, backImage string) error {
-	// 检查是否有正在审核的申请
-	var count int64
-	repository.DB.Model(&model.UserVerification{}).Where("user_id = ? AND status = 0", userID).Count(&count)
-	if count > 0 {
-		return errors.New("您有一个正在审核中的申请，请耐心等待")
-	}
-
-	v := model.UserVerification{
-		UserID:       userID,
-		RealName:     realName,
-		IDCard:       idCard,
-		IDFrontImage: normalizeStoredAsset(frontImage),
-		IDBackImage:  normalizeStoredAsset(backImage),
-		Status:       0,
-	}
-	return repository.DB.Create(&v).Error
+	_, err := s.SubmitRealNameVerification(userID, realName, idCard)
+	return err
 }
 
 // GetDevices 获取登录设备列表

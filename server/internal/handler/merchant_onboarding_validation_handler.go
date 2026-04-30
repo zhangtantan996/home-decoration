@@ -3,7 +3,6 @@ package handler
 import (
 	"strings"
 
-	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/utils"
 
@@ -41,11 +40,6 @@ func MerchantValidateOnboardingLicense(c *gin.Context) {
 		response.Success(c, gin.H{"ok": false, "message": "名称长度应在2-100个字符之间", "normalizedValue": normalized})
 		return
 	}
-	if err := service.VerifyLicenseForApply(normalized, companyName); err != nil {
-		response.Success(c, gin.H{"ok": false, "message": err.Error(), "normalizedValue": normalized})
-		return
-	}
-
 	response.Success(c, gin.H{"ok": true, "normalizedValue": normalized})
 }
 
@@ -70,10 +64,5 @@ func MerchantValidateOnboardingIDCard(c *gin.Context) {
 		response.Success(c, gin.H{"ok": true, "normalizedValue": normalizedID})
 		return
 	}
-	if err := service.VerifyIDCardForApply(normalizedID, realName); err != nil {
-		response.Success(c, gin.H{"ok": false, "message": err.Error(), "normalizedValue": normalizedID})
-		return
-	}
-
 	response.Success(c, gin.H{"ok": true, "normalizedValue": normalizedID})
 }

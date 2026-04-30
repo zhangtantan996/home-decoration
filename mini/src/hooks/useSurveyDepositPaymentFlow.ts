@@ -23,6 +23,7 @@ import {
 } from '@/services/payments';
 import { showErrorToast } from '@/utils/error';
 import { buildPaymentWebviewUrl } from '@/utils/orderRoutes';
+import { isRealNameRequiredError, navigateToRealNameVerification } from '@/utils/realNameVerification';
 import {
   chooseSurveyDepositPaymentAction,
   getSurveyDepositChannelOptions,
@@ -429,6 +430,11 @@ export const useSurveyDepositPaymentFlow = ({
           throw new Error('当前支付方式暂不可用');
       }
     } catch (error) {
+      if (isRealNameRequiredError(error)) {
+        Taro.showToast({ title: '支付前请先完成实名认证', icon: 'none' });
+        navigateToRealNameVerification(source?.returnUrl);
+        return false;
+      }
       showErrorToast(error, '发起支付失败');
       return false;
     } finally {
@@ -442,6 +448,7 @@ export const useSurveyDepositPaymentFlow = ({
     launchPayment,
     launchingAction,
     openAlipayWebview,
+    source?.returnUrl,
     startCountdown,
     startStatusPolling,
     stopPaymentTracking,

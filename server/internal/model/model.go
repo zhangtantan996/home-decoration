@@ -479,6 +479,12 @@ type MaterialShopApplication struct {
 	CompanyName            string     `json:"companyName" gorm:"size:100"`
 	BusinessLicenseNo      string     `json:"businessLicenseNo" gorm:"type:text"` // AES加密存储
 	BusinessLicense        string     `json:"businessLicense" gorm:"size:500"`
+	LicenseVerifyStatus    string     `json:"licenseVerifyStatus" gorm:"size:20"`
+	LicenseVerifyProvider  string     `json:"licenseVerifyProvider" gorm:"size:30"`
+	LicenseVerifyRequestID string     `json:"licenseVerifyRequestId" gorm:"size:100"`
+	LicenseVerifyReason    string     `json:"licenseVerifyReason" gorm:"size:200"`
+	LicenseHash            string     `json:"-" gorm:"size:64;index"`
+	LicenseVerifiedAt      *time.Time `json:"licenseVerifiedAt"`
 	LegalPersonName        string     `json:"legalPersonName" gorm:"size:50"`
 	LegalPersonIDCardNo    string     `json:"legalPersonIdCardNo" gorm:"size:100"`
 	LegalPersonIDCardFront string     `json:"legalPersonIdCardFront" gorm:"size:500"`
@@ -620,16 +626,22 @@ type MerchantApplication struct {
 	IDCardBack  string `json:"idCardBack" gorm:"size:500"`  // 身份证反面
 
 	// 工作室/公司信息
-	CompanyName            string `json:"companyName" gorm:"size:100"`
-	LicenseNo              string `json:"licenseNo" gorm:"type:text"`   // 营业执照号，AES加密存储
-	LicenseImage           string `json:"licenseImage" gorm:"size:500"` // 营业执照照片
-	LegalPersonName        string `json:"legalPersonName" gorm:"size:50"`
-	LegalPersonIDCardNo    string `json:"legalPersonIdCardNo" gorm:"size:100"`
-	LegalPersonIDCardFront string `json:"legalPersonIdCardFront" gorm:"size:500"`
-	LegalPersonIDCardBack  string `json:"legalPersonIdCardBack" gorm:"size:500"`
-	TeamSize               int    `json:"teamSize" gorm:"default:1"`
-	OfficeAddress          string `json:"officeAddress" gorm:"size:200"`
-	CompanyAlbumJSON       string `json:"companyAlbumJson" gorm:"type:text"`
+	CompanyName            string     `json:"companyName" gorm:"size:100"`
+	LicenseNo              string     `json:"licenseNo" gorm:"type:text"`   // 营业执照号，AES加密存储
+	LicenseImage           string     `json:"licenseImage" gorm:"size:500"` // 营业执照照片
+	LicenseVerifyStatus    string     `json:"licenseVerifyStatus" gorm:"size:20"`
+	LicenseVerifyProvider  string     `json:"licenseVerifyProvider" gorm:"size:30"`
+	LicenseVerifyRequestID string     `json:"licenseVerifyRequestId" gorm:"size:100"`
+	LicenseVerifyReason    string     `json:"licenseVerifyReason" gorm:"size:200"`
+	LicenseHash            string     `json:"-" gorm:"size:64;index"`
+	LicenseVerifiedAt      *time.Time `json:"licenseVerifiedAt"`
+	LegalPersonName        string     `json:"legalPersonName" gorm:"size:50"`
+	LegalPersonIDCardNo    string     `json:"legalPersonIdCardNo" gorm:"size:100"`
+	LegalPersonIDCardFront string     `json:"legalPersonIdCardFront" gorm:"size:500"`
+	LegalPersonIDCardBack  string     `json:"legalPersonIdCardBack" gorm:"size:500"`
+	TeamSize               int        `json:"teamSize" gorm:"default:1"`
+	OfficeAddress          string     `json:"officeAddress" gorm:"size:200"`
+	CompanyAlbumJSON       string     `json:"companyAlbumJson" gorm:"type:text"`
 	// 工长扩展信息
 	YearsExperience int    `json:"yearsExperience" gorm:"default:0"`
 	WorkTypes       string `json:"workTypes" gorm:"type:text;default:'[]'"` // JSON数组：工种类型
@@ -964,14 +976,20 @@ func (UserSettings) TableName() string {
 // UserVerification 实名认证
 type UserVerification struct {
 	Base
-	UserID       uint64     `json:"userId" gorm:"index"`
-	RealName     string     `json:"realName" gorm:"size:50"`
-	IDCard       string     `json:"idCard" gorm:"size:20"`
-	IDFrontImage string     `json:"idFrontImage" gorm:"size:500"`
-	IDBackImage  string     `json:"idBackImage" gorm:"size:500"`
-	Status       int8       `json:"status" gorm:"default:0"` // 0=待审核 1=已通过 2=已拒绝
-	RejectReason string     `json:"rejectReason" gorm:"size:200"`
-	VerifiedAt   *time.Time `json:"verifiedAt"`
+	UserID            uint64     `json:"userId" gorm:"index"`
+	RealName          string     `json:"realName" gorm:"size:50"`
+	RealNameMasked    string     `json:"realNameMasked" gorm:"size:50"`
+	IDCard            string     `json:"idCard" gorm:"size:20"`
+	IDCardLast4       string     `json:"idCardLast4" gorm:"size:4"`
+	IDCardHash        string     `json:"-" gorm:"size:64;index"`
+	IDFrontImage      string     `json:"idFrontImage" gorm:"size:500"`
+	IDBackImage       string     `json:"idBackImage" gorm:"size:500"`
+	Status            int8       `json:"status" gorm:"default:0"` // 0=待审核 1=已通过 2=已拒绝
+	VerifyMethod      string     `json:"verifyMethod" gorm:"size:30;default:'manual_review'"`
+	Provider          string     `json:"provider" gorm:"size:30"`
+	ProviderRequestID string     `json:"providerRequestId" gorm:"size:100"`
+	RejectReason      string     `json:"rejectReason" gorm:"size:200"`
+	VerifiedAt        *time.Time `json:"verifiedAt"`
 }
 
 func (UserVerification) TableName() string {

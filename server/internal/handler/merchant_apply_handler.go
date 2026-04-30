@@ -34,6 +34,43 @@ func firstNonEmptyMerchantApplicantName(values ...string) string {
 	return ""
 }
 
+func merchantLicenseVerificationFields(outcome *service.EnterpriseVerificationOutcome) (status, provider, requestID, reason, licenseHash string, verifiedAt *time.Time) {
+	if outcome == nil {
+		return "", "", "", "", "", nil
+	}
+	return outcome.Status, outcome.Provider, outcome.ProviderRequestID, outcome.RejectReason, outcome.LicenseHash, outcome.VerifiedAt
+}
+
+func licenseVerificationStatus(outcome *service.EnterpriseVerificationOutcome) string {
+	status, _, _, _, _, _ := merchantLicenseVerificationFields(outcome)
+	return status
+}
+
+func licenseVerificationProvider(outcome *service.EnterpriseVerificationOutcome) string {
+	_, provider, _, _, _, _ := merchantLicenseVerificationFields(outcome)
+	return provider
+}
+
+func licenseVerificationRequestID(outcome *service.EnterpriseVerificationOutcome) string {
+	_, _, requestID, _, _, _ := merchantLicenseVerificationFields(outcome)
+	return requestID
+}
+
+func licenseVerificationReason(outcome *service.EnterpriseVerificationOutcome) string {
+	_, _, _, reason, _, _ := merchantLicenseVerificationFields(outcome)
+	return reason
+}
+
+func licenseVerificationHash(outcome *service.EnterpriseVerificationOutcome) string {
+	_, _, _, _, licenseHash, _ := merchantLicenseVerificationFields(outcome)
+	return licenseHash
+}
+
+func licenseVerificationVerifiedAt(outcome *service.EnterpriseVerificationOutcome) *time.Time {
+	_, _, _, _, _, verifiedAt := merchantLicenseVerificationFields(outcome)
+	return verifiedAt
+}
+
 // MerchantApplyInput 入驻申请输入
 type MerchantApplyInput struct {
 	Phone                  string `json:"phone" binding:"required"`
@@ -711,7 +748,7 @@ func validateMerchantApplyBusinessFields(input *MerchantApplyInput) error {
 		if input.LicenseNo == "" {
 			return fmt.Errorf("公司主体必须提供统一社会信用代码/营业执照号")
 		}
-		if err := service.VerifyLicenseForApply(input.LicenseNo, input.CompanyName); err != nil {
+		if err := service.ValidateLicenseInputForApply(input.LicenseNo, input.CompanyName); err != nil {
 			return err
 		}
 		if strings.TrimSpace(input.LicenseImage) == "" {
@@ -820,6 +857,21 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
+	var licenseVerification *service.EnterpriseVerificationOutcome
+	if input.EntityType == "company" {
+		licenseVerification, err = service.VerifyLicenseForApplyWithContextResult(service.EnterpriseVerificationContext{
+			ApplicationType: "merchant",
+			ActorKey:        input.Phone,
+			CompanyName:     input.CompanyName,
+			LicenseNo:       input.LicenseNo,
+			ClientIP:        c.ClientIP(),
+		})
+		if err != nil {
+			response.Error(c, 400, err.Error())
+			return
+		}
+	}
+
 	// 5. 序列化 JSON 字段
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
@@ -896,36 +948,42 @@ func MerchantApply(c *gin.Context) {
 createProviderApplication:
 	acceptedAt := time.Now()
 	application := model.MerchantApplication{
-		UserID:              user.ID,
-		Phone:               input.Phone,
-		ApplicantType:       input.ApplicantType,
-		Role:                input.Role,
-		EntityType:          input.EntityType,
-		RealName:            input.RealName,
-		Avatar:              input.Avatar,
-		IDCardNo:            encryptSensitiveOrPlain(input.IDCardNo),
-		IDCardFront:         input.IDCardFront,
-		IDCardBack:          input.IDCardBack,
-		CompanyName:         input.CompanyName,
-		LicenseNo:           encryptSensitiveOrPlain(input.LicenseNo),
-		LicenseImage:        input.LicenseImage,
-		TeamSize:            input.TeamSize,
-		OfficeAddress:       input.OfficeAddress,
-		CompanyAlbumJSON:    string(companyAlbumJSON),
-		YearsExperience:     input.YearsExperience,
-		ServiceArea:         string(serviceAreaJSON),
-		Styles:              string(stylesJSON),
-		HighlightTags:       string(highlightTagsJSON),
-		PricingJSON:         string(pricingJSON),
-		Introduction:        input.Introduction,
-		GraduateSchool:      input.GraduateSchool,
-		DesignPhilosophy:    input.DesignPhilosophy,
-		PortfolioCases:      string(portfolioJSON),
-		LegalAcceptanceJSON: buildLegalAcceptanceJSON(input.LegalAcceptance),
-		LegalAcceptedAt:     &acceptedAt,
-		LegalAcceptSource:   "merchant_web",
-		ApplicationScene:    model.MerchantApplicationSceneNewOnboarding,
-		Status:              0, // 待审核
+		UserID:                 user.ID,
+		Phone:                  input.Phone,
+		ApplicantType:          input.ApplicantType,
+		Role:                   input.Role,
+		EntityType:             input.EntityType,
+		RealName:               input.RealName,
+		Avatar:                 input.Avatar,
+		IDCardNo:               encryptSensitiveOrPlain(input.IDCardNo),
+		IDCardFront:            input.IDCardFront,
+		IDCardBack:             input.IDCardBack,
+		CompanyName:            input.CompanyName,
+		LicenseNo:              encryptSensitiveOrPlain(input.LicenseNo),
+		LicenseImage:           input.LicenseImage,
+		LicenseVerifyStatus:    licenseVerificationStatus(licenseVerification),
+		LicenseVerifyProvider:  licenseVerificationProvider(licenseVerification),
+		LicenseVerifyRequestID: licenseVerificationRequestID(licenseVerification),
+		LicenseVerifyReason:    licenseVerificationReason(licenseVerification),
+		LicenseHash:            licenseVerificationHash(licenseVerification),
+		LicenseVerifiedAt:      licenseVerificationVerifiedAt(licenseVerification),
+		TeamSize:               input.TeamSize,
+		OfficeAddress:          input.OfficeAddress,
+		CompanyAlbumJSON:       string(companyAlbumJSON),
+		YearsExperience:        input.YearsExperience,
+		ServiceArea:            string(serviceAreaJSON),
+		Styles:                 string(stylesJSON),
+		HighlightTags:          string(highlightTagsJSON),
+		PricingJSON:            string(pricingJSON),
+		Introduction:           input.Introduction,
+		GraduateSchool:         input.GraduateSchool,
+		DesignPhilosophy:       input.DesignPhilosophy,
+		PortfolioCases:         string(portfolioJSON),
+		LegalAcceptanceJSON:    buildLegalAcceptanceJSON(input.LegalAcceptance),
+		LegalAcceptedAt:        &acceptedAt,
+		LegalAcceptSource:      "merchant_web",
+		ApplicationScene:       model.MerchantApplicationSceneNewOnboarding,
+		Status:                 0, // 待审核
 	}
 
 	if err := tx.Create(&application).Error; err != nil {
@@ -1376,6 +1434,23 @@ func MerchantResubmit(c *gin.Context) {
 	}
 
 	// 更新申请信息
+	var licenseVerification *service.EnterpriseVerificationOutcome
+	if input.EntityType == "company" {
+		if !service.CanReuseEnterpriseLicenseVerification(app.LicenseVerifyStatus, app.LicenseHash, app.CompanyName, input.CompanyName, input.LicenseNo) {
+			licenseVerification, err = service.VerifyLicenseForApplyWithContextResult(service.EnterpriseVerificationContext{
+				ApplicationType: "merchant",
+				ApplicationID:   app.ID,
+				ActorKey:        input.Phone,
+				CompanyName:     input.CompanyName,
+				LicenseNo:       input.LicenseNo,
+				ClientIP:        c.ClientIP(),
+			})
+			if err != nil {
+				response.Error(c, 400, err.Error())
+				return
+			}
+		}
+	}
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
 	highlightTagsJSON, _ := json.Marshal(input.HighlightTags)
@@ -1398,6 +1473,14 @@ func MerchantResubmit(c *gin.Context) {
 	app.CompanyName = input.CompanyName
 	app.LicenseNo = encryptSensitiveOrPlain(input.LicenseNo)
 	app.LicenseImage = input.LicenseImage
+	if licenseVerification != nil || input.EntityType != "company" {
+		app.LicenseVerifyStatus = licenseVerificationStatus(licenseVerification)
+		app.LicenseVerifyProvider = licenseVerificationProvider(licenseVerification)
+		app.LicenseVerifyRequestID = licenseVerificationRequestID(licenseVerification)
+		app.LicenseVerifyReason = licenseVerificationReason(licenseVerification)
+		app.LicenseHash = licenseVerificationHash(licenseVerification)
+		app.LicenseVerifiedAt = licenseVerificationVerifiedAt(licenseVerification)
+	}
 	app.TeamSize = input.TeamSize
 	app.OfficeAddress = input.OfficeAddress
 	app.YearsExperience = input.YearsExperience

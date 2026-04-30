@@ -255,10 +255,19 @@ export async function request<T>(options: RequestOptions): Promise<T> {
       )
         ? Number(responseObject.code || 0)
         : undefined;
+      const errorCode = (
+        responseObject
+        && responseObject.data
+        && typeof responseObject.data === 'object'
+        && 'errorCode' in (responseObject.data as Record<string, unknown>)
+      )
+        ? String((responseObject.data as Record<string, unknown>).errorCode || '')
+        : undefined;
 
       throw new MiniApiError(responseMessage || `请求失败(${res.statusCode})`, {
         status: res.statusCode,
         code: responseCode,
+        errorCode,
         data: responseData,
       });
     }

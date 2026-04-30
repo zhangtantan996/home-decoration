@@ -159,14 +159,6 @@ func GetVerification(c *gin.Context) {
 		return
 	}
 
-	if v == nil {
-		response.Success(c, gin.H{
-			"status":  -1, // 未提交
-			"message": "未提交实名认证",
-		})
-		return
-	}
-
 	response.Success(c, v)
 }
 
@@ -179,22 +171,21 @@ func SubmitVerification(c *gin.Context) {
 	}
 
 	var req struct {
-		RealName     string `json:"realName" binding:"required"`
-		IDCard       string `json:"idCard" binding:"required"`
-		IDFrontImage string `json:"idFrontImage" binding:"required"`
-		IDBackImage  string `json:"idBackImage" binding:"required"`
+		RealName string `json:"realName" binding:"required"`
+		IDCard   string `json:"idCard" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "请填写完整的认证信息")
 		return
 	}
 
-	if err := userSettingsService.SubmitVerification(userID, req.RealName, req.IDCard, req.IDFrontImage, req.IDBackImage); err != nil {
+	result, err := userSettingsService.SubmitRealNameVerificationForClient(userID, req.RealName, req.IDCard, c.ClientIP())
+	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
 
-	response.SuccessWithMessage(c, "实名认证已提交，请耐心等待审核", nil)
+	response.SuccessWithMessage(c, "实名认证已完成", result)
 }
 
 // ========== 登录设备管理 ==========

@@ -270,6 +270,9 @@ func PayOrder(c *gin.Context) {
 		response.BadRequest(c, "支付参数错误")
 		return
 	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
+		return
+	}
 
 	result, err := paymentService.StartOrderPayment(userID, orderID, req.Channel, req.TerminalType)
 	if err != nil {
@@ -304,6 +307,9 @@ func PayPaymentPlan(c *gin.Context) {
 	req, err := bindPaymentLaunchRequest(c)
 	if err != nil {
 		response.BadRequest(c, "支付参数错误")
+		return
+	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
 		return
 	}
 

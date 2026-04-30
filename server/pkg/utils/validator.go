@@ -41,14 +41,22 @@ func ValidateIDCard(id string) bool {
 
 // ValidateRealName 验证姓名 (2-20位)
 func ValidateRealName(name string) bool {
-	n := len([]rune(strings.TrimSpace(name)))
-	return n >= 2 && n <= 20
+	trimmed := strings.TrimSpace(name)
+	n := len([]rune(trimmed))
+	if n < 2 || n > 20 {
+		return false
+	}
+	return regexp.MustCompile(`^[\p{Han}·]+$`).MatchString(trimmed)
 }
 
 // ValidateCompanyName 验证公司名 (2-100位)
 func ValidateCompanyName(name string) bool {
-	n := len([]rune(strings.TrimSpace(name)))
-	return n >= 2 && n <= 100
+	trimmed := strings.TrimSpace(name)
+	n := len([]rune(trimmed))
+	if n < 2 || n > 100 {
+		return false
+	}
+	return regexp.MustCompile(`[\p{Han}A-Za-z0-9]`).MatchString(trimmed)
 }
 
 func NormalizeLicenseNo(value string) string {

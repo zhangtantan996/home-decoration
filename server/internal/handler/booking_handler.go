@@ -146,7 +146,7 @@ func GetBooking(c *gin.Context) {
 	})
 }
 
-// PayIntentFee 兼容旧路由，内部统一走量房费支付
+// PayIntentFee legacy compatibility route. New clients must use /bookings/:id/pay-survey-deposit.
 func PayIntentFee(c *gin.Context) {
 	bookingID := parseUint64(c.Param("id"))
 	userID := c.GetUint64("userId")
@@ -159,6 +159,9 @@ func PayIntentFee(c *gin.Context) {
 		response.BadRequest(c, "支付参数错误")
 		return
 	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
+		return
+	}
 
 	result, err := paymentService.StartBookingIntentPayment(userID, bookingID, req.TerminalType)
 	if err != nil {
@@ -166,6 +169,8 @@ func PayIntentFee(c *gin.Context) {
 		return
 	}
 
+	c.Header("X-Legacy-Route", "true")
+	c.Header("X-Replacement-Route", "/bookings/:id/pay-survey-deposit")
 	response.Success(c, result)
 }
 

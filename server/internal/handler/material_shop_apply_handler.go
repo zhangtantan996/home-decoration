@@ -188,7 +188,7 @@ func validateMaterialShopApply(input *materialShopApplyInput) error {
 	if input.BusinessLicenseNo == "" {
 		return fmt.Errorf("请填写统一社会信用代码/营业执照号")
 	}
-	if err := service.VerifyLicenseForApply(input.BusinessLicenseNo, input.CompanyName); err != nil {
+	if err := service.ValidateLicenseInputForApply(input.BusinessLicenseNo, input.CompanyName); err != nil {
 		return err
 	}
 	if input.BusinessLicense == "" {
@@ -422,6 +422,18 @@ func MaterialShopApply(c *gin.Context) {
 	}
 
 createMaterialShopApplication:
+	licenseVerification, err := service.VerifyLicenseForApplyWithContextResult(service.EnterpriseVerificationContext{
+		ApplicationType: "material_shop",
+		ActorKey:        input.Phone,
+		CompanyName:     input.CompanyName,
+		LicenseNo:       input.BusinessLicenseNo,
+		ClientIP:        c.ClientIP(),
+	})
+	if err != nil {
+		tx.Rollback()
+		response.Error(c, 400, err.Error())
+		return
+	}
 	acceptedAt := time.Now()
 	application := model.MaterialShopApplication{
 		UserID:                 user.ID,
@@ -433,6 +445,12 @@ createMaterialShopApplication:
 		CompanyName:            input.CompanyName,
 		BusinessLicenseNo:      encryptSensitiveOrPlain(input.BusinessLicenseNo),
 		BusinessLicense:        input.BusinessLicense,
+		LicenseVerifyStatus:    licenseVerificationStatus(licenseVerification),
+		LicenseVerifyProvider:  licenseVerificationProvider(licenseVerification),
+		LicenseVerifyRequestID: licenseVerificationRequestID(licenseVerification),
+		LicenseVerifyReason:    licenseVerificationReason(licenseVerification),
+		LicenseHash:            licenseVerificationHash(licenseVerification),
+		LicenseVerifiedAt:      licenseVerificationVerifiedAt(licenseVerification),
 		LegalPersonName:        input.LegalPersonName,
 		LegalPersonIDCardNo:    encryptSensitiveOrPlain(input.LegalPersonIDCardNo),
 		LegalPersonIDCardFront: input.LegalPersonIDCardFront,
@@ -631,6 +649,23 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 		return
 	}
 
+	var licenseVerification *service.EnterpriseVerificationOutcome
+	if !service.CanReuseEnterpriseLicenseVerification(app.LicenseVerifyStatus, app.LicenseHash, app.CompanyName, input.CompanyName, input.BusinessLicenseNo) {
+		var verifyErr error
+		licenseVerification, verifyErr = service.VerifyLicenseForApplyWithContextResult(service.EnterpriseVerificationContext{
+			ApplicationType: "material_shop",
+			ApplicationID:   app.ID,
+			ActorKey:        input.Phone,
+			CompanyName:     input.CompanyName,
+			LicenseNo:       input.BusinessLicenseNo,
+			ClientIP:        c.ClientIP(),
+		})
+		if verifyErr != nil {
+			response.Error(c, 400, verifyErr.Error())
+			return
+		}
+	}
+
 	tx := repository.DB.Begin()
 
 	app.EntityType = input.EntityType
@@ -640,6 +675,14 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 	app.CompanyName = input.CompanyName
 	app.BusinessLicenseNo = encryptSensitiveOrPlain(input.BusinessLicenseNo)
 	app.BusinessLicense = input.BusinessLicense
+	if licenseVerification != nil {
+		app.LicenseVerifyStatus = licenseVerificationStatus(licenseVerification)
+		app.LicenseVerifyProvider = licenseVerificationProvider(licenseVerification)
+		app.LicenseVerifyRequestID = licenseVerificationRequestID(licenseVerification)
+		app.LicenseVerifyReason = licenseVerificationReason(licenseVerification)
+		app.LicenseHash = licenseVerificationHash(licenseVerification)
+		app.LicenseVerifiedAt = licenseVerificationVerifiedAt(licenseVerification)
+	}
 	app.LegalPersonName = input.LegalPersonName
 	app.LegalPersonIDCardNo = encryptSensitiveOrPlain(input.LegalPersonIDCardNo)
 	app.LegalPersonIDCardFront = input.LegalPersonIDCardFront

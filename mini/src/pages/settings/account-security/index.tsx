@@ -1,18 +1,55 @@
-import Taro from '@tarojs/taro';
-import React, { useMemo } from 'react';
+import Taro, { useDidShow } from '@tarojs/taro';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import SettingsLayout, { SettingsGroup, SettingsRow } from '@/components/settings/SettingsLayout';
 import { useResolvedUserPhone } from '@/hooks/useResolvedUserPhone';
+import { getUserVerification, type UserVerificationStatus } from '@/services/userSettings';
 
 import { maskPhone } from './shared';
 
 export default function AccountSecurityPage() {
   const { resolvedPhone } = useResolvedUserPhone();
+  const [verification, setVerification] = useState<UserVerificationStatus | null>(null);
   const phoneLabel = useMemo(() => maskPhone(resolvedPhone), [resolvedPhone]);
+  const verificationLabel = useMemo(() => {
+    switch (verification?.status) {
+      case 'verified':
+        return '已认证';
+      case 'failed':
+        return '未通过';
+      case 'pending':
+        return '核验中';
+      default:
+        return '未认证';
+    }
+  }, [verification?.status]);
 
   const openPage = (url: string) => {
     void Taro.navigateTo({ url });
   };
+
+  useEffect(() => {
+    let mounted = true;
+    getUserVerification()
+      .then((result) => {
+        if (mounted) {
+          setVerification(result);
+        }
+      })
+      .catch(() => {
+        if (mounted) {
+          setVerification(null);
+        }
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+  useDidShow(() => {
+    void getUserVerification()
+      .then(setVerification)
+      .catch(() => setVerification(null));
+  });
 
   return (
     <SettingsLayout title="账号安全">
@@ -35,8 +72,8 @@ export default function AccountSecurityPage() {
         />
         <SettingsRow
           label="实名认证"
-          value="暂未开放"
-          arrow={false}
+          value={verificationLabel}
+          onClick={() => openPage('/pages/settings/account-security/verification/index')}
         />
       </SettingsGroup>
 

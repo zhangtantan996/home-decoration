@@ -56,3 +56,9 @@ export const isValidBusinessLicenseNo = (rawValue: string): boolean => {
     const value = normalizeLicenseNo(rawValue);
     return isValidUnifiedSocialCreditCode(value) || isValidLegacyBusinessLicenseNo(value);
 };
+
+export const isValidCompanyName = (value: string): boolean => {
+    const trimmed = value.trim();
+    const length = Array.from(trimmed).length;
+    return length >= 2 && length <= 100 && /[\u4e00-\u9fa5A-Za-z0-9]/.test(trimmed);
+};

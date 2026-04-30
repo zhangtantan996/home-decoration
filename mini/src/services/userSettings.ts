@@ -30,9 +30,9 @@ export interface UserDevice {
 }
 
 export interface UserVerificationStatus {
-  id?: number;
-  status: number;
-  message?: string;
+  status: 'unverified' | 'pending' | 'verified' | 'failed' | string;
+  realNameMasked?: string;
+  idCardLast4?: string;
   rejectReason?: string;
   verifiedAt?: string;
 }
@@ -299,6 +299,15 @@ export async function getUserVerification() {
   return request<UserVerificationStatus>({
     url: '/user/verification',
     method: 'GET',
+  });
+}
+
+export async function submitUserVerification(payload: { realName: string; idCard: string }) {
+  return request<UserVerificationStatus>({
+    url: '/user/verification',
+    method: 'POST',
+    data: payload,
+    showLoading: true,
   });
 }
 

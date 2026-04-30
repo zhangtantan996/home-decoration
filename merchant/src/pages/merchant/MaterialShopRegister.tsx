@@ -42,7 +42,7 @@ import {
     type MaterialShopCompletionSubmitPayload,
 } from '../../services/merchantApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
-import { isValidBusinessLicenseNo, isValidChineseIDCard, normalizeLicenseNo } from '../../utils/onboardingValidation';
+import { isValidBusinessLicenseNo, isValidChineseIDCard, isValidCompanyName, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import { buildStoredAssetFile, getAssetPreviewUrl, getStoredPathFromUploadFile, normalizeStoredAssetValue, normalizeStoredAssetValues } from '../../utils/uploadAsset';
 import { readSafeErrorMessage } from '../../utils/userFacingText';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
@@ -229,6 +229,9 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
         if (!normalized) return;
         if (!isValidBusinessLicenseNo(normalized)) {
             throw new Error('请输入正确的统一社会信用代码/营业执照号');
+        }
+        if (companyName && !isValidCompanyName(companyName)) {
+            throw new Error('请填写正确的企业名称');
         }
         const result = await onboardingValidationApi.validateLicense({
             licenseNo: normalized,

@@ -23,6 +23,7 @@ import { payOrderCenterEntry } from '@/services/orderCenter';
 import { getPaymentStatus, normalizePaymentLaunchUrl } from '@/services/payments';
 import { showErrorToast } from '@/utils/error';
 import { publishPaymentRefreshNotice } from '@/utils/paymentRefresh';
+import { isRealNameRequiredError, navigateToRealNameVerification } from '@/utils/realNameVerification';
 
 import './index.scss';
 
@@ -386,6 +387,11 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
       startCountdown(launch.expiresAt);
       startStatusPolling(launch.paymentId, true, launch.expiresAt);
     } catch (error) {
+      if (isRealNameRequiredError(error)) {
+        Taro.showToast({ title: '支付前请先完成实名认证', icon: 'none' });
+        navigateToRealNameVerification(returnUrl || undefined);
+        return;
+      }
       showErrorToast(error, '发起二维码支付失败');
     } finally {
       setFallbackLoading(false);
@@ -398,6 +404,7 @@ const SurveyDepositPaymentWebviewPage: React.FC = () => {
     startCountdown,
     startStatusPolling,
     stopTracking,
+    returnUrl,
   ]);
 
   useLoad((options) => {

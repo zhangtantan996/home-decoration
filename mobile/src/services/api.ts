@@ -416,6 +416,7 @@ export const bookingApi = {
     list: (params?: { paid?: boolean }) => api.get<any>('/bookings', { params }),
     create: (data: any) => api.post('/bookings', data),
     getDetail: (id: number) => api.get<any>(`/bookings/${id}`),
+    // Legacy compatibility route. New clients should use the survey deposit payment flow.
     payIntent: (id: number) => api.post<any>(`/bookings/${id}/pay-intent`),
     cancel: (id: number) => api.delete<any>(`/bookings/${id}/cancel`),
     delete: (id: number) => api.delete<any>(`/bookings/${id}`),

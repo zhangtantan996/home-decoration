@@ -45,11 +45,24 @@ const normalizeErrorMessage = (raw: string, fallback: string) => {
     : withoutHeaders;
 };
 
+const getApiErrorCode = (error: MiniApiError) => {
+  if (error.errorCode) {
+    return error.errorCode;
+  }
+  if (error.data && typeof error.data === 'object' && 'errorCode' in (error.data as Record<string, unknown>)) {
+    return String((error.data as Record<string, unknown>).errorCode || '');
+  }
+  return '';
+};
+
 export const getErrorMessage = (error: unknown, fallback = '操作失败') => {
   if (typeof error === 'string') {
     return normalizeErrorMessage(error, fallback);
   }
   if (error instanceof MiniApiError) {
+    if (getApiErrorCode(error) === 'REAL_NAME_REQUIRED') {
+      return '支付前请先完成实名认证';
+    }
     if (error.status === 403) {
       return '无权限访问当前功能';
     }

@@ -24,6 +24,9 @@ func PaySurveyDeposit(c *gin.Context) {
 		response.BadRequest(c, "支付参数错误")
 		return
 	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
+		return
+	}
 
 	result, err := paymentService.StartSurveyDepositPayment(userID, bookingID, req.Channel, req.TerminalType)
 	if err != nil {
@@ -75,6 +78,9 @@ func ConfirmDesignFeeQuote(c *gin.Context) {
 	quoteID := parseUint64(c.Param("id"))
 	if quoteID == 0 {
 		response.BadRequest(c, "无效报价ID")
+		return
+	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
 		return
 	}
 

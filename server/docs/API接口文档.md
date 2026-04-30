@@ -704,9 +704,9 @@
 
 ---
 
-#### 3.3.4 支付意向金
+#### 3.3.4 支付意向金（Legacy）
 **接口**: `POST /api/v1/bookings/:id/pay-intent`
-**描述**: 支付预约的意向金
+**描述**: 旧版兼容入口，内部已映射到量房费支付；新客户端请使用 `POST /api/v1/bookings/:id/pay-survey-deposit`
 **认证**: 需要 JWT Token
 **请求参数**:
 ```json

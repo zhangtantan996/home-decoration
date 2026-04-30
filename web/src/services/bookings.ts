@@ -771,6 +771,7 @@ export async function getBookingDetail(id: number) {
   return adaptBookingDetail(data);
 }
 
+/** @deprecated Legacy compatibility route. Use paySurveyDeposit instead. */
 export async function payIntentFee(id: number, request?: PaymentLaunchRequest) {
   return requestJson<PaymentLaunchPayload>(`/bookings/${id}/pay-intent`, {
     method: 'POST',

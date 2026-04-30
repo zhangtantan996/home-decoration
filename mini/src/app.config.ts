@@ -76,6 +76,7 @@ export default {
     'pages/settings/account-security/change-phone/index',
     'pages/settings/account-security/change-password/index',
     'pages/settings/account-security/delete-account/index',
+    'pages/settings/account-security/verification/index',
     'pages/settings/devices/index',
     'pages/settings/notification/index',
     'pages/settings/privacy/index',

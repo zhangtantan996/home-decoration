@@ -153,6 +153,30 @@ validate_release_runtime() {
     exit 1
   fi
 
+  local real_name_provider license_provider
+  real_name_provider="$(printf '%s' "${USER_REAL_NAME_VERIFY_PROVIDER:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  license_provider="$(printf '%s' "${LICENSE_VERIFY_PROVIDER:-}" | tr '[:upper:]' '[:lower:]' | xargs)"
+  if [[ "${real_name_provider}" != "aliyun" ]]; then
+    echo "Production deploy requires USER_REAL_NAME_VERIFY_PROVIDER=aliyun, current=${USER_REAL_NAME_VERIFY_PROVIDER:-<empty>}" >&2
+    exit 1
+  fi
+  if [[ "${license_provider}" != "aliyun" ]]; then
+    echo "Production deploy requires LICENSE_VERIFY_PROVIDER=aliyun, current=${LICENSE_VERIFY_PROVIDER:-<empty>}" >&2
+    exit 1
+  fi
+  if [[ -z "${ALIYUN_VERIFY_ACCESS_KEY_ID:-}" || -z "${ALIYUN_VERIFY_ACCESS_KEY_SECRET:-}" ]]; then
+    echo "Production deploy requires ALIYUN_VERIFY_ACCESS_KEY_ID and ALIYUN_VERIFY_ACCESS_KEY_SECRET." >&2
+    exit 1
+  fi
+  if [[ -z "${ALIYUN_PERSON_VERIFY_AUTH_CODE:-}" ]]; then
+    echo "Production deploy requires ALIYUN_PERSON_VERIFY_AUTH_CODE for personal real-name verification." >&2
+    exit 1
+  fi
+  if [[ -z "${ALIYUN_ENTERPRISE_VERIFY_AUTH_CODE:-}" ]]; then
+    echo "Production deploy requires ALIYUN_ENTERPRISE_VERIFY_AUTH_CODE for enterprise verification." >&2
+    exit 1
+  fi
+
   if [[ -z "${VITE_PUBLIC_SITE_URL:-}" || ! "${VITE_PUBLIC_SITE_URL}" =~ ^https:// ]]; then
     echo "Production deploy requires VITE_PUBLIC_SITE_URL to use https://, current=${VITE_PUBLIC_SITE_URL:-<empty>}" >&2
     exit 1

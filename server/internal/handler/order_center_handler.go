@@ -45,6 +45,7 @@ func GetOrderCenterEntry(c *gin.Context) {
 }
 
 func StartOrderCenterEntryPayment(c *gin.Context) {
+	userID := getCurrentUserID(c)
 	entryKey := strings.TrimSpace(c.Param("entryKey"))
 	if entryKey == "" {
 		response.BadRequest(c, "无效订单中心条目")
@@ -56,8 +57,11 @@ func StartOrderCenterEntryPayment(c *gin.Context) {
 		response.BadRequest(c, "支付参数错误")
 		return
 	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
+		return
+	}
 
-	result, err := orderCenterService.StartEntryPaymentForUser(getCurrentUserID(c), entryKey, req.Channel, req.TerminalType)
+	result, err := orderCenterService.StartEntryPaymentForUser(userID, entryKey, req.Channel, req.TerminalType)
 	if err != nil {
 		respondDomainMutationError(c, err, "发起支付失败")
 		return

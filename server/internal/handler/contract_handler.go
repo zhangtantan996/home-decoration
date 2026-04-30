@@ -142,6 +142,9 @@ func StartContractDepositPayment(c *gin.Context) {
 		response.BadRequest(c, "参数错误: "+err.Error())
 		return
 	}
+	if !requireUserVerifiedForMoneyAction(c, userID) {
+		return
+	}
 
 	launchResp, err := paymentService.StartContractDepositPayment(userID, contractID, input.Channel, input.TerminalType)
 	if err != nil {
@@ -151,4 +154,3 @@ func StartContractDepositPayment(c *gin.Context) {
 
 	response.Success(c, launchResp)
 }
-

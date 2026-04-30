@@ -97,6 +97,10 @@ func respondDomainMutationError(c *gin.Context, err error, fallback string) {
 	if err == nil {
 		return
 	}
+	if errors.Is(err, service.ErrRealNameRequired) {
+		respondRealNameRequired(c)
+		return
+	}
 	message := strings.TrimSpace(err.Error())
 	if message == "" {
 		message = fallback
@@ -124,6 +128,28 @@ func respondDomainMutationError(c *gin.Context, err error, fallback string) {
 	default:
 		response.BadRequest(c, message)
 	}
+}
+
+func respondRealNameRequired(c *gin.Context) {
+	c.JSON(http.StatusForbidden, response.Response{
+		Code:    http.StatusForbidden,
+		Message: service.ErrRealNameRequired.Error(),
+		Data: gin.H{
+			"errorCode": service.RealNameRequiredErrorCode,
+		},
+	})
+}
+
+func requireUserVerifiedForMoneyAction(c *gin.Context, userID uint64) bool {
+	if err := service.RequireUserVerifiedForMoneyAction(userID); err != nil {
+		if errors.Is(err, service.ErrRealNameRequired) {
+			respondRealNameRequired(c)
+			return false
+		}
+		response.ServerError(c, "查询实名认证状态失败")
+		return false
+	}
+	return true
 }
 
 func respondAdminRBACMutationError(c *gin.Context, err error, fallback string) {

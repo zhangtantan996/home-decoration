@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import Taro, { useRouter } from '@tarojs/taro'
 import { request } from '@/utils/request'
 import { getErrorMessage } from '@/utils/error'
+import { isRealNameRequiredError, navigateToRealNameVerification } from '@/utils/realNameVerification'
 import { miniPaymentAdapter } from '@/adapters/payment'
 import { getPaymentStatus } from '@/services/payments'
 import { startOrderCenterEntryPayment } from '@/services/orderCenter'
@@ -94,6 +95,11 @@ export default function MilestonePaymentDetail() {
       })
       await loadMilestoneDetail()
     } catch (error: any) {
+      if (isRealNameRequiredError(error)) {
+        Taro.showToast({ title: '支付前请先完成实名认证', icon: 'none' })
+        navigateToRealNameVerification()
+        return
+      }
       Taro.showToast({
         title: getErrorMessage(error, '支付失败'),
         icon: 'none'
