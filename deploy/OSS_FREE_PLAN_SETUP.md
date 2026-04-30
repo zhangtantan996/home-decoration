@@ -10,6 +10,15 @@
 - `deploy/scripts/backup_uploads.sh`
 - `deploy/scripts/oss_sync_backups.sh`
 - `deploy/scripts/backup_and_sync_oss.sh`
+- `deploy/scripts/run_prod_backup_to_oss.sh`
+
+当前生产备份约定：
+- Bucket：`hezeyunchuang-prod-backup`
+- 地域：华东 1（杭州）
+- Endpoint：`oss-cn-hangzhou.aliyuncs.com`
+- OSS 前缀：`home-decoration/prod-backups`
+- 生产目录：`/root/home-decoration/deploy`
+- 生产 Docker 网络：`deploy_prod-net`
 
 ## 1. OSS 控制台准备
 
@@ -42,13 +51,14 @@ ossutil ls oss://<your-bucket>/
 
 在 ECS：
 ```bash
-cd /opt/home_decoration/deploy
+cd /root/home-decoration/deploy
 
 export DATABASE_HOST="<your-db-host>"
 export DATABASE_PORT="5432"
 export DATABASE_USER="postgres"
 export DATABASE_PASSWORD="<your-db-password>"
 export DATABASE_DBNAME="home_decoration"
+export BACKUP_DOCKER_NETWORK="deploy_prod-net"
 export OSS_BUCKET="<your-bucket>"
 export OSS_PREFIX="home-decoration/prod-backups"
 export KEEP_LOCAL_DAYS="7"
@@ -68,9 +78,9 @@ ossutil ls oss://<your-bucket>/home-decoration/prod-backups/
 crontab -e
 ```
 
-加入一行（按实际密码替换）：
+生产环境建议使用专用入口，脚本会从 `deploy/.env` 读取数据库密码，避免把密码写入 crontab：
 ```bash
-0 3 * * * cd /opt/home_decoration/deploy && DATABASE_HOST="<your-db-host>" DATABASE_PORT="5432" DATABASE_USER="postgres" DATABASE_PASSWORD="<your-db-password>" DATABASE_DBNAME="home_decoration" OSS_BUCKET="<your-bucket>" OSS_PREFIX="home-decoration/prod-backups" KEEP_LOCAL_DAYS="7" bash ./scripts/backup_and_sync_oss.sh >> /var/log/home-decoration-backup.log 2>&1
+0 3 * * * cd /root/home-decoration/deploy && bash ./scripts/run_prod_backup_to_oss.sh >> /var/log/home-decoration-backup.log 2>&1
 ```
 
 检查是否生效：
