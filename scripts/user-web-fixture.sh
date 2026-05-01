@@ -55,10 +55,43 @@ done
 
 apply_sql_file() {
   local file_path=$1
-  if [[ -n "$DB_URL" ]]; then
-    psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$file_path"
+  local prepared_file
+  local status=0
+
+  prepared_file="$(mktemp)"
+  if grep -Eq '^[[:space:]]*--[[:space:]]+up[[:space:]]*$' "$file_path"; then
+    awk '
+      BEGIN { in_up = 0 }
+      /^[[:space:]]*--[[:space:]]+up[[:space:]]*$/ {
+        in_up = 1
+        next
+      }
+      /^[[:space:]]*--[[:space:]]+down[[:space:]]*$/ {
+        exit
+      }
+      in_up {
+        print
+      }
+    ' "$file_path" > "$prepared_file"
   else
-    docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$file_path"
+    cat "$file_path" > "$prepared_file"
+  fi
+
+  if [[ ! -s "$prepared_file" ]]; then
+    rm -f "$prepared_file"
+    echo "sql file has no executable content: $file_path" >&2
+    exit 1
+  fi
+
+  if [[ -n "$DB_URL" ]]; then
+    psql "$DB_URL" -v ON_ERROR_STOP=1 -f "$prepared_file" || status=$?
+  else
+    docker exec -i "$DB_CONTAINER" psql -v ON_ERROR_STOP=1 -U "$DB_USER" -d "$DB_NAME" < "$prepared_file" || status=$?
+  fi
+
+  rm -f "$prepared_file"
+  if [[ "$status" -ne 0 ]]; then
+    exit "$status"
   fi
 }
 
