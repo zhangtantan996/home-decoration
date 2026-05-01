@@ -1,0 +1,71 @@
+.system-settings-section-card {
+  margin-bottom: 16px;
+}
+
+.system-settings-block-hint {
+  display: block;
+  margin-bottom: 16px;
+}
+
+.system-settings-actions-right {
+  margin-top: 16px;
+  text-align: right;
+}
+
+.system-settings-legal-drawer-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, 0.86fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.system-settings-legal-editor {
+  min-width: 0;
+}
+
+.system-settings-legal-preview {
+  position: sticky;
+  top: 0;
+  min-width: 0;
+}
+
+.system-settings-legal-preview-card {
+  min-height: 520px;
+  padding: 24px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: var(--ant-border-radius-lg);
+  background: var(--ant-color-bg-layout);
+}
+
+.system-settings-legal-preview-kicker {
+  display: block;
+  margin-bottom: 8px;
+  letter-spacing: 0.08em;
+}
+
+.system-settings-legal-preview-content {
+  color: var(--ant-color-text);
+  line-height: 1.85;
+  white-space: pre-line;
+}
+
+.system-settings-legal-preview-content h4 {
+  margin: 22px 0 8px;
+  color: var(--ant-color-text);
+  font-size: 16px;
+}
+
+.system-settings-legal-preview-content p {
+  margin: 0 0 14px;
+  color: var(--ant-color-text-secondary);
+}
+
+@media (max-width: 960px) {
+  .system-settings-legal-drawer-body {
+    grid-template-columns: 1fr;
+  }
+
+  .system-settings-legal-preview {
+    position: static;
+  }
+}

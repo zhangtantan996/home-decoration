@@ -116,6 +116,13 @@ func resolveAdminMaterialShopOperatingStatus(shop model.MaterialShop, hasBoundUs
 	return adminOperatingStatusActive
 }
 
+func materialShopStatusValue(status *int8) int8 {
+	if status == nil {
+		return merchantProviderStatusFrozen
+	}
+	return *status
+}
+
 const (
 	adminPlatformDisplayRequiresActiveMessage = "主体经营异常，平台展示设置当前不生效"
 	merchantDisplayRequiresActiveMessage      = "主体经营异常，商家展示设置当前不生效"
@@ -660,11 +667,15 @@ func AdminListUsers(c *gin.Context) {
 
 	type adminUserListRow struct {
 		model.User
-		RoleType          string `json:"roleType"`
-		RoleLabel         string `json:"roleLabel"`
-		PrimaryEntityType string `json:"primaryEntityType,omitempty"`
-		PrimaryEntityID   uint64 `json:"primaryEntityId,omitempty"`
-		PrimaryEntityName string `json:"primaryEntityName,omitempty"`
+		RoleType          string     `json:"roleType"`
+		RoleLabel         string     `json:"roleLabel"`
+		PrimaryEntityType string     `json:"primaryEntityType,omitempty"`
+		PrimaryEntityID   uint64     `json:"primaryEntityId,omitempty"`
+		PrimaryEntityName string     `json:"primaryEntityName,omitempty"`
+		LastLoginAt       *time.Time `json:"lastLoginAt,omitempty"`
+		LastLoginIP       string     `json:"lastLoginIp,omitempty"`
+		LoginFailedCount  int        `json:"loginFailedCount,omitempty"`
+		LockedUntil       *time.Time `json:"lockedUntil,omitempty"`
 	}
 
 	db := repository.DB.Model(&model.User{})
@@ -751,6 +762,10 @@ func AdminListUsers(c *gin.Context) {
 			PrimaryEntityType: primaryEntityType,
 			PrimaryEntityID:   primaryEntityID,
 			PrimaryEntityName: primaryEntityName,
+			LastLoginAt:       user.LastLoginAt,
+			LastLoginIP:       user.LastLoginIP,
+			LoginFailedCount:  user.LoginFailedCount,
+			LockedUntil:       user.LockedUntil,
 		})
 	}
 
@@ -1551,6 +1566,90 @@ func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+func AdminSetProviderAvailability(c *gin.Context) {
+	providerID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if !service.SupportsProviderPlatformDisplayEnabled() {
+		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("服务商平台展示开关"))
+		return
+	}
+
+	tx := repository.DB.Begin()
+	var provider model.Provider
+	if err := tx.First(&provider, providerID).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "服务商不存在")
+		return
+	}
+	beforeProvider := provider
+	beforeIdentityStatus := resolveProviderIdentityStatus(provider)
+
+	nextStatus := merchantProviderStatusFrozen
+	if req.Enabled {
+		nextStatus = merchantProviderStatusActive
+	}
+	updates := map[string]interface{}{
+		"status":                   nextStatus,
+		"platform_display_enabled": req.Enabled,
+	}
+	if err := tx.Model(&provider).Updates(updates).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+
+	provider.Status = nextStatus
+	provider.PlatformDisplayEnabled = req.Enabled
+	if provider.UserID > 0 {
+		if err := ensureMerchantIdentity(tx, provider.UserID, merchantIdentityTypeProvider, provider.ID, adminID, resolveProviderIdentityStatus(provider)); err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步服务商身份失败: "+err.Error())
+			return
+		}
+	}
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "set_provider_availability",
+		ResourceType:  "provider",
+		ResourceID:    provider.ID,
+		Reason:        readAdminReason(c, "调整服务商经营状态"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"status":                 beforeProvider.Status,
+			"platformDisplayEnabled": beforeProvider.PlatformDisplayEnabled,
+			"identityStatus":         beforeIdentityStatus,
+		},
+		AfterState: map[string]interface{}{
+			"status":                 provider.Status,
+			"platformDisplayEnabled": provider.PlatformDisplayEnabled,
+			"identityStatus":         resolveProviderIdentityStatus(provider),
+		},
+		Metadata: map[string]interface{}{
+			"enabled": req.Enabled,
+		},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "写入审计失败")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	response.Success(c, nil)
+}
+
 // AdminClaimProviderAccount 为未入驻服务商（装修公司）绑定账号并完成入驻
 func AdminClaimProviderAccount(c *gin.Context) {
 	providerID := parseUint64(c.Param("id"))
@@ -2120,6 +2219,11 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		response.ServerError(c, "创建失败")
 		return
 	}
+	if err := repository.DB.Model(&shop).Update("is_settled", false).Error; err != nil {
+		response.ServerError(c, "创建失败")
+		return
+	}
+	shop.IsSettled = false
 	response.Success(c, shop)
 }
 
@@ -2449,6 +2553,92 @@ func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
 	response.Success(c, nil)
 }
 
+func AdminSetMaterialShopAvailability(c *gin.Context) {
+	shopID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
+	var req struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if !service.SupportsMaterialShopPlatformDisplayEnabled() {
+		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商平台展示开关"))
+		return
+	}
+
+	tx := repository.DB.Begin()
+	var shop model.MaterialShop
+	if err := tx.First(&shop, shopID).Error; err != nil {
+		tx.Rollback()
+		response.NotFound(c, "门店不存在")
+		return
+	}
+	beforeShop := shop
+	beforeIdentityStatus := resolveMaterialShopIdentityStatus(shop)
+
+	nextStatus := merchantProviderStatusFrozen
+	if req.Enabled {
+		nextStatus = merchantProviderStatusActive
+	}
+	if err := tx.Exec(
+		"UPDATE material_shops SET status = ?, platform_display_enabled = ?, updated_at = ? WHERE id = ?",
+		nextStatus,
+		req.Enabled,
+		time.Now(),
+		shop.ID,
+	).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+
+	shop.Status = &nextStatus
+	shop.PlatformDisplayEnabled = req.Enabled
+	if shop.UserID > 0 {
+		if err := ensureMerchantIdentity(tx, shop.UserID, merchantIdentityTypeMaterial, shop.ID, adminID, resolveMaterialShopIdentityStatus(shop)); err != nil {
+			tx.Rollback()
+			response.Error(c, 500, "同步主材商身份失败: "+err.Error())
+			return
+		}
+	}
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "set_material_shop_availability",
+		ResourceType:  "material_shop",
+		ResourceID:    shop.ID,
+		Reason:        readAdminReason(c, "调整主材门店经营状态"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"status":                 materialShopStatusValue(beforeShop.Status),
+			"platformDisplayEnabled": beforeShop.PlatformDisplayEnabled,
+			"identityStatus":         beforeIdentityStatus,
+		},
+		AfterState: map[string]interface{}{
+			"status":                 materialShopStatusValue(shop.Status),
+			"platformDisplayEnabled": shop.PlatformDisplayEnabled,
+			"identityStatus":         resolveMaterialShopIdentityStatus(shop),
+		},
+		Metadata: map[string]interface{}{
+			"enabled": req.Enabled,
+		},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "写入审计失败")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	response.Success(c, nil)
+}
+
 // ==================== Admin 退款管理 ====================
 
 // AdminRefundIntentFee 管理员手动退款意向金
@@ -2508,6 +2698,13 @@ func AdminGetSystemConfigs(c *gin.Context) {
 		response.Error(c, 500, err.Error())
 		return
 	}
+	filteredConfigs := make([]model.SystemConfig, 0, len(configs)+2)
+	for _, config := range configs {
+		if service.IsSecretConfigKey(config.Key) {
+			continue
+		}
+		filteredConfigs = append(filteredConfigs, config)
+	}
 	configs = append(configs,
 		model.SystemConfig{
 			Key:         "payment.channel.wechat.runtime_ready",
@@ -2522,10 +2719,11 @@ func AdminGetSystemConfigs(c *gin.Context) {
 			Type:        "boolean",
 		},
 	)
+	filteredConfigs = append(filteredConfigs, configs[len(configs)-2:]...)
 
 	response.Success(c, gin.H{
-		"configs": configs,
-		"count":   len(configs),
+		"configs": filteredConfigs,
+		"count":   len(filteredConfigs),
 	})
 }
 

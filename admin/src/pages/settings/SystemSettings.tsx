@@ -5,6 +5,7 @@ import {
   Form,
   Input,
   Button,
+  Drawer,
   Tabs,
   Switch,
   Space,
@@ -15,11 +16,13 @@ import {
   Col,
   Typography,
   Tag,
+  Table,
   DatePicker,
   Image,
   Upload,
 } from "antd";
 import {
+  EditOutlined,
   SaveOutlined,
   PlusOutlined,
   MinusCircleOutlined,
@@ -37,6 +40,7 @@ import AdminGuideHint from "../../components/AdminGuideHint";
 import { toAbsoluteAssetUrl } from "../../utils/env";
 import type { AdminUploadedAsset } from "../../utils/uploadAsset";
 import dayjs, { type Dayjs } from "dayjs";
+import "./SystemSettings.css";
 
 const { TabPane } = Tabs;
 
@@ -48,6 +52,154 @@ const PAYMENT_CHANNEL_KEYS = {
 } as const;
 
 const MINI_HOME_POPUP_CONFIG_KEY = "mini.home_popup.config";
+
+const PUBLIC_COMPLIANCE_CONFIG_KEYS = {
+  brandName: "public.brand_name",
+  companyName: "public.company_name",
+  companyCreditCode: "public.company_credit_code",
+  companyRegisterAddress: "public.company_register_addr",
+  companyContactAddress: "public.company_contact_addr",
+  icp: "public.icp",
+  securityBeian: "public.security_beian",
+  customerPhone: "public.customer_phone",
+  customerEmail: "public.customer_email",
+  complaintEmail: "public.complaint_email",
+  privacyEmail: "public.privacy_email",
+  userAgreement: "public.user_agreement",
+  privacyPolicy: "public.privacy_policy",
+  transactionRules: "public.transaction_rules",
+  refundRules: "public.refund_rules",
+  merchantOnboardingRules: "public.merchant_onboarding",
+  thirdPartySharing: "public.third_party_sharing",
+  legalVersion: "public.legal_version",
+  legalEffectiveDate: "public.legal_effective_date",
+} as const;
+
+const LEGAL_DOCUMENT_CONFIGS = [
+  {
+    title: "用户服务协议",
+    slug: "user-agreement",
+    formName: "userAgreement",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement,
+    description: "账号注册、预约报价、交易确认、退款售后和平台边界。",
+  },
+  {
+    title: "隐私政策",
+    slug: "privacy-policy",
+    formName: "privacyPolicy",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy,
+    description: "个人信息收集、使用、保存、共享和用户权利。",
+  },
+  {
+    title: "交易规则",
+    slug: "transaction-rules",
+    formName: "transactionRules",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules,
+    description: "平台撮合、交易流程管理、履约协同和线下合同关系。",
+  },
+  {
+    title: "退款与售后规则",
+    slug: "refund-rules",
+    formName: "refundRules",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.refundRules,
+    description: "退款条件、处理时限、争议材料和平台介入条件。",
+  },
+  {
+    title: "商家入驻规则",
+    slug: "merchant-rules",
+    formName: "merchantOnboardingRules",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules,
+    description: "设计师、工长、装修公司、主材商准入与清退规则。",
+  },
+  {
+    title: "第三方信息共享清单",
+    slug: "third-party-sharing",
+    formName: "thirdPartySharing",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing,
+    description: "短信、支付、实名核验、OSS、地图、IM 等实际启用服务披露。",
+  },
+] as const;
+
+type LegalDocumentConfig = (typeof LEGAL_DOCUMENT_CONFIGS)[number];
+type LegalDocumentFormName = LegalDocumentConfig["formName"];
+
+interface ComplianceFormValues {
+  brandName?: string;
+  companyName?: string;
+  companyCreditCode?: string;
+  companyRegisterAddress?: string;
+  companyContactAddress?: string;
+  icp?: string;
+  securityBeian?: string;
+  customerPhone?: string;
+  customerEmail?: string;
+  complaintEmail?: string;
+  privacyEmail?: string;
+  userAgreement?: string;
+  privacyPolicy?: string;
+  transactionRules?: string;
+  refundRules?: string;
+  merchantOnboardingRules?: string;
+  thirdPartySharing?: string;
+  legalVersion?: string;
+  legalEffectiveDate?: string;
+}
+
+const getLegalTextLength = (value?: string) =>
+  String(value || "")
+    .replace(/\s/g, "")
+    .length;
+
+const normalizeLegalText = (value?: string) => String(value || "").trim();
+
+const assertLegalDocumentContent = (
+  doc: LegalDocumentConfig,
+  content?: string,
+) => {
+  const text = normalizeLegalText(content);
+  const length = getLegalTextLength(text);
+  if (!text) {
+    throw new Error(`请补全${doc.title}`);
+  }
+  if (length < 20) {
+    throw new Error(`${doc.title}内容过短，请补充完整规则后再保存`);
+  }
+  if (length > 50000) {
+    throw new Error(`${doc.title}超过 50000 字，请拆分或精简后再保存`);
+  }
+};
+
+const renderLegalPreviewBlocks = (content?: string) => {
+  const blocks = normalizeLegalText(content)
+    .split(/\n{2,}/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (blocks.length === 0) {
+    return (
+      <Typography.Text type="secondary">
+        暂无正文，保存前请先补全协议内容。
+      </Typography.Text>
+    );
+  }
+
+  return blocks.map((block, index) => {
+    const lines = block
+      .split(/\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    const [firstLine, ...restLines] = lines;
+    if (/^\d+[.、]\s*/.test(firstLine || "")) {
+      return (
+        <section key={`${index}-${firstLine}`}>
+          <h4>{firstLine}</h4>
+          {restLines.length > 0 ? <p>{restLines.join("\n")}</p> : null}
+        </section>
+      );
+    }
+    return <p key={`${index}-${firstLine}`}>{block}</p>;
+  });
+};
 
 const HOME_POPUP_THEME_OPTIONS = [
   { value: "sunrise", label: "暖橙主题" },
@@ -361,9 +513,9 @@ const evaluateHomePopupDiagnostics = (
   if (!values.enabled) {
     serviceActive = false;
     items.push({
-      label: "服务端生效条件",
+      label: "展示生效条件",
       status: "error",
-      detail: "弹窗开关已关闭，公开接口会直接返回 popup: null",
+      detail: "弹窗开关已关闭，用户进入首页时不会看到弹窗",
     });
   }
 
@@ -449,9 +601,9 @@ const evaluateHomePopupDiagnostics = (
 
   if (serviceActive) {
     items.unshift({
-      label: "服务端生效条件",
+      label: "展示生效条件",
       status: "success",
-      detail: "当前配置命中服务端生效条件，公开接口会返回弹窗配置",
+      detail: "当前配置已满足展示条件，用户进入首页时可看到弹窗",
     });
   }
 
@@ -475,9 +627,9 @@ const evaluateHomePopupDiagnostics = (
   }
 
   items.push({
-    label: "客户端频控推演",
+    label: "展示频控推演",
     status: frequencyBlocked ? "warning" : "success",
-    detail: `${frequencyDetail}。这里按模拟次数推演，后台无法直接读取用户设备本地缓存。`,
+    detail: `${frequencyDetail}。此处按模拟次数预估实际展示结果。`,
   });
 
   const finalVisible = serviceActive && !frequencyBlocked;
@@ -487,8 +639,8 @@ const evaluateHomePopupDiagnostics = (
     detail: finalVisible
       ? "按当前配置与模拟次数推演，重新进入首页后会弹"
       : serviceActive
-        ? "服务端会返回弹窗，但当前模拟会被客户端频控拦住"
-        : "服务端侧已经不会返回弹窗，客户端也就无从展示",
+        ? "当前模拟次数已达到频控条件，重新进入首页不会重复弹出"
+        : "当前配置未满足展示条件，重新进入首页不会弹出",
   });
 
   return {
@@ -641,6 +793,12 @@ const renderRuntimeStatus = (ready: boolean) => (
   </Tag>
 );
 
+const renderSecretCustodyStatus = (ready: boolean) => (
+  <Tag color={ready ? "success" : "warning"}>
+    {ready ? "密钥已托管" : "密钥待托管"}
+  </Tag>
+);
+
 const toStoredAsset = (asset?: AdminUploadedAsset | null) =>
   String(asset?.path || asset?.url || "");
 
@@ -651,6 +809,7 @@ const SystemSettings: React.FC = () => {
   const [savingBiz, setSavingBiz] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [savingHomePopup, setSavingHomePopup] = useState(false);
+  const [savingCompliance, setSavingCompliance] = useState(false);
   const [uploadingPopupHero, setUploadingPopupHero] = useState(false);
   const [popupHeroUploadSummary, setPopupHeroUploadSummary] =
     useState<HomePopupHeroUploadSummary | null>(null);
@@ -658,8 +817,11 @@ const SystemSettings: React.FC = () => {
     useState(0);
   const [reauthOpen, setReauthOpen] = useState(false);
   const [activeTabKey, setActiveTabKey] = useState("1");
+  const [editingLegalDocSlug, setEditingLegalDocSlug] = useState<string | null>(
+    null,
+  );
   const [pendingAction, setPendingAction] = useState<
-    "base" | "payment" | "biz" | "homePopup" | null
+    "base" | "payment" | "biz" | "homePopup" | "compliance" | null
   >(null);
   const [pendingPayload, setPendingPayload] = useState<Record<
     string,
@@ -669,13 +831,68 @@ const SystemSettings: React.FC = () => {
     wechat: false,
     alipay: false,
   });
+  const [secretRuntimeReady, setSecretRuntimeReady] = useState({
+    sms: false,
+    im: false,
+  });
   const [form] = Form.useForm();
   const [bizForm] = Form.useForm();
   const [paymentForm] = Form.useForm();
   const [popupForm] = Form.useForm<HomePopupFormValues>();
+  const [complianceForm] = Form.useForm();
   const popupPreviewValues = Form.useWatch([], popupForm) as
     | Partial<HomePopupFormValues>
     | undefined;
+  const compliancePreviewValues = Form.useWatch([], complianceForm) as
+    | Partial<ComplianceFormValues>
+    | undefined;
+
+  const readComplianceValue = (
+    field: keyof ComplianceFormValues | LegalDocumentFormName,
+  ) =>
+    String(
+      compliancePreviewValues?.[field as keyof ComplianceFormValues] ??
+        complianceForm.getFieldValue(field) ??
+        "",
+    );
+
+  const editingLegalDoc = useMemo(
+    () =>
+      LEGAL_DOCUMENT_CONFIGS.find((item) => item.slug === editingLegalDocSlug) ||
+      null,
+    [editingLegalDocSlug],
+  );
+
+  const legalVersionPreview =
+    readComplianceValue("legalVersion") || "v1.0.0-20260430";
+  const legalEffectiveDatePreview =
+    readComplianceValue("legalEffectiveDate") || "2026-04-30";
+  const customerPhonePreview =
+    readComplianceValue("customerPhone") || "17764774797";
+  const customerEmailPreview = readComplianceValue("customerEmail");
+  const privacyEmailPreview = readComplianceValue("privacyEmail");
+
+  const legalDocumentRows = useMemo(
+    () =>
+      LEGAL_DOCUMENT_CONFIGS.map((doc) => {
+        const content = readComplianceValue(doc.formName);
+        const characterCount = getLegalTextLength(content);
+        const status =
+          characterCount >= 20
+            ? "ready"
+            : characterCount > 0
+              ? "draft"
+              : "empty";
+        return {
+          ...doc,
+          content,
+          characterCount,
+          status,
+        };
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [compliancePreviewValues],
+  );
 
   useEffect(() => {
     loadSettings();
@@ -720,6 +937,12 @@ const SystemSettings: React.FC = () => {
         settings.im_tencent_enabled =
           settings.im_tencent_enabled === "true" ||
           settings.im_tencent_enabled === true;
+        setSecretRuntimeReady({
+          sms: isConfigEnabled(String(settings.sms_runtime_ready ?? "")),
+          im: isConfigEnabled(
+            String(settings.im_tencent_secret_ready ?? ""),
+          ),
+        });
         form.setFieldsValue(settings);
       }
       const bizRes = (await adminSystemConfigApi.list()) as any;
@@ -728,6 +951,55 @@ const SystemSettings: React.FC = () => {
       popupForm.setFieldsValue(
         safeParseHomePopupConfig(bizConfigMap[MINI_HOME_POPUP_CONFIG_KEY]),
       );
+      complianceForm.setFieldsValue({
+        brandName:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.brandName] || "禾泽云",
+        companyName:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.companyName] ||
+          "陕西禾泽云创科技有限公司",
+        companyCreditCode:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.companyCreditCode] ||
+          "91610102MAK4U1K51H",
+        companyRegisterAddress:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.companyRegisterAddress] ||
+          "陕西省西安市新城区解放路166号1幢所住10401室",
+        companyContactAddress:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.companyContactAddress] ||
+          "陕西省西安市新城区解放路103号民生百货解放路店F7层7004",
+        icp:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.icp] ||
+          "陕ICP备2026004441号",
+        securityBeian:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.securityBeian] || "",
+        customerPhone:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.customerPhone] ||
+          "17764774797",
+        customerEmail:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.customerEmail] || "",
+        complaintEmail:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.complaintEmail] || "",
+        privacyEmail:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyEmail] || "",
+        userAgreement:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement] || "",
+        privacyPolicy:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy] || "",
+        transactionRules:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules] || "",
+        refundRules:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.refundRules] || "",
+        merchantOnboardingRules:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules] ||
+          "",
+        thirdPartySharing:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing] || "",
+        legalVersion:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion] ||
+          "v1.0.0-20260430",
+        legalEffectiveDate:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate] ||
+          "2026-04-30",
+      });
       bizForm.setFieldsValue({
         surveyDepositDefault: Number(
           bizConfigMap["booking.survey_deposit_default"] || 500,
@@ -745,7 +1017,7 @@ const SystemSettings: React.FC = () => {
         constructionPaymentMode:
           bizConfigMap["order.construction_payment_mode"] || "milestone",
         constructionFeeStages: safeParseStages(
-          bizConfigMap["order.construction_fee_stages"],
+          bizConfigMap["order.construction_milestones"],
           [
             { name: "开工款", percentage: 30 },
             { name: "水电验收款", percentage: 30 },
@@ -876,7 +1148,7 @@ const SystemSettings: React.FC = () => {
       "order.construction_payment_mode": String(
         values.constructionPaymentMode || "milestone",
       ),
-      "order.construction_fee_stages": JSON.stringify(
+      "order.construction_milestones": JSON.stringify(
         values.constructionFeeStages || [],
       ),
       "order.design_fee_unlock_download": String(
@@ -949,8 +1221,107 @@ const SystemSettings: React.FC = () => {
     };
   };
 
+  const buildCompliancePayload = async () => {
+    const values = (await complianceForm.validateFields()) as ComplianceFormValues;
+    const readValue = (field: keyof ComplianceFormValues) =>
+      String(values[field] ?? complianceForm.getFieldValue(field) ?? "");
+
+    LEGAL_DOCUMENT_CONFIGS.forEach((doc) => {
+      assertLegalDocumentContent(doc, readValue(doc.formName));
+    });
+
+    return {
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.brandName]: String(
+        readValue("brandName") || "禾泽云",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.companyName]: String(
+        readValue("companyName") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.companyCreditCode]: String(
+        readValue("companyCreditCode") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.companyRegisterAddress]: String(
+        readValue("companyRegisterAddress") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.companyContactAddress]: String(
+        readValue("companyContactAddress") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.icp]: String(readValue("icp") || ""),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.securityBeian]: String(
+        readValue("securityBeian") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.customerPhone]: String(
+        readValue("customerPhone") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.customerEmail]: String(
+        readValue("customerEmail") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.complaintEmail]: String(
+        readValue("complaintEmail") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyEmail]: String(
+        readValue("privacyEmail") || "",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement]: String(
+        normalizeLegalText(readValue("userAgreement")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy]: String(
+        normalizeLegalText(readValue("privacyPolicy")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules]: String(
+        normalizeLegalText(readValue("transactionRules")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.refundRules]: String(
+        normalizeLegalText(readValue("refundRules")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules]: String(
+        normalizeLegalText(readValue("merchantOnboardingRules")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing]: String(
+        normalizeLegalText(readValue("thirdPartySharing")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion]: String(
+        readValue("legalVersion") || "v1.0.0-20260430",
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate]: String(
+        readValue("legalEffectiveDate") || "2026-04-30",
+      ),
+    };
+  };
+
+  const requestSaveComplianceDocument = async (doc: LegalDocumentConfig) => {
+    try {
+      const values = (await complianceForm.validateFields([
+        "legalVersion",
+        "legalEffectiveDate",
+        doc.formName,
+      ])) as ComplianceFormValues;
+      const content = String(
+        values[doc.formName] ?? complianceForm.getFieldValue(doc.formName) ?? "",
+      );
+      assertLegalDocumentContent(doc, content);
+      setPendingAction("compliance");
+      setPendingPayload({
+        [doc.configKey]: normalizeLegalText(content),
+        [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion]: String(
+          values.legalVersion ||
+            complianceForm.getFieldValue("legalVersion") ||
+            "v1.0.0-20260430",
+        ),
+        [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate]: String(
+          values.legalEffectiveDate ||
+            complianceForm.getFieldValue("legalEffectiveDate") ||
+            "2026-04-30",
+        ),
+      });
+      setReauthOpen(true);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    }
+  };
+
   const requestSave = async (
-    action: "base" | "payment" | "biz" | "homePopup",
+    action: "base" | "payment" | "biz" | "homePopup" | "compliance",
   ) => {
     try {
       let payload: Record<string, string>;
@@ -960,6 +1331,8 @@ const SystemSettings: React.FC = () => {
         payload = await buildPaymentPayload();
       } else if (action === "homePopup") {
         payload = await buildHomePopupPayload();
+      } else if (action === "compliance") {
+        payload = await buildCompliancePayload();
       } else {
         payload = await buildBizPayload();
       }
@@ -1020,6 +1393,8 @@ const SystemSettings: React.FC = () => {
       setSavingPayment(true);
     } else if (pendingAction === "homePopup") {
       setSavingHomePopup(true);
+    } else if (pendingAction === "compliance") {
+      setSavingCompliance(true);
     } else {
       setSavingBiz(true);
     }
@@ -1034,6 +1409,9 @@ const SystemSettings: React.FC = () => {
       } else if (pendingAction === "homePopup") {
         await adminSystemConfigApi.batchUpdate(nextPayload);
         message.success("首页弹窗保存成功");
+      } else if (pendingAction === "compliance") {
+        await adminSystemConfigApi.batchUpdate(nextPayload);
+        message.success("对外内容与合规信息保存成功");
       } else {
         await adminSystemConfigApi.batchUpdate(nextPayload);
         message.success("业务配置保存成功");
@@ -1046,6 +1424,7 @@ const SystemSettings: React.FC = () => {
       setSavingPayment(false);
       setSavingHomePopup(false);
       setSavingBiz(false);
+      setSavingCompliance(false);
     }
   };
 
@@ -1129,8 +1508,8 @@ const SystemSettings: React.FC = () => {
           >
             <div style={{ marginBottom: 16 }}>
               <AdminGuideHint
-                summary="支付密钥、证书与回调配置统一以服务端环境变量为准"
-                description="后台本页只负责控制渠道开关与查看运行时状态，不再录入微信支付或支付宝的私钥、证书、公钥。"
+                summary="支付密钥、证书与回调资料由技术管理员统一维护"
+                description="本页只负责控制渠道开关与查看支付能力状态，不录入微信支付或支付宝的私钥、证书、公钥。"
               />
             </div>
 
@@ -1173,7 +1552,7 @@ const SystemSettings: React.FC = () => {
             </Card>
 
             <Typography.Text type="secondary">
-              若开启失败，请先检查服务端对应环境变量是否完整，再重新保存渠道开关。
+              若开启失败，请联系技术管理员确认支付通道资料是否完整，再重新保存渠道开关。
             </Typography.Text>
 
             <div style={{ textAlign: "right", marginTop: 16 }}>
@@ -1577,7 +1956,7 @@ const SystemSettings: React.FC = () => {
                     style={{ width: "100%" }}
                   >
                     <Typography.Text type="secondary">
-                      按当前表单内容实时推演。频控属于客户端本地状态，后台无法直接读取，只能按模拟次数判断。
+                      按当前表单内容和模拟次数预估用户重新进入首页后的展示结果。
                     </Typography.Text>
                     <Space align="center" wrap>
                       <Typography.Text>模拟当前设备已处理次数</Typography.Text>
@@ -1594,8 +1973,8 @@ const SystemSettings: React.FC = () => {
                           popupDiagnostics.serviceActive ? "success" : "error"
                         }
                       >
-                        服务端
-                        {popupDiagnostics.serviceActive ? "会返回" : "不会返回"}
+                        配置
+                        {popupDiagnostics.serviceActive ? "可展示" : "不可展示"}
                       </Tag>
                       <Tag
                         color={
@@ -1604,10 +1983,10 @@ const SystemSettings: React.FC = () => {
                             : "success"
                         }
                       >
-                        频控
+                        次数规则
                         {popupDiagnostics.frequencyBlocked
-                          ? "会拦截"
-                          : "不会拦截"}
+                          ? "不再展示"
+                          : "允许展示"}
                       </Tag>
                       <Tag
                         color={
@@ -1657,16 +2036,348 @@ const SystemSettings: React.FC = () => {
           </Form>
         </TabPane>
 
+        <TabPane tab="对外内容/合规信息" key="9">
+          <Form form={complianceForm} layout="vertical">
+            <Card size="small" title="主体与备案" className="system-settings-section-card">
+              <Row gutter={16}>
+                <Col span={8}>
+                  <Form.Item
+                    label="品牌名"
+                    name="brandName"
+                    rules={[{ required: true, message: "请输入品牌名" }]}
+                  >
+                    <Input placeholder="禾泽云" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    label="公司全称"
+                    name="companyName"
+                    rules={[{ required: true, message: "请输入公司全称" }]}
+                  >
+                    <Input placeholder="陕西禾泽云创科技有限公司" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
+                  <Form.Item
+                    label="统一社会信用代码"
+                    name="companyCreditCode"
+                    rules={[{ required: true, message: "请输入统一社会信用代码" }]}
+                  >
+                    <Input placeholder="91610102MAK4U1K51H" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="注册地址"
+                    name="companyRegisterAddress"
+                    rules={[{ required: true, message: "请输入注册地址" }]}
+                  >
+                    <Input.TextArea rows={2} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="对外联系地址"
+                    name="companyContactAddress"
+                    rules={[{ required: true, message: "请输入对外联系地址" }]}
+                  >
+                    <Input.TextArea rows={2} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="ICP备案号"
+                    name="icp"
+                    rules={[{ required: true, message: "请输入ICP备案号" }]}
+                  >
+                    <Input placeholder="陕ICP备2026004441号" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="公安备案号"
+                    name="securityBeian"
+                    tooltip="未取得时留空，前台不会展示"
+                  >
+                    <Input placeholder="未取得时留空" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card size="small" title="联系方式" className="system-settings-section-card">
+              <Typography.Text
+                type="secondary"
+                className="system-settings-block-hint"
+              >
+                邮箱未正式开通时留空，公开页面只展示客服电话，不展示占位邮箱。
+              </Typography.Text>
+              <Row gutter={16}>
+                <Col span={6}>
+                  <Form.Item
+                    label="客服电话"
+                    name="customerPhone"
+                    rules={[{ required: true, message: "请输入客服电话" }]}
+                  >
+                    <Input placeholder="17764774797" />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item
+                    label="客服邮箱"
+                    name="customerEmail"
+                    rules={[{ type: "email", message: "邮箱格式不正确" }]}
+                  >
+                    <Input placeholder="未开通时留空" />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item
+                    label="投诉举报邮箱"
+                    name="complaintEmail"
+                    rules={[{ type: "email", message: "邮箱格式不正确" }]}
+                  >
+                    <Input placeholder="未开通时留空" />
+                  </Form.Item>
+                </Col>
+                <Col span={6}>
+                  <Form.Item
+                    label="隐私保护邮箱"
+                    name="privacyEmail"
+                    rules={[{ type: "email", message: "邮箱格式不正确" }]}
+                  >
+                    <Input placeholder="未开通时留空" />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </Card>
+
+            <Card
+              size="small"
+              title="协议与规则"
+              className="system-settings-section-card"
+            >
+              <Typography.Text
+                type="secondary"
+                className="system-settings-block-hint"
+              >
+                正文通过独立文档维护，前台按公开法务页展示。暂不使用 Word/PDF 上传作为主内容，避免移动端阅读、搜索和版本对比困难。
+              </Typography.Text>
+              <Row gutter={16}>
+                <Col span={12}>
+                  <Form.Item
+                    label="协议版本"
+                    name="legalVersion"
+                    rules={[{ required: true, message: "请输入协议版本" }]}
+                  >
+                    <Input placeholder="v1.0.0-20260430" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item
+                    label="生效日期"
+                    name="legalEffectiveDate"
+                    rules={[{ required: true, message: "请输入生效日期" }]}
+                  >
+                    <Input placeholder="2026-04-30" />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <Table
+                rowKey="slug"
+                pagination={false}
+                dataSource={legalDocumentRows}
+                columns={[
+                  {
+                    title: "文档",
+                    dataIndex: "title",
+                    render: (_: unknown, row) => (
+                      <Space direction="vertical" size={2}>
+                        <Typography.Text strong>{row.title}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          {row.description}
+                        </Typography.Text>
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: "Slug",
+                    dataIndex: "slug",
+                    width: 180,
+                    render: (slug: string) => <Tag>{slug}</Tag>,
+                  },
+                  {
+                    title: "字数",
+                    dataIndex: "characterCount",
+                    width: 100,
+                    render: (count: number) => `${count} 字`,
+                  },
+                  {
+                    title: "状态",
+                    dataIndex: "status",
+                    width: 110,
+                    render: (status: string) => {
+                      if (status === "ready") {
+                        return <Tag color="success">已配置</Tag>;
+                      }
+                      if (status === "draft") {
+                        return <Tag color="warning">待补全</Tag>;
+                      }
+                      return <Tag color="default">空白</Tag>;
+                    },
+                  },
+                  {
+                    title: "版本 / 生效日期",
+                    width: 170,
+                    render: () => (
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text>{legalVersionPreview}</Typography.Text>
+                        <Typography.Text type="secondary">
+                          {legalEffectiveDatePreview}
+                        </Typography.Text>
+                      </Space>
+                    ),
+                  },
+                  {
+                    title: "操作",
+                    width: 120,
+                    render: (_: unknown, row) => (
+                      <Button
+                        icon={<EditOutlined />}
+                        onClick={() => setEditingLegalDocSlug(row.slug)}
+                      >
+                        编辑
+                      </Button>
+                    ),
+                  },
+                ]}
+              />
+            </Card>
+
+            <div className="system-settings-actions-right">
+              <Space>
+                <Button onClick={loadSettings}>重置</Button>
+                <Button
+                  type="primary"
+                  loading={savingCompliance}
+                  onClick={() => void requestSave("compliance")}
+                >
+                  保存对外内容
+                </Button>
+              </Space>
+            </div>
+            <Drawer
+              width={960}
+              open={Boolean(editingLegalDoc)}
+              onClose={() => setEditingLegalDocSlug(null)}
+              title={editingLegalDoc ? `编辑：${editingLegalDoc.title}` : "编辑法务文档"}
+              destroyOnClose={false}
+              extra={
+                editingLegalDoc ? (
+                  <Button
+                    type="primary"
+                    icon={<SaveOutlined />}
+                    loading={savingCompliance}
+                    onClick={() =>
+                      void requestSaveComplianceDocument(editingLegalDoc)
+                    }
+                  >
+                    保存当前文档
+                  </Button>
+                ) : null
+              }
+            >
+              {editingLegalDoc ? (
+                <div className="system-settings-legal-drawer-body">
+                  <section className="system-settings-legal-editor">
+                    <Typography.Title level={5}>正文编辑</Typography.Title>
+                    <Typography.Text
+                      type="secondary"
+                      className="system-settings-block-hint"
+                    >
+                      仅支持纯文本。使用空行分隔段落，使用“1. 标题”或“1、标题”生成小节标题。
+                    </Typography.Text>
+                    <Form.Item
+                      label={editingLegalDoc.title}
+                      name={editingLegalDoc.formName}
+                      rules={[
+                        {
+                          required: true,
+                          message: `请输入${editingLegalDoc.title}`,
+                        },
+                        {
+                          min: 20,
+                          message: "内容过短，请补充完整规则后再保存",
+                        },
+                        {
+                          max: 50000,
+                          message: "单份文档不能超过 50000 字",
+                        },
+                      ]}
+                    >
+                      <Input.TextArea
+                        showCount
+                        autoSize={{ minRows: 18, maxRows: 28 }}
+                        placeholder={`请输入${editingLegalDoc.title}正文`}
+                      />
+                    </Form.Item>
+                  </section>
+                  <section className="system-settings-legal-preview">
+                    <div className="system-settings-legal-preview-card">
+                      <Typography.Text
+                        type="secondary"
+                        className="system-settings-legal-preview-kicker"
+                      >
+                        公开页面预览
+                      </Typography.Text>
+                      <Typography.Title level={3}>
+                        {editingLegalDoc.title}
+                      </Typography.Title>
+                      <Typography.Paragraph type="secondary">
+                        版本：{legalVersionPreview} · 生效日期：
+                        {legalEffectiveDatePreview}
+                      </Typography.Paragraph>
+                      <div className="system-settings-legal-preview-content">
+                        {renderLegalPreviewBlocks(
+                          readComplianceValue(editingLegalDoc.formName),
+                        )}
+                        <p>
+                          运营主体：{readComplianceValue("companyName") ||
+                            "陕西禾泽云创科技有限公司"}
+                          。客服电话：{customerPhonePreview}。
+                          {customerEmailPreview
+                            ? `客服邮箱：${customerEmailPreview}。`
+                            : ""}
+                          {privacyEmailPreview
+                            ? `隐私保护邮箱：${privacyEmailPreview}。`
+                            : ""}
+                        </p>
+                      </div>
+                    </div>
+                  </section>
+                </div>
+              ) : null}
+            </Drawer>
+          </Form>
+        </TabPane>
+
         <TabPane tab="短信设置" key="5">
           <Form form={form} labelCol={{ span: 4 }} wrapperCol={{ span: 16 }}>
+            <Form.Item label="密钥状态">
+              <Space size={12}>
+                {renderSecretCustodyStatus(secretRuntimeReady.sms)}
+                <Typography.Text type="secondary">
+                  短信密钥由平台安全托管，后台不展示也不保存。
+                </Typography.Text>
+              </Space>
+            </Form.Item>
             <Form.Item label="服务商" name="sms_provider">
               <Input placeholder="如：阿里云、腾讯云等" />
-            </Form.Item>
-            <Form.Item label="AccessKey" name="sms_access_key">
-              <Input placeholder="请输入AccessKey" />
-            </Form.Item>
-            <Form.Item label="SecretKey" name="sms_secret_key">
-              <Input.Password placeholder="请输入SecretKey" />
             </Form.Item>
             <Form.Item label="签名" name="sms_sign_name">
               <Input placeholder="请输入短信签名" />
@@ -1680,6 +2391,14 @@ const SystemSettings: React.FC = () => {
         <TabPane tab="即时通信" key="6">
           <Form form={form} labelCol={{ span: 4 }} wrapperCol={{ span: 16 }}>
             <Divider orientation="left">腾讯云 IM</Divider>
+            <Form.Item label="密钥状态">
+              <Space size={12}>
+                {renderSecretCustodyStatus(secretRuntimeReady.im)}
+                <Typography.Text type="secondary">
+                  IM 签名密钥由平台安全托管，后台不展示也不保存。
+                </Typography.Text>
+              </Space>
+            </Form.Item>
             <Form.Item
               label="启用"
               name="im_tencent_enabled"
@@ -1693,13 +2412,6 @@ const SystemSettings: React.FC = () => {
               tooltip="在腾讯云控制台创建 IM 应用后获取"
             >
               <Input placeholder="如：1400123456" />
-            </Form.Item>
-            <Form.Item
-              label="SecretKey"
-              name="im_tencent_secret_key"
-              tooltip="用于后端生成 UserSig 签名，请妥善保管"
-            >
-              <Input.Password placeholder="请输入 SecretKey" />
             </Form.Item>
           </Form>
         </TabPane>
@@ -2071,7 +2783,7 @@ const SystemSettings: React.FC = () => {
       <AdminReauthModal
         open={reauthOpen}
         title="提交系统配置变更"
-        description="系统设置、支付开关、首页弹窗和业务配置属于高危修改，提交前必须再次认证。"
+        description="系统设置、支付开关、首页弹窗、对外内容和业务配置属于高危修改，提交前必须再次认证。"
         onCancel={() => {
           setReauthOpen(false);
           setPendingAction(null);

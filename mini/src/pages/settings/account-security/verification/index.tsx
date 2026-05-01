@@ -1,8 +1,9 @@
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
-import { Input, Text, View } from '@tarojs/components';
+import { Text, View } from '@tarojs/components';
 import React, { useMemo, useState } from 'react';
 
 import { Button } from '@/components/Button';
+import { Input } from '@/components/Input';
 import SettingsLayout, { SettingsGroup } from '@/components/settings/SettingsLayout';
 import {
   getUserVerification,
@@ -169,10 +170,10 @@ export default function AccountVerificationPage() {
               <Text className="real-name-page__label">真实姓名</Text>
               <Input
                 className="real-name-page__input"
-                maxlength={20}
+                maxLength={20}
                 placeholder="请输入本人姓名"
                 value={realName}
-                onInput={(event) => setRealName(event.detail.value)}
+                onChange={setRealName}
               />
               {realName.trim() && !isValidRealNameInput(realName) ? (
                 <Text className="real-name-page__field-error">姓名需为2-20位中文，可包含间隔点</Text>
@@ -182,10 +183,10 @@ export default function AccountVerificationPage() {
               <Text className="real-name-page__label">身份证号</Text>
               <Input
                 className="real-name-page__input"
-                maxlength={18}
+                maxLength={18}
                 placeholder="请输入18位身份证号"
                 value={idCard}
-                onInput={(event) => setIdCard(normalizeIDCardInput(event.detail.value))}
+                onChange={(value) => setIdCard(normalizeIDCardInput(value))}
               />
               {idCard && !isValidIDCardInput(idCard) ? (
                 <Text className="real-name-page__field-error">请填写正确的18位身份证号</Text>

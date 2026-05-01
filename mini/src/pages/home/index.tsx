@@ -1055,10 +1055,17 @@ export default function Home() {
                         variant="warning"
                         className="home-page__entity-status-tag"
                       >
-                        未入驻
+                        平台整理
                       </Tag>
                     ) : null}
                   </View>
+
+                  {shop.isSettled !== true ? (
+                    <View className="home-page__entity-tag-row">
+                      <Tag variant="warning">待商家认领</Tag>
+                      <Tag variant="secondary">信息仅供参考</Tag>
+                    </View>
+                  ) : null}
 
                   <View className="home-page__entity-meta-row">
                     <View className="home-page__entity-rating">

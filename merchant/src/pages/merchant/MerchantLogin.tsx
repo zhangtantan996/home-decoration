@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Form, Input, Button, message, Layout, Typography, Divider, Grid } from 'antd';
 import { PhoneOutlined, SafetyOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type MerchantLoginNextAction } from '../../services/merchantApi';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
@@ -12,14 +12,23 @@ import { readSafeErrorMessage } from '../../utils/userFacingText';
 const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
+const normalizeRedirectPath = (value: string | null) => {
+    if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/login')) {
+        return '';
+    }
+    return value;
+};
+
 const MerchantLogin: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
     const timerRef = useRef<number | null>(null);
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const screens = useBreakpoint();
     const [form] = Form.useForm();
+    const requestedPath = normalizeRedirectPath(searchParams.get('redirect'));
 
     // 手机号校验规则
     const phoneRules = [
@@ -202,6 +211,8 @@ const MerchantLogin: React.FC = () => {
                         ? '/material-shop/onboarding/completion'
                         : '/onboarding/completion'
                 );
+            } else if (requestedPath) {
+                navigate(requestedPath, { replace: true });
             } else if (merchantKind === 'material_shop' || provider?.merchantKind === 'material_shop') {
                 navigate('/material-shop/products');
             } else {

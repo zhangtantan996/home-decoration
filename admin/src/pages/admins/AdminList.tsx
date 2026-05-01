@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { App, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag } from 'antd';
+import { App, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip } from 'antd';
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 
 import AdminReauthModal from '../../components/AdminReauthModal';
@@ -7,6 +7,7 @@ import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
 import { ADMIN_PASSWORD_MIN_LENGTH } from '../../constants/security';
 import { adminManageApi, adminRoleApi } from '../../services/api';
+import { useAdaptiveTableScroll } from '../../hooks/useAdaptiveTableScroll';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Role {
@@ -208,22 +209,40 @@ const AdminList: React.FC = () => {
   const columns = [
     {
       title: 'ID',
+      key: 'id',
       dataIndex: 'id',
-      width: 80,
+      width: 112,
+      fixed: 'left' as const,
+      className: 'hz-table-id-cell',
+      render: (value: number) => value,
     },
     {
       title: '用户名',
+      key: 'username',
       dataIndex: 'username',
-      width: 140,
+      width: 160,
+      fixed: 'left' as const,
+      className: 'hz-table-cell-nowrap',
+      render: (value: string) => (
+        <Tooltip title={value || '-'}>
+          <span className="hz-table-ellipsis-text">{value || '-'}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '昵称',
+      key: 'nickname',
       dataIndex: 'nickname',
-      width: 120,
-      render: (value: string) => value || '-',
+      width: 140,
+      render: (value: string) => (
+        <Tooltip title={value || '-'}>
+          <span className="hz-table-ellipsis-text">{value || '-'}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '角色',
+      key: 'roles',
       dataIndex: 'roles',
       width: 220,
       render: (items: Role[], record: Admin) => {
@@ -234,7 +253,7 @@ const AdminList: React.FC = () => {
           return <Tag>无角色</Tag>;
         }
         return (
-          <Space size={4} wrap>
+          <Space size={4} className="hz-status-tag-line">
             {items.map((role) => (
               <Tag key={role.id} color="blue">
                 {role.name}
@@ -259,26 +278,38 @@ const AdminList: React.FC = () => {
     },
     {
       title: '在线会话',
+      key: 'sessionCount',
       dataIndex: 'sessionCount',
       width: 100,
+      className: 'hz-table-cell-nowrap',
       render: (value?: number) => value || 0,
     },
     {
       title: '最后登录',
+      key: 'lastLoginAt',
       dataIndex: 'lastLoginAt',
       width: 170,
+      className: 'hz-table-cell-nowrap',
       render: (value?: string) => formatServerDateTime(value),
     },
     {
       title: '最后登录 IP',
+      key: 'lastLoginIp',
       dataIndex: 'lastLoginIp',
       width: 150,
-      render: (value?: string) => value || '-',
+      className: 'hz-table-cell-nowrap',
+      render: (value?: string) => (
+        <Tooltip title={value || '-'}>
+          <span className="hz-table-ellipsis-text">{value || '-'}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '启停',
+      key: 'status',
       dataIndex: 'status',
       width: 120,
+      className: 'hz-table-cell-nowrap',
       render: (value: number, record: Admin) => (
         <Switch
           checked={value === 1}
@@ -291,17 +322,20 @@ const AdminList: React.FC = () => {
     },
     {
       title: '创建时间',
+      key: 'createdAt',
       dataIndex: 'createdAt',
       width: 170,
+      className: 'hz-table-cell-nowrap',
       render: (value: string) => formatServerDateTime(value),
     },
     {
       title: '操作',
       key: 'action',
-      width: 150,
+      width: 180,
       fixed: 'right' as const,
+      className: 'hz-table-action-cell',
       render: (_value: unknown, record: Admin) => (
-        <Space>
+        <Space size={6} className="hz-table-action-group">
           <Button type="link" size="small" onClick={() => handleEdit(record)}>
             编辑
           </Button>
@@ -314,6 +348,12 @@ const AdminList: React.FC = () => {
       ),
     },
   ];
+  const {
+    tableContainerRef,
+    tableClassName,
+    tableColumns,
+    tableScroll,
+  } = useAdaptiveTableScroll(columns, { growColumnKey: 'roles' });
 
   return (
     <div className="hz-page-stack">
@@ -345,21 +385,26 @@ const AdminList: React.FC = () => {
       </ToolbarCard>
 
       <Card className="hz-table-card">
-        <Table
-          loading={loading}
-          dataSource={admins}
-          columns={columns}
-          rowKey="id"
-          scroll={{ x: 1650 }}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            onChange: setPage,
-            showTotal: (value) => `共 ${value} 条`,
-            showSizeChanger: false,
-          }}
-        />
+        <div ref={tableContainerRef}>
+          <Table
+            className={tableClassName}
+            loading={loading}
+            dataSource={admins}
+            columns={tableColumns}
+            rowKey="id"
+            scroll={tableScroll}
+            tableLayout="fixed"
+            sticky
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              onChange: setPage,
+              showTotal: (value) => `共 ${value} 条`,
+              showSizeChanger: false,
+            }}
+          />
+        </div>
       </Card>
 
       <Modal

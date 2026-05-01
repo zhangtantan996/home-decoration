@@ -1,8 +1,8 @@
-import axios from 'axios';
-import { message } from 'antd';
-import { getApiBaseUrl, getLoginPath } from '../utils/env';
-import { useMerchantAuthStore } from '../stores/merchantAuthStore';
-import { toSafeUserFacingText } from '../utils/userFacingText';
+import axios from "axios";
+import { message } from "antd";
+import { getApiBaseUrl, getLoginPath, getRouterBasename } from "../utils/env";
+import { useMerchantAuthStore } from "../stores/merchantAuthStore";
+import { toSafeUserFacingText } from "../utils/userFacingText";
 
 const API_BASE_URL = getApiBaseUrl();
 
@@ -10,11 +10,11 @@ const api = axios.create({
   baseURL: API_BASE_URL,
   timeout: 10000,
   headers: {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   },
 });
 
-const MERCHANT_ERROR_STATUS_KEY = '__merchantHandledStatus';
+const MERCHANT_ERROR_STATUS_KEY = "__merchantHandledStatus";
 const ACCESS_DENIED_MESSAGE_COOLDOWN_MS = 3000;
 let lastAccessDeniedAt = 0;
 
@@ -30,9 +30,17 @@ export class MerchantRequestError<T = unknown> extends Error {
   errorCode?: string;
   data?: T;
 
-  constructor(message: string, options: { status?: number; code?: number; errorCode?: string; data?: T } = {}) {
+  constructor(
+    message: string,
+    options: {
+      status?: number;
+      code?: number;
+      errorCode?: string;
+      data?: T;
+    } = {},
+  ) {
     super(message);
-    this.name = 'MerchantRequestError';
+    this.name = "MerchantRequestError";
     this.status = options.status;
     this.code = options.code;
     this.errorCode = options.errorCode;
@@ -41,7 +49,7 @@ export class MerchantRequestError<T = unknown> extends Error {
 }
 
 const getApiErrorStatus = (error: unknown): number | undefined => {
-  if (typeof error !== 'object' || error === null || !('response' in error)) {
+  if (typeof error !== "object" || error === null || !("response" in error)) {
     return undefined;
   }
 
@@ -50,7 +58,7 @@ const getApiErrorStatus = (error: unknown): number | undefined => {
 };
 
 const markMerchantErrorHandled = (error: unknown, status: 401 | 403) => {
-  if (typeof error === 'object' && error !== null) {
+  if (typeof error === "object" && error !== null) {
     Object.defineProperty(error, MERCHANT_ERROR_STATUS_KEY, {
       value: status,
       configurable: true,
@@ -60,8 +68,10 @@ const markMerchantErrorHandled = (error: unknown, status: 401 | 403) => {
   }
 };
 
-export const getHandledMerchantStatus = (error: unknown): 401 | 403 | undefined => {
-  if (typeof error !== 'object' || error === null) {
+export const getHandledMerchantStatus = (
+  error: unknown,
+): 401 | 403 | undefined => {
+  if (typeof error !== "object" || error === null) {
     return undefined;
   }
 
@@ -80,7 +90,7 @@ const notifyMerchantAccessDenied = () => {
   }
 
   lastAccessDeniedAt = now;
-  message.error('无权限访问当前功能');
+  message.error("无权限访问当前功能");
 };
 
 const normalizeMerchantError = (error: unknown) => {
@@ -89,31 +99,81 @@ const normalizeMerchantError = (error: unknown) => {
   }
 
   const status = getApiErrorStatus(error);
-  const payload = typeof error === 'object' && error !== null && 'response' in error
-    ? ((error as { response?: { data?: MerchantErrorPayload } }).response?.data || undefined)
-    : undefined;
-  const errorCode = payload?.data && typeof payload.data === 'object' && 'errorCode' in payload.data
-    ? String(payload.data.errorCode || '')
-    : undefined;
+  const payload =
+    typeof error === "object" && error !== null && "response" in error
+      ? (error as { response?: { data?: MerchantErrorPayload } }).response
+          ?.data || undefined
+      : undefined;
+  const errorCode =
+    payload?.data &&
+    typeof payload.data === "object" &&
+    "errorCode" in payload.data
+      ? String(payload.data.errorCode || "")
+      : undefined;
 
-  return new MerchantRequestError(toSafeUserFacingText(payload?.message, '操作失败'), {
-    status,
-    code: payload?.code,
-    errorCode,
-    data: payload?.data,
-  });
+  const normalized = new MerchantRequestError(
+    toSafeUserFacingText(payload?.message, "操作失败"),
+    {
+      status,
+      code: payload?.code,
+      errorCode,
+      data: payload?.data,
+    },
+  );
+  const handledStatus = getHandledMerchantStatus(error);
+  if (handledStatus) {
+    markMerchantErrorHandled(normalized, handledStatus);
+  }
+  return normalized;
+};
+
+const buildMerchantLoginRedirect = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const basename = getRouterBasename();
+  const pathname = window.location.pathname;
+  const pathWithoutBase =
+    basename !== "/" && pathname.startsWith(basename)
+      ? pathname.slice(basename.length) || "/"
+      : pathname;
+  const current = `${pathWithoutBase}${window.location.search}`;
+  if (!current || current === "/" || current.startsWith("/login")) {
+    return "";
+  }
+  return `?redirect=${encodeURIComponent(current)}`;
+};
+
+const isMerchantSessionBoundaryError = (
+  status: number | undefined,
+  payload?: MerchantErrorPayload,
+) => {
+  if (status === 401) {
+    return true;
+  }
+  if (status !== 403) {
+    return false;
+  }
+  const token = localStorage.getItem("merchant_token");
+  const provider = localStorage.getItem("merchant_provider");
+  const messageText = String(payload?.message || "").trim();
+  return (
+    !token ||
+    !provider ||
+    /无权访问商家接口|Token类型不匹配|账号已被禁用/.test(messageText)
+  );
 };
 
 export const redirectToMerchantLogin = () => {
   useMerchantAuthStore.getState().logout();
 
-  if (typeof window === 'undefined') {
+  if (typeof window === "undefined") {
     return;
   }
 
   const loginPath = getLoginPath();
   if (window.location.pathname !== loginPath) {
-    window.location.replace(loginPath);
+    window.location.replace(`${loginPath}${buildMerchantLoginRedirect()}`);
   }
 };
 
@@ -133,9 +193,16 @@ api.interceptors.response.use(
   (error) => {
     const status = getApiErrorStatus(error);
 
-    if (status === 401) {
+    const payload =
+      typeof error === "object" && error !== null && "response" in error
+        ? (error as { response?: { data?: MerchantErrorPayload } }).response
+            ?.data || undefined
+        : undefined;
+
+    if (isMerchantSessionBoundaryError(status, payload)) {
       markMerchantErrorHandled(error, 401);
       redirectToMerchantLogin();
+      return Promise.reject(normalizeMerchantError(error));
     }
 
     if (status === 403) {

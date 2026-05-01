@@ -42,8 +42,15 @@ func setupMaterialShopServiceDB(t *testing.T) *gorm.DB {
 func createMaterialShopForTest(t *testing.T, db *gorm.DB, shop model.MaterialShop, activeProducts int) model.MaterialShop {
 	t.Helper()
 
+	shouldStayUnsettled := !shop.IsSettled
 	if err := db.Create(&shop).Error; err != nil {
 		t.Fatalf("create material shop: %v", err)
+	}
+	if shouldStayUnsettled {
+		if err := db.Model(&shop).Update("is_settled", false).Error; err != nil {
+			t.Fatalf("mark material shop unsettled: %v", err)
+		}
+		shop.IsSettled = false
 	}
 
 	for i := 0; i < activeProducts; i++ {
@@ -244,7 +251,7 @@ func TestMaterialShopServiceDetailReturnsPublicProductsAndUsesProductCoverFallba
 	}
 }
 
-func TestMaterialShopServiceListHidesUnsettledLeadShops(t *testing.T) {
+func TestMaterialShopServiceListShowsUnsettledLeadShopsAsReference(t *testing.T) {
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
@@ -268,14 +275,24 @@ func TestMaterialShopServiceListHidesUnsettledLeadShops(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list material shops: %v", err)
 	}
-	if total != 1 || len(list) != 1 {
-		t.Fatalf("expected only settled verified shop to remain visible, total=%d len=%d", total, len(list))
+	if total != 2 || len(list) != 2 {
+		t.Fatalf("expected settled shop and unsettled lead to remain visible, total=%d len=%d", total, len(list))
 	}
-	if list[0].Name != "正式入驻门店" {
-		t.Fatalf("unexpected visible shop: %+v", list[0])
+	if !containsMaterialShopName(list, "未入驻线索门店") {
+		t.Fatalf("expected unsettled lead to be visible, got=%v", list)
 	}
-	if list[0].Description != "" {
-		t.Fatalf("expected public list description to be blank, got=%q", list[0].Description)
+	for _, item := range list {
+		if item.Name == "未入驻线索门店" {
+			if item.IsVerified {
+				t.Fatalf("unsettled lead must not be exposed as verified: %+v", item)
+			}
+			if item.IsSettled {
+				t.Fatalf("unsettled lead must keep isSettled=false: %+v", item)
+			}
+		}
+		if item.Description != "" {
+			t.Fatalf("expected public list description to be blank, got=%q", item.Description)
+		}
 	}
 }
 

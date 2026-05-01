@@ -96,7 +96,7 @@ const toMaterialShopItem = (dto: MaterialShopDTO): MaterialShopItem => ({
   distance: String(dto.distance || '附近'),
   openTime: dto.openTime || '营业时间待补充',
   tags: normalizeStringArray(dto.tags),
-  isVerified: Boolean(dto.isVerified),
+  isVerified: dto.isSettled === true && Boolean(dto.isVerified),
   isSettled: dto.isSettled,
   products: Array.isArray(dto.products) ? dto.products.map(toMaterialShopProductItem) : [],
 });

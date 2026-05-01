@@ -7,6 +7,13 @@ interface PublicOnlyRouteProps {
   children: ReactNode;
 }
 
+function normalizeRedirectPath(value: string | null) {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/login')) {
+    return '/';
+  }
+  return value;
+}
+
 export function PublicOnlyRoute({ children }: PublicOnlyRouteProps) {
   const location = useLocation();
   const hasHydrated = useSessionStore((state) => state.hasHydrated);
@@ -24,7 +31,7 @@ export function PublicOnlyRoute({ children }: PublicOnlyRouteProps) {
 
   if (hasSession) {
     const redirect = new URLSearchParams(location.search).get('redirect');
-    return <Navigate replace to={redirect && redirect.startsWith('/') ? redirect : '/'} />;
+    return <Navigate replace to={normalizeRedirectPath(redirect)} />;
   }
 
   return <>{children}</>;

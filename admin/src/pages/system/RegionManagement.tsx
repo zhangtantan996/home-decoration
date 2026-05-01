@@ -349,6 +349,7 @@ const RegionManagement: React.FC = () => {
                     ),
                 }}
                 scroll={{ x: 760, y: 600 }}
+                sticky
             />
         </Card>
     );

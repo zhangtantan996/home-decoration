@@ -28,16 +28,16 @@ type VisibilityEntitySnapshot struct {
 }
 
 type VisibilityData struct {
-	CurrentLabel        string                   `json:"currentLabel"`
-	PublicVisible       bool                     `json:"publicVisible"`
-	Blockers            []VisibilityBlocker      `json:"blockers"`
-	DistributionStatus  string                   `json:"distributionStatus,omitempty"`
-	PrimaryBlockerCode  string                   `json:"primaryBlockerCode,omitempty"`
-	PrimaryBlockerMsg   string                   `json:"primaryBlockerMessage,omitempty"`
-	PlatformDisplayEditable bool                 `json:"platformDisplayEditable"`
-	MerchantDisplayEditable bool                 `json:"merchantDisplayEditable"`
-	PreviewAfterApprove *VisibilityPreview       `json:"previewAfterApprove"`
-	EntitySnapshot      VisibilityEntitySnapshot `json:"entitySnapshot"`
+	CurrentLabel            string                   `json:"currentLabel"`
+	PublicVisible           bool                     `json:"publicVisible"`
+	Blockers                []VisibilityBlocker      `json:"blockers"`
+	DistributionStatus      string                   `json:"distributionStatus,omitempty"`
+	PrimaryBlockerCode      string                   `json:"primaryBlockerCode,omitempty"`
+	PrimaryBlockerMsg       string                   `json:"primaryBlockerMessage,omitempty"`
+	PlatformDisplayEditable bool                     `json:"platformDisplayEditable"`
+	MerchantDisplayEditable bool                     `json:"merchantDisplayEditable"`
+	PreviewAfterApprove     *VisibilityPreview       `json:"previewAfterApprove"`
+	EntitySnapshot          VisibilityEntitySnapshot `json:"entitySnapshot"`
 }
 
 type VisibilityActions struct {
@@ -228,7 +228,7 @@ func (r *AdminVisibilityResolver) ResolveIdentityApplication(app model.IdentityA
 			previewBlockers = addBlocker(previewBlockers, "identity_only_not_profile_complete", "审核通过后会激活服务商身份，但商家资料未完成，仍不可公开")
 		}
 		if previewProvider.Status != 1 {
-			previewBlockers = addBlocker(previewBlockers, "provider_frozen", "审核通过后服务商状态异常，公开列表不可见")
+			previewBlockers = addBlocker(previewBlockers, "provider_frozen", "审核通过后服务商已下线，公开列表不可见")
 		}
 		if !previewProvider.Verified {
 			previewBlockers = addBlocker(previewBlockers, "provider_unverified", "审核通过后服务商未实名，公开列表不可见")
@@ -434,6 +434,9 @@ func resolveVisibilityDistributionStatus(data VisibilityData) string {
 	if data.PublicVisible {
 		return visibilityDistributionActive
 	}
+	if _, ok := findVisibilityBlocker(data.Blockers, "account_disabled"); ok {
+		return visibilityDistributionBlockedOperating
+	}
 	if _, ok := findVisibilityBlocker(data.Blockers, "provider_frozen"); ok {
 		return visibilityDistributionBlockedOperating
 	}
@@ -451,6 +454,7 @@ func resolveVisibilityDistributionStatus(data VisibilityData) string {
 
 func pickPrimaryVisibilityBlocker(blockers []VisibilityBlocker) (VisibilityBlocker, bool) {
 	priorities := []string{
+		"account_disabled",
 		"provider_frozen",
 		"shop_frozen",
 		"platform_hidden",

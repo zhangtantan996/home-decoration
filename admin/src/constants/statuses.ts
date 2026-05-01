@@ -429,12 +429,12 @@ export const VERIFICATION_STATUS_META: Record<string, { text: string; color: str
 
 export const ADMIN_PROVIDER_STATUS_META: Record<number, { text: string; color: string }> = {
   1: { text: '正常', color: 'green' },
-  0: { text: '封禁', color: 'red' },
+  0: { text: '已下线', color: 'red' },
 };
 
 export const ADMIN_PROVIDER_STATUS_OPTIONS: Array<{ value: number; label: string }> = [
   { value: 1, label: '正常' },
-  { value: 0, label: '封禁' },
+  { value: 0, label: '已下线' },
 ];
 
 export const PUBLIC_VISIBILITY_META: Record<string, { text: string; color: string }> = {
@@ -470,14 +470,14 @@ export const ACCOUNT_BOUND_STATUS_META: Record<string, { text: string; color: st
 
 export const ACCOUNT_STATUS_META: Record<string, { text: string; color: string }> = {
   unbound: { text: '未绑定', color: 'default' },
-  active: { text: '账号正常', color: 'green' },
-  disabled: { text: '账号已禁用', color: 'red' },
+  active: { text: '账号可用', color: 'green' },
+  disabled: { text: '账号禁用', color: 'red' },
 };
 
 export const ACCOUNT_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'unbound', label: '未绑定' },
-  { value: 'active', label: '账号正常' },
-  { value: 'disabled', label: '账号已禁用' },
+  { value: 'active', label: '账号可用' },
+  { value: 'disabled', label: '账号禁用' },
 ];
 
 export const LOGIN_ENABLED_STATUS_META: Record<string, { text: string; color: string }> = {
@@ -488,22 +488,22 @@ export const LOGIN_ENABLED_STATUS_META: Record<string, { text: string; color: st
 export const LOGIN_STATUS_META: Record<string, { text: string; color: string }> = {
   unbound: { text: '未绑定', color: 'default' },
   enabled: { text: '可登录', color: 'green' },
-  disabled_by_account: { text: '账号已禁用', color: 'red' },
-  disabled_by_entity: { text: '主体已封禁', color: 'orange' },
+  disabled_by_account: { text: '账号禁用', color: 'red' },
+  disabled_by_entity: { text: '主体已下线', color: 'orange' },
 };
 
 export const OPERATING_STATUS_META: Record<string, { text: string; color: string }> = {
   unopened: { text: '未开通', color: 'default' },
   restricted: { text: '受限', color: 'orange' },
   active: { text: '正常经营', color: 'green' },
-  frozen: { text: '已封禁', color: 'red' },
+  frozen: { text: '已下线', color: 'red' },
 };
 
 export const OPERATING_STATUS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'unopened', label: '未开通' },
   { value: 'restricted', label: '受限' },
   { value: 'active', label: '正常经营' },
-  { value: 'frozen', label: '已封禁' },
+  { value: 'frozen', label: '已下线' },
 ];
 
 export const ONBOARDING_STATUS_FILTER_OPTIONS: Array<{ value: string; label: string }> = [

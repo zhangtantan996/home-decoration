@@ -212,6 +212,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		// 智能报价询价 (公开接口，支持未登录用户)
 		v1.POST("/quote-inquiries", middleware.OptionalJWT(cfg.JWT.Secret), handler.CreateQuoteInquiry)
 		v1.GET("/quote-inquiries/:id", middleware.OptionalJWT(cfg.JWT.Secret), handler.GetQuoteInquiry)
+		v1.GET("/public/site-config", handler.GetPublicSiteConfig)
 		v1.GET("/public/mini/home-popup", handler.GetMiniHomePopup)
 
 		// 案例详情 (公开)
@@ -691,6 +692,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PATCH("/providers/:id/verify", providerEditPerm, handler.AdminVerifyProvider)
 			admin.PATCH("/providers/:id/status", providerEditPerm, handler.AdminUpdateProviderStatus)
 			admin.PATCH("/providers/:id/platform-display", providerEditPerm, handler.AdminUpdateProviderPlatformDisplay)
+			admin.PATCH("/providers/:id/availability", providerEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminSetProviderAvailability)
 			admin.POST("/providers/:id/claim-account", providerEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminClaimProviderAccount)
 			admin.POST("/providers/:id/complete-settlement", providerEditPerm, handler.AdminCompleteProviderSettlement)
 
@@ -712,6 +714,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PATCH("/material-shops/:id/verify", materialShopEditPerm, handler.AdminVerifyMaterialShop)
 			admin.PATCH("/material-shops/:id/status", materialShopEditPerm, handler.AdminUpdateMaterialShopStatus)
 			admin.PATCH("/material-shops/:id/platform-display", materialShopEditPerm, handler.AdminUpdateMaterialShopPlatformDisplay)
+			admin.PATCH("/material-shops/:id/availability", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminSetMaterialShopAvailability)
 			admin.POST("/material-shops/:id/complete-account", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCompleteMaterialShopAccount)
 
 			// 审核管理

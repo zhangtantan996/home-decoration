@@ -47,6 +47,7 @@ type HomepageMaterialShop struct {
 	MainProducts string  `json:"mainProducts"`
 	Address      string  `json:"address"`
 	IsVerified   bool    `json:"isVerified"`
+	IsSettled    bool    `json:"isSettled"`
 }
 
 type HomepageInspiration struct {
@@ -265,6 +266,7 @@ func (s *HomepageService) featuredMaterialShops(limit int) ([]HomepageMaterialSh
 
 	items := make([]HomepageMaterialShop, len(shops))
 	for i, shop := range shops {
+		settled := materialShopSettlementValue(&shop)
 		items[i] = HomepageMaterialShop{
 			ID:           shop.ID,
 			Type:         shop.Type,
@@ -274,7 +276,8 @@ func (s *HomepageService) featuredMaterialShops(limit int) ([]HomepageMaterialSh
 			Rating:       shop.Rating,
 			MainProducts: shop.MainProducts,
 			Address:      shop.Address,
-			IsVerified:   shop.IsVerified,
+			IsVerified:   settled && shop.IsVerified,
+			IsSettled:    settled,
 		}
 	}
 	return items, nil

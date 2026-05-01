@@ -50,7 +50,7 @@ export function MaterialShopCard({ shop }: MaterialShopCardProps) {
             <div className="pcard-cover-placeholder-copy">
               <strong>{buildCoverLabel(shop.name, 8)}</strong>
               <div className="pcard-cover-placeholder-meta">
-                <span>{isUnsettled ? '公开线索门店' : '主材品牌门店'}</span>
+                <span>{isUnsettled ? '平台整理门店' : '主材品牌门店'}</span>
                 <span>{supportingText || '支持到店选材'}</span>
               </div>
             </div>
@@ -64,14 +64,20 @@ export function MaterialShopCard({ shop }: MaterialShopCardProps) {
           />
         )}
         {isUnsettled
-          ? <div className="pcard-verified pcard-verified-reference">公开资料</div>
+          ? <div className="pcard-verified pcard-verified-reference">平台整理</div>
           : shop.isVerified ? <div className="pcard-verified">已认证</div> : null}
       </div>
       <div className="pcard-body">
         <div className="pcard-head">
           <div className="pcard-name">{shop.name}</div>
-          <span className="pcard-badge">主材门店</span>
+          <span className="pcard-badge">{isUnsettled ? '待商家认领' : '主材门店'}</span>
         </div>
+        {isUnsettled ? (
+          <div className="pcard-reference-note">
+            <span className="pcard-reference-note-label">信息仅供参考</span>
+            <span>平台整理公开资料，商家尚未认领入驻。</span>
+          </div>
+        ) : null}
         <div className="pcard-org">{shop.rating.toFixed(1)} 分 · {shop.reviewCount} 条评价 · {shop.distance || '到店咨询'}</div>
         <div className="pcard-supporting pcard-supporting-fixed">{supportingText || '支持到店选材'}</div>
         <div className="pcard-tags pcard-tags-fixed" aria-hidden={displayTags.length === 0}>

@@ -327,6 +327,7 @@ const PaymentOrderList: React.FC = () => {
             showTotal: (value) => `共 ${value} 条`,
           }}
           scroll={{ x: 1380 }}
+          sticky
         />
       </Card>
 

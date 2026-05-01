@@ -1,10 +1,8 @@
 -- 修复系统设置中文字段的编码问题
-UPDATE system_settings SET value = '家装管理平台' WHERE key = 'site_name';
-UPDATE system_settings SET value = '专业的家装服务管理系统' WHERE key = 'site_description';
-UPDATE system_settings SET value = '京ICP备12345678号' WHERE key = 'icp';
+UPDATE system_settings SET value = '禾泽云' WHERE key = 'site_name';
+UPDATE system_settings SET value = '家装服务撮合、交易流程管理与履约协同平台' WHERE key = 'site_description';
+UPDATE system_settings SET value = '陕ICP备2026004441号' WHERE key = 'icp';
 UPDATE system_settings SET description = '短信服务商（阿里云/腾讯云等）' WHERE key = 'sms_provider';
-UPDATE system_settings SET description = '短信服务AccessKey' WHERE key = 'sms_access_key';
-UPDATE system_settings SET description = '短信服务SecretKey' WHERE key = 'sms_secret_key';
 UPDATE system_settings SET description = '短信签名' WHERE key = 'sms_sign_name';
 UPDATE system_settings SET description = '短信模板ID' WHERE key = 'sms_template_id';
 UPDATE system_settings SET description = '是否允许用户注册' WHERE key = 'enable_registration';

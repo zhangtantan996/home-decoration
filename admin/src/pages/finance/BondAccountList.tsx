@@ -194,6 +194,7 @@ const BondAccountList: React.FC = () => {
           showTotal: (value) => `共 ${value} 条`,
         }}
         scroll={{ x: 980 }}
+        sticky
       />
 
       <Modal

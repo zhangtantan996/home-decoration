@@ -55,6 +55,13 @@ function CheckCircleIcon() {
 
 
 
+function normalizeRedirectPath(value: string | null) {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/login')) {
+    return '/';
+  }
+  return value;
+}
+
 export function LoginPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -68,8 +75,7 @@ export function LoginPage() {
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
 
-  const redirect = useMemo(() => searchParams.get('redirect') || '/', [searchParams]);
-  const safeRedirect = useMemo(() => (redirect.startsWith('/') ? redirect : '/'), [redirect]);
+  const safeRedirect = useMemo(() => normalizeRedirectPath(searchParams.get('redirect')), [searchParams]);
   const phoneError = phone.length > 0 && !phonePattern.test(phone) ? '请输入 11 位手机号' : '';
   const codeError = code.length > 0 && !codePattern.test(code) ? '请输入 6 位数字验证码' : '';
   const canSend = phonePattern.test(phone) && !sending && countdown === 0;

@@ -205,6 +205,7 @@ const AdminSecuritySettings: React.FC = () => {
           pagination={false}
           locale={{ emptyText: <Empty description="暂无在线会话" /> }}
           scroll={{ x: 980 }}
+          sticky
         />
       </Card>
 

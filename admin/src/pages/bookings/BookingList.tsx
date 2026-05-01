@@ -153,7 +153,8 @@ const BookingList: React.FC = () => {
                     dataSource={bookings}
                     rowKey="id"
                     loading={loading}
-                    scroll={{ x: 'max-content' }}
+                    scroll={{ x: 1500 }}
+                    sticky
                     pagination={{
                         current: page,
                         pageSize,

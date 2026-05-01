@@ -802,7 +802,6 @@ const OrderList: React.FC = () => {
       title: '操作',
       key: 'action',
       width: 96,
-      fixed: 'right',
       render: (_, record) => (
         <Button type="link" icon={<EyeOutlined />} onClick={() => void openDrawer(record)}>
           详情
@@ -902,6 +901,7 @@ const OrderList: React.FC = () => {
           dataSource={rows}
           columns={columns}
           scroll={{ x: 1400 }}
+          sticky
           locale={{ emptyText: <Empty description="暂无业务链路" /> }}
           pagination={{
             current: page,

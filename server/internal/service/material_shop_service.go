@@ -155,6 +155,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			}
 		}
 
+		settled := materialShopSettlementValue(&shop)
 		result[i] = MaterialShopListItem{
 			ID:                shop.ID,
 			Type:              shop.Type,
@@ -170,8 +171,8 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			Distance:          distance,
 			OpenTime:          shop.OpenTime,
 			Tags:              tags,
-			IsVerified:        shop.IsVerified,
-			IsSettled:         materialShopSettlementValue(&shop),
+			IsVerified:        settled && shop.IsVerified,
+			IsSettled:         settled,
 		}
 	}
 
@@ -230,6 +231,7 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		})
 	}
 
+	settled := materialShopSettlementValue(&shop)
 	return &MaterialShopListItem{
 		ID:                shop.ID,
 		Type:              shop.Type,
@@ -245,8 +247,8 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		Distance:          "—",
 		OpenTime:          shop.OpenTime,
 		Tags:              tags,
-		IsVerified:        shop.IsVerified,
-		IsSettled:         materialShopSettlementValue(&shop),
+		IsVerified:        settled && shop.IsVerified,
+		IsSettled:         settled,
 		Products:          productItems,
 	}, nil
 }

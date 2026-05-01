@@ -201,6 +201,7 @@ const WithdrawDetail: React.FC = () => {
           locale={{ emptyText: <Empty description="暂无关联收入记录" /> }}
           pagination={false}
           scroll={{ x: 980 }}
+          sticky
         />
       </Card>
     </div>

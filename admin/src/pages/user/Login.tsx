@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Card, Form, Input, Button, message, Typography, Alert } from 'antd';
 import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { adminAuthApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
 import type { AdminLoginStage, AdminSecurityStatus, AdminUser, MenuItem } from '../../stores/authStore';
@@ -45,14 +45,23 @@ const parseAdminLoginResponse = (payload: unknown): AdminLoginEnvelope | null =>
   };
 };
 
+const normalizeRedirectPath = (value: string | null) => {
+  if (!value || !value.startsWith('/') || value.startsWith('//') || value.startsWith('/login')) {
+    return '';
+  }
+  return value;
+};
+
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [otpRequired, setOtpRequired] = useState(false);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { token, admin, menus, security, setSession } = useAuthStore();
   const [form] = Form.useForm();
 
-  const nextPath = useMemo(() => pickAdminLandingPath(menus), [menus]);
+  const requestedPath = useMemo(() => normalizeRedirectPath(searchParams.get('redirect')), [searchParams]);
+  const nextPath = useMemo(() => requestedPath || pickAdminLandingPath(menus), [menus, requestedPath]);
 
   useEffect(() => {
     if (!token || !admin) {
@@ -96,7 +105,7 @@ const Login: React.FC = () => {
     }
 
     message.success('登录成功');
-    navigate(pickAdminLandingPath(payload.menus || []), { replace: true });
+    navigate(requestedPath || pickAdminLandingPath(payload.menus || []), { replace: true });
   };
 
   const onFinish = async (values: { username: string; password: string; otpCode?: string }) => {

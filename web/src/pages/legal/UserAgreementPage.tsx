@@ -1,25 +1,5 @@
+import { LegalDocumentPage } from './LegalDocumentPage';
+
 export function UserAgreementPage() {
-  return (
-    <div className="container page-stack legal-page">
-      <section className="card section-card legal-shell">
-        <p className="kicker eyebrow-accent">用户协议</p>
-        <h1 className="page-title">禾泽云用户服务协议</h1>
-        <div className="legal-prose">
-          <p>欢迎使用禾泽云装修服务。你在本平台登录、预约、查看报价、跟踪项目与接收通知时，即表示同意按照本协议使用平台能力。</p>
-          <h2>1. 服务范围</h2>
-          <p>平台提供服务商浏览、预约提交、报价确认、项目进度查看、站内通知等功能。平台负责提供信息展示和流程留痕，不替代双方在线下签署的补充协议与法定责任。</p>
-          <h2>2. 账户使用</h2>
-          <p>你应使用本人手机号登录并妥善保管验证码和会话信息。任何通过你的登录态发起的预约、确认、支付或验收动作，平台将视为你本人操作。</p>
-          <h2>3. 业务数据</h2>
-          <p>你提交的地址、预算、施工需求、预约时间、报价确认、项目里程碑等记录，将作为业务处理、通知提醒、纠纷留痕与服务改进的依据。</p>
-          <h2>4. 平台边界</h2>
-          <p>平台会尽力核验服务商公开信息与流程状态，但不对线下额外约定、未留存在站内的口头承诺承担担保义务。</p>
-          <h2>5. 违规与限制</h2>
-          <p>若发现恶意注册、虚假预约、骚扰服务商、恶意拖欠或绕开平台留痕的行为，平台有权限制相关账号的访问与操作能力。</p>
-          <h2>6. 协议更新</h2>
-          <p>平台可能根据产品、法规或服务流程更新本协议。继续使用即表示接受更新后的版本。</p>
-        </div>
-      </section>
-    </div>
-  );
+  return <LegalDocumentPage slug="user-agreement" />;
 }

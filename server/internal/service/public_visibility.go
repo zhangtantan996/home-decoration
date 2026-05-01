@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"sync"
@@ -14,6 +15,9 @@ func IsProviderPublicVisible(provider *model.Provider) bool {
 	if provider == nil {
 		return false
 	}
+	if !boundUserAccountActive(provider.UserID) {
+		return false
+	}
 	if !providerPlatformDisplayEnabled(provider) || !providerMerchantDisplayEnabled(provider) {
 		return false
 	}
@@ -21,12 +25,15 @@ func IsProviderPublicVisible(provider *model.Provider) bool {
 		return provider.Verified && provider.Status == 1
 	}
 	if !providerSettlementValue(provider) {
-		return provider.Status == 1 // 未入驻：只要未封禁就可见
+		return provider.Status == 1 // 未入驻：只要未下线就可见
 	}
 	return provider.Verified && provider.Status == 1
 }
 
 func applyVisibleProviderFilter(db *gorm.DB) *gorm.DB {
+	if supportsUserAccountPublicVisibility() {
+		db = db.Where("NOT EXISTS (SELECT 1 FROM users AS public_provider_users WHERE public_provider_users.id = providers.user_id AND public_provider_users.status <> ?)", 1)
+	}
 	if supportsProviderPlatformDisplayEnabled() {
 		db = db.Where("providers.platform_display_enabled = ?", true)
 	}
@@ -57,6 +64,9 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 	if provider == nil {
 		return finalizeProviderVisibilityData(provider, addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成服务商实体"))
 	}
+	if !boundUserAccountActive(provider.UserID) {
+		result = addPublicVisibilityBlocker(result, "account_disabled", "绑定账号禁用，公开列表不可见")
+	}
 	if !providerPlatformDisplayEnabled(provider) {
 		result = addPublicVisibilityBlocker(result, "platform_hidden", "平台已下线该服务商")
 	}
@@ -68,14 +78,14 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 			result = addPublicVisibilityBlocker(result, "provider_unverified", "服务商未实名通过，公开列表不可见")
 		}
 		if provider.Status != 1 {
-			result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商状态异常（冻结/停用），公开列表不可见")
+			result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商已下线，公开列表不可见")
 		}
 		return finalizeProviderVisibilityData(provider, result)
 	}
 	if !providerSettlementValue(provider) {
 		// 未入驻商家仅检查 status
 		if provider.Status != 1 {
-			result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商状态异常（冻结/停用），公开列表不可见")
+			result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商已下线，公开列表不可见")
 		}
 		return finalizeProviderVisibilityData(provider, result)
 	}
@@ -83,7 +93,7 @@ func EvaluateProviderPublicVisibility(provider *model.Provider) VisibilityData {
 		result = addPublicVisibilityBlocker(result, "provider_unverified", "服务商未实名通过，公开列表不可见")
 	}
 	if provider.Status != 1 {
-		result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商状态异常（冻结/停用），公开列表不可见")
+		result = addPublicVisibilityBlocker(result, "provider_frozen", "服务商已下线，公开列表不可见")
 	}
 	return finalizeProviderVisibilityData(provider, result)
 }
@@ -122,6 +132,9 @@ func IsMaterialShopPublicVisible(shop *model.MaterialShop, activeProductCount in
 	if shop == nil {
 		return false
 	}
+	if !boundUserAccountActive(shop.UserID) {
+		return false
+	}
 	if !materialShopPlatformDisplayEnabled(shop) || !materialShopMerchantDisplayEnabled(shop) {
 		return false
 	}
@@ -132,12 +145,15 @@ func IsMaterialShopPublicVisible(shop *model.MaterialShop, activeProductCount in
 		return shop.IsVerified
 	}
 	if !materialShopSettlementValue(shop) {
-		return false
+		return true
 	}
 	return shop.IsVerified
 }
 
 func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
+	if supportsUserAccountPublicVisibility() {
+		db = db.Where("NOT EXISTS (SELECT 1 FROM users AS public_material_shop_users WHERE public_material_shop_users.id = material_shops.user_id AND public_material_shop_users.status <> ?)", 1)
+	}
 	if supportsMaterialShopPlatformDisplayEnabled() {
 		db = db.Where("material_shops.platform_display_enabled = ?", true)
 	}
@@ -146,14 +162,17 @@ func applyVisibleMaterialShopFilter(db *gorm.DB) *gorm.DB {
 	}
 	if !supportsMaterialShopStatus() {
 		if !supportsMaterialShopSettlementVisibility() {
-			return db.Where("is_verified = ?", true)
+			return db.Where("material_shops.is_verified = ?", true)
 		}
-		return db.Where("is_settled = ? AND is_verified = ?", true, true)
+		return db.Where("(material_shops.is_settled = ?) OR (material_shops.is_settled = ? AND material_shops.is_verified = ?)", false, true, true)
 	}
 	if !supportsMaterialShopSettlementVisibility() {
-		return db.Where("is_verified = ? AND status = ?", true, 1)
+		return db.Where("material_shops.is_verified = ? AND (material_shops.status = ? OR material_shops.status IS NULL)", true, 1)
 	}
-	return db.Where("is_settled = ? AND is_verified = ? AND status = ?", true, true, 1)
+	return db.Where(
+		"((material_shops.is_settled = ? AND (material_shops.status = ? OR material_shops.status IS NULL)) OR (material_shops.is_settled = ? AND material_shops.is_verified = ? AND (material_shops.status = ? OR material_shops.status IS NULL)))",
+		false, 1, true, true, 1,
+	)
 }
 
 func ApplyPublicMaterialShopFilter(db *gorm.DB) *gorm.DB {
@@ -171,6 +190,9 @@ func EvaluateMaterialShopPublicVisibility(shop *model.MaterialShop, activeProduc
 	if shop == nil {
 		return finalizeMaterialShopVisibilityData(shop, addPublicVisibilityBlocker(result, "entity_not_created", "尚未生成主材商实体"))
 	}
+	if !boundUserAccountActive(shop.UserID) {
+		result = addPublicVisibilityBlocker(result, "account_disabled", "绑定账号禁用，公开列表不可见")
+	}
 	if !materialShopPlatformDisplayEnabled(shop) {
 		result = addPublicVisibilityBlocker(result, "platform_hidden", "平台已下线该主材商")
 	}
@@ -178,10 +200,7 @@ func EvaluateMaterialShopPublicVisibility(shop *model.MaterialShop, activeProduc
 		result = addPublicVisibilityBlocker(result, "merchant_hidden", "商家已手动下线")
 	}
 	if materialShopStatusEnabled(shop) && !IsMaterialShopActive(shop) {
-		result = addPublicVisibilityBlocker(result, "shop_frozen", "主材门店已被封禁，公开列表不可见")
-	}
-	if supportsMaterialShopSettlementVisibility() && !materialShopSettlementValue(shop) {
-		result = addPublicVisibilityBlocker(result, "shop_unsettled", "未正式入驻的主材线索不进入公开交易视图")
+		result = addPublicVisibilityBlocker(result, "shop_frozen", "主材门店已下线，公开列表不可见")
 	}
 	if supportsMaterialShopSettlementVisibility() && materialShopSettlementValue(shop) && !shop.IsVerified {
 		result = addPublicVisibilityBlocker(result, "shop_unverified", "主材商未完成认证，公开列表不可见")
@@ -233,6 +252,9 @@ func applyVisibleInspirationCaseFilter(db *gorm.DB) *gorm.DB {
 	}
 	filtered := db.Joins("LEFT JOIN providers ON providers.id = provider_cases.provider_id").
 		Where("provider_cases.show_in_inspiration = ?", true)
+	if supportsUserAccountPublicVisibility() {
+		filtered = filtered.Where("(provider_cases.provider_id = 0) OR NOT EXISTS (SELECT 1 FROM users AS public_case_provider_users WHERE public_case_provider_users.id = providers.user_id AND public_case_provider_users.status <> ?)", 1)
+	}
 	if supportsProviderPlatformDisplayEnabled() {
 		filtered = filtered.Where("(provider_cases.provider_id = 0) OR (providers.platform_display_enabled = ?)", true)
 	}
@@ -388,6 +410,28 @@ func SupportsMaterialShopMerchantDisplayEnabled() bool {
 	return supportsMaterialShopMerchantDisplayEnabled()
 }
 
+func boundUserAccountActive(userID uint64) bool {
+	if userID == 0 {
+		return true
+	}
+	if repository.DB == nil || !supportsUserAccountPublicVisibility() {
+		return true
+	}
+
+	var user model.User
+	if err := repository.DB.Select("id", "status").First(&user, userID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return true
+		}
+		return false
+	}
+	return user.Status == 1
+}
+
+func supportsUserAccountPublicVisibility() bool {
+	return cachedHasTable("users_table", &model.User{})
+}
+
 func cachedHasColumn(cacheKey string, schema any, column string) bool {
 	if cached, ok := publicVisibilitySchemaCache.Load(cacheKey); ok {
 		return cached.(bool)
@@ -398,4 +442,16 @@ func cachedHasColumn(cacheKey string, schema any, column string) bool {
 	hasColumn := repository.DB.Migrator().HasColumn(schema, column)
 	publicVisibilitySchemaCache.Store(cacheKey, hasColumn)
 	return hasColumn
+}
+
+func cachedHasTable(cacheKey string, schema any) bool {
+	if cached, ok := publicVisibilitySchemaCache.Load(cacheKey); ok {
+		return cached.(bool)
+	}
+	if repository.DB == nil {
+		return false
+	}
+	hasTable := repository.DB.Migrator().HasTable(schema)
+	publicVisibilitySchemaCache.Store(cacheKey, hasTable)
+	return hasTable
 }

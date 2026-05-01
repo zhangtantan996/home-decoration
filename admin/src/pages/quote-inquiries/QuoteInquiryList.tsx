@@ -174,7 +174,6 @@ const QuoteInquiryList: React.FC = () => {
       title: '操作',
       key: 'actions',
       width: 90,
-      fixed: 'right',
       render: (_value, record) => (
         <Button
           type="link"
@@ -252,6 +251,7 @@ const QuoteInquiryList: React.FC = () => {
           dataSource={inquiries}
           loading={loading}
           scroll={{ x: 1500 }}
+          sticky
           pagination={{
             current: page,
             pageSize,

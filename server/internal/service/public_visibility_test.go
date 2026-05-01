@@ -24,7 +24,7 @@ func setupPublicVisibilitySchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.Provider{}, &model.MaterialShop{}, &model.ProviderCase{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}, &model.ProviderCase{}); err != nil {
 		t.Fatalf("auto migrate public visibility schema: %v", err)
 	}
 
@@ -40,6 +40,71 @@ func setupPublicVisibilitySchema(t *testing.T) {
 		publicVisibilitySchemaCache = sync.Map{}
 		_ = sqlDB.Close()
 	})
+}
+
+func TestEvaluateProviderPublicVisibilityBlocksDisabledAccount(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	user := model.User{Phone: "18800000001", Status: 0}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := repository.DB.Model(&user).Update("status", 0).Error; err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+
+	result := EvaluateProviderPublicVisibility(&model.Provider{
+		UserID:                 user.ID,
+		Verified:               true,
+		Status:                 1,
+		IsSettled:              true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	})
+	if result.PublicVisible {
+		t.Fatalf("expected disabled account provider hidden")
+	}
+	if !hasBlockerCode(result.Blockers, "account_disabled") {
+		t.Fatalf("expected account_disabled blocker, got %+v", result.Blockers)
+	}
+	if result.DistributionStatus != visibilityDistributionBlockedOperating {
+		t.Fatalf("expected blocked_by_operating distribution, got %+v", result)
+	}
+	if result.PrimaryBlockerCode != "account_disabled" {
+		t.Fatalf("expected account_disabled primary blocker, got %+v", result)
+	}
+}
+
+func TestApplyPublicProviderFilterExcludesDisabledAccount(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	activeUser := model.User{Phone: "18800000011", Status: 1}
+	disabledUser := model.User{Phone: "18800000012", Status: 1}
+	if err := repository.DB.Create(&activeUser).Error; err != nil {
+		t.Fatalf("create active user: %v", err)
+	}
+	if err := repository.DB.Create(&disabledUser).Error; err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+	if err := repository.DB.Model(&disabledUser).Update("status", 0).Error; err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+
+	providers := []model.Provider{
+		{UserID: activeUser.ID, Verified: true, Status: 1, IsSettled: true, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+		{UserID: disabledUser.ID, Verified: true, Status: 1, IsSettled: true, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+	}
+	if err := repository.DB.Create(&providers).Error; err != nil {
+		t.Fatalf("create providers: %v", err)
+	}
+
+	var visible []model.Provider
+	if err := ApplyPublicProviderFilter(repository.DB.Model(&model.Provider{})).Find(&visible).Error; err != nil {
+		t.Fatalf("apply provider filter: %v", err)
+	}
+	if len(visible) != 1 || visible[0].UserID != activeUser.ID {
+		t.Fatalf("expected only active account provider visible, got %+v", visible)
+	}
 }
 
 func TestEvaluateProviderPublicVisibility(t *testing.T) {
@@ -143,6 +208,17 @@ func TestEvaluateMaterialShopPublicVisibility(t *testing.T) {
 		t.Fatalf("expected visible material shop, got %+v", visible)
 	}
 
+	unsettledLead := EvaluateMaterialShopPublicVisibility(&model.MaterialShop{
+		IsVerified:             false,
+		IsSettled:              false,
+		Status:                 materialShopStatusPtr(1),
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}, 0)
+	if !unsettledLead.PublicVisible || len(unsettledLead.Blockers) != 0 {
+		t.Fatalf("expected unsettled material shop lead visible, got %+v", unsettledLead)
+	}
+
 	hidden := EvaluateMaterialShopPublicVisibility(&model.MaterialShop{
 		IsVerified:             false,
 		IsSettled:              true,
@@ -154,6 +230,107 @@ func TestEvaluateMaterialShopPublicVisibility(t *testing.T) {
 	}
 	if !hasBlockerCode(hidden.Blockers, "shop_unverified") {
 		t.Fatalf("expected material shop blockers, got %+v", hidden.Blockers)
+	}
+}
+
+func TestEvaluateMaterialShopPublicVisibilityBlocksDisabledAccount(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	user := model.User{Phone: "18800000002", Status: 0}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	if err := repository.DB.Model(&user).Update("status", 0).Error; err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+
+	result := EvaluateMaterialShopPublicVisibility(&model.MaterialShop{
+		UserID:                 user.ID,
+		IsVerified:             true,
+		IsSettled:              true,
+		Status:                 materialShopStatusPtr(1),
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}, 4)
+	if result.PublicVisible {
+		t.Fatalf("expected disabled account material shop hidden")
+	}
+	if !hasBlockerCode(result.Blockers, "account_disabled") {
+		t.Fatalf("expected account_disabled blocker, got %+v", result.Blockers)
+	}
+	if result.DistributionStatus != visibilityDistributionBlockedOperating {
+		t.Fatalf("expected blocked_by_operating distribution, got %+v", result)
+	}
+	if result.PrimaryBlockerCode != "account_disabled" {
+		t.Fatalf("expected account_disabled primary blocker, got %+v", result)
+	}
+}
+
+func TestApplyPublicMaterialShopFilterExcludesDisabledAccount(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	activeUser := model.User{Phone: "18800000021", Status: 1}
+	disabledUser := model.User{Phone: "18800000022", Status: 1}
+	if err := repository.DB.Create(&activeUser).Error; err != nil {
+		t.Fatalf("create active user: %v", err)
+	}
+	if err := repository.DB.Create(&disabledUser).Error; err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+	if err := repository.DB.Model(&disabledUser).Update("status", 0).Error; err != nil {
+		t.Fatalf("disable user: %v", err)
+	}
+
+	activeStatus := int8(1)
+	shops := []model.MaterialShop{
+		{UserID: activeUser.ID, IsVerified: true, IsSettled: true, Status: &activeStatus, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+		{UserID: disabledUser.ID, IsVerified: true, IsSettled: true, Status: &activeStatus, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+	}
+	if err := repository.DB.Create(&shops).Error; err != nil {
+		t.Fatalf("create material shops: %v", err)
+	}
+	if err := repository.DB.Model(&model.MaterialShop{}).
+		Where("id IN ?", []uint64{shops[0].ID, shops[1].ID}).
+		Update("is_settled", false).Error; err != nil {
+		t.Fatalf("mark material shop unsettled: %v", err)
+	}
+	var visible []model.MaterialShop
+	if err := ApplyPublicMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).Find(&visible).Error; err != nil {
+		t.Fatalf("apply material shop filter: %v", err)
+	}
+	if len(visible) != 1 || visible[0].UserID != activeUser.ID {
+		t.Fatalf("expected only active account material shop visible, got %+v", visible)
+	}
+}
+
+func TestApplyPublicMaterialShopFilterIncludesUnsettledLeads(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	activeStatus := int8(1)
+	hiddenStatus := int8(0)
+	shops := []model.MaterialShop{
+		{IsVerified: false, IsSettled: false, Status: &activeStatus, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+		{IsVerified: false, IsSettled: false, Status: &hiddenStatus, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+		{IsVerified: false, IsSettled: true, Status: &activeStatus, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true},
+	}
+	if err := repository.DB.Create(&shops).Error; err != nil {
+		t.Fatalf("create material shops: %v", err)
+	}
+	if err := repository.DB.Model(&model.MaterialShop{}).
+		Where("id IN ?", []uint64{shops[0].ID, shops[1].ID}).
+		Update("is_settled", false).Error; err != nil {
+		t.Fatalf("mark material shop unsettled: %v", err)
+	}
+	if err := repository.DB.Exec("UPDATE material_shops SET status = ? WHERE id = ?", 0, shops[1].ID).Error; err != nil {
+		t.Fatalf("freeze material shop: %v", err)
+	}
+
+	var visible []model.MaterialShop
+	if err := ApplyPublicMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).Order("id ASC").Find(&visible).Error; err != nil {
+		t.Fatalf("apply material shop filter: %v", err)
+	}
+	if len(visible) != 1 || visible[0].IsSettled {
+		t.Fatalf("expected only active unsettled material lead visible, got %+v", visible)
 	}
 }
 

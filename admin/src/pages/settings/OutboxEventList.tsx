@@ -195,7 +195,6 @@ const OutboxEventList: React.FC = () => {
     {
       title: '操作',
       width: 210,
-      fixed: 'right',
       render: (_, record) => (
         <Space>
           <Button size="small" onClick={() => openDetail(record)}>详情</Button>
@@ -245,6 +244,7 @@ const OutboxEventList: React.FC = () => {
           columns={columns}
           dataSource={records}
           scroll={{ x: 1350 }}
+          sticky
           pagination={{
             current: page,
             pageSize,

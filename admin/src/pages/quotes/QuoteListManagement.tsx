@@ -620,7 +620,6 @@ const QuoteListManagement: React.FC = () => {
       title: "操作",
       key: "actions",
       width: 260,
-      fixed: "right",
       render: (_value, record) => (
         <Space size={0}>
           <Button type="link" onClick={() => void openDetail(record.id)}>
@@ -770,6 +769,7 @@ const QuoteListManagement: React.FC = () => {
           dataSource={filteredRows}
           pagination={{ pageSize: 10, showSizeChanger: false }}
           scroll={{ x: 1280 }}
+          sticky
         />
       </Card>
 

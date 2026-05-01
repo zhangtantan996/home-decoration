@@ -153,6 +153,8 @@ export function PublicAppLayout() {
           <div className={styles.footerLinks}>
             <Link to="/legal/user-agreement">用户协议</Link>
             <Link to="/legal/privacy-policy">隐私政策</Link>
+            <Link to="/legal/transaction-rules">交易规则</Link>
+            <Link to="/legal/refund-rules">退款售后</Link>
           </div>
         </div>
       </footer>

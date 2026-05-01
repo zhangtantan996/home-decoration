@@ -1,10 +1,19 @@
-import React, { useEffect, useRef } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { Button, Result, Spin } from 'antd';
-import { adminAuthApi } from '../services/api';
-import { useAuthStore, type AdminSecurityStatus, type AdminUser, type MenuItem } from '../stores/authStore';
-import { usePermission } from '../hooks/usePermission';
-import { pickAdminLandingPath } from '../utils/adminNavigation';
+import React, { useEffect, useRef } from "react";
+import { Navigate, createSearchParams, useLocation } from "react-router-dom";
+import { Button, Result, Spin } from "antd";
+import {
+  adminAuthApi,
+  getHandledAdminStatus,
+  redirectToAdminLogin,
+} from "../services/api";
+import {
+  useAuthStore,
+  type AdminSecurityStatus,
+  type AdminUser,
+  type MenuItem,
+} from "../stores/authStore";
+import { usePermission } from "../hooks/usePermission";
+import { pickAdminLandingPath } from "../utils/adminNavigation";
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -45,14 +54,14 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }, [bootstrapStatus]);
 
   useEffect(() => {
-    if (!token || !admin || bootstrapStatusRef.current !== 'idle') {
+    if (!token || !admin || bootstrapStatusRef.current !== "idle") {
       return;
     }
 
     let cancelled = false;
 
     const bootstrap = async () => {
-      setBootstrapStatus('loading');
+      setBootstrapStatus("loading");
       try {
         const res = (await adminAuthApi.getInfo()) as {
           code?: number;
@@ -69,17 +78,24 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
           accessToken: res.data.accessToken,
           refreshToken: res.data.refreshToken,
           admin: res.data.admin,
-          permissions: Array.isArray(res.data.permissions) ? res.data.permissions : [],
+          permissions: Array.isArray(res.data.permissions)
+            ? res.data.permissions
+            : [],
           menus: Array.isArray(res.data.menus) ? res.data.menus : [],
           security: res.data.security ?? null,
         });
-      } catch {
+      } catch (error) {
         if (!cancelled) {
+          const handledStatus = getHandledAdminStatus(error);
+          if (handledStatus === 401) {
+            redirectToAdminLogin();
+            return;
+          }
           logout();
         }
       } finally {
         if (!cancelled) {
-          setBootstrapStatus('ready');
+          setBootstrapStatus("ready");
         }
       }
     };
@@ -92,29 +108,34 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
   }, [admin, logout, setBootstrapStatus, setSession, token]);
 
   if (!token || !admin) {
-    return <Navigate to="/login" replace />;
+    const redirect = `${location.pathname}${location.search}`;
+    const search =
+      redirect && redirect !== "/"
+        ? `?${createSearchParams({ redirect })}`
+        : "";
+    return <Navigate to={`/login${search}`} replace />;
   }
 
-  if (bootstrapStatus === 'idle' || bootstrapStatus === 'loading') {
+  if (bootstrapStatus === "idle" || bootstrapStatus === "loading") {
     return (
-      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center' }}>
-        <div style={{ textAlign: 'center' }}>
+      <div className="admin-route-loading">
+        <div className="admin-route-loading__inner">
           <Spin size="large" />
-          <div style={{ marginTop: 16, color: '#64748b' }}>正在校验管理员会话...</div>
+          <div className="admin-route-loading__text">正在校验管理员会话...</div>
         </div>
       </div>
     );
   }
 
-  const isSetupRoute = location.pathname.startsWith('/security/setup');
+  const isSetupRoute = location.pathname.startsWith("/security/setup");
   const loginStage = security?.loginStage;
   const landingPath = pickAdminLandingPath(menus);
 
-  if (loginStage === 'setup_required' && !isSetupRoute) {
+  if (loginStage === "setup_required" && !isSetupRoute) {
     return <Navigate to="/security/setup" replace />;
   }
 
-  if (loginStage === 'active' && isSetupRoute) {
+  if (loginStage === "active" && isSetupRoute) {
     return <Navigate to={landingPath} replace />;
   }
 
@@ -137,11 +158,11 @@ const ProtectedRoute: React.FC<ProtectedRouteProps> = ({
         status="403"
         title="403"
         subTitle="抱歉，您没有权限访问此页面"
-        extra={(
+        extra={
           <Button type="primary" onClick={() => window.history.back()}>
             返回上一页
           </Button>
-        )}
+        }
       />
     );
   }

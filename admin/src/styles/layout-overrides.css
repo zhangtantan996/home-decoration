@@ -72,7 +72,7 @@ body {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--hz-muted);
-  background: #f8f9fb;
+  background: color-mix(in srgb, var(--hz-page) 70%, var(--hz-surface));
   border-bottom: 1px solid var(--hz-border);
 }
 
@@ -81,7 +81,7 @@ body {
 }
 
 .ant-descriptions-bordered .ant-descriptions-item-label {
-  background: #f8f9fb;
+  background: color-mix(in srgb, var(--hz-page) 70%, var(--hz-surface));
   color: var(--hz-muted);
   font-size: 0.82rem;
   font-weight: 500;
@@ -416,6 +416,55 @@ body {
 .hz-table-card .ant-table-wrapper {
   min-width: 0;
   width: 100%;
+}
+
+.hz-table-card .hz-adaptive-table--compact .ant-table,
+.hz-table-card .hz-adaptive-table--compact .ant-table-container,
+.hz-table-card .hz-adaptive-table--compact .ant-table-content {
+  width: 100%;
+  max-width: 100%;
+}
+
+.hz-table-card .hz-adaptive-table--compact table {
+  width: 100% !important;
+  min-width: 100% !important;
+}
+
+.hz-table-card .ant-table-content,
+.hz-table-card .ant-table-body {
+  overflow-x: auto !important;
+}
+
+.hz-table-card .ant-table-content::-webkit-scrollbar,
+.hz-table-card .ant-table-body::-webkit-scrollbar {
+  height: 10px;
+}
+
+.hz-table-card .ant-table-content::-webkit-scrollbar-thumb,
+.hz-table-card .ant-table-body::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--hz-muted) 36%, transparent);
+  border-radius: 999px;
+}
+
+.hz-table-card .ant-table-content::-webkit-scrollbar-track,
+.hz-table-card .ant-table-body::-webkit-scrollbar-track {
+  background: var(--hz-border-soft);
+  border-radius: 999px;
+}
+
+.hz-table-card .ant-table-sticky-scroll {
+  height: 14px !important;
+  background: var(--hz-border-soft);
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--hz-border);
+  opacity: 1;
+  z-index: 4;
+}
+
+.hz-table-card .ant-table-sticky-scroll-bar {
+  height: 10px !important;
+  background: var(--hz-accent);
+  border-radius: 999px;
 }
 
 .hz-table-card .ant-table-pagination {
@@ -1323,4 +1372,143 @@ body {
     width: 100%;
     min-width: 0;
   }
+}
+
+.user-list-column-settings {
+  width: 220px;
+}
+
+.provider-list-column-settings {
+  width: 220px;
+}
+
+.provider-list-governance-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.provider-list-governance-hint .ant-tag {
+  flex: 0 0 auto;
+}
+
+.provider-list-governance-action {
+  display: block;
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.provider-list-availability {
+  min-width: 104px;
+}
+
+.hz-table-card .ant-table-thead > tr > th {
+  padding-inline: 18px;
+  white-space: nowrap;
+}
+
+.hz-table-card .ant-table-tbody > tr > td {
+  padding-inline: 18px;
+  overflow: hidden;
+}
+
+.hz-table-card .ant-table-cell-fix-left,
+.hz-table-card .ant-table-cell-fix-right {
+  background: var(--hz-surface);
+  background-clip: padding-box;
+  overflow: hidden;
+  z-index: 3;
+}
+
+.hz-table-card .ant-table-thead .ant-table-cell-fix-left,
+.hz-table-card .ant-table-thead .ant-table-cell-fix-right {
+  background: color-mix(in srgb, var(--hz-page) 70%, var(--hz-surface));
+  z-index: 4;
+}
+
+.hz-table-card .ant-table-tbody > tr:hover > .ant-table-cell-fix-left,
+.hz-table-card .ant-table-tbody > tr:hover > .ant-table-cell-fix-right,
+.hz-table-card .ant-table-tbody > tr > .ant-table-cell-row-hover.ant-table-cell-fix-left,
+.hz-table-card .ant-table-tbody > tr > .ant-table-cell-row-hover.ant-table-cell-fix-right {
+  background: color-mix(in srgb, var(--hz-accent) 4%, var(--hz-surface)) !important;
+}
+
+.hz-table-card .ant-tag,
+.hz-table-card .hz-table-id-cell,
+.hz-table-card .hz-status-tag,
+.hz-table-card .hz-table-cell-nowrap {
+  word-break: keep-all;
+  white-space: nowrap;
+}
+
+.hz-table-card .hz-table-id-cell {
+  padding-inline: 10px !important;
+}
+
+.hz-table-card .hz-status-tag-line {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.hz-table-card .hz-status-tag-line .ant-tag {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+}
+
+.hz-table-card .hz-table-ellipsis-text,
+.hz-table-card .hz-table-inline-action__text {
+  display: inline-block;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  vertical-align: bottom;
+  white-space: nowrap;
+}
+
+.hz-table-card .hz-table-inline-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.hz-table-card .hz-table-inline-action__text {
+  flex: 1 1 auto;
+}
+
+.hz-table-card .hz-table-inline-action .ant-btn {
+  flex: 0 0 auto;
+}
+
+.hz-table-card .hz-table-action-cell {
+  padding-inline: 12px !important;
+  white-space: nowrap;
+}
+
+.hz-table-card .hz-table-action-group {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.hz-table-card .hz-table-action-group .ant-btn {
+  flex: 0 0 auto;
+  padding-inline: 4px;
 }

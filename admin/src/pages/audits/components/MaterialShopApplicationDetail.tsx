@@ -182,6 +182,7 @@ const MaterialShopApplicationDetail: React.FC<MaterialShopApplicationDetailProps
                     pagination={false}
                     size="small"
                     scroll={{ x: 1100 }}
+                    sticky
                 />
             </Card>
         </Space>

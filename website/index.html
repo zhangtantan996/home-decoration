@@ -94,20 +94,20 @@
       </div>
       <div class="hero-stats">
         <div class="hero-stat">
-          <div class="stat-number" data-target="5000" data-suffix="+">0</div>
-          <div class="stat-label" data-i18n="hero.stats.providers">认证服务商</div>
+          <div class="stat-word" data-i18n="hero.stats.providersValue">实名准入</div>
+          <div class="stat-label" data-i18n="hero.stats.providers">服务商资质审核</div>
         </div>
         <div class="hero-stat">
-          <div class="stat-number" data-target="10000" data-suffix="+">0</div>
-          <div class="stat-label" data-i18n="hero.stats.cases">装修案例</div>
+          <div class="stat-word" data-i18n="hero.stats.casesValue">真实案例</div>
+          <div class="stat-label" data-i18n="hero.stats.cases">案例与工艺展示</div>
         </div>
         <div class="hero-stat">
-          <div class="stat-number" data-target="98" data-suffix="%">0</div>
-          <div class="stat-label" data-i18n="hero.stats.satisfaction">用户满意度</div>
+          <div class="stat-word" data-i18n="hero.stats.satisfactionValue">流程留痕</div>
+          <div class="stat-label" data-i18n="hero.stats.satisfaction">报价交易协同</div>
         </div>
         <div class="hero-stat">
-          <div class="stat-number" data-target="30" data-suffix="">0</div>
-          <div class="stat-label" data-i18n="hero.stats.cities">覆盖城市</div>
+          <div class="stat-word" data-i18n="hero.stats.citiesValue">本地服务</div>
+          <div class="stat-label" data-i18n="hero.stats.cities">按城市匹配资源</div>
         </div>
       </div>
     </div>
@@ -195,7 +195,7 @@
       <div class="section-header animate-on-scroll">
         <div class="section-tag" data-i18n="gallery.tag">灵感图库</div>
         <h2 class="section-title" data-i18n="gallery.title">发现你的理想家</h2>
-        <p class="section-desc" data-i18n="gallery.desc">数千个真实装修案例，涵盖北欧、现代简约、日式、新中式等风格。</p>
+        <p class="section-desc" data-i18n="gallery.desc">精选真实装修案例，涵盖北欧、现代简约、日式、新中式等风格。</p>
       </div>
       <div class="gallery-masonry animate-on-scroll">
         <div class="gallery-img stagger-item">
@@ -355,7 +355,7 @@
                   <div class="card-icon"><i data-lucide="palette"></i></div>
                   <div class="card-text">
                     <span class="card-title" data-i18n="download.preview.designer.title">找设计师</span>
-                    <span class="card-subtitle" data-i18n="download.preview.designer.subtitle">5000+ 认证设计师</span>
+                    <span class="card-subtitle" data-i18n="download.preview.designer.subtitle">认证设计服务</span>
                   </div>
                 </div>
                 <div class="app-preview-card">
@@ -369,7 +369,7 @@
                   <div class="card-icon"><i data-lucide="image"></i></div>
                   <div class="card-text">
                     <span class="card-title" data-i18n="download.preview.gallery.title">灵感图库</span>
-                    <span class="card-subtitle" data-i18n="download.preview.gallery.subtitle">10000+ 真实案例</span>
+                    <span class="card-subtitle" data-i18n="download.preview.gallery.subtitle">精选真实案例</span>
                   </div>
                 </div>
               </div>
@@ -381,10 +381,10 @@
   </section>
 
   <!-- ========== FOOTER ========== -->
-  <footer class="footer">
+  <footer class="site-footer" id="footer-contact">
     <div class="container">
-      <div class="footer-top">
-        <div class="footer-brand">
+      <div class="footer-directory">
+        <div class="footer-brand-card">
           <div class="logo-row">
             <div class="logo-icon">
               <img class="logo-img" src="./assets/images/company-logo.png" alt="禾泽云" width="28" height="28"
@@ -393,47 +393,43 @@
             <span class="brand-name">禾泽云 Hezeyun</span>
           </div>
           <p data-i18n="footer.slogan">让每个家都值得期待</p>
+          <p class="footer-brand-summary" data-i18n="footer.summary">连接业主、设计师、施工方与主材商的一站式家装服务平台。</p>
         </div>
-        <div class="footer-col">
+        <nav class="footer-column" aria-label="产品入口">
           <h4 data-i18n="footer.product">产品</h4>
           <a href="/app/login" data-link-target="user-web-login" data-i18n="footer.product.app">用户端入口</a>
           <a href="/app/#/pages/providers/list/index" data-link-target="user-web-providers" data-i18n="footer.product.designer">找设计师</a>
           <a href="/app/#/pages/providers/list/index?type=foreman" data-link-target="user-web-foremen" data-i18n="footer.product.worker">找施工方</a>
           <a href="/app/#/pages/inspiration/index" data-link-target="user-web-inspiration" data-i18n="footer.product.inspiration">灵感图库</a>
-        </div>
-        <div class="footer-col" id="footer-company">
-          <h4 data-i18n="footer.company">公司</h4>
-          <a href="#about" data-i18n="footer.company.about">关于我们</a>
-          <a href="/merchant" data-link-target="merchant-entry" data-i18n="footer.company.join">入驻合作</a>
-          <a href="#footer-company" data-i18n="footer.company.careers" data-track="cta_footer_company_careers">加入团队</a>
-          <a href="#footer-company" data-i18n="footer.company.contact" data-track="cta_footer_company_contact">联系我们</a>
-        </div>
-        <div class="footer-col" id="footer-support">
-          <h4 data-i18n="footer.support">支持</h4>
-          <a href="#footer-support" data-i18n="footer.support.help" data-track="cta_footer_support_help">帮助中心</a>
-          <a href="#footer-support" data-i18n="footer.support.terms" data-track="cta_footer_support_terms">服务条款</a>
-          <a href="#footer-support" data-i18n="footer.support.privacy" data-track="cta_footer_support_privacy">隐私协议</a>
-          <a href="#footer-support" data-i18n="footer.support.feedback"
-            data-track="cta_footer_support_feedback">意见反馈</a>
+        </nav>
+        <nav class="footer-column" aria-label="入驻合作">
+          <h4 data-i18n="footer.partner">入驻合作</h4>
+          <a href="/merchant" data-link-target="merchant-entry" data-i18n="footer.partner.entry">商家端入口</a>
+          <a href="#join" data-i18n="footer.partner.apply">申请入驻</a>
+          <a href="/app/legal/merchant-rules" data-link-target="user-web-legal-merchant-rules" data-i18n="footer.partner.rules">商家入驻规则</a>
+        </nav>
+        <nav class="footer-column" aria-label="支持与规则">
+          <h4 data-i18n="footer.support">支持与规则</h4>
+          <a href="/app/legal/user-agreement" data-link-target="user-web-legal-user-agreement" data-i18n="footer.support.terms">用户协议</a>
+          <a href="/app/legal/privacy-policy" data-link-target="user-web-legal-privacy-policy" data-i18n="footer.support.privacy">隐私政策</a>
+          <a href="/app/legal/transaction-rules" data-link-target="user-web-legal-transaction-rules" data-i18n="footer.support.transaction">平台交易规则</a>
+          <a href="/app/legal/refund-rules" data-link-target="user-web-legal-refund-rules" data-i18n="footer.support.help">退款与售后</a>
+          <a href="/app/legal/third-party-sharing" data-link-target="user-web-legal-third-party-sharing" data-i18n="footer.support.thirdParty">第三方共享清单</a>
+        </nav>
+        <div class="footer-column footer-contact">
+          <h4 data-i18n="footer.contact">联系我们</h4>
+          <a href="tel:17764774797">17764774797</a>
+          <span data-i18n="footer.contact.time">工作日 09:00-18:00</span>
+          <span data-i18n="footer.contact.address">陕西省西安市新城区解放路103号民生百货解放路店F7层7004</span>
         </div>
       </div>
-      <div class="footer-bottom">
-        <div class="footer-legal">
-          <p data-i18n="footer.copyright">© 2026 禾泽云 Hezeyun. 保留所有权利.</p>
-          <p class="footer-icp">
-            <span data-i18n="footer.icpLabel">ICP备案/许可证号：</span>
-            <a class="icp-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer"
-              data-track="cta_footer_icp">陕ICP备2026004441号</a>
-          </p>
-        </div>
-        <div class="social-links" id="footer-social">
-          <a href="#footer-social" class="social-link" data-i18n-aria="aria.social.wechat" aria-label="微信"
-            data-track="cta_footer_social_wechat"><i data-lucide="message-square"></i></a>
-          <a href="#footer-social" class="social-link" data-i18n-aria="aria.social.weibo" aria-label="微博"
-            data-track="cta_footer_social_weibo"><i data-lucide="megaphone"></i></a>
-          <a href="#footer-social" class="social-link" data-i18n-aria="aria.social.xiaohongshu" aria-label="小红书"
-            data-track="cta_footer_social_xiaohongshu"><i data-lucide="book-open"></i></a>
-        </div>
+      <div class="footer-compliance">
+        <p data-i18n="footer.copyright">© 2026 禾泽云 Hezeyun. 保留所有权利.</p>
+        <p>
+          <a class="icp-link" href="https://beian.miit.gov.cn/" target="_blank" rel="noreferrer"
+            data-track="cta_footer_icp">陕ICP备2026004441号</a>
+          <span data-i18n="footer.company.phone">客服电话：17764774797</span>
+        </p>
       </div>
     </div>
   </footer>

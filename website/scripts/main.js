@@ -97,6 +97,12 @@ const linkTargets = {
     'user-web-providers': () => buildUserWebURL('/providers?category=designer'),
     'user-web-foremen': () => buildUserWebURL('/providers?category=construction'),
     'user-web-inspiration': () => buildUserWebURL('/inspiration'),
+    'user-web-legal-user-agreement': () => buildUserWebURL('/legal/user-agreement'),
+    'user-web-legal-privacy-policy': () => buildUserWebURL('/legal/privacy-policy'),
+    'user-web-legal-transaction-rules': () => buildUserWebURL('/legal/transaction-rules'),
+    'user-web-legal-refund-rules': () => buildUserWebURL('/legal/refund-rules'),
+    'user-web-legal-merchant-rules': () => buildUserWebURL('/legal/merchant-rules'),
+    'user-web-legal-third-party-sharing': () => buildUserWebURL('/legal/third-party-sharing'),
     'merchant-entry': () => resolveMerchantWebBase(),
     'merchant-web': () => resolveMerchantWebBase(),
 };

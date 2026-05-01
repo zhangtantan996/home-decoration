@@ -1,6 +1,6 @@
 import axios from "axios";
 import { message } from "antd";
-import { getApiBaseUrl, getLoginPath } from "../utils/env";
+import { getApiBaseUrl, getLoginPath, getRouterBasename } from "../utils/env";
 import { toSafeUserFacingText } from "../utils/userFacingText";
 import {
   useAuthStore,
@@ -118,7 +118,7 @@ const normalizeAdminError = (error: unknown) => {
       ? String(payload.data.errorCode || "")
       : undefined;
 
-  return new AdminApiError(
+  const normalized = new AdminApiError(
     toSafeUserFacingText(payload?.message, "操作失败"),
     {
       status,
@@ -126,6 +126,50 @@ const normalizeAdminError = (error: unknown) => {
       errorCode,
       data: payload?.data,
     },
+  );
+  const handledStatus = getHandledAdminStatus(error);
+  if (handledStatus) {
+    markAdminErrorHandled(normalized, handledStatus);
+  }
+  return normalized;
+};
+
+const buildAdminLoginRedirect = () => {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  const basename = getRouterBasename();
+  const pathname = window.location.pathname;
+  const pathWithoutBase =
+    basename !== "/" && pathname.startsWith(basename)
+      ? pathname.slice(basename.length) || "/"
+      : pathname;
+  const current = `${pathWithoutBase}${window.location.search}`;
+  if (!current || current === "/" || current.startsWith("/login")) {
+    return "";
+  }
+  return `?redirect=${encodeURIComponent(current)}`;
+};
+
+const isAdminSessionBoundaryError = (
+  status: number | undefined,
+  payload?: AdminEnvelopeError,
+) => {
+  if (status === 401) {
+    return true;
+  }
+  if (status !== 403) {
+    return false;
+  }
+  const token = localStorage.getItem("admin_token");
+  const admin = localStorage.getItem("admin_user");
+  const messageText = String(payload?.message || "").trim();
+  return (
+    !token ||
+    !admin ||
+    /无权访问管理接口|Token类型不匹配|账号已被禁用|管理员不存在/.test(
+      messageText,
+    )
   );
 };
 
@@ -138,7 +182,7 @@ const redirectToAdminLogin = () => {
 
   const loginPath = getLoginPath();
   if (!window.location.pathname.endsWith("/login")) {
-    window.location.replace(loginPath);
+    window.location.replace(`${loginPath}${buildAdminLoginRedirect()}`);
   }
 };
 
@@ -232,9 +276,16 @@ api.interceptors.response.use(
       }
     }
 
-    if (status === 401) {
+    const payload =
+      typeof error === "object" && error !== null && "response" in error
+        ? (error as { response?: { data?: AdminEnvelopeError } }).response
+            ?.data || undefined
+        : undefined;
+
+    if (isAdminSessionBoundaryError(status, payload)) {
       markAdminErrorHandled(error, 401);
       redirectToAdminLogin();
+      return Promise.reject(normalizeAdminError(error));
     }
 
     if (status === 403) {
@@ -1344,6 +1395,10 @@ export interface AdminUserListItem {
   roleType?: string;
   roleLabel?: string;
   status: number;
+  lastLoginAt?: string;
+  lastLoginIp?: string;
+  loginFailedCount?: number;
+  lockedUntil?: string;
   primaryEntityType?: "provider" | "material_shop";
   primaryEntityId?: number;
   primaryEntityName?: string;
@@ -1512,6 +1567,11 @@ export const adminProviderApi = {
     api.patch(`/admin/providers/${id}/status`, { status }),
   updatePlatformDisplay: (id: number, enabled: boolean) =>
     api.patch(`/admin/providers/${id}/platform-display`, { enabled }),
+  setAvailability: (
+    id: number,
+    enabled: boolean,
+    extra?: { reason?: string; recentReauthProof?: string },
+  ) => api.patch(`/admin/providers/${id}/availability`, { enabled, ...extra }),
   claimAccount: (
     id: number,
     data: {
@@ -1559,6 +1619,15 @@ export const adminMaterialShopApi = {
     api.patch(`/admin/material-shops/${id}/status`, { status }),
   updatePlatformDisplay: (id: number, enabled: boolean) =>
     api.patch(`/admin/material-shops/${id}/platform-display`, { enabled }),
+  setAvailability: (
+    id: number,
+    enabled: boolean,
+    extra?: { reason?: string; recentReauthProof?: string },
+  ) =>
+    api.patch(`/admin/material-shops/${id}/availability`, {
+      enabled,
+      ...extra,
+    }),
   completeAccount: (
     id: number,
     data: {
@@ -2401,8 +2470,11 @@ export interface AdminOutboxEventQuery {
 }
 
 export const adminOutboxEventApi = {
-  list: (params?: AdminOutboxEventQuery) => api.get('/admin/outbox-events', { params }),
+  list: (params?: AdminOutboxEventQuery) =>
+    api.get("/admin/outbox-events", { params }),
   detail: (id: number) => api.get(`/admin/outbox-events/${id}`),
-  retry: (id: number, reason: string, recentReauthProof?: string) => api.post(`/admin/outbox-events/${id}/retry`, { reason, recentReauthProof }),
-  ignore: (id: number, reason: string) => api.post(`/admin/outbox-events/${id}/ignore`, { reason }),
+  retry: (id: number, reason: string, recentReauthProof?: string) =>
+    api.post(`/admin/outbox-events/${id}/retry`, { reason, recentReauthProof }),
+  ignore: (id: number, reason: string) =>
+    api.post(`/admin/outbox-events/${id}/ignore`, { reason }),
 };

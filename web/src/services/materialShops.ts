@@ -51,7 +51,7 @@ function toMaterialShop(dto: MaterialShopDTO): MaterialShopListItemVM {
     distance: dto.distance || '附近',
     openTime: dto.openTime || '营业时间待补充',
     tags: dto.tags || [],
-    isVerified: Boolean(dto.isVerified),
+    isVerified: dto.isSettled === true && Boolean(dto.isVerified),
     isSettled: dto.isSettled,
   };
 }

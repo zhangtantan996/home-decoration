@@ -254,9 +254,15 @@ const MaterialShopDetailPage: React.FC = () => {
                 <Text className="material-detail-page__summary-title">{detail.name}</Text>
                 <View className="material-detail-page__summary-badges">
                   {detail.isVerified ? <Tag variant="success">已认证</Tag> : null}
-                  <Tag variant={settled ? 'secondary' : 'warning'}>{settled ? '已入驻' : '未入驻'}</Tag>
+                  <Tag variant={settled ? 'secondary' : 'warning'}>{settled ? '已入驻' : '平台整理'}</Tag>
                 </View>
               </View>
+              {!settled ? (
+                <View className="material-detail-page__tag-list material-detail-page__tag-list--inline">
+                  <Tag variant="warning">待商家认领</Tag>
+                  <Tag variant="secondary">信息仅供参考</Tag>
+                </View>
+              ) : null}
 
               <View className="material-detail-page__meta-row">
                 <View className="material-detail-page__rating">
@@ -379,9 +385,9 @@ const MaterialShopDetailPage: React.FC = () => {
         <View className="material-detail-page__unsettled-bar">
           <View className="material-detail-page__unsettled-head">
             <View className="material-detail-page__unsettled-dot" />
-            <Text className="material-detail-page__unsettled-title">未入驻提醒</Text>
+            <Text className="material-detail-page__unsettled-title">平台整理</Text>
           </View>
-          <Text className="material-detail-page__unsettled-text">该商家信息来源于公开渠道，尚未在本平台入驻，当前展示内容仅供参考。</Text>
+          <Text className="material-detail-page__unsettled-text">待商家认领，信息仅供参考；不代表平台认证、合作或履约承诺。</Text>
         </View>
       ) : null}
     </View>

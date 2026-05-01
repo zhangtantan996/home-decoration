@@ -29,6 +29,23 @@ export interface RegionCascaderOption {
     children?: RegionCascaderOption[];
 }
 
+const readArrayPayload = <T,>(payload: unknown): T[] => {
+    if (Array.isArray(payload)) {
+        return payload as T[];
+    }
+    if (typeof payload === 'object' && payload !== null && 'data' in payload) {
+        const data = (payload as { data?: unknown }).data;
+        if (Array.isArray(data)) {
+            return data as T[];
+        }
+        if (typeof data === 'object' && data !== null && 'list' in data) {
+            const list = (data as { list?: unknown }).list;
+            return Array.isArray(list) ? (list as T[]) : [];
+        }
+    }
+    return [];
+};
+
 /**
  * 行政区划级联选择 Hook
  * 支持懒加载省市区三级数据
@@ -45,7 +62,7 @@ export const useRegionCascader = () => {
     const loadProvinces = async () => {
         setLoading(true);
         try {
-            const response = (await api.get('/regions/provinces')) as Region[];
+            const response = readArrayPayload<Region>(await api.get('/regions/provinces'));
             const provinceOptions: RegionCascaderOption[] = response.map((province: Region) => ({
                 value: province.code,
                 label: province.name,
@@ -62,7 +79,7 @@ export const useRegionCascader = () => {
     // 加载城市列表
     const loadCities = async (provinceCode: string): Promise<RegionCascaderOption[]> => {
         try {
-            const response = (await api.get(`/regions/provinces/${provinceCode}/cities`)) as Region[];
+            const response = readArrayPayload<Region>(await api.get(`/regions/provinces/${provinceCode}/cities`));
             return response.map((city: Region) => ({
                 value: city.code,
                 label: city.name,
@@ -77,7 +94,7 @@ export const useRegionCascader = () => {
     // 加载区县列表
     const loadDistricts = async (cityCode: string): Promise<RegionCascaderOption[]> => {
         try {
-            const response = (await api.get(`/regions/cities/${cityCode}/districts`)) as Region[];
+            const response = readArrayPayload<Region>(await api.get(`/regions/cities/${cityCode}/districts`));
             return response.map((district: Region) => ({
                 value: district.code,
                 label: district.name,
@@ -133,9 +150,9 @@ export const regionApi = {
 
     // 获取子行政区划 (主要用于获取区县)
     getChildren: (code: string) => 
-        api.get(`/regions/cities/${code}/districts`) as Promise<Region[]>,
+        api.get(`/regions/cities/${code}/districts`).then(readArrayPayload<Region>),
 
     // 获取开放服务城市（按后端开放策略过滤）
     getServiceCities: () =>
-        api.get('/regions/service-cities') as Promise<ServiceCityRegion[]>,
+        api.get('/regions/service-cities').then(readArrayPayload<ServiceCityRegion>),
 };

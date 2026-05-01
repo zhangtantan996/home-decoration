@@ -259,6 +259,7 @@ const ProviderPriceBookInspection: React.FC = () => {
         }}
         pagination={{ pageSize: 10, showSizeChanger: false }}
         scroll={{ x: 1180 }}
+        sticky
       />
     </div>
   );

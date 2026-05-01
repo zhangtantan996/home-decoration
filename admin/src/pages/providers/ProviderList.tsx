@@ -16,16 +16,19 @@ import {
   InputNumber,
   Tooltip,
   Typography,
+  Dropdown,
+  Checkbox,
 } from "antd";
 import {
   ReloadOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   PlusOutlined,
+  MoreOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import {
   adminProviderApi,
-  type AdminAccountStatus,
   type AdminOnboardingStatus,
   type AdminOperatingStatus,
   type AdminProviderListItem,
@@ -37,15 +40,13 @@ import PageHeader from "../../components/PageHeader";
 import ToolbarCard from "../../components/ToolbarCard";
 import AuditStatusSummary from "../audits/components/AuditStatusSummary";
 import VisibilityStatusPanel from "../audits/components/VisibilityStatusPanel";
+import { useAdaptiveTableScroll } from "../../hooks/useAdaptiveTableScroll";
 import {
-  ACCOUNT_STATUS_META,
-  ACCOUNT_STATUS_OPTIONS,
   ADMIN_PROVIDER_STATUS_META,
   ADMIN_PROVIDER_STATUS_OPTIONS,
   ADMIN_PROVIDER_TYPE_META,
   ADMIN_PROVIDER_TYPE_OPTIONS,
   LEGACY_PATH_BADGE,
-  LOGIN_STATUS_META,
   MERCHANT_ONBOARDING_STATUS_META,
   ONBOARDING_STATUS_FILTER_OPTIONS,
   OPERATING_STATUS_META,
@@ -67,15 +68,126 @@ interface ServiceCityGroupOption {
 
 const { Text } = Typography;
 
+const safeTrimmedText = (value: unknown) =>
+  typeof value === "string" ? value.trim() : "";
+
+type ProviderColumnKey =
+  | "id"
+  | "displayName"
+  | "providerType"
+  | "sourceLabel"
+  | "statusOverview"
+  | "subType"
+  | "principalName"
+  | "rating"
+  | "governanceTier"
+  | "governanceHint"
+  | "publicVisible"
+  | "blockerSummary"
+  | "verified"
+  | "availability"
+  | "action";
+
+const PROVIDER_COLUMN_STORAGE_KEY = "admin.providerList.visibleColumns.v4";
+const REQUIRED_PROVIDER_COLUMNS: ProviderColumnKey[] = [
+  "id",
+  "displayName",
+  "statusOverview",
+  "subType",
+  "governanceTier",
+  "publicVisible",
+  "availability",
+  "action",
+];
+const DEFAULT_PROVIDER_COLUMNS: ProviderColumnKey[] = [
+  ...REQUIRED_PROVIDER_COLUMNS,
+  "providerType",
+  "verified",
+];
+const PROVIDER_COLUMN_OPTIONS: Array<{
+  label: string;
+  value: ProviderColumnKey;
+}> = [
+  { label: "类型", value: "providerType" },
+  { label: "来源", value: "sourceLabel" },
+  { label: "负责人", value: "principalName" },
+  { label: "评分", value: "rating" },
+  { label: "治理提示", value: "governanceHint" },
+  { label: "阻断摘要", value: "blockerSummary" },
+  { label: "认证", value: "verified" },
+];
+
+const loadVisibleProviderColumns = (): ProviderColumnKey[] => {
+  try {
+    if (typeof window === "undefined") return DEFAULT_PROVIDER_COLUMNS;
+    const raw = window.localStorage.getItem(PROVIDER_COLUMN_STORAGE_KEY);
+    if (!raw) return DEFAULT_PROVIDER_COLUMNS;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_PROVIDER_COLUMNS;
+    const valid = new Set<ProviderColumnKey>([
+      ...REQUIRED_PROVIDER_COLUMNS,
+      ...PROVIDER_COLUMN_OPTIONS.map((item) => item.value),
+    ]);
+    const next = parsed.filter((item): item is ProviderColumnKey =>
+      valid.has(item),
+    );
+    return next.length > 0
+      ? Array.from(new Set([...REQUIRED_PROVIDER_COLUMNS, ...next]))
+      : DEFAULT_PROVIDER_COLUMNS;
+  } catch {
+    return DEFAULT_PROVIDER_COLUMNS;
+  }
+};
+
+const toStringList = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item).trim()).filter(Boolean);
+  }
+  if (typeof value === "string") {
+    const raw = value.trim();
+    if (!raw) {
+      return [];
+    }
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.map((item) => String(item).trim()).filter(Boolean);
+      }
+    } catch {
+      return raw
+        .split(/,|，|;|；/)
+        .map((item) => item.trim())
+        .filter(Boolean);
+    }
+  }
+  return [];
+};
+
+const formatRating = (value: unknown) => {
+  const rating =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : NaN;
+  return Number.isFinite(rating) ? rating.toFixed(1) : "-";
+};
+
 const getProviderDisplayName = (provider: Provider) => {
-  return provider.realName?.trim() || provider.companyName?.trim() || "-";
+  return (
+    safeTrimmedText(provider.realName) ||
+    safeTrimmedText(provider.companyName) ||
+    "-"
+  );
 };
 
 const getProviderPrincipalName = (provider: Provider) =>
-  provider.realName || "-";
+  safeTrimmedText(provider.realName) || "-";
 
 const getProviderSubjectName = (provider: Provider) =>
-  provider.companyName?.trim() || provider.realName?.trim() || "-";
+  safeTrimmedText(provider.companyName) ||
+  safeTrimmedText(provider.realName) ||
+  "-";
 
 const resolveVisibilityTag = (provider: Provider) => {
   const isVisible = provider.visibility?.publicVisible;
@@ -84,20 +196,6 @@ const resolveVisibilityTag = (provider: Provider) => {
       isVisible === true ? "true" : isVisible === false ? "false" : "unknown"
     ];
   return <Tag color={config.color}>{config.text}</Tag>;
-};
-
-const resolveAccountStatusTag = (provider: Provider) => {
-  const meta =
-    ACCOUNT_STATUS_META[provider.accountStatus || "unbound"] ||
-    ACCOUNT_STATUS_META.unbound;
-  return <Tag color={meta.color}>{meta.text}</Tag>;
-};
-
-const resolveLoginStatusTag = (provider: Provider) => {
-  const meta =
-    LOGIN_STATUS_META[provider.loginStatus || "unbound"] ||
-    LOGIN_STATUS_META.unbound;
-  return <Tag color={meta.color}>{meta.text}</Tag>;
 };
 
 const resolveOnboardingStatusTag = (provider: Provider) => {
@@ -128,8 +226,28 @@ const renderBooleanStatusTag = (
   </Tag>
 );
 
-const isProviderPlatformDisplayEditable = (provider: Provider) =>
-  provider.status === 1;
+const renderStatusTag = (_label: string, text: string, color: string) => (
+  <Tag color={color} className="hz-status-tag">
+    {text}
+  </Tag>
+);
+
+const normalizeGovernanceTier = (value: unknown) => {
+  const text = String(value ?? "").trim();
+  if (!text || text === "0" || text === "null" || text === "undefined") {
+    return "";
+  }
+  return text;
+};
+
+const getGovernanceTierColor = (tier: string) => {
+  if (tier === "风险观察期") return "red";
+  if (tier === "重点扶持期") return "gold";
+  return "blue";
+};
+
+const isProviderAvailable = (provider: Provider) =>
+  provider.status === 1 && (provider.platformDisplayEnabled ?? true);
 
 const renderProviderStatusOverview = (provider: Provider) => {
   const onboardingStatus = provider.onboardingStatus || "none";
@@ -139,31 +257,40 @@ const renderProviderStatusOverview = (provider: Provider) => {
     (provider.operatingStatus || "unopened") === "frozen";
 
   return (
-    <Space size={[0, 4]} wrap>
-      <Tag
-        color={
-          provider.isSettled
-            ? SETTLED_STATUS_META.true.color
-            : SETTLED_STATUS_META.false.color
-        }
-      >
-        {provider.isSettled
+    <Space size={4} className="hz-status-tag-line">
+      {renderStatusTag(
+        "入驻",
+        provider.isSettled
           ? SETTLED_STATUS_META.true.text
-          : SETTLED_STATUS_META.false.text}
-      </Tag>
-      {provider.accountBound ? (
-        resolveAccountStatusTag(provider)
-      ) : (
-        <Tag color="default">未绑定账号</Tag>
+          : SETTLED_STATUS_META.false.text,
+        provider.isSettled
+          ? SETTLED_STATUS_META.true.color
+          : SETTLED_STATUS_META.false.color,
       )}
-      {showOnboardingTag && resolveOnboardingStatusTag(provider)}
-      {showOperatingTag && resolveOperatingStatusTag(provider)}
+      {showOnboardingTag &&
+        renderStatusTag(
+          "资料",
+          (MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
+            MERCHANT_ONBOARDING_STATUS_META.unknown).text,
+          (MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
+            MERCHANT_ONBOARDING_STATUS_META.unknown).color,
+        )}
+      {showOperatingTag &&
+        renderStatusTag(
+          "主体",
+          (OPERATING_STATUS_META[provider.operatingStatus || "unopened"] ||
+            OPERATING_STATUS_META.unopened).text,
+          (OPERATING_STATUS_META[provider.operatingStatus || "unopened"] ||
+            OPERATING_STATUS_META.unopened).color,
+        )}
     </Space>
   );
 };
 
 const renderBlockerSummary = (provider: Provider) => {
-  const blockers = provider.visibility?.blockers || [];
+  const blockers = Array.isArray(provider.visibility?.blockers)
+    ? provider.visibility?.blockers || []
+    : [];
   if (blockers.length === 0) {
     return <Text type="secondary">-</Text>;
   }
@@ -187,7 +314,7 @@ const renderBlockerSummary = (provider: Provider) => {
         </div>
       }
     >
-      <Text ellipsis style={{ display: "inline-block", maxWidth: 240 }}>
+      <Text className="hz-table-ellipsis-text">
         {summary}
       </Text>
     </Tooltip>
@@ -312,15 +439,15 @@ const ProviderList: React.FC = () => {
   const [providerType, setProviderType] = useState<number | undefined>();
   const [verifiedFilter, setVerifiedFilter] = useState<string | undefined>();
   const [settledFilter, setSettledFilter] = useState<string | undefined>();
-  const [accountStatusFilter, setAccountStatusFilter] = useState<
-    AdminAccountStatus | undefined
-  >();
   const [onboardingStatusFilter, setOnboardingStatusFilter] = useState<
     AdminOnboardingStatus | undefined
   >();
   const [operatingStatusFilter, setOperatingStatusFilter] = useState<
     AdminOperatingStatus | undefined
   >();
+  const [visibleColumns, setVisibleColumns] = useState<ProviderColumnKey[]>(
+    loadVisibleProviderColumns,
+  );
   const [detailVisible, setDetailVisible] = useState(false);
   const [currentProvider, setCurrentProvider] = useState<Provider | null>(null);
   const [modalVisible, setModalVisible] = useState(false);
@@ -340,6 +467,12 @@ const ProviderList: React.FC = () => {
     string,
     unknown
   > | null>(null);
+  const [availabilityReauthOpen, setAvailabilityReauthOpen] = useState(false);
+  const [pendingAvailability, setPendingAvailability] = useState<{
+    id: number;
+    enabled: boolean;
+    name: string;
+  } | null>(null);
   const [claimForm] = Form.useForm();
   const [serviceCityOptions, setServiceCityOptions] = useState<
     ServiceCityGroupOption[]
@@ -371,7 +504,6 @@ const ProviderList: React.FC = () => {
     providerType,
     verifiedFilter,
     settledFilter,
-    accountStatusFilter,
     onboardingStatusFilter,
     operatingStatusFilter,
   ]);
@@ -414,7 +546,6 @@ const ProviderList: React.FC = () => {
             : settledFilter === "false"
               ? false
               : undefined,
-        accountStatus: accountStatusFilter,
         onboardingStatus: onboardingStatusFilter,
         operatingStatus: operatingStatusFilter,
       })) as any;
@@ -440,37 +571,32 @@ const ProviderList: React.FC = () => {
     }
   };
 
-  const handleStatusChange = async (id: number, status: number) => {
+  const handleAvailabilityChange = async (id: number, enabled: boolean) => {
     const target = providers.find((item) => item.id === id);
-    Modal.confirm({
-      title: status === 1 ? "确认恢复经营" : "确认封禁经营",
-      content:
-        status === 1
-          ? `将恢复「${getProviderDisplayName(target || ({} as Provider))}」的主体经营状态。该操作只影响主体经营与登录结果，不修改用户账号启用状态。`
-          : `将封禁「${getProviderDisplayName(target || ({} as Provider))}」的主体经营状态。该操作只影响主体经营与登录结果，不修改用户账号启用状态。`,
-      okText: status === 1 ? "确认恢复" : "确认封禁",
-      cancelText: "取消",
-      okButtonProps: status === 1 ? undefined : { danger: true },
-      onOk: async () => {
-        try {
-          await adminProviderApi.updateStatus(id, status);
-          message.success(status === 1 ? "已恢复经营" : "已封禁经营");
-          loadData();
-        } catch (error) {
-          message.error("操作失败");
-        }
-      },
+    setPendingAvailability({
+      id,
+      enabled,
+      name: getProviderDisplayName(target || ({} as Provider)),
     });
+    setAvailabilityReauthOpen(true);
   };
 
-  const handleTogglePlatformDisplay = async (id: number, enabled: boolean) => {
-    try {
-      await adminProviderApi.updatePlatformDisplay(id, enabled);
-      message.success(enabled ? "已上线" : "已下线");
-      loadData();
-    } catch (error) {
-      message.error("操作失败");
-    }
+  const handleAvailabilityConfirmed = async (payload: {
+    reason?: string;
+    recentReauthProof: string;
+  }) => {
+    if (!pendingAvailability) return;
+    await adminProviderApi.setAvailability(
+      pendingAvailability.id,
+      pendingAvailability.enabled,
+      {
+        reason: payload.reason,
+        recentReauthProof: payload.recentReauthProof,
+      },
+    );
+    message.success(pendingAvailability.enabled ? "已恢复经营" : "已停止经营");
+    setPendingAvailability(null);
+    loadData();
   };
 
   const showDetail = (record: Provider) => {
@@ -620,20 +746,45 @@ const ProviderList: React.FC = () => {
     });
   };
 
-  const columns = [
+  const updateVisibleColumns = (keys: ProviderColumnKey[]) => {
+    const next = Array.from(new Set([...REQUIRED_PROVIDER_COLUMNS, ...keys]));
+    setVisibleColumns(next);
+    window.localStorage.setItem(
+      PROVIDER_COLUMN_STORAGE_KEY,
+      JSON.stringify(next),
+    );
+  };
+
+  const allColumns = [
     {
       title: "ID",
+      key: "id",
       dataIndex: "id",
-      width: 80,
+      width: 112,
+      fixed: "left" as const,
+      className: "hz-table-id-cell",
+      render: (value: number) => value,
     },
     {
       title: "展示名",
       key: "displayName",
-      render: (_: unknown, record: Provider) => getProviderDisplayName(record),
+      width: 200,
+      fixed: "left" as const,
+      ellipsis: true,
+      render: (_: unknown, record: Provider) => (
+        <Tooltip title={getProviderDisplayName(record)}>
+          <Text className="hz-table-ellipsis-text">
+            {getProviderDisplayName(record)}
+          </Text>
+        </Tooltip>
+      ),
     },
     {
       title: "类型",
       dataIndex: "providerType",
+      key: "providerType",
+      width: 100,
+      className: "hz-table-cell-nowrap",
       render: (val: number) => {
         const config = ADMIN_PROVIDER_TYPE_META[val];
         return config ? <Tag color={config.color}>{config.text}</Tag> : "-";
@@ -644,6 +795,7 @@ const ProviderList: React.FC = () => {
       dataIndex: "sourceLabel",
       key: "sourceLabel",
       width: 90,
+      className: "hz-table-cell-nowrap",
       render: (text: string) => (
         <Tag color={text === "平台收录" ? "orange" : "default"}>
           {text || "-"}
@@ -651,57 +803,89 @@ const ProviderList: React.FC = () => {
       ),
     },
     {
-      title: "状态总览",
+      title: "经营概览",
       key: "statusOverview",
-      width: 260,
+      width: 170,
       render: (_: unknown, record: Provider) =>
         renderProviderStatusOverview(record),
     },
     {
       title: "主体类型",
       dataIndex: "subType",
+      width: 120,
+      ellipsis: true,
+      className: "hz-table-cell-nowrap",
       render: (val: string) => PROVIDER_SUBTYPE_LABELS[val] || val || "-",
     },
     {
       title: "负责人",
       key: "principalName",
-      render: (_: unknown, record: Provider) =>
-        getProviderPrincipalName(record),
+      width: 150,
+      ellipsis: true,
+      className: "hz-table-cell-nowrap",
+      render: (_: unknown, record: Provider) => {
+        const principalName = getProviderPrincipalName(record);
+        return (
+          <Tooltip title={principalName === "-" ? "" : principalName}>
+            <Text className="hz-table-ellipsis-text">{principalName}</Text>
+          </Tooltip>
+        );
+      },
     },
     {
       title: "评分",
       dataIndex: "rating",
-      render: (val: number) => val?.toFixed(1) || "-",
+      key: "rating",
+      width: 90,
+      className: "hz-table-cell-nowrap",
+      render: (val: unknown) => formatRating(val),
     },
     {
       title: "治理分层",
       dataIndex: "governanceTier",
+      key: "governanceTier",
       width: 130,
-      render: (val?: string) => <Tag color={val === '风险观察期' ? 'red' : val === '重点扶持期' ? 'gold' : 'blue'}>{val || '-'}</Tag>,
+      className: "hz-table-cell-nowrap",
+      render: (val?: string) => {
+        const tier = normalizeGovernanceTier(val);
+        return tier ? (
+          <Tag color={getGovernanceTierColor(tier)}>{tier}</Tag>
+        ) : (
+          <Text type="secondary">-</Text>
+        );
+      },
     },
     {
       title: "治理提示",
       key: "governanceHint",
       width: 260,
-      render: (_: unknown, record: Provider) => (
-        <Space size={[4, 4]} wrap>
-          {(record.riskFlags || []).slice(0, 2).map((flag) => (
-            <Tag color="red" key={flag}>{flag}</Tag>
-          ))}
-          {record.recommendedAction ? (
-            <Tooltip title={record.recommendedAction}>
-              <Text ellipsis style={{ maxWidth: 180 }}>{record.recommendedAction}</Text>
-            </Tooltip>
-          ) : (
-            <Text type="secondary">-</Text>
-          )}
-        </Space>
-      ),
+      render: (_: unknown, record: Provider) => {
+        const flags = toStringList(record.riskFlags).slice(0, 2);
+        return (
+          <div className="provider-list-governance-hint">
+            {flags.map((flag) => (
+              <Tag color="red" key={flag}>
+                {flag}
+              </Tag>
+            ))}
+            {record.recommendedAction ? (
+              <Tooltip title={record.recommendedAction}>
+                <Text className="provider-list-governance-action">
+                  {record.recommendedAction}
+                </Text>
+              </Tooltip>
+            ) : (
+              <Text type="secondary">-</Text>
+            )}
+          </div>
+        );
+      },
     },
     {
       title: "公开结果",
       key: "publicVisible",
       width: 120,
+      className: "hz-table-cell-nowrap",
       render: (_: any, record: Provider) => (
         <Space size={4} wrap>
           {resolveVisibilityTag(record)}
@@ -714,12 +898,16 @@ const ProviderList: React.FC = () => {
     {
       title: "阻断摘要",
       key: "blockerSummary",
+      width: 260,
       ellipsis: true,
       render: (_: any, record: Provider) => renderBlockerSummary(record),
     },
     {
       title: "认证",
       dataIndex: "verified",
+      key: "verified",
+      width: 100,
+      className: "hz-table-cell-nowrap",
       render: (val: boolean, record: Provider) => (
         <PermissionWrapper
           permission={[
@@ -738,39 +926,65 @@ const ProviderList: React.FC = () => {
       ),
     },
     {
-      title: "经营",
-      dataIndex: "status",
-      render: (val: number, record: Provider) => (
-        <PermissionWrapper
-          permission={[
-            "provider:designer:status",
-            "provider:company:status",
-            "provider:foreman:status",
-          ]}
-        >
-          <Switch
-            checked={val === 1}
-            checkedChildren="正常经营"
-            unCheckedChildren="封禁经营"
-            onChange={(checked) =>
-              handleStatusChange(record.id, checked ? 1 : 0)
-            }
-          />
-        </PermissionWrapper>
-      ),
+      title: "经营状态",
+      key: "availability",
+      width: 150,
+      className: "hz-table-cell-nowrap",
+      render: (_: any, record: Provider) => {
+        const available = isProviderAvailable(record);
+        return (
+          <Space size={8} className="provider-list-availability">
+            <Tag color={available ? "success" : "default"}>
+              {available ? "经营中" : "已下线"}
+            </Tag>
+            <PermissionWrapper
+              permission={[
+                "provider:designer:status",
+                "provider:company:status",
+                "provider:foreman:status",
+              ]}
+            >
+              <Switch
+                size="small"
+                checked={available}
+                onChange={(checked) =>
+                  handleAvailabilityChange(record.id, checked)
+                }
+              />
+            </PermissionWrapper>
+          </Space>
+        );
+      },
     },
     {
-      title: "平台展示",
-      key: "platformDisplayEnabled",
-      render: (_: any, record: Provider) => (
-        <Tooltip
-          title={
-            isProviderPlatformDisplayEditable(record)
-              ? "控制平台是否继续公开分发该主体"
-              : "主体经营异常时，平台展示设置当前不生效"
-          }
-        >
-          <span>
+      title: "操作",
+      key: "action",
+      width: 216,
+      fixed: "right" as const,
+      className: "hz-table-action-cell",
+      render: (_: any, record: Provider) => {
+        const moreItems = [
+          record.isSettled === false && !record.accountBound
+            ? { key: "claim", label: "认领入驻" }
+            : null,
+          record.isSettled === false && !!record.accountBound
+            ? { key: "complete", label: "完成入驻" }
+            : null,
+        ].filter(Boolean) as Array<{ key: string; label: string }>;
+
+        return (
+          <Space size={6} className="hz-table-action-group">
+            <PermissionWrapper
+              permission={[
+                "provider:designer:view",
+                "provider:company:view",
+                "provider:foreman:view",
+              ]}
+            >
+              <Button type="link" size="small" onClick={() => showDetail(record)}>
+                详情
+              </Button>
+            </PermissionWrapper>
             <PermissionWrapper
               permission={[
                 "provider:designer:edit",
@@ -778,75 +992,42 @@ const ProviderList: React.FC = () => {
                 "provider:foreman:edit",
               ]}
             >
-              <Switch
-                checked={record.platformDisplayEnabled ?? true}
-                checkedChildren="展示"
-                unCheckedChildren="隐藏"
-                disabled={!isProviderPlatformDisplayEditable(record)}
-                onChange={(checked) =>
-                  handleTogglePlatformDisplay(record.id, checked)
-                }
-              />
-            </PermissionWrapper>
-          </span>
-        </Tooltip>
-      ),
-    },
-    {
-      title: "操作",
-      key: "action",
-      render: (_: any, record: Provider) => (
-        <Space>
-          {record.isSettled === false && !record.accountBound && (
-            <PermissionWrapper permission={["provider:company:edit"]}>
-              <Button
-                type="link"
-                size="small"
-                style={{ color: "#fa8c16" }}
-                onClick={() => openClaimModal(record)}
-              >
-                认领入驻
+              <Button type="link" size="small" onClick={() => openModal(record)}>
+                编辑
               </Button>
             </PermissionWrapper>
-          )}
-          {record.isSettled === false && !!record.accountBound && (
-            <PermissionWrapper permission={["provider:company:edit"]}>
-              <Button
-                type="link"
-                size="small"
-                style={{ color: "#fa8c16" }}
-                onClick={() => handleCompleteSettlement(record)}
-              >
-                完成入驻
-              </Button>
-            </PermissionWrapper>
-          )}
-          <PermissionWrapper
-            permission={[
-              "provider:designer:edit",
-              "provider:company:edit",
-              "provider:foreman:edit",
-            ]}
-          >
-            <Button type="link" size="small" onClick={() => openModal(record)}>
-              编辑
-            </Button>
-          </PermissionWrapper>
-          <PermissionWrapper
-            permission={[
-              "provider:designer:view",
-              "provider:company:view",
-              "provider:foreman:view",
-            ]}
-          >
-            <Button type="link" size="small" onClick={() => showDetail(record)}>
-              详情
-            </Button>
-          </PermissionWrapper>
-        </Space>
-      ),
+            {moreItems.length > 0 && (
+              <PermissionWrapper permission={["provider:company:edit"]}>
+                <Dropdown
+                  trigger={["click"]}
+                  menu={{
+                    items: moreItems,
+                    onClick: ({ key }) => {
+                      if (key === "claim") openClaimModal(record);
+                      if (key === "complete") handleCompleteSettlement(record);
+                    },
+                  }}
+                >
+                  <Button type="link" size="small" icon={<MoreOutlined />}>
+                    更多
+                  </Button>
+                </Dropdown>
+              </PermissionWrapper>
+            )}
+          </Space>
+        );
+      },
     },
   ];
+  const columns = allColumns.filter((column) =>
+    visibleColumns.includes(column.key as ProviderColumnKey),
+  );
+  const {
+    tableContainerRef,
+    tableClassName,
+    tableColumns,
+    tableScroll,
+  } = useAdaptiveTableScroll(columns, { growColumnKey: "displayName" });
 
   return (
     <div className="hz-page-stack">
@@ -888,17 +1069,6 @@ const ProviderList: React.FC = () => {
           />
           <Select
             allowClear
-            placeholder="账号状态"
-            style={{ width: 120 }}
-            value={accountStatusFilter}
-            onChange={(val) => {
-              setAccountStatusFilter(val);
-              setPage(1);
-            }}
-            options={ACCOUNT_STATUS_OPTIONS}
-          />
-          <Select
-            allowClear
             placeholder="补全状态"
             style={{ width: 120 }}
             value={onboardingStatusFilter}
@@ -922,6 +1092,24 @@ const ProviderList: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={loadData}>
             刷新
           </Button>
+          <Dropdown
+            trigger={["click"]}
+            dropdownRender={() => (
+              <Card size="small" className="provider-list-column-settings">
+                <Checkbox.Group
+                  value={visibleColumns.filter((key) =>
+                    PROVIDER_COLUMN_OPTIONS.some((item) => item.value === key),
+                  )}
+                  options={PROVIDER_COLUMN_OPTIONS}
+                  onChange={(keys) =>
+                    updateVisibleColumns(keys as ProviderColumnKey[])
+                  }
+                />
+              </Card>
+            )}
+          >
+            <Button icon={<SettingOutlined />}>列设置</Button>
+          </Dropdown>
           <PermissionWrapper
             permission={[
               "provider:designer:create",
@@ -941,20 +1129,25 @@ const ProviderList: React.FC = () => {
       </ToolbarCard>
 
       <Card className="hz-table-card">
-        <Table
-          columns={columns}
-          dataSource={providers}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: "max-content" }}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            onChange: setPage,
-            showTotal: (t) => `共 ${t} 条`,
-          }}
-        />
+        <div ref={tableContainerRef}>
+          <Table
+            className={tableClassName}
+            columns={tableColumns}
+            dataSource={providers}
+            rowKey="id"
+            loading={loading}
+            scroll={tableScroll}
+            tableLayout="fixed"
+            sticky
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              onChange: setPage,
+              showTotal: (t) => `共 ${t} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       <Modal
@@ -1071,7 +1264,7 @@ const ProviderList: React.FC = () => {
               </Descriptions>
             </Card>
 
-            <Card size="small" title="账号信息">
+            <Card size="small" title="绑定信息">
               <Descriptions column={2} bordered size="small">
                 <Descriptions.Item label="账号绑定">
                   <Tag
@@ -1079,12 +1272,6 @@ const ProviderList: React.FC = () => {
                   >
                     {currentProvider.accountBound ? "已绑定" : "未绑定"}
                   </Tag>
-                </Descriptions.Item>
-                <Descriptions.Item label="账号状态">
-                  {resolveAccountStatusTag(currentProvider)}
-                </Descriptions.Item>
-                <Descriptions.Item label="登录结果">
-                  {resolveLoginStatusTag(currentProvider)}
                 </Descriptions.Item>
                 <Descriptions.Item label="关联账号ID">
                   {currentProvider.userId || "-"}
@@ -1427,6 +1614,24 @@ const ProviderList: React.FC = () => {
           setPendingClaimValues(null);
         }}
         onConfirmed={handleClaimConfirmed}
+      />
+
+      <AdminReauthModal
+        open={availabilityReauthOpen}
+        title={
+          pendingAvailability?.enabled ? "恢复服务商经营" : "停止服务商经营"
+        }
+        description={
+          pendingAvailability?.enabled
+            ? `将「${pendingAvailability?.name || "-"}」恢复为经营中，允许公开展示和承接新业务。`
+            : `将「${pendingAvailability?.name || "-"}」设为已下线，不再公开展示、不再承接新业务；历史项目、结算和审计仍可查看。`
+        }
+        confirmText={pendingAvailability?.enabled ? "确认恢复" : "确认停止"}
+        onCancel={() => {
+          setAvailabilityReauthOpen(false);
+          setPendingAvailability(null);
+        }}
+        onConfirmed={handleAvailabilityConfirmed}
       />
     </div>
   );

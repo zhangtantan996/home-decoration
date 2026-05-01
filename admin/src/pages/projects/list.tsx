@@ -207,11 +207,13 @@ const ProjectList: React.FC = () => {
                 ))}
             </div>
             <Table
+                className="hz-table-card"
                 dataSource={projects}
                 columns={columns}
                 rowKey="id"
                 loading={loading}
-                scroll={{ x: 'max-content' }}
+                scroll={{ x: 1500 }}
+                sticky
                 pagination={{
                     current: page,
                     total,

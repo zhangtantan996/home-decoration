@@ -118,6 +118,7 @@ interface HomepageShopDTO {
   mainProducts?: string;
   address?: string;
   isVerified?: boolean;
+  isSettled?: boolean;
 }
 
 interface HomepageInspirationDTO {
@@ -180,7 +181,8 @@ function toShopVM(dto: HomepageShopDTO): MaterialShopListItemVM {
     distance: '',
     openTime: '',
     tags: [],
-    isVerified: Boolean(dto.isVerified),
+    isVerified: dto.isSettled === true && Boolean(dto.isVerified),
+    isSettled: dto.isSettled,
   };
 }
 

@@ -240,7 +240,8 @@ const ProviderAudit: React.FC = () => {
                     loading={loading}
                     dataSource={items}
                     columns={columns}
-                    scroll={{ x: 'max-content' }}
+                    scroll={{ x: 1500 }}
+                    sticky
                     pagination={{
                         current: page,
                         pageSize,

@@ -19,8 +19,11 @@ export function MaterialShopDetailPage() {
   return (
     <div className="top-detail">
       {!settled && (
-        <section className="card section-card" style={{ background: '#fffbeb', border: '1px solid #f59e0b', marginBottom: 16, padding: '12px 16px' }}>
-          <p style={{ margin: 0, color: '#92400e', fontSize: 14 }}>该商家信息来源于公开渠道，尚未在本平台入驻，展示内容仅供参考。</p>
+        <section className="card section-card">
+          <div className="pcard-reference-note">
+            <span className="pcard-reference-note-label">平台整理</span>
+            <span>待商家认领，信息仅供参考；不代表平台认证、合作或履约承诺。</span>
+          </div>
         </section>
       )}
       <section className="detail-header">
@@ -35,7 +38,7 @@ export function MaterialShopDetailPage() {
           </div>
           <div className="inline-actions">
             {!settled
-              ? <span className="status-chip" data-tone="warning">未入驻</span>
+              ? <span className="status-chip" data-tone="warning">待商家认领</span>
               : data.isVerified ? <span className="status-chip" data-tone="success">已认证</span> : null}
             <Link className="button-outline" to="/providers?category=material">返回主材列表</Link>
           </div>

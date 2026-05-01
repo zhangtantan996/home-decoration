@@ -217,7 +217,7 @@ export default function LoginPage() {
       <View className="mini-login__content">
         <View className="mini-login__brand-panel">
           <View className="mini-login__logo" />
-          <Text className="mini-login__brand-name">禾泽云创</Text>
+          <Text className="mini-login__brand-name">禾泽云</Text>
         </View>
 
         <View className="mini-login__actions">

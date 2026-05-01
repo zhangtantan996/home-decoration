@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -76,6 +77,73 @@ func TestValidatePaymentChannelRuntimeConfig_WechatRejectsIncompletePlatformPubl
 	}
 	if !strings.Contains(err.Error(), "平台公钥配置不完整") {
 		t.Fatalf("expected platform public key error, got %v", err)
+	}
+}
+
+func TestSetConfigRejectsUnknownAndDeprecatedKeys(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	if err := svc.SetConfig("unknown.typo", "1", "bad"); err == nil {
+		t.Fatal("expected unknown config key to be rejected")
+	}
+	if err := svc.SetConfig("order.construction_fee_stages", `[{"name":"开工款","percentage":100}]`, "旧施工分期"); err == nil {
+		t.Fatal("expected deprecated construction fee stages key to be rejected")
+	}
+}
+
+func TestSetConfigValidatesConstructionMilestonePercentages(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	err := svc.SetConfig(model.ConfigKeyConstructionMilestones, `[{"name":"开工款","percentage":30},{"name":"尾款","percentage":30}]`, "施工分期")
+	if err == nil {
+		t.Fatal("expected construction milestones with non-100 total to fail")
+	}
+
+	valid := `[{"name":"开工款","percentage":30},{"name":"尾款","percentage":70}]`
+	if err := svc.SetConfig(model.ConfigKeyConstructionMilestones, valid, "施工分期"); err != nil {
+		t.Fatalf("expected valid construction milestones to pass, got %v", err)
+	}
+	milestones, err := svc.GetConstructionMilestones()
+	if err != nil {
+		t.Fatalf("get construction milestones: %v", err)
+	}
+	if len(milestones) != 2 || milestones[1].Percentage != 70 {
+		t.Fatalf("unexpected milestones: %+v", milestones)
+	}
+}
+
+func TestGetTencentIMConfigReadsSecretFromEnvOnly(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+	t.Setenv("TENCENT_IM_SECRET_KEY", "env-secret")
+
+	if err := repository.DB.Create(&[]model.SystemConfig{
+		{Key: model.ConfigKeyTencentIMSDKAppID, Value: "140001", Editable: true},
+		{Key: model.ConfigKeyTencentIMEnabled, Value: "true", Editable: true},
+		{Key: model.ConfigKeyTencentIMSecretKey, Value: "db-secret", Editable: true},
+	}).Error; err != nil {
+		t.Fatalf("seed configs: %v", err)
+	}
+	svc.ClearCache()
+
+	cfg, err := svc.GetTencentIMConfig()
+	if err != nil {
+		t.Fatalf("get im config: %v", err)
+	}
+	if cfg.SecretKey != "env-secret" {
+		t.Fatalf("expected env secret, got %q", cfg.SecretKey)
+	}
+
+	_ = os.Unsetenv("TENCENT_IM_SECRET_KEY")
+	svc.ClearCache()
+	cfg, err = svc.GetTencentIMConfig()
+	if err != nil {
+		t.Fatalf("get im config without env: %v", err)
+	}
+	if cfg.SecretKey != "" {
+		t.Fatalf("expected DB secret to be ignored, got %q", cfg.SecretKey)
 	}
 }
 

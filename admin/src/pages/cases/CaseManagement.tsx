@@ -563,8 +563,7 @@ const CaseManagement: React.FC = () => {
             title: '操作',
             key: 'action',
             width: 150,
-            fixed: 'right' as const,
-            render: (_, record) => (
+                  render: (_, record) => (
                 <Space>
                     <Button type="link" size="small" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
                         编辑
@@ -659,6 +658,7 @@ const CaseManagement: React.FC = () => {
                 rowKey="id"
                 loading={loading}
                 scroll={{ x: 1200 }}
+                sticky
                 pagination={{
                     ...pagination,
                     onChange: (page) => setPagination({ ...pagination, current: page }),

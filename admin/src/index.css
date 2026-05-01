@@ -22,3 +22,57 @@ body {
   min-height: 100vh;
   background: #f5f6f8;
 }
+
+.admin-error-fallback {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: Canvas;
+}
+
+.admin-error-fallback__card {
+  max-width: 720px;
+  width: 100%;
+  background: Canvas;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, currentColor 12%, transparent);
+  padding: 24px;
+}
+
+.admin-error-fallback__title {
+  margin-top: 0;
+  margin-bottom: 12px;
+  color: CanvasText;
+}
+
+.admin-error-fallback__desc {
+  margin-top: 0;
+  margin-bottom: 16px;
+  color: inherit;
+  opacity: 0.78;
+  line-height: 1.7;
+}
+
+.admin-error-fallback__actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.admin-route-loading {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+}
+
+.admin-route-loading__inner {
+  text-align: center;
+}
+
+.admin-route-loading__text {
+  margin-top: 16px;
+  color: inherit;
+  opacity: 0.72;
+}

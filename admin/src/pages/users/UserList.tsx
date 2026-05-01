@@ -13,6 +13,8 @@ import {
   Form,
   Tooltip,
   Alert,
+  Checkbox,
+  Dropdown,
 } from "antd";
 import {
   SearchOutlined,
@@ -20,6 +22,7 @@ import {
   PlusOutlined,
   DeleteOutlined,
   LinkOutlined,
+  SettingOutlined,
 } from "@ant-design/icons";
 import {
   adminUserApi,
@@ -28,6 +31,7 @@ import {
 import PageHeader from "../../components/PageHeader";
 import ToolbarCard from "../../components/ToolbarCard";
 import StatusTag from "../../components/StatusTag";
+import { useAdaptiveTableScroll } from "../../hooks/useAdaptiveTableScroll";
 import { useAuthStore } from "../../stores/authStore";
 import { formatServerDateTime } from "../../utils/serverTime";
 import { readSafeErrorMessage } from "../../utils/userFacingText";
@@ -35,6 +39,59 @@ import { readSafeErrorMessage } from "../../utils/userFacingText";
 interface User extends AdminUserListItem {}
 
 const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
+
+type UserColumnKey =
+  | "id"
+  | "phone"
+  | "nickname"
+  | "roleType"
+  | "primaryEntity"
+  | "primaryEntityId"
+  | "status"
+  | "lastLoginAt"
+  | "lastLoginIp"
+  | "accountSecurity"
+  | "createdAt"
+  | "action";
+
+const USER_COLUMN_STORAGE_KEY = "admin.userList.visibleColumns.v3";
+const REQUIRED_USER_COLUMNS: UserColumnKey[] = [
+  "id",
+  "phone",
+  "nickname",
+  "roleType",
+  "primaryEntity",
+  "status",
+  "lastLoginAt",
+  "createdAt",
+  "action",
+];
+const DEFAULT_USER_COLUMNS: UserColumnKey[] = [...REQUIRED_USER_COLUMNS];
+const USER_COLUMN_OPTIONS: Array<{ label: string; value: UserColumnKey }> = [
+  { label: "主体ID", value: "primaryEntityId" },
+  { label: "最近登录IP", value: "lastLoginIp" },
+  { label: "账号安全状态", value: "accountSecurity" },
+];
+
+const loadVisibleUserColumns = (): UserColumnKey[] => {
+  try {
+    if (typeof window === "undefined") return DEFAULT_USER_COLUMNS;
+    const raw = window.localStorage.getItem(USER_COLUMN_STORAGE_KEY);
+    if (!raw) return DEFAULT_USER_COLUMNS;
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return DEFAULT_USER_COLUMNS;
+    const valid = new Set<UserColumnKey>([
+      ...DEFAULT_USER_COLUMNS,
+      ...USER_COLUMN_OPTIONS.map((item) => item.value),
+    ]);
+    const next = parsed.filter((item): item is UserColumnKey => valid.has(item));
+    return next.length > 0
+      ? Array.from(new Set([...REQUIRED_USER_COLUMNS, ...next]))
+      : DEFAULT_USER_COLUMNS;
+  } catch {
+    return DEFAULT_USER_COLUMNS;
+  }
+};
 
 const userRoleMap: Record<string, { text: string; color: string }> = {
   owner: { text: "业主", color: "blue" },
@@ -68,6 +125,9 @@ const UserList: React.FC = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchDeleteVisible, setBatchDeleteVisible] = useState(false);
   const [batchDeleteSubmitting, setBatchDeleteSubmitting] = useState(false);
+  const [visibleColumns, setVisibleColumns] = useState<UserColumnKey[]>(
+    loadVisibleUserColumns,
+  );
   const [form] = Form.useForm();
   const [batchDeleteForm] = Form.useForm();
 
@@ -104,18 +164,18 @@ const UserList: React.FC = () => {
   const handleStatusChange = async (id: number, status: number) => {
     const target = users.find((item) => item.id === id);
     Modal.confirm({
-      title: status === 1 ? "确认启用登录" : "确认禁用登录",
+      title: status === 1 ? "确认允许登录" : "确认禁止登录",
       content:
         status === 1
-          ? `将恢复「${target?.nickname || target?.phone || id}」的登录能力。该操作只影响登录，不直接改变主体经营状态。`
-          : `将禁止「${target?.nickname || target?.phone || id}」登录系统。该操作只影响登录，不直接改变主体经营状态。`,
-      okText: status === 1 ? "确认启用" : "确认禁用",
+          ? `将恢复「${target?.nickname || target?.phone || id}」的登录能力；其绑定主体是否公开展示仍按主体上线、认证和入驻结果计算。`
+          : `将禁止「${target?.nickname || target?.phone || id}」登录系统；其绑定主体也会从公开展示和业务分发中移除。`,
+      okText: status === 1 ? "确认允许" : "确认禁止",
       cancelText: "取消",
       okButtonProps: status === 1 ? undefined : { danger: true },
       onOk: async () => {
         try {
           await adminUserApi.updateStatus(id, status);
-          message.success(status === 1 ? "已启用登录" : "已禁用登录");
+          message.success(status === 1 ? "已允许登录" : "已禁止登录");
           loadData();
         } catch (error) {
           message.error("操作失败");
@@ -138,6 +198,22 @@ const UserList: React.FC = () => {
       default:
         return "/providers/companies";
     }
+  };
+
+  const updateVisibleColumns = (keys: UserColumnKey[]) => {
+    const next = Array.from(new Set([...REQUIRED_USER_COLUMNS, ...keys]));
+    setVisibleColumns(next);
+    window.localStorage.setItem(USER_COLUMN_STORAGE_KEY, JSON.stringify(next));
+  };
+
+  const renderAccountSecurity = (record: User) => {
+    if (record.lockedUntil && new Date(record.lockedUntil).getTime() > Date.now()) {
+      return <StatusTag status="rejected" text="账号锁定" />;
+    }
+    if ((record.loginFailedCount || 0) > 0) {
+      return <StatusTag status="warning" text="有失败记录" />;
+    }
+    return <StatusTag status="approved" text="正常" />;
   };
 
   const openModal = (user?: User) => {
@@ -247,24 +323,44 @@ const UserList: React.FC = () => {
     }
   };
 
-  const columns = [
+  const allColumns = [
     {
       title: "ID",
+      key: "id",
       dataIndex: "id",
-      width: 80,
+      width: 112,
+      fixed: "left" as const,
+      className: "hz-table-id-cell",
+      render: (value: number) => value,
     },
     {
       title: "手机号",
+      key: "phone",
       dataIndex: "phone",
+      width: 150,
+      fixed: "left" as const,
+      className: "hz-table-cell-nowrap",
+      render: (value: string) => (
+        <Tooltip title={value || "-"}>
+          <span className="hz-table-ellipsis-text">{value || "-"}</span>
+        </Tooltip>
+      ),
     },
     {
       title: "昵称",
+      key: "nickname",
       dataIndex: "nickname",
-      render: (val: string) => val || "-",
+      width: 140,
+      render: (val: string) => (
+        <Tooltip title={val || "-"}>
+          <span className="hz-table-ellipsis-text">{val || "-"}</span>
+        </Tooltip>
+      ),
     },
     {
       title: "用户类型",
       key: "roleType",
+      width: 100,
       render: (_: unknown, record: User) => {
         const config = userRoleMap[record.roleType || "owner"];
         return config ? <StatusTag status="info" text={config.text} /> : "-";
@@ -273,13 +369,21 @@ const UserList: React.FC = () => {
     {
       title: "关联主体",
       key: "primaryEntity",
+      width: 280,
       render: (_: unknown, record: User) => {
         if (!record.primaryEntityType || !record.primaryEntityId) {
-          return <StatusTag status="info" text="未关联主体" />;
+          return <span className="hz-table-ellipsis-text">未关联</span>;
         }
+        const entityText = `已关联：${
+          record.primaryEntityName || `#${record.primaryEntityId}`
+        }`;
         return (
-          <Space size={4}>
-            <span>{record.primaryEntityName || `#${record.primaryEntityId}`}</span>
+          <div className="hz-table-inline-action">
+            <Tooltip title={entityText}>
+              <span className="hz-table-inline-action__text">
+                {entityText}
+              </span>
+            </Tooltip>
             <Button
               type="link"
               size="small"
@@ -288,32 +392,72 @@ const UserList: React.FC = () => {
             >
               查看主体
             </Button>
-          </Space>
+          </div>
         );
       },
     },
     {
-      title: "账号状态",
+      title: "主体ID",
+      key: "primaryEntityId",
+      width: 100,
+      render: (_: unknown, record: User) => record.primaryEntityId || "-",
+    },
+    {
+      title: "登录状态",
+      key: "status",
       dataIndex: "status",
+      width: 130,
       render: (val: number, record: User) => (
         <Switch
           checked={val === 1}
-          checkedChildren="启用登录"
-          unCheckedChildren="禁用登录"
+          checkedChildren="允许登录"
+          unCheckedChildren="禁止登录"
           onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
         />
       ),
     },
     {
+      title: "最近登录",
+      key: "lastLoginAt",
+      dataIndex: "lastLoginAt",
+      width: 170,
+      className: "hz-table-cell-nowrap",
+      render: (val: string) => formatServerDateTime(val),
+    },
+    {
+      title: "最近登录IP",
+      key: "lastLoginIp",
+      dataIndex: "lastLoginIp",
+      width: 140,
+      className: "hz-table-cell-nowrap",
+      render: (val: string) => (
+        <Tooltip title={val || "-"}>
+          <span className="hz-table-ellipsis-text">{val || "-"}</span>
+        </Tooltip>
+      ),
+    },
+    {
+      title: "账号安全状态",
+      key: "accountSecurity",
+      width: 130,
+      render: (_: unknown, record: User) => renderAccountSecurity(record),
+    },
+    {
       title: "注册时间",
+      key: "createdAt",
       dataIndex: "createdAt",
+      width: 170,
+      className: "hz-table-cell-nowrap",
       render: (val: string) => formatServerDateTime(val),
     },
     {
       title: "操作",
       key: "action",
+      width: 180,
+      fixed: "right" as const,
+      className: "hz-table-action-cell",
       render: (_: any, record: User) => (
-        <Space>
+        <Space size={6} className="hz-table-action-group">
           <Button type="link" size="small" onClick={() => openModal(record)}>
             编辑
           </Button>
@@ -334,12 +478,24 @@ const UserList: React.FC = () => {
       ),
     },
   ];
+  const columns = allColumns.filter((column) =>
+    visibleColumns.includes(column.key as UserColumnKey),
+  );
+  const {
+    tableContainerRef,
+    tableClassName,
+    tableColumns,
+    tableScroll,
+  } = useAdaptiveTableScroll(columns, {
+    extraWidth: admin?.isSuperAdmin ? 48 : 0,
+    growColumnKey: "primaryEntity",
+  });
 
   return (
     <div className="hz-page-stack">
       <PageHeader
         title="用户管理"
-        description="管理平台登录账号本身，查看身份类型、关联主体与登录启停状态，不直接改变主体经营状态。"
+        description="管理平台账号总控；账号禁用后，绑定主体同步从公开展示和业务分发中移除。"
       />
 
       <ToolbarCard>
@@ -383,6 +539,24 @@ const UserList: React.FC = () => {
           >
             新增用户
           </Button>
+          <Dropdown
+            trigger={["click"]}
+            dropdownRender={() => (
+              <Card size="small" className="user-list-column-settings">
+                <Checkbox.Group
+                  value={visibleColumns.filter((key) =>
+                    USER_COLUMN_OPTIONS.some((item) => item.value === key),
+                  )}
+                  options={USER_COLUMN_OPTIONS}
+                  onChange={(keys) =>
+                    updateVisibleColumns(keys as UserColumnKey[])
+                  }
+                />
+              </Card>
+            )}
+          >
+            <Button icon={<SettingOutlined />}>列设置</Button>
+          </Dropdown>
           {admin?.isSuperAdmin && (
             <Button
               danger
@@ -396,16 +570,6 @@ const UserList: React.FC = () => {
         </div>
       </ToolbarCard>
 
-      {admin?.isSuperAdmin && (
-        <Alert
-          type="warning"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="用户删除为高风险操作"
-          description="单个删除会直接清理该用户及其关联业务数据；批量删除必须输入验证短语后才能执行。"
-        />
-      )}
-
       {roleType && roleTypeHelpText[roleType] && (
         <Alert
           type="info"
@@ -416,34 +580,39 @@ const UserList: React.FC = () => {
       )}
 
       <Card className="hz-table-card">
-        <Table
-          rowSelection={
-            admin?.isSuperAdmin
-              ? {
-                  selectedRowKeys,
-                  onChange: setSelectedRowKeys,
-                }
-              : undefined
-          }
-          columns={columns}
-          dataSource={users}
-          rowKey="id"
-          loading={loading}
-          scroll={{ x: "max-content" }}
-          locale={{
-            emptyText:
-              roleType && roleTypeHelpText[roleType]
-                ? "当前筛选下暂无已绑定账号，请先到对应实体管理页补全/认领账号。"
-                : "暂无数据",
-          }}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            onChange: setPage,
-            showTotal: (t) => `共 ${t} 条`,
-          }}
-        />
+        <div ref={tableContainerRef}>
+          <Table
+            className={tableClassName}
+            rowSelection={
+              admin?.isSuperAdmin
+                ? {
+                    selectedRowKeys,
+                    onChange: setSelectedRowKeys,
+                  }
+                : undefined
+            }
+            columns={tableColumns}
+            dataSource={users}
+            rowKey="id"
+            loading={loading}
+            scroll={tableScroll}
+            tableLayout="fixed"
+            sticky
+            locale={{
+              emptyText:
+                roleType && roleTypeHelpText[roleType]
+                  ? "当前筛选下暂无已绑定账号，请先到对应实体管理页补全/认领账号。"
+                  : "暂无数据",
+            }}
+            pagination={{
+              current: page,
+              pageSize,
+              total,
+              onChange: setPage,
+              showTotal: (t) => `共 ${t} 条`,
+            }}
+          />
+        </div>
       </Card>
 
       <Modal
@@ -481,8 +650,8 @@ const UserList: React.FC = () => {
           <Form.Item name="status" label="账号状态">
             <Select
               options={[
-                { value: 1, label: "启用登录" },
-                { value: 0, label: "禁用登录" },
+                { value: 1, label: "允许登录" },
+                { value: 0, label: "禁止登录" },
               ]}
             />
           </Form.Item>

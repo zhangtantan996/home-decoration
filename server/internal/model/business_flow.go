@@ -75,6 +75,27 @@ const (
 	ConfigKeyOutboxWorkerPollIntervalSec = "outbox.worker.poll_interval_seconds"
 	ConfigKeyOutboxWorkerLockTTLSec      = "outbox.worker.lock_ttl_seconds"
 	ConfigKeyOutboxWorkerMaxRetries      = "outbox.worker.max_retries"
+
+	// 对外内容与合规信息配置（仅白名单字段允许公开读取）
+	ConfigKeyPublicBrandName           = "public.brand_name"
+	ConfigKeyPublicCompanyName         = "public.company_name"
+	ConfigKeyPublicCompanyCreditCode   = "public.company_credit_code"
+	ConfigKeyPublicCompanyRegisterAddr = "public.company_register_addr"
+	ConfigKeyPublicCompanyContactAddr  = "public.company_contact_addr"
+	ConfigKeyPublicICP                 = "public.icp"
+	ConfigKeyPublicSecurityBeian       = "public.security_beian"
+	ConfigKeyPublicCustomerPhone       = "public.customer_phone"
+	ConfigKeyPublicCustomerEmail       = "public.customer_email"
+	ConfigKeyPublicComplaintEmail      = "public.complaint_email"
+	ConfigKeyPublicPrivacyEmail        = "public.privacy_email"
+	ConfigKeyPublicUserAgreement       = "public.user_agreement"
+	ConfigKeyPublicPrivacyPolicy       = "public.privacy_policy"
+	ConfigKeyPublicTransactionRules    = "public.transaction_rules"
+	ConfigKeyPublicRefundRules         = "public.refund_rules"
+	ConfigKeyPublicMerchantOnboarding  = "public.merchant_onboarding"
+	ConfigKeyPublicThirdPartySharing   = "public.third_party_sharing"
+	ConfigKeyPublicLegalVersion        = "public.legal_version"
+	ConfigKeyPublicLegalEffectiveDate  = "public.legal_effective_date"
 )
 
 // Proposal 设计方案

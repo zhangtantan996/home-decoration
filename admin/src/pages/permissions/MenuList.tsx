@@ -305,8 +305,7 @@ const MenuList: React.FC = () => {
             title: '操作',
             key: 'action',
             width: 240,
-            fixed: 'right',
-            render: (_value, record) => (
+                  render: (_value, record) => (
                 <Space size={0}>
                     {record.type !== 3 && canCreateMenu ? (
                         <Button type="link" size="small" icon={<PlusOutlined />} onClick={() => handleAdd(record.id)}>
@@ -398,6 +397,7 @@ const MenuList: React.FC = () => {
                     dataSource={menus}
                     pagination={false}
                     scroll={{ x: 1320 }}
+                    sticky
                     expandable={{
                         expandedRowKeys,
                         onExpandedRowsChange: (keys) => setExpandedRowKeys(keys as React.Key[]),

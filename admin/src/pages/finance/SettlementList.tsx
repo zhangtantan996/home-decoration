@@ -231,6 +231,7 @@ const SettlementList: React.FC = () => {
             showTotal: (value) => `共 ${value} 条`,
           }}
           scroll={{ x: 1320 }}
+          sticky
         />
       </Card>
     </div>

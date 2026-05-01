@@ -473,8 +473,7 @@ const RoleList: React.FC = () => {
             title: '操作',
             key: 'action',
             width: 250,
-            fixed: 'right',
-            render: (_value, record) => {
+                  render: (_value, record) => {
                 const reservedMeta = getReservedRoleMeta(record.key);
                 return (
                     <Space size={0}>
@@ -603,6 +602,7 @@ const RoleList: React.FC = () => {
                     dataSource={roles}
                     pagination={{ pageSize: 10, showSizeChanger: false }}
                     scroll={{ x: 1100 }}
+                    sticky
                 />
             </Card>
 

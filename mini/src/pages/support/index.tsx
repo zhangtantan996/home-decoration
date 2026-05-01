@@ -6,7 +6,7 @@ import { ListItem } from '@/components/ListItem';
 import { Icon } from '@/components/Icon';
 import { showErrorToast } from '@/utils/error';
 
-const SUPPORT_PHONE = '400-888-8888';
+const SUPPORT_PHONE = '17764774797';
 const SUPPORT_TIME = '工作日 09:00 - 18:00';
 
 export default function SupportPage() {

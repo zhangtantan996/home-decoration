@@ -257,7 +257,8 @@ const IdentityApplicationAudit: React.FC = () => {
                     loading={loading}
                     columns={columns as any}
                     dataSource={items}
-                    scroll={{ x: 'max-content' }}
+                    scroll={{ x: 1500 }}
+                    sticky
                     pagination={{
                         current: page,
                         pageSize,

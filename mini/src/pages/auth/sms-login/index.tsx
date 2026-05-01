@@ -180,7 +180,7 @@ export default function SmsLoginPage() {
       <View className="mini-sms-login__content">
         <View className="mini-sms-login__brand-panel">
           <View className="mini-sms-login__logo" />
-          <Text className="mini-sms-login__brand-name">禾泽云创</Text>
+          <Text className="mini-sms-login__brand-name">禾泽云</Text>
         </View>
 
         <View className="mini-sms-login__panel">

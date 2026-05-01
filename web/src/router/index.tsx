@@ -42,6 +42,7 @@ import { ProviderDetailPage } from '../pages/ProviderDetailPage';
 import { ProvidersPage } from '../pages/ProvidersPage';
 import { QuoteGeneratorLandingPage } from '../pages/QuoteGeneratorLandingPage';
 import { PrivacyPolicyPage } from '../pages/legal/PrivacyPolicyPage';
+import { LegalDocumentPage } from '../pages/legal/LegalDocumentPage';
 import { UserAgreementPage } from '../pages/legal/UserAgreementPage';
 import { BookingsPage } from '../pages/profile/BookingsPage';
 import { ComplaintsPage } from '../pages/profile/ComplaintsPage';
@@ -82,6 +83,7 @@ const router = createBrowserRouter(
         },
         { path: 'legal/user-agreement', element: <UserAgreementPage /> },
         { path: 'legal/privacy-policy', element: <PrivacyPolicyPage /> },
+        { path: 'legal/:slug', element: <LegalDocumentPage /> },
       ],
     },
   {

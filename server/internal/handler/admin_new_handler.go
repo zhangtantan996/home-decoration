@@ -2,10 +2,13 @@ package handler
 
 import (
 	"fmt"
+	appconfig "home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -811,7 +814,20 @@ func AdminGetSettings(c *gin.Context) {
 	// 转换为 map 格式
 	result := make(map[string]interface{})
 	for _, setting := range settings {
+		if service.IsSecretSettingKey(setting.Key) {
+			continue
+		}
 		result[setting.Key] = setting.Value
+	}
+	cfg := appconfig.GetConfig()
+	result["sms_runtime_ready"] = strings.TrimSpace(cfg.SMS.AccessKeyID) != "" && strings.TrimSpace(cfg.SMS.AccessKeySecret) != ""
+	result["im_tencent_secret_ready"] = strings.TrimSpace(os.Getenv("TENCENT_IM_SECRET_KEY")) != ""
+	configSvc := &service.ConfigService{}
+	if value, err := configSvc.GetConfig(model.ConfigKeyTencentIMEnabled); err == nil {
+		result["im_tencent_enabled"] = value
+	}
+	if value, err := configSvc.GetConfig(model.ConfigKeyTencentIMSDKAppID); err == nil {
+		result["im_tencent_sdk_app_id"] = value
 	}
 
 	response.Success(c, result)
@@ -831,12 +847,17 @@ func AdminUpdateSettings(c *gin.Context) {
 	delete(req, "recentReauthProof")
 
 	updatedKeys := make([]string, 0, len(req))
+	configSvc := &service.ConfigService{}
 
 	for key, value := range req {
 		// ✅ 前端使用 im_tencent_* 格式，后端使用 im.tencent_* 格式，自动转换
 		dbKey := key
 		if len(key) > 3 && key[:3] == "im_" {
 			dbKey = "im." + key[3:] // im_tencent_enabled -> im.tencent_enabled
+		}
+		if service.IsSecretSettingKey(key) || service.IsSecretSettingKey(dbKey) || service.IsSecretConfigKey(dbKey) {
+			response.BadRequest(c, "密钥类配置由运行环境托管，后台不允许读取或写入")
+			return
 		}
 
 		// 1. 尝试更新 system_settings 表（旧版通用设置）
@@ -850,23 +871,19 @@ func AdminUpdateSettings(c *gin.Context) {
 		// 2. 尝试更新 system_configs 表（业务配置，包括腾讯云 IM）
 		var config model.SystemConfig
 		if err := repository.DB.Where("key = ?", dbKey).First(&config).Error; err == nil {
-			config.Value = value
-			repository.DB.Save(&config)
-			// ✅ 清除配置缓存，确保新值立即生效
-			configSvc := &service.ConfigService{}
-			configSvc.ClearCache()
+			if err := configSvc.SetConfig(dbKey, value, config.Description); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
 			continue
 		}
 
-		// 3. 如果两表都不存在，为 im.* 开头的 key 自动创建到 system_configs
+		// 3. 如果两表都不存在，只允许注册过的 im.* 非密钥配置创建到 system_configs
 		if len(dbKey) > 3 && dbKey[:3] == "im." {
-			newConfig := model.SystemConfig{
-				Key:      dbKey,
-				Value:    value,
-				Type:     "string",
-				Editable: true,
+			if err := configSvc.SetConfig(dbKey, value, ""); err != nil {
+				response.BadRequest(c, err.Error())
+				return
 			}
-			repository.DB.Create(&newConfig)
 		}
 		updatedKeys = append(updatedKeys, dbKey)
 	}
