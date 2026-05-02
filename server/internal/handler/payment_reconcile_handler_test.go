@@ -3,6 +3,7 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -45,10 +46,18 @@ func (handlerPaymentReconcileChannel) ParseNotifyRequest(context.Context, *http.
 	return nil, nil
 }
 
-func (handlerPaymentReconcileChannel) QueryCollectOrder(context.Context, *model.PaymentOrder) (*service.PaymentChannelTradeResult, error) {
+func (handlerPaymentReconcileChannel) QueryCollectOrder(_ context.Context, order *model.PaymentOrder) (*service.PaymentChannelTradeResult, error) {
+	amountCent := int64(0)
+	if order != nil {
+		amountCent = order.AmountCent
+		if amountCent == 0 {
+			amountCent = int64(math.Round(order.Amount * 100))
+		}
+	}
 	return &service.PaymentChannelTradeResult{
 		ProviderTradeNo: "ALI-PAID-2",
 		TradeStatus:     "TRADE_SUCCESS",
+		AmountCent:      amountCent,
 		RawJSON:         `{"trade_status":"TRADE_SUCCESS"}`,
 	}, nil
 }

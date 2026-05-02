@@ -464,7 +464,7 @@ func buildAdminProfile(admin *model.SysAdmin) gin.H {
 		"nickname":          admin.Nickname,
 		"avatar":            imgutil.GetFullImageURL(admin.Avatar),
 		"isSuperAdmin":      admin.IsSuperAdmin,
-		"roles":             getRoleKeys(admin.Roles),
+		"roles":             getRoleKeys(activeAdminRoles(admin.Roles)),
 		"mustResetPassword": admin.MustResetPassword,
 		"twoFactorEnabled":  admin.TwoFactorEnabled,
 		"twoFactorBoundAt":  admin.TwoFactorBoundAt,
@@ -552,11 +552,7 @@ func getAdminPermissions(admin *model.SysAdmin) []string {
 	}
 
 	var permissions []string
-	roleIDs := make([]uint64, len(admin.Roles))
-	for i, role := range admin.Roles {
-		roleIDs[i] = role.ID
-	}
-
+	roleIDs := activeAdminRoleIDs(admin.Roles)
 	if len(roleIDs) == 0 {
 		return permissions
 	}
@@ -591,11 +587,7 @@ func getAdminMenuTree(admin *model.SysAdmin) []*model.SysMenu {
 			Order("sort ASC, id ASC").Find(&menus)
 	} else {
 		// 普通管理员根据角色获取菜单
-		roleIDs := make([]uint64, len(admin.Roles))
-		for i, role := range admin.Roles {
-			roleIDs[i] = role.ID
-		}
-
+		roleIDs := activeAdminRoleIDs(admin.Roles)
 		if len(roleIDs) == 0 {
 			return nil
 		}
@@ -611,6 +603,25 @@ func getAdminMenuTree(admin *model.SysAdmin) []*model.SysMenu {
 
 	// 构建树
 	return buildMenuTree(uniqueMenus, 0)
+}
+
+func activeAdminRoleIDs(roles []model.SysRole) []uint64 {
+	activeRoles := activeAdminRoles(roles)
+	roleIDs := make([]uint64, 0, len(activeRoles))
+	for _, role := range activeRoles {
+		roleIDs = append(roleIDs, role.ID)
+	}
+	return roleIDs
+}
+
+func activeAdminRoles(roles []model.SysRole) []model.SysRole {
+	activeRoles := make([]model.SysRole, 0, len(roles))
+	for _, role := range roles {
+		if role.ID > 0 && role.Status == 1 {
+			activeRoles = append(activeRoles, role)
+		}
+	}
+	return activeRoles
 }
 
 func uniqueAdminMenuNodes(menus []model.SysMenu) []*model.SysMenu {

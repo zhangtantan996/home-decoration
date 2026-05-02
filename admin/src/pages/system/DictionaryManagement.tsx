@@ -12,6 +12,8 @@ import type { ColumnsType } from 'antd/es/table';
 import { readSafeErrorMessage } from '../../utils/userFacingText';
 
 const RANGE_EXTRA_CATEGORIES = new Set(['provider_budget_range', 'inspiration_area_bucket']);
+const OPEN_SERVICE_CATEGORIES = new Set(['open_service_provinces', 'open_service_cities']);
+const HIDE_OPEN_SERVICE_CATEGORIES = true;
 
 function readRangeNumber(value: unknown) {
     if (value === '' || value === undefined || value === null) {
@@ -51,6 +53,7 @@ const DictionaryManagement: React.FC = () => {
     const { clearDict } = useDictStore();
     const currentCategoryCode = Form.useWatch('categoryCode', form) || activeCategory;
     const isRangeCategory = RANGE_EXTRA_CATEGORIES.has(currentCategoryCode);
+    const isOpenServiceCategory = OPEN_SERVICE_CATEGORIES.has(activeCategory);
 
     // 加载分类列表
     useEffect(() => {
@@ -70,7 +73,15 @@ const DictionaryManagement: React.FC = () => {
             const res = await dictionaryApi.getCategories();
             // 过滤掉 service_area，已迁移至行政区划管理
             // 过滤掉 work_type，当前业务未直接消费该字典，避免与实际商家/施工角色口径混淆
-            const filteredCategories = (res || []).filter(cat => !['service_area', 'work_type'].includes(cat.code));
+            const filteredCategories = (res || []).filter(cat => {
+                if (['service_area', 'work_type'].includes(cat.code)) {
+                    return false;
+                }
+                if (HIDE_OPEN_SERVICE_CATEGORIES && OPEN_SERVICE_CATEGORIES.has(cat.code)) {
+                    return false;
+                }
+                return true;
+            });
             setCategories(filteredCategories);
             if (filteredCategories && filteredCategories.length > 0 && !activeCategory) {
                 setActiveCategory(filteredCategories[0].code);
@@ -101,6 +112,10 @@ const DictionaryManagement: React.FC = () => {
     };
 
     const handleAdd = () => {
+        if (isOpenServiceCategory) {
+            message.warning('开放服务地区已迁移至行政区划管理，当前分类只读');
+            return;
+        }
         form.resetFields();
         const currentCategory = categories.find(cat => cat.code === activeCategory);
 
@@ -124,6 +139,10 @@ const DictionaryManagement: React.FC = () => {
     };
 
     const handleEdit = (record: DictItem) => {
+        if (isOpenServiceCategory) {
+            message.warning('开放服务地区已迁移至行政区划管理，当前分类只读');
+            return;
+        }
         const currentCategory = categories.find(cat => cat.code === record.categoryCode);
         const rangeMin = readRangeNumber(record.extraData?.min);
         const rangeMax = readRangeNumber(record.extraData?.max);
@@ -140,6 +159,10 @@ const DictionaryManagement: React.FC = () => {
     };
 
     const handleDelete = async (record: DictItem) => {
+        if (isOpenServiceCategory) {
+            message.warning('开放服务地区已迁移至行政区划管理，当前分类只读');
+            return;
+        }
         try {
             await dictionaryApi.delete(record.id);
             message.success('删除成功');
@@ -241,6 +264,7 @@ const DictionaryManagement: React.FC = () => {
                         type="link"
                         size="small"
                         icon={<EditOutlined />}
+                        disabled={isOpenServiceCategory}
                         onClick={() => handleEdit(record)}
                     >
                         编辑
@@ -254,6 +278,7 @@ const DictionaryManagement: React.FC = () => {
                             size="small"
                             danger
                             icon={<DeleteOutlined />}
+                            disabled={isOpenServiceCategory}
                         >
                             删除
                         </Button>
@@ -267,14 +292,14 @@ const DictionaryManagement: React.FC = () => {
         <Card
             title="数据字典管理"
             extra={
-                <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+                <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd} disabled={isOpenServiceCategory}>
                     新增
                 </Button>
             }
         >
             <div style={{ marginBottom: 16, padding: '12px 16px', background: '#fff7e6', borderRadius: 4, border: '1px solid #ffd591' }}>
                 <p style={{ margin: 0, color: '#ad6800' }}>
-                    💡 <strong>提示</strong>：行政区划数据请前往 <Link to="/settings/regions" style={{ fontWeight: 'bold', color: '#1890ff' }}>行政区划管理</Link> 维护；服务城市开放策略请在当前字典页维护“开放省份 / 开放城市”分类。
+                    💡 <strong>提示</strong>：行政区划与开放服务策略统一收口到 <Link to="/settings/regions" style={{ fontWeight: 'bold', color: '#1890ff' }}>行政区划管理</Link> 维护。字典页不再作为开放服务地区维护入口。
                 </p>
             </div>
 

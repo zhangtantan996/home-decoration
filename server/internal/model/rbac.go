@@ -48,7 +48,7 @@ type SysRole struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 
 	// 关联
-	Menus []SysMenu `json:"menus" gorm:"many2many:sys_role_menus;"`
+	Menus []SysMenu `json:"menus" gorm:"many2many:sys_role_menus;foreignKey:ID;joinForeignKey:RoleID;References:ID;joinReferences:MenuID"`
 }
 
 func (SysRole) TableName() string {

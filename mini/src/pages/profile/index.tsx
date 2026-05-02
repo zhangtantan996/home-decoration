@@ -3,6 +3,7 @@ import { Image, Text, View } from '@tarojs/components';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Card } from '@/components/Card';
+import { Button } from '@/components/Button';
 import { Icon } from '@/components/Icon';
 import { ListItem } from '@/components/ListItem';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
@@ -265,6 +266,12 @@ export default function Profile() {
     });
   };
 
+  const handleQuoteGenerator = () => {
+    requireAuth(() => {
+      Taro.navigateTo({ url: '/pages/quote-generator/index' });
+    });
+  };
+
   const handleSettings = () => {
     Taro.navigateTo({ url: '/pages/settings/index' });
   };
@@ -323,6 +330,9 @@ export default function Profile() {
                 </View>
               </View>
 
+              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleQuoteGenerator}>
+                智能报价
+              </Button>
             </View>
           </View>
 

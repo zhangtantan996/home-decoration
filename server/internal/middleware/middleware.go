@@ -334,7 +334,6 @@ func AdminJWT(secret string) gin.HandlerFunc {
 // RequirePermission RBAC权限验证中间件
 func RequirePermission(permission string) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 获取管理员ID和超管标志
 		adminID, exists := c.Get("admin_id")
 		if !exists {
 			response.Unauthorized(c, "未登录")
@@ -344,33 +343,16 @@ func RequirePermission(permission string) gin.HandlerFunc {
 
 		isSuperAdmin, _ := c.Get("is_super")
 		if isSuperAdmin == true {
-			// 超级管理员拥有所有权限
 			c.Next()
 			return
 		}
 
-		// 查询管理员权限
-		var admin model.SysAdmin
-		if err := repository.DB.Preload("Roles.Menus").First(&admin, adminID).Error; err != nil {
+		hasPermission, err := adminHasAnyPermission(adminID, []string{permission})
+		if err != nil {
 			response.Forbidden(c, "无权限")
 			c.Abort()
 			return
 		}
-
-		// 检查是否有该权限
-		hasPermission := false
-		for _, role := range admin.Roles {
-			for _, menu := range role.Menus {
-				if menu.Permission == permission || menu.Permission == "*:*:*" {
-					hasPermission = true
-					break
-				}
-			}
-			if hasPermission {
-				break
-			}
-		}
-
 		if !hasPermission {
 			response.Forbidden(c, "无权限执行此操作")
 			c.Abort()
@@ -397,40 +379,51 @@ func RequireAnyPermission(permissions ...string) gin.HandlerFunc {
 			return
 		}
 
-		if len(permissions) == 0 {
+		hasPermission, err := adminHasAnyPermission(adminID, permissions)
+		if err != nil {
+			response.Forbidden(c, "无权限")
+			c.Abort()
+			return
+		}
+		if !hasPermission {
 			response.Forbidden(c, "无权限执行此操作")
 			c.Abort()
 			return
 		}
 
-		var admin model.SysAdmin
-		if err := repository.DB.Preload("Roles.Menus").First(&admin, adminID).Error; err != nil {
-			response.Forbidden(c, "无权限")
-			c.Abort()
-			return
-		}
-
-		permissionSet := make(map[string]struct{}, len(permissions))
-		for _, permission := range permissions {
-			permissionSet[permission] = struct{}{}
-		}
-
-		for _, role := range admin.Roles {
-			for _, menu := range role.Menus {
-				if menu.Permission == "*:*:*" {
-					c.Next()
-					return
-				}
-				if _, ok := permissionSet[menu.Permission]; ok {
-					c.Next()
-					return
-				}
-			}
-		}
-
-		response.Forbidden(c, "无权限执行此操作")
-		c.Abort()
+		c.Next()
 	}
+}
+
+func adminHasAnyPermission(rawAdminID interface{}, permissions []string) (bool, error) {
+	adminID, ok := claimToUint64(rawAdminID)
+	if !ok || adminID == 0 || len(permissions) == 0 {
+		return false, nil
+	}
+	normalized := make([]string, 0, len(permissions))
+	for _, permission := range permissions {
+		permission = strings.TrimSpace(permission)
+		if permission != "" {
+			normalized = append(normalized, permission)
+		}
+	}
+	if len(normalized) == 0 {
+		return false, nil
+	}
+
+	var count int64
+	err := repository.DB.Table("sys_admin_roles").
+		Joins("JOIN sys_roles ON sys_roles.id = sys_admin_roles.role_id AND sys_roles.status = 1").
+		Joins("JOIN sys_role_menus ON sys_role_menus.role_id = sys_roles.id").
+		Joins("JOIN sys_menus ON sys_menus.id = sys_role_menus.menu_id AND sys_menus.status = 1").
+		Where("sys_admin_roles.admin_id = ?", adminID).
+		Where("sys_menus.permission = ? OR sys_menus.permission IN ?", "*:*:*", normalized).
+		Limit(1).
+		Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
 }
 
 // RequireSuperAdmin 仅允许超级管理员访问

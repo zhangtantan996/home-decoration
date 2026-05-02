@@ -6,6 +6,8 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"strings"
+
+	"gorm.io/gorm"
 )
 
 // RegionService 行政区划服务
@@ -31,6 +33,7 @@ type serviceCityRecord struct {
 	ParentName        string
 	ProvinceSortOrder int
 	CitySortOrder     int
+	ServiceEnabled    bool
 }
 
 // ValidateRegionCodes 验证区域代码数组是否有效（存在且已启用）
@@ -377,36 +380,13 @@ func (s *RegionService) ListOpenServiceProvinces() ([]ServiceRegionDTO, error) {
 
 // ListOpenServiceCities 返回当前开放可选的服务城市
 func (s *RegionService) ListOpenServiceCities() ([]ServiceRegionDTO, error) {
-	provinceCodes, err := s.getEnabledDictionaryValues(openServiceProvincesCategory)
+	records, err := s.listServiceEnabledCityRecords()
 	if err != nil {
 		return nil, err
-	}
-	cityCodes, err := s.getEnabledDictionaryValues(openServiceCitiesCategory)
-	if err != nil {
-		return nil, err
-	}
-
-	records, err := s.listEnabledCityRecords()
-	if err != nil {
-		return nil, err
-	}
-
-	provinceOpen := make(map[string]struct{}, len(provinceCodes))
-	for _, code := range provinceCodes {
-		provinceOpen[code] = struct{}{}
-	}
-	cityOpen := make(map[string]struct{}, len(cityCodes))
-	for _, code := range cityCodes {
-		cityOpen[code] = struct{}{}
 	}
 
 	items := make([]ServiceRegionDTO, 0, len(records))
 	for _, record := range records {
-		_, provinceEnabled := provinceOpen[record.ParentCode]
-		_, cityEnabled := cityOpen[record.Code]
-		if !provinceEnabled && !cityEnabled {
-			continue
-		}
 		items = append(items, ServiceRegionDTO{
 			Code:       record.Code,
 			Name:       record.Name,
@@ -418,27 +398,121 @@ func (s *RegionService) ListOpenServiceCities() ([]ServiceRegionDTO, error) {
 	return items, nil
 }
 
-func (s *RegionService) getEnabledDictionaryValues(categoryCode string) ([]string, error) {
-	var values []string
-	if err := repository.DB.Model(&model.SystemDictionary{}).
-		Where("category_code = ? AND enabled = ?", categoryCode, true).
-		Order("sort_order ASC, id ASC").
-		Pluck("value", &values).Error; err != nil {
-		return nil, err
+// SyncOpenServiceDictionariesFromRegionsTx 按 regions.service_enabled 重建开放省市字典（兼容期双写）
+func (s *RegionService) SyncOpenServiceDictionariesFromRegionsTx(tx *gorm.DB) error {
+	if tx == nil {
+		tx = repository.DB
 	}
-	return values, nil
+
+	records, err := s.listEnabledCityRecordsTx(tx)
+	if err != nil {
+		return err
+	}
+
+	provinceRows := make([]model.SystemDictionary, 0)
+	cityRows := make([]model.SystemDictionary, 0)
+
+	type provinceStats struct {
+		totalEnabled int
+		openEnabled  int
+	}
+
+	provinceOrder := make([]string, 0)
+	provinceSeen := make(map[string]struct{})
+	provinceStatsMap := make(map[string]*provinceStats)
+	openCityByProvince := make(map[string][]serviceCityRecord)
+
+	for _, record := range records {
+		if _, ok := provinceSeen[record.ParentCode]; !ok {
+			provinceSeen[record.ParentCode] = struct{}{}
+			provinceOrder = append(provinceOrder, record.ParentCode)
+		}
+		stats := provinceStatsMap[record.ParentCode]
+		if stats == nil {
+			stats = &provinceStats{}
+			provinceStatsMap[record.ParentCode] = stats
+		}
+		stats.totalEnabled++
+		if record.ServiceEnabled {
+			stats.openEnabled++
+			openCityByProvince[record.ParentCode] = append(openCityByProvince[record.ParentCode], record)
+		}
+	}
+
+	provinceSortOrder := 1
+	citySortOrder := 1
+	for _, provinceCode := range provinceOrder {
+		stats := provinceStatsMap[provinceCode]
+		if stats == nil || stats.totalEnabled == 0 || stats.openEnabled == 0 {
+			continue
+		}
+		if stats.openEnabled == stats.totalEnabled {
+			provinceRows = append(provinceRows, model.SystemDictionary{
+				CategoryCode: openServiceProvincesCategory,
+				Value:        provinceCode,
+				Label:        openCityByProvince[provinceCode][0].ParentName,
+				Description:  "由行政区划服务开放状态自动同步",
+				SortOrder:    provinceSortOrder,
+				Enabled:      true,
+			})
+			provinceSortOrder++
+			continue
+		}
+		for _, city := range openCityByProvince[provinceCode] {
+			cityRows = append(cityRows, model.SystemDictionary{
+				CategoryCode: openServiceCitiesCategory,
+				Value:        city.Code,
+				Label:        city.Name,
+				Description:  "由行政区划服务开放状态自动同步",
+				SortOrder:    citySortOrder,
+				Enabled:      true,
+			})
+			citySortOrder++
+		}
+	}
+
+	if err := s.ensureOpenServiceDictionaryCategoriesTx(tx); err != nil {
+		return err
+	}
+	if err := tx.Where("category_code IN ?", []string{openServiceProvincesCategory, openServiceCitiesCategory}).
+		Delete(&model.SystemDictionary{}).Error; err != nil {
+		return err
+	}
+	if len(provinceRows) > 0 {
+		if err := tx.Create(&provinceRows).Error; err != nil {
+			return err
+		}
+	}
+	if len(cityRows) > 0 {
+		if err := tx.Create(&cityRows).Error; err != nil {
+			return err
+		}
+	}
+
+	cache := NewDictCacheService()
+	_ = cache.DeleteDictCache(openServiceProvincesCategory)
+	_ = cache.DeleteDictCache(openServiceCitiesCategory)
+	return nil
 }
 
 func (s *RegionService) listEnabledCityRecords() ([]serviceCityRecord, error) {
+	return s.listEnabledCityRecordsTx(repository.DB)
+}
+
+func (s *RegionService) listEnabledCityRecordsTx(tx *gorm.DB) ([]serviceCityRecord, error) {
+	if tx == nil {
+		tx = repository.DB
+	}
 	var records []serviceCityRecord
-	err := repository.DB.Table("regions AS city").
+	err := tx.Table("regions AS city").
 		Select(`
 			city.code AS code,
 			city.name AS name,
 			city.parent_code AS parent_code,
 			province.name AS parent_name,
 			province.sort_order AS province_sort_order,
-			city.sort_order AS city_sort_order
+			city.sort_order AS city_sort_order,
+			city.service_enabled AS service_enabled
 		`).
 		Joins("JOIN regions AS province ON province.code = city.parent_code").
 		Where("city.level = ? AND city.enabled = ? AND province.enabled = ?", 2, true, true).
@@ -448,6 +522,63 @@ func (s *RegionService) listEnabledCityRecords() ([]serviceCityRecord, error) {
 		return nil, err
 	}
 	return records, nil
+}
+
+func (s *RegionService) listServiceEnabledCityRecords() ([]serviceCityRecord, error) {
+	var records []serviceCityRecord
+	err := repository.DB.Table("regions AS city").
+		Select(`
+			city.code AS code,
+			city.name AS name,
+			city.parent_code AS parent_code,
+			province.name AS parent_name,
+			province.sort_order AS province_sort_order,
+			city.sort_order AS city_sort_order,
+			city.service_enabled AS service_enabled
+		`).
+		Joins("JOIN regions AS province ON province.code = city.parent_code").
+		Where("city.level = ? AND city.enabled = ? AND city.service_enabled = ? AND province.enabled = ?", 2, true, true, true).
+		Order("province.sort_order ASC, province.code ASC, city.sort_order ASC, city.code ASC").
+		Scan(&records).Error
+	if err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (s *RegionService) ensureOpenServiceDictionaryCategoriesTx(tx *gorm.DB) error {
+	if tx == nil {
+		tx = repository.DB
+	}
+	rows := []model.DictionaryCategory{
+		{
+			Code:        openServiceProvincesCategory,
+			Name:        "开放服务省份",
+			Description: "控制哪些省份下的已启用地级市对外开放",
+			SortOrder:   13,
+			Enabled:     true,
+		},
+		{
+			Code:        openServiceCitiesCategory,
+			Name:        "开放服务城市",
+			Description: "补充追加开放单个地级市",
+			SortOrder:   14,
+			Enabled:     true,
+		},
+	}
+	for _, row := range rows {
+		if err := tx.Where("code = ?", row.Code).
+			Assign(map[string]interface{}{
+				"name":        row.Name,
+				"description": row.Description,
+				"sort_order":  row.SortOrder,
+				"enabled":     true,
+			}).
+			FirstOrCreate(&model.DictionaryCategory{Code: row.Code}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func normalizeRegionInputs(items []string) []string {

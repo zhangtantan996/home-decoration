@@ -12,7 +12,17 @@ import (
 
 type regionTreeItem struct {
 	model.Region
-	HasChildren bool `json:"hasChildren"`
+	HasChildren           bool  `json:"hasChildren"`
+	OpenCityCount         int64 `json:"openCityCount,omitempty"`
+	TotalCityCount        int64 `json:"totalCityCount,omitempty"`
+	TotalEnabledCityCount int64 `json:"totalEnabledCityCount,omitempty"`
+}
+
+type provinceServiceStatsRow struct {
+	ParentCode            string `gorm:"column:parent_code"`
+	OpenCityCount         int64  `gorm:"column:open_city_count"`
+	TotalCityCount        int64  `gorm:"column:total_city_count"`
+	TotalEnabledCityCount int64  `gorm:"column:total_enabled_city_count"`
 }
 
 func appendRegionHasChildren(regions []model.Region) ([]regionTreeItem, error) {
@@ -48,6 +58,52 @@ func appendRegionHasChildren(regions []model.Region) ([]regionTreeItem, error) {
 	}
 
 	return items, nil
+}
+
+func appendProvinceServiceStats(items []regionTreeItem) error {
+	if len(items) == 0 {
+		return nil
+	}
+
+	provinceCodes := make([]string, 0)
+	for _, item := range items {
+		if item.Level == 1 {
+			provinceCodes = append(provinceCodes, item.Code)
+		}
+	}
+	if len(provinceCodes) == 0 {
+		return nil
+	}
+
+	var rows []provinceServiceStatsRow
+	if err := repository.DB.Table("regions").
+		Select(`
+			parent_code,
+			SUM(CASE WHEN enabled = TRUE AND service_enabled = TRUE THEN 1 ELSE 0 END) AS open_city_count,
+			COUNT(1) AS total_city_count,
+			SUM(CASE WHEN enabled = TRUE THEN 1 ELSE 0 END) AS total_enabled_city_count
+		`).
+		Where("level = ? AND parent_code IN ?", 2, provinceCodes).
+		Group("parent_code").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+
+	statsMap := make(map[string]provinceServiceStatsRow, len(rows))
+	for _, row := range rows {
+		statsMap[row.ParentCode] = row
+	}
+	for idx := range items {
+		if items[idx].Level != 1 {
+			continue
+		}
+		stats := statsMap[items[idx].Code]
+		items[idx].OpenCityCount = stats.OpenCityCount
+		items[idx].TotalCityCount = stats.TotalCityCount
+		items[idx].TotalEnabledCityCount = stats.TotalEnabledCityCount
+	}
+
+	return nil
 }
 
 // ==================== 行政区划 API ====================
@@ -146,6 +202,8 @@ func AdminGetChildrenByParentCode(c *gin.Context) {
 
 	var children []model.Region
 	if err := repository.DB.Where("parent_code = ?", parentCode).
+		Order("CASE WHEN level = 2 AND service_enabled = TRUE THEN 0 ELSE 1 END ASC").
+		Order("CASE WHEN level = 2 AND enabled = TRUE THEN 0 ELSE 1 END ASC").
 		Order("sort_order ASC, code ASC").
 		Find(&children).Error; err != nil {
 		response.Error(c, 500, "查询失败")
@@ -180,6 +238,31 @@ func AdminListRegions(c *gin.Context) {
 		db = db.Where("parent_code = ?", parentCode)
 	}
 
+	if level == "1" {
+		db = db.Order(`
+			CASE WHEN EXISTS (
+				SELECT 1 FROM regions AS city
+				WHERE city.level = 2
+				  AND city.parent_code = regions.code
+				  AND city.enabled = TRUE
+				  AND city.service_enabled = TRUE
+			) THEN 0 ELSE 1 END ASC
+		`).
+			Order(`
+				(
+					SELECT COUNT(1) FROM regions AS city
+					WHERE city.level = 2
+					  AND city.parent_code = regions.code
+					  AND city.enabled = TRUE
+					  AND city.service_enabled = TRUE
+				) DESC
+			`)
+	}
+	if level == "2" {
+		db = db.Order("service_enabled DESC").
+			Order("enabled DESC")
+	}
+
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).
 		Order("level ASC, sort_order ASC, code ASC").
@@ -190,11 +273,136 @@ func AdminListRegions(c *gin.Context) {
 		response.Error(c, 500, "查询失败")
 		return
 	}
+	if err := appendProvinceServiceStats(items); err != nil {
+		response.Error(c, 500, "查询失败")
+		return
+	}
 
 	response.Success(c, gin.H{
 		"list":  items,
 		"total": total,
 	})
+}
+
+// AdminToggleRegionService 管理员开启/关闭服务开放状态
+func AdminToggleRegionService(c *gin.Context) {
+	id := c.Param("id")
+	var req struct {
+		ServiceEnabled *bool `json:"serviceEnabled"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if req.ServiceEnabled == nil {
+		response.BadRequest(c, "serviceEnabled 不能为空")
+		return
+	}
+	serviceEnabled := *req.ServiceEnabled
+
+	var region model.Region
+	if err := repository.DB.Where("id = ?", id).First(&region).Error; err != nil {
+		response.NotFound(c, "区域不存在")
+		return
+	}
+
+	if region.Level == 3 {
+		response.BadRequest(c, "区县不参与服务开放开关")
+		return
+	}
+
+	tx := repository.DB.Begin()
+	if tx.Error != nil {
+		response.ServerError(c, "操作失败")
+		return
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	beforeState := map[string]interface{}{
+		"regionId":         region.ID,
+		"level":            region.Level,
+		"serviceEnabled":   region.ServiceEnabled,
+		"targetRegionCode": region.Code,
+	}
+	afterState := map[string]interface{}{
+		"regionId":         region.ID,
+		"level":            region.Level,
+		"serviceEnabled":   serviceEnabled,
+		"targetRegionCode": region.Code,
+	}
+	affected := int64(0)
+
+	if region.Level == 1 {
+		if err := tx.Model(&model.Region{}).
+			Where("level = ? AND parent_code = ?", 2, region.Code).
+			Update("service_enabled", serviceEnabled).Error; err != nil {
+			tx.Rollback()
+			response.ServerError(c, "操作失败")
+			return
+		}
+		if err := tx.Model(&model.Region{}).
+			Where("level = ? AND parent_code = ?", 2, region.Code).
+			Count(&affected).Error; err != nil {
+			tx.Rollback()
+			response.ServerError(c, "操作失败")
+			return
+		}
+		afterState["affectedCityCount"] = affected
+	} else {
+		if err := tx.Model(&model.Region{}).
+			Where("id = ?", region.ID).
+			Update("service_enabled", serviceEnabled).Error; err != nil {
+			tx.Rollback()
+			response.ServerError(c, "操作失败")
+			return
+		}
+		affected = 1
+	}
+
+	regionService := service.RegionService{}
+	if err := regionService.SyncOpenServiceDictionariesFromRegionsTx(tx); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "同步开放服务字典失败")
+		return
+	}
+
+	adminID := c.GetUint64("admin_id")
+	if adminID == 0 {
+		adminID = c.GetUint64("adminId")
+	}
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "toggle_region_service",
+		ResourceType:  "region",
+		ResourceID:    region.ID,
+		Reason:        readAdminReason(c, "调整区域服务开放状态"),
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState:    afterState,
+		Metadata: map[string]interface{}{
+			"regionCode":        region.Code,
+			"regionLevel":       region.Level,
+			"serviceEnabled":    serviceEnabled,
+			"affectedCityCount": affected,
+		},
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "写入审计日志失败")
+		return
+	}
+
+	if err := tx.Commit().Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "操作失败")
+		return
+	}
+
+	response.Success(c, nil)
 }
 
 // AdminToggleRegion 管理员启用/禁用行政区划（级联操作）

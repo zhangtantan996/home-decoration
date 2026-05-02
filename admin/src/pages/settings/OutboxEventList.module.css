@@ -1,5 +1,6 @@
 .filterCompact {
   width: 140px;
+  min-width: 140px;
 }
 
 .filterEventType {
@@ -21,4 +22,8 @@
 .payloadPre {
   margin: 0;
   white-space: pre-wrap;
+}
+
+:global(.ant-select-dropdown .ant-select-item-option-content) {
+  white-space: nowrap;
 }

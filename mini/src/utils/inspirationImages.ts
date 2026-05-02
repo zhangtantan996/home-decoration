@@ -1,6 +1,6 @@
 import { parseAbsoluteUrl, replaceAbsoluteUrlOrigin } from '@/utils/url';
 
-const API_BASE = (process.env.TARO_APP_API_BASE || 'http://127.0.0.1:8080/api/v1').trim();
+const API_BASE = (process.env.TARO_APP_API_BASE || 'https://api.hezeyunchuang.com/api/v1').trim();
 
 export const DEFAULT_INSPIRATION_IMAGE_PATH = '/static/inspiration/default-cover.png';
 export const DEFAULT_INSPIRATION_AVATAR_PATH = '/static/inspiration/default-avatar.png';

@@ -15,6 +15,7 @@ type PaymentChannelTradeResult struct {
 	TradeStatus     string
 	BuyerLogonID    string
 	BuyerAmount     float64
+	AmountCent      int64
 	RawJSON         string
 }
 
@@ -44,6 +45,7 @@ type PaymentChannelNotifyResult struct {
 	OutTradeNo      string
 	ProviderTradeNo string
 	TradeStatus     string
+	AmountCent      int64
 	RawJSON         string
 }
 
@@ -139,6 +141,7 @@ func (s *AlipayPaymentChannelService) ParseNotifyRequest(_ context.Context, requ
 		OutTradeNo:      payload["out_trade_no"],
 		ProviderTradeNo: payload["trade_no"],
 		TradeStatus:     payload["trade_status"],
+		AmountCent:      parseAlipayNotifyAmountCent(payload),
 		RawJSON:         mustMarshalJSON(payload),
 	}, nil
 }
@@ -153,6 +156,7 @@ func (s *AlipayPaymentChannelService) QueryCollectOrder(ctx context.Context, ord
 		TradeStatus:     result.TradeStatus,
 		BuyerLogonID:    result.BuyerLogonID,
 		BuyerAmount:     result.BuyerAmount,
+		AmountCent:      floatToCents(result.BuyerAmount),
 		RawJSON:         result.RawJSON,
 	}, nil
 }

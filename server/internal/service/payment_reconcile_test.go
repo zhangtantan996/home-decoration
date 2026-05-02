@@ -45,11 +45,19 @@ func (c paymentReconcileTestChannel) ParseNotifyRequest(context.Context, *http.R
 	return nil, nil
 }
 
-func (c paymentReconcileTestChannel) QueryCollectOrder(context.Context, *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
+func (c paymentReconcileTestChannel) QueryCollectOrder(_ context.Context, order *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
+	amountCent := int64(0)
+	if order != nil {
+		amountCent = order.AmountCent
+		if amountCent == 0 {
+			amountCent = floatToCents(order.Amount)
+		}
+	}
 	return &PaymentChannelTradeResult{
 		ProviderTradeNo: "ALI-PAID-1",
 		TradeStatus:     c.tradeStatus,
-		RawJSON:         `{"trade_status":"TRADE_SUCCESS"}`,
+		AmountCent:      amountCent,
+		RawJSON:         `{"trade_status":"TRADE_SUCCESS","buyer_pay_amount":"1000.00"}`,
 	}, nil
 }
 

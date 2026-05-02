@@ -51,6 +51,11 @@ const PAYMENT_CHANNEL_KEYS = {
   alipayReady: "payment.channel.alipay.runtime_ready",
 } as const;
 
+const FEATURE_SWITCH_KEYS = {
+  outboxWorkerEnabled: "outbox.worker.enabled",
+  paymentPayoutAutoEnabled: "payment.payout_auto_enabled",
+} as const;
+
 const MINI_HOME_POPUP_CONFIG_KEY = "mini.home_popup.config";
 
 const PUBLIC_COMPLIANCE_CONFIG_KEYS = {
@@ -221,7 +226,7 @@ const HOME_POPUP_FREQUENCY_OPTIONS = [
   { value: "campaign_once", label: "活动期一次" },
 ];
 
-const TABS_WITH_GLOBAL_SAVE = new Set(["1", "2", "5", "6"]);
+const TABS_WITH_GLOBAL_SAVE = new Set(["1", "5", "6"]);
 
 interface HomePopupFormValues {
   enabled: boolean;
@@ -808,6 +813,7 @@ const SystemSettings: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [savingBiz, setSavingBiz] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
+  const [savingFeature, setSavingFeature] = useState(false);
   const [savingHomePopup, setSavingHomePopup] = useState(false);
   const [savingCompliance, setSavingCompliance] = useState(false);
   const [uploadingPopupHero, setUploadingPopupHero] = useState(false);
@@ -821,7 +827,7 @@ const SystemSettings: React.FC = () => {
     null,
   );
   const [pendingAction, setPendingAction] = useState<
-    "base" | "payment" | "biz" | "homePopup" | "compliance" | null
+    "base" | "payment" | "feature" | "biz" | "homePopup" | "compliance" | null
   >(null);
   const [pendingPayload, setPendingPayload] = useState<Record<
     string,
@@ -838,6 +844,7 @@ const SystemSettings: React.FC = () => {
   const [form] = Form.useForm();
   const [bizForm] = Form.useForm();
   const [paymentForm] = Form.useForm();
+  const [featureForm] = Form.useForm();
   const [popupForm] = Form.useForm<HomePopupFormValues>();
   const [complianceForm] = Form.useForm();
   const popupPreviewValues = Form.useWatch([], popupForm) as
@@ -925,15 +932,6 @@ const SystemSettings: React.FC = () => {
       const res = (await adminSettingsApi.get()) as any;
       if (res.code === 0) {
         const settings = { ...res.data };
-        settings.enable_registration =
-          settings.enable_registration === "true" ||
-          settings.enable_registration === true;
-        settings.enable_sms_verify =
-          settings.enable_sms_verify === "true" ||
-          settings.enable_sms_verify === true;
-        settings.enable_email_verify =
-          settings.enable_email_verify === "true" ||
-          settings.enable_email_verify === true;
         settings.im_tencent_enabled =
           settings.im_tencent_enabled === "true" ||
           settings.im_tencent_enabled === true;
@@ -948,6 +946,14 @@ const SystemSettings: React.FC = () => {
       const bizRes = (await adminSystemConfigApi.list()) as any;
       const configs: AdminSystemConfigItem[] = bizRes?.data?.configs || [];
       const bizConfigMap = applyPaymentConfig(configs);
+      featureForm.setFieldsValue({
+        outboxWorkerEnabled: isConfigEnabled(
+          bizConfigMap[FEATURE_SWITCH_KEYS.outboxWorkerEnabled],
+        ),
+        paymentPayoutAutoEnabled: isConfigEnabled(
+          bizConfigMap[FEATURE_SWITCH_KEYS.paymentPayoutAutoEnabled],
+        ),
+      });
       popupForm.setFieldsValue(
         safeParseHomePopupConfig(bizConfigMap[MINI_HOME_POPUP_CONFIG_KEY]),
       );
@@ -1076,27 +1082,23 @@ const SystemSettings: React.FC = () => {
   const buildBaseSettingsPayload = async () => {
     const values = await form.validateFields();
     const settings = { ...values } as Record<string, string | boolean>;
-    if (typeof settings.enable_registration === "boolean") {
-      settings.enable_registration = settings.enable_registration
-        ? "true"
-        : "false";
-    }
-    if (typeof settings.enable_sms_verify === "boolean") {
-      settings.enable_sms_verify = settings.enable_sms_verify
-        ? "true"
-        : "false";
-    }
-    if (typeof settings.enable_email_verify === "boolean") {
-      settings.enable_email_verify = settings.enable_email_verify
-        ? "true"
-        : "false";
-    }
     if (typeof settings.im_tencent_enabled === "boolean") {
       settings.im_tencent_enabled = settings.im_tencent_enabled
         ? "true"
         : "false";
     }
     return settings as Record<string, string>;
+  };
+
+  const buildFeaturePayload = async () => {
+    const values = await featureForm.validateFields();
+    return {
+      [FEATURE_SWITCH_KEYS.outboxWorkerEnabled]: values.outboxWorkerEnabled
+        ? "true"
+        : "false",
+      [FEATURE_SWITCH_KEYS.paymentPayoutAutoEnabled]:
+        values.paymentPayoutAutoEnabled ? "true" : "false",
+    };
   };
 
   const buildPaymentPayload = async () => {
@@ -1321,7 +1323,13 @@ const SystemSettings: React.FC = () => {
   };
 
   const requestSave = async (
-    action: "base" | "payment" | "biz" | "homePopup" | "compliance",
+    action:
+      | "base"
+      | "payment"
+      | "feature"
+      | "biz"
+      | "homePopup"
+      | "compliance",
   ) => {
     try {
       let payload: Record<string, string>;
@@ -1329,6 +1337,8 @@ const SystemSettings: React.FC = () => {
         payload = await buildBaseSettingsPayload();
       } else if (action === "payment") {
         payload = await buildPaymentPayload();
+      } else if (action === "feature") {
+        payload = await buildFeaturePayload();
       } else if (action === "homePopup") {
         payload = await buildHomePopupPayload();
       } else if (action === "compliance") {
@@ -1391,6 +1401,8 @@ const SystemSettings: React.FC = () => {
       setSaving(true);
     } else if (pendingAction === "payment") {
       setSavingPayment(true);
+    } else if (pendingAction === "feature") {
+      setSavingFeature(true);
     } else if (pendingAction === "homePopup") {
       setSavingHomePopup(true);
     } else if (pendingAction === "compliance") {
@@ -1406,6 +1418,9 @@ const SystemSettings: React.FC = () => {
       } else if (pendingAction === "payment") {
         await adminSystemConfigApi.batchUpdate(nextPayload);
         message.success("支付开关保存成功");
+      } else if (pendingAction === "feature") {
+        await adminSystemConfigApi.batchUpdate(nextPayload);
+        message.success("功能开关保存成功");
       } else if (pendingAction === "homePopup") {
         await adminSystemConfigApi.batchUpdate(nextPayload);
         message.success("首页弹窗保存成功");
@@ -1422,6 +1437,7 @@ const SystemSettings: React.FC = () => {
     } finally {
       setSaving(false);
       setSavingPayment(false);
+      setSavingFeature(false);
       setSavingHomePopup(false);
       setSavingBiz(false);
       setSavingCompliance(false);
@@ -1448,6 +1464,10 @@ const SystemSettings: React.FC = () => {
       <Tabs activeKey={activeTabKey} onChange={setActiveTabKey}>
         <TabPane tab="基本设置" key="1">
           <Form form={form} labelCol={{ span: 4 }} wrapperCol={{ span: 16 }}>
+            <AdminGuideHint
+              summary="基础设置仅维护后台站点元信息"
+              description="客服电话、客服邮箱、ICP备案号等对外展示信息已统一迁移到“对外内容/合规信息”，避免两个入口重复维护导致口径不一致。"
+            />
             <Form.Item
               label="网站名称"
               name="site_name"
@@ -1458,45 +1478,53 @@ const SystemSettings: React.FC = () => {
             <Form.Item label="网站描述" name="site_description">
               <Input.TextArea rows={3} placeholder="请输入网站描述" />
             </Form.Item>
-            <Form.Item
-              label="联系邮箱"
-              name="contact_email"
-              rules={[{ type: "email" }]}
-            >
-              <Input placeholder="请输入联系邮箱" />
-            </Form.Item>
-            <Form.Item label="联系电话" name="contact_phone">
-              <Input placeholder="请输入联系电话" />
-            </Form.Item>
-            <Form.Item label="ICP备案号" name="icp">
-              <Input placeholder="请输入ICP备案号" />
+            <Form.Item label="对外配置入口">
+              <Space>
+                <Typography.Text type="secondary">
+                  联系方式、备案、合规文档请在“对外内容/合规信息”页维护。
+                </Typography.Text>
+                <Button type="link" onClick={() => setActiveTabKey("9")}>
+                  去配置
+                </Button>
+              </Space>
             </Form.Item>
           </Form>
         </TabPane>
 
         <TabPane tab="功能开关" key="2">
-          <Form form={form} labelCol={{ span: 4 }} wrapperCol={{ span: 16 }}>
+          <Form form={featureForm} labelCol={{ span: 5 }} wrapperCol={{ span: 16 }}>
+            <AdminGuideHint
+              summary="仅保留已接入业务链路的开关"
+              description="本页开关已严格对齐后端业务代码，不再展示仅写库但不生效的历史开关。"
+            />
             <Form.Item
-              label="用户注册"
-              name="enable_registration"
+              label="事件任务 Worker"
+              name="outboxWorkerEnabled"
               valuePropName="checked"
+              tooltip="关闭后，通知/审计/统计等异步副作用将停止消费"
             >
               <Switch checkedChildren="开启" unCheckedChildren="关闭" />
             </Form.Item>
             <Form.Item
-              label="短信验证"
-              name="enable_sms_verify"
+              label="自动出款"
+              name="paymentPayoutAutoEnabled"
               valuePropName="checked"
+              tooltip="关闭后，平台不会自动打款，仅支持人工放款"
             >
               <Switch checkedChildren="开启" unCheckedChildren="关闭" />
             </Form.Item>
-            <Form.Item
-              label="邮箱验证"
-              name="enable_email_verify"
-              valuePropName="checked"
-            >
-              <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-            </Form.Item>
+            <div className="system-settings-actions-right">
+              <Space>
+                <Button onClick={loadSettings}>重置</Button>
+                <Button
+                  type="primary"
+                  loading={savingFeature}
+                  onClick={() => void requestSave("feature")}
+                >
+                  保存功能开关
+                </Button>
+              </Space>
+            </div>
           </Form>
         </TabPane>
 
@@ -2376,14 +2404,19 @@ const SystemSettings: React.FC = () => {
                 </Typography.Text>
               </Space>
             </Form.Item>
+            <Form.Item label="配置来源">
+              <Typography.Text type="secondary">
+                短信发送读取服务端运行环境（`SMS_*`），不是读取后台数据库字段。
+              </Typography.Text>
+            </Form.Item>
             <Form.Item label="服务商" name="sms_provider">
-              <Input placeholder="如：阿里云、腾讯云等" />
+              <Input disabled placeholder="如：阿里云、腾讯云等（历史字段，仅展示）" />
             </Form.Item>
             <Form.Item label="签名" name="sms_sign_name">
-              <Input placeholder="请输入短信签名" />
+              <Input disabled placeholder="请输入短信签名（历史字段，仅展示）" />
             </Form.Item>
             <Form.Item label="模板ID" name="sms_template_id">
-              <Input placeholder="请输入模板ID" />
+              <Input disabled placeholder="请输入模板ID（历史字段，仅展示）" />
             </Form.Item>
           </Form>
         </TabPane>

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -84,6 +85,10 @@ func (h *DictionaryHandler) CreateDict(c *gin.Context) {
 
 	dict, err := h.service.CreateDict(&req)
 	if err != nil {
+		if errors.Is(err, service.ErrDictionaryCategoryReadOnly) {
+			response.Forbidden(c, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -108,6 +113,10 @@ func (h *DictionaryHandler) UpdateDict(c *gin.Context) {
 
 	dict, err := h.service.UpdateDict(id, &req)
 	if err != nil {
+		if errors.Is(err, service.ErrDictionaryCategoryReadOnly) {
+			response.Forbidden(c, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -125,6 +134,10 @@ func (h *DictionaryHandler) DeleteDict(c *gin.Context) {
 	}
 
 	if err := h.service.DeleteDict(id); err != nil {
+		if errors.Is(err, service.ErrDictionaryCategoryReadOnly) {
+			response.Forbidden(c, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -159,6 +172,10 @@ func (h *DictionaryHandler) CreateCategory(c *gin.Context) {
 	}
 
 	if err := h.service.CreateCategory(&cat); err != nil {
+		if errors.Is(err, service.ErrDictionaryCategoryReadOnly) {
+			response.Forbidden(c, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -180,6 +197,10 @@ func (h *DictionaryHandler) UpdateCategory(c *gin.Context) {
 	cat.Code = code
 
 	if err := h.service.UpdateCategory(&cat); err != nil {
+		if errors.Is(err, service.ErrDictionaryCategoryReadOnly) {
+			response.Forbidden(c, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -193,6 +214,10 @@ func (h *DictionaryHandler) DeleteCategory(c *gin.Context) {
 	code := c.Param("code")
 
 	if err := h.service.DeleteCategory(code); err != nil {
+		if errors.Is(err, service.ErrDictionaryCategoryReadOnly) {
+			response.Forbidden(c, err.Error())
+			return
+		}
 		response.Error(c, http.StatusInternalServerError, err.Error())
 		return
 	}

@@ -101,6 +101,7 @@ func (g *WechatPayGateway) ParseNotifyRequest(ctx context.Context, request *http
 		OutTradeNo:      stringValue(transaction.OutTradeNo),
 		ProviderTradeNo: stringValue(transaction.TransactionId),
 		TradeStatus:     stringValue(transaction.TradeState),
+		AmountCent:      wechatTransactionAmountCent(transaction),
 		RawJSON:         strings.TrimSpace(notifyReq.Resource.Plaintext),
 	}, nil
 }
@@ -153,6 +154,7 @@ func (g *WechatPayGateway) QueryCollectOrder(ctx context.Context, order *model.P
 		ProviderTradeNo: stringValue(resp.TransactionId),
 		TradeStatus:     strings.TrimSpace(stringValue(resp.TradeState)),
 		BuyerAmount:     amount,
+		AmountCent:      amountYuanToFen(amount),
 		RawJSON:         mustMarshalJSON(resp),
 	}, nil
 }
@@ -354,6 +356,13 @@ func amountYuanToFen(amount float64) int64 {
 
 func amountFenToYuan(amount int64) float64 {
 	return float64(amount) / 100
+}
+
+func wechatTransactionAmountCent(transaction *payments.Transaction) int64 {
+	if transaction == nil || transaction.Amount == nil || transaction.Amount.Total == nil {
+		return 0
+	}
+	return *transaction.Amount.Total
 }
 
 func (g *WechatPayGateway) QueryOrderByOutTradeNo(ctx context.Context, outTradeNo string) (*PaymentChannelQueryResult, error) {

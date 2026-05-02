@@ -215,10 +215,22 @@ const OutboxEventList: React.FC = () => {
       <ToolbarCard>
         <Form form={form} layout="inline" onFinish={() => { setPage(1); void loadData(); }}>
           <Form.Item name="status" label="状态">
-            <Select allowClear options={STATUS_OPTIONS} className={styles.filterCompact} />
+            <Select
+              allowClear
+              placeholder="全部"
+              options={STATUS_OPTIONS}
+              className={styles.filterCompact}
+              popupMatchSelectWidth={false}
+            />
           </Form.Item>
           <Form.Item name="handlerKey" label="处理器">
-            <Select allowClear options={HANDLER_OPTIONS} className={styles.filterCompact} />
+            <Select
+              allowClear
+              placeholder="全部"
+              options={HANDLER_OPTIONS}
+              className={styles.filterCompact}
+              popupMatchSelectWidth={false}
+            />
           </Form.Item>
           <Form.Item name="eventType" label="事件类型">
             <Input allowClear placeholder="如 payment.paid" className={styles.filterEventType} />

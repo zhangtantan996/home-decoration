@@ -461,7 +461,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"order_center", "order_center_view",
 		"demands_root", "demands_list",
 		"bookings_root", "bookings_list", "booking_view",
-		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view", "finance_transaction_export",
+		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view",
 		"finance_payouts", "finance_settlements",
 		"reviews_root", "reviews_list", "review_view",
 		"risk_root", "risk_warnings", "risk_warning_view", "risk_arbitration", "risk_arbitration_view",

@@ -4,6 +4,7 @@ export type AppEnv = "local" | "test" | "staging" | "production";
 
 const PLACEHOLDER_API_HOST_PATTERN = /api\.yourdomain\.com/i;
 const LOCAL_API_HOST_PATTERN = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\b/i;
+const PROD_API_BASE_URL = "https://api.hezeyunchuang.com/api/v1";
 
 const normalizeAppEnv = (raw?: string): AppEnv => {
   const value = (raw || "").trim().toLowerCase();
@@ -46,7 +47,7 @@ const getDefaultApiBaseUrl = (appEnv: AppEnv) => {
     case "test":
       return "http://127.0.0.1:8080/api/v1";
     default:
-      return "https://api.yourdomain.com/api/v1";
+      return PROD_API_BASE_URL;
   }
 };
 

@@ -9,8 +9,12 @@ export interface Region {
     level: number;
     parentCode: string;
     enabled: boolean;
+    serviceEnabled?: boolean;
     sortOrder: number;
     hasChildren?: boolean;
+    openCityCount?: number;
+    totalCityCount?: number;
+    totalEnabledCityCount?: number;
 }
 
 export interface ServiceCityRegion {
@@ -147,6 +151,14 @@ export const regionApi = {
     // 启用/禁用行政区划
     toggle: (id: number, enabled: boolean) =>
         api.put(`/admin/regions/${id}/toggle`, { enabled }),
+
+    // 开启/关闭服务开放（省级=批量影响下属城市，市级=单点）
+    toggleService: (id: number, serviceEnabled: boolean, reason: string, recentReauthProof?: string) =>
+        api.put(`/admin/regions/${id}/service-toggle`, {
+            serviceEnabled,
+            reason,
+            recentReauthProof,
+        }),
 
     // 获取子行政区划 (主要用于获取区县)
     getChildren: (code: string) => 

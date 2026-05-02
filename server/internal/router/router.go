@@ -631,6 +631,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			financeTransactionListPerm := middleware.RequirePermission("finance:transaction:list")
 			financeTransactionViewPerm := middleware.RequirePermission("finance:transaction:view")
 			financeTransactionApprovePerm := middleware.RequirePermission("finance:transaction:approve")
+			financeTransactionExportPerm := middleware.RequirePermission("finance:transaction:export")
 			riskWarningListPerm := middleware.RequirePermission("risk:warning:list")
 			riskWarningHandlePerm := middleware.RequirePermission("risk:warning:handle")
 			riskArbitrationListPerm := middleware.RequirePermission("risk:arbitration:list")
@@ -764,6 +765,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/regions", settingListPerm, handler.AdminListRegions)
 			admin.GET("/regions/children/:parentCode", settingListPerm, handler.AdminGetChildrenByParentCode)
 			admin.PUT("/regions/:id/toggle", settingEditPerm, handler.AdminToggleRegion)
+			admin.PUT("/regions/:id/service-toggle", settingEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminToggleRegionService)
 
 			// 财务管理
 			admin.GET("/finance/overview", financeEscrowListPerm, handler.AdminGetFinanceOverview)
@@ -771,7 +773,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/finance/payment-orders", financeTransactionListPerm, handler.AdminListPaymentOrders)
 			admin.GET("/finance/payment-orders/:id", financeTransactionViewPerm, handler.AdminGetPaymentOrderDetail)
 			admin.GET("/finance/transactions", financeTransactionListPerm, handler.AdminListTransactions)
-			admin.GET("/finance/transactions/export", financeTransactionListPerm, handler.AdminExportTransactions)
+			admin.GET("/finance/transactions/export", financeTransactionExportPerm, handler.AdminExportTransactions)
 			admin.GET("/finance/reconciliations", financeTransactionListPerm, handler.AdminListFinanceReconciliations)
 			admin.POST("/finance/reconciliations/run", financeTransactionApprovePerm, handler.AdminRunFinanceReconciliation)
 			admin.POST("/finance/reconciliations/:id/claim", financeTransactionApprovePerm, handler.AdminClaimFinanceReconciliation)
@@ -953,8 +955,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/complaints/:id/resolve", complaintResolvePerm, handler.AdminResolveComplaint)
 
 			// 退款申请审核
-			admin.GET("/refunds", financeTransactionListPerm, handler.AdminListRefundApplications)
-			admin.GET("/refunds/:id", financeTransactionViewPerm, handler.AdminGetRefundApplication)
+			admin.GET("/refunds", financeTransactionApprovePerm, handler.AdminListRefundApplications)
+			admin.GET("/refunds/:id", financeTransactionApprovePerm, handler.AdminGetRefundApplication)
 			admin.POST("/refunds/:id/approve", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminApproveRefundApplication)
 			admin.POST("/refunds/:id/reject", financeTransactionApprovePerm, middleware.RequireAdminReason("adminNotes", "reason"), middleware.RequireAdminReauth(), handler.AdminRejectRefundApplication)
 

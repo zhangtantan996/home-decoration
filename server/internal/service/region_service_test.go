@@ -36,15 +36,11 @@ func seedServiceRegionOpenData(t *testing.T, db *gorm.DB) {
 
 	records := []interface{}{
 		&model.Region{Code: "610000", Name: "陕西省", Level: 1, Enabled: true, SortOrder: 1},
-		&model.Region{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, SortOrder: 1},
-		&model.Region{Code: "610400", Name: "咸阳市", Level: 2, ParentCode: "610000", Enabled: true, SortOrder: 2},
+		&model.Region{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, ServiceEnabled: true, SortOrder: 1},
+		&model.Region{Code: "610400", Name: "咸阳市", Level: 2, ParentCode: "610000", Enabled: true, ServiceEnabled: true, SortOrder: 2},
 		&model.Region{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true, SortOrder: 1},
 		&model.Region{Code: "510000", Name: "四川省", Level: 1, Enabled: true, SortOrder: 2},
-		&model.Region{Code: "510100", Name: "成都市", Level: 2, ParentCode: "510000", Enabled: true, SortOrder: 1},
-		&model.DictionaryCategory{Code: openServiceProvincesCategory, Name: "开放服务省份", Enabled: true},
-		&model.DictionaryCategory{Code: openServiceCitiesCategory, Name: "开放服务城市", Enabled: true},
-		&model.SystemDictionary{CategoryCode: openServiceProvincesCategory, Value: "610000", Label: "陕西省", Enabled: true, SortOrder: 1},
-		&model.SystemDictionary{CategoryCode: openServiceCitiesCategory, Value: "510100", Label: "成都市", Enabled: true, SortOrder: 1},
+		&model.Region{Code: "510100", Name: "成都市", Level: 2, ParentCode: "510000", Enabled: true, ServiceEnabled: true, SortOrder: 1},
 	}
 
 	for _, record := range records {
@@ -115,5 +111,41 @@ func TestRegionServiceResolveServiceAreaInputsToCityDisplayRollsUpDistrict(t *te
 	}
 	if len(names) != 1 || names[0] != "西安市" {
 		t.Fatalf("expected rolled city name only, got %v", names)
+	}
+}
+
+func TestRegionServiceSyncOpenServiceDictionariesFromRegionsTx(t *testing.T) {
+	db := setupRegionServiceTestDB(t)
+	seedServiceRegionOpenData(t, db)
+
+	if err := db.Model(&model.Region{}).
+		Where("code = ?", "610400").
+		Update("service_enabled", false).Error; err != nil {
+		t.Fatalf("disable city service flag: %v", err)
+	}
+
+	svc := RegionService{}
+	if err := svc.SyncOpenServiceDictionariesFromRegionsTx(db); err != nil {
+		t.Fatalf("sync open service dictionaries: %v", err)
+	}
+
+	var provinceDicts []model.SystemDictionary
+	if err := db.Where("category_code = ?", openServiceProvincesCategory).
+		Order("sort_order ASC, id ASC").
+		Find(&provinceDicts).Error; err != nil {
+		t.Fatalf("query province dicts: %v", err)
+	}
+	if len(provinceDicts) != 1 || provinceDicts[0].Value != "510000" {
+		t.Fatalf("unexpected province dicts: %+v", provinceDicts)
+	}
+
+	var cityDicts []model.SystemDictionary
+	if err := db.Where("category_code = ?", openServiceCitiesCategory).
+		Order("sort_order ASC, id ASC").
+		Find(&cityDicts).Error; err != nil {
+		t.Fatalf("query city dicts: %v", err)
+	}
+	if len(cityDicts) != 1 || cityDicts[0].Value != "610100" {
+		t.Fatalf("unexpected city dicts: %+v", cityDicts)
 	}
 }

@@ -5,11 +5,23 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"log"
+	"strings"
 )
 
 type DictionaryService struct {
 	repo  *repository.DictionaryRepository
 	cache *DictCacheService
+}
+
+var ErrDictionaryCategoryReadOnly = errors.New("该字典分类已迁移到行政区划管理，当前只读")
+
+func isRegionOpenServiceCategory(categoryCode string) bool {
+	switch strings.TrimSpace(categoryCode) {
+	case openServiceProvincesCategory, openServiceCitiesCategory:
+		return true
+	default:
+		return false
+	}
 }
 
 func NewDictionaryService(repo *repository.DictionaryRepository, cache *DictCacheService) *DictionaryService {
@@ -81,6 +93,10 @@ func (s *DictionaryService) ListDicts(page, pageSize int, categoryCode string) (
 
 // CreateDict 创建字典值
 func (s *DictionaryService) CreateDict(req *model.CreateDictRequest) (*model.SystemDictionary, error) {
+	if isRegionOpenServiceCategory(req.CategoryCode) {
+		return nil, ErrDictionaryCategoryReadOnly
+	}
+
 	// 1. 校验分类是否存在
 	exists, err := s.repo.CheckCategoryExists(req.CategoryCode)
 	if err != nil {
@@ -130,6 +146,9 @@ func (s *DictionaryService) UpdateDict(id uint64, req *model.UpdateDictRequest) 
 	if err != nil {
 		return nil, errors.New("字典值不存在")
 	}
+	if isRegionOpenServiceCategory(dict.CategoryCode) || isRegionOpenServiceCategory(req.CategoryCode) {
+		return nil, ErrDictionaryCategoryReadOnly
+	}
 
 	// 2. 检查值是否重复
 	if dict.Value != req.Value {
@@ -171,6 +190,9 @@ func (s *DictionaryService) DeleteDict(id uint64) error {
 	if err != nil {
 		return errors.New("字典值不存在")
 	}
+	if isRegionOpenServiceCategory(dict.CategoryCode) {
+		return ErrDictionaryCategoryReadOnly
+	}
 
 	// 2. TODO: 检查是否被业务数据引用（可选功能）
 	// 例如：检查 provider_cases 表中是否有使用该风格值
@@ -192,6 +214,9 @@ func (s *DictionaryService) DeleteDict(id uint64) error {
 
 // CreateCategory 创建分类
 func (s *DictionaryService) CreateCategory(cat *model.DictionaryCategory) error {
+	if cat != nil && isRegionOpenServiceCategory(cat.Code) {
+		return ErrDictionaryCategoryReadOnly
+	}
 	if err := s.repo.CreateCategory(cat); err != nil {
 		return err
 	}
@@ -206,6 +231,9 @@ func (s *DictionaryService) CreateCategory(cat *model.DictionaryCategory) error 
 
 // UpdateCategory 更新分类
 func (s *DictionaryService) UpdateCategory(cat *model.DictionaryCategory) error {
+	if cat != nil && isRegionOpenServiceCategory(cat.Code) {
+		return ErrDictionaryCategoryReadOnly
+	}
 	if err := s.repo.UpdateCategory(cat); err != nil {
 		return err
 	}
@@ -220,6 +248,9 @@ func (s *DictionaryService) UpdateCategory(cat *model.DictionaryCategory) error 
 
 // DeleteCategory 删除分类
 func (s *DictionaryService) DeleteCategory(code string) error {
+	if isRegionOpenServiceCategory(code) {
+		return ErrDictionaryCategoryReadOnly
+	}
 	if err := s.repo.DeleteCategory(code); err != nil {
 		return err
 	}

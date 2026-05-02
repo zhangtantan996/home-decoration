@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strconv"
 	"strings"
@@ -24,7 +25,10 @@ type paymentServiceTestGateway struct {
 	queryRefundResult *AlipayRefundResult
 }
 
-type paymentServiceTestWechatGateway struct{}
+type paymentServiceTestWechatGateway struct {
+	notifyResult     *PaymentChannelNotifyResult
+	queryTradeResult *PaymentChannelTradeResult
+}
 
 type paymentServiceTestWechatRefundGateway struct {
 	paymentServiceTestWechatGateway
@@ -69,6 +73,7 @@ func (g paymentServiceTestGateway) QueryCollectOrder(ctx context.Context, order 
 			TradeStatus:     g.queryTradeResult.TradeStatus,
 			BuyerLogonID:    g.queryTradeResult.BuyerLogonID,
 			BuyerAmount:     g.queryTradeResult.BuyerAmount,
+			AmountCent:      floatToCents(g.queryTradeResult.BuyerAmount),
 			RawJSON:         g.queryTradeResult.RawJSON,
 		}, nil
 	}
@@ -143,11 +148,17 @@ func (paymentServiceTestWechatGateway) VerifyNotify(url.Values) (map[string]stri
 	return map[string]string{}, nil
 }
 
-func (paymentServiceTestWechatGateway) ParseNotifyRequest(context.Context, *http.Request) (*PaymentChannelNotifyResult, error) {
+func (g paymentServiceTestWechatGateway) ParseNotifyRequest(context.Context, *http.Request) (*PaymentChannelNotifyResult, error) {
+	if g.notifyResult != nil {
+		return g.notifyResult, nil
+	}
 	return nil, nil
 }
 
-func (paymentServiceTestWechatGateway) QueryCollectOrder(context.Context, *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
+func (g paymentServiceTestWechatGateway) QueryCollectOrder(context.Context, *model.PaymentOrder) (*PaymentChannelTradeResult, error) {
+	if g.queryTradeResult != nil {
+		return g.queryTradeResult, nil
+	}
 	return &PaymentChannelTradeResult{}, nil
 }
 
@@ -958,6 +969,7 @@ func TestPaymentServiceStartMerchantBondPaymentAndNotifySyncsBondAccount(t *test
 	notifyValues.Set("trade_status", alipayTradeSuccess)
 	notifyValues.Set("notify_id", "notify-bond-001")
 	notifyValues.Set("trade_no", "trade-bond-001")
+	notifyValues.Set("total_amount", "3000.00")
 	if err := svc.HandleAlipayNotify(notifyValues); err != nil {
 		t.Fatalf("HandleAlipayNotify: %v", err)
 	}
@@ -1021,6 +1033,7 @@ func TestPaymentServiceHandleAlipayNotifyIsIdempotent(t *testing.T) {
 			"trade_status": alipayTradeSuccess,
 			"notify_id":    "notify-001",
 			"trade_no":     "trade-001",
+			"total_amount": "99.00",
 		},
 	})
 
@@ -1091,6 +1104,7 @@ func TestPaymentServiceHandleAlipayNotifyCreatesUserPaidReceipt(t *testing.T) {
 			"trade_status": alipayTradeSuccess,
 			"notify_id":    "notify-order-001",
 			"trade_no":     "trade-order-001",
+			"total_amount": "2888.00",
 		},
 	})
 
@@ -1116,6 +1130,274 @@ func TestPaymentServiceHandleAlipayNotifyCreatesUserPaidReceipt(t *testing.T) {
 	}
 	if notification.Title != "支付成功" || notification.Content == "" {
 		t.Fatalf("unexpected paid receipt copy: %+v", notification)
+	}
+}
+
+func TestPaymentServiceHandleAlipayNotifyRejectsAmountMismatch(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 403},
+		BizType:      model.PaymentBizTypeBookingIntent,
+		BizID:        bookingID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelAlipay,
+		Scene:        model.PaymentBizTypeBookingIntent,
+		TerminalType: model.PaymentTerminalPCWeb,
+		Subject:      "量房费",
+		Amount:       99,
+		AmountCent:   9900,
+		OutTradeNo:   "intent-trade-mismatch",
+		Status:       model.PaymentStatusPending,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment order: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{
+		notifyPayload: map[string]string{
+			"out_trade_no": "intent-trade-mismatch",
+			"trade_status": alipayTradeSuccess,
+			"notify_id":    "notify-mismatch-001",
+			"trade_no":     "trade-mismatch-001",
+			"total_amount": "98.00",
+		},
+	})
+
+	err := svc.HandleAlipayNotify(url.Values{})
+	if err == nil || !strings.Contains(err.Error(), "金额") {
+		t.Fatalf("expected amount mismatch error, got %v", err)
+	}
+
+	var updated model.PaymentOrder
+	if err := db.First(&updated, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if updated.Status == model.PaymentStatusPaid {
+		t.Fatalf("payment should not be marked paid on amount mismatch: %+v", updated)
+	}
+	var booking model.Booking
+	if err := db.First(&booking, bookingID).Error; err != nil {
+		t.Fatalf("reload booking: %v", err)
+	}
+	if booking.IntentFeePaid {
+		t.Fatalf("booking should not be marked paid on amount mismatch: %+v", booking)
+	}
+	var outboxCount int64
+	if err := db.Model(&model.OutboxEvent{}).Where("event_type = ? AND aggregate_id = ?", OutboxEventPaymentPaid, payment.ID).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count outbox events: %v", err)
+	}
+	if outboxCount != 0 {
+		t.Fatalf("expected no paid outbox events on amount mismatch, got %d", outboxCount)
+	}
+	var callback model.PaymentCallback
+	if err := db.Where("notify_id = ?", "notify-mismatch-001").First(&callback).Error; err != nil {
+		t.Fatalf("expected callback error record: %v", err)
+	}
+	if callback.Processed || !strings.Contains(callback.ErrorMessage, "金额") {
+		t.Fatalf("expected unprocessed callback with amount error, got %+v", callback)
+	}
+}
+
+func TestPaymentServiceHandleAlipayNotifyRejectsMissingAmount(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 404},
+		BizType:      model.PaymentBizTypeBookingIntent,
+		BizID:        bookingID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelAlipay,
+		Scene:        model.PaymentBizTypeBookingIntent,
+		TerminalType: model.PaymentTerminalPCWeb,
+		Subject:      "量房费",
+		Amount:       99,
+		AmountCent:   9900,
+		OutTradeNo:   "intent-trade-missing-amount",
+		Status:       model.PaymentStatusPending,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment order: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{
+		notifyPayload: map[string]string{
+			"out_trade_no": "intent-trade-missing-amount",
+			"trade_status": alipayTradeSuccess,
+			"notify_id":    "notify-missing-amount-001",
+			"trade_no":     "trade-missing-amount-001",
+		},
+	})
+
+	err := svc.HandleAlipayNotify(url.Values{})
+	if err == nil || !strings.Contains(err.Error(), "金额") {
+		t.Fatalf("expected missing amount error, got %v", err)
+	}
+
+	var updated model.PaymentOrder
+	if err := db.First(&updated, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if updated.Status == model.PaymentStatusPaid {
+		t.Fatalf("payment should not be marked paid without callback amount: %+v", updated)
+	}
+}
+
+func TestPaymentServiceHandleWechatNotifyRejectsMissingAmount(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableWechatForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 405},
+		BizType:      model.PaymentBizTypeBookingIntent,
+		BizID:        bookingID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelWechat,
+		Scene:        model.PaymentBizTypeBookingIntent,
+		TerminalType: model.PaymentTerminalMiniWechatJSAPI,
+		Subject:      "量房费",
+		Amount:       99,
+		AmountCent:   9900,
+		OutTradeNo:   "wechat-trade-missing-amount",
+		Status:       model.PaymentStatusPending,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment order: %v", err)
+	}
+
+	svc := NewPaymentServiceWithChannels(map[string]PaymentChannelService{
+		model.PaymentChannelWechat: paymentServiceTestWechatGateway{
+			notifyResult: &PaymentChannelNotifyResult{
+				NotifyID:        "wechat-notify-missing-amount-001",
+				EventType:       "TRANSACTION.SUCCESS",
+				OutTradeNo:      "wechat-trade-missing-amount",
+				ProviderTradeNo: "wechat-provider-trade-001",
+				TradeStatus:     "SUCCESS",
+				RawJSON:         `{"trade_state":"SUCCESS"}`,
+			},
+		},
+	})
+
+	err := svc.HandleWechatNotify(httptest.NewRequest(http.MethodPost, "/wechat/notify", nil))
+	if err == nil || !strings.Contains(err.Error(), "金额") {
+		t.Fatalf("expected missing amount error, got %v", err)
+	}
+
+	var updated model.PaymentOrder
+	if err := db.First(&updated, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if updated.Status == model.PaymentStatusPaid {
+		t.Fatalf("payment should not be marked paid without callback amount: %+v", updated)
+	}
+}
+
+func TestPaymentServiceHandleWechatNotifyRejectsAmountMismatch(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableWechatForPaymentTests(t)
+	userID, bookingID := seedPaymentIntentFixture(t, db)
+
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 406},
+		BizType:      model.PaymentBizTypeBookingIntent,
+		BizID:        bookingID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelWechat,
+		Scene:        model.PaymentBizTypeBookingIntent,
+		TerminalType: model.PaymentTerminalMiniWechatJSAPI,
+		Subject:      "量房费",
+		Amount:       99,
+		AmountCent:   9900,
+		OutTradeNo:   "wechat-trade-mismatch",
+		Status:       model.PaymentStatusPending,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment order: %v", err)
+	}
+
+	svc := NewPaymentServiceWithChannels(map[string]PaymentChannelService{
+		model.PaymentChannelWechat: paymentServiceTestWechatGateway{
+			notifyResult: &PaymentChannelNotifyResult{
+				NotifyID:        "wechat-notify-mismatch-001",
+				EventType:       "TRANSACTION.SUCCESS",
+				OutTradeNo:      "wechat-trade-mismatch",
+				ProviderTradeNo: "wechat-provider-trade-002",
+				TradeStatus:     "SUCCESS",
+				AmountCent:      9800,
+				RawJSON:         `{"trade_state":"SUCCESS","amount":{"total":9800}}`,
+			},
+		},
+	})
+
+	err := svc.HandleWechatNotify(httptest.NewRequest(http.MethodPost, "/wechat/notify", nil))
+	if err == nil || !strings.Contains(err.Error(), "金额") {
+		t.Fatalf("expected amount mismatch error, got %v", err)
+	}
+
+	var updated model.PaymentOrder
+	if err := db.First(&updated, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if updated.Status == model.PaymentStatusPaid {
+		t.Fatalf("payment should not be marked paid on amount mismatch: %+v", updated)
+	}
+}
+
+func TestPaymentServiceSyncPaymentStateRejectsAmountMismatch(t *testing.T) {
+	db := setupPaymentServiceTestDB(t)
+	enableAlipayForPaymentTests(t)
+	userID, orderID := seedPendingOrderFixture(t, db)
+
+	payment := model.PaymentOrder{
+		Base:         model.Base{ID: 407},
+		BizType:      model.PaymentBizTypeOrder,
+		BizID:        orderID,
+		PayerUserID:  userID,
+		Channel:      model.PaymentChannelAlipay,
+		FundScene:    model.FundSceneDesignFee,
+		TerminalType: model.PaymentTerminalMiniQR,
+		Subject:      "设计费订单",
+		Amount:       1888,
+		AmountCent:   188800,
+		OutTradeNo:   "sync-trade-mismatch",
+		Status:       model.PaymentStatusScanPending,
+	}
+	if err := db.Create(&payment).Error; err != nil {
+		t.Fatalf("create payment order: %v", err)
+	}
+
+	svc := NewPaymentService(paymentServiceTestGateway{
+		queryTradeResult: &AlipayTradeQueryResult{
+			TradeNo:     "sync-provider-trade-001",
+			TradeStatus: alipayTradeSuccess,
+			BuyerAmount: 1887,
+			RawJSON:     `{"trade_status":"TRADE_SUCCESS","buyer_pay_amount":"1887.00"}`,
+		},
+	})
+
+	_, err := svc.SyncPaymentState(payment.ID)
+	if err == nil || !strings.Contains(err.Error(), "金额") {
+		t.Fatalf("expected amount mismatch error, got %v", err)
+	}
+
+	var updated model.PaymentOrder
+	if err := db.First(&updated, payment.ID).Error; err != nil {
+		t.Fatalf("reload payment: %v", err)
+	}
+	if updated.Status == model.PaymentStatusPaid {
+		t.Fatalf("payment should not be marked paid on query amount mismatch: %+v", updated)
+	}
+	var outboxCount int64
+	if err := db.Model(&model.OutboxEvent{}).Where("event_type = ? AND aggregate_id = ?", OutboxEventPaymentPaid, payment.ID).Count(&outboxCount).Error; err != nil {
+		t.Fatalf("count outbox events: %v", err)
+	}
+	if outboxCount != 0 {
+		t.Fatalf("expected no paid outbox events on query amount mismatch, got %d", outboxCount)
 	}
 }
 

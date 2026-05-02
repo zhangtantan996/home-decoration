@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -650,6 +651,9 @@ func (s *PaymentService) SyncPaymentState(paymentID uint64) (*model.PaymentOrder
 		nextStatus := resolveQueriedPaymentStatus(&current, result)
 		switch nextStatus {
 		case model.PaymentStatusPaid:
+			if err := validatePaymentSuccessAmount(&current, result.AmountCent); err != nil {
+				return err
+			}
 			effect, err = s.confirmPaymentSuccessTx(tx, &current, result.ProviderTradeNo, result.RawJSON)
 			if err != nil {
 				return err
@@ -705,6 +709,7 @@ func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
 	tradeStatus := strings.TrimSpace(payload["trade_status"])
 	notifyID := strings.TrimSpace(payload["notify_id"])
 	var effect *paymentSideEffect
+	var callbackErr error
 	err = repository.DB.Transaction(func(tx *gorm.DB) error {
 		var payment model.PaymentOrder
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("out_trade_no = ?", outTradeNo).First(&payment).Error; err != nil {
@@ -719,6 +724,10 @@ func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
 		}
 		switch tradeStatus {
 		case alipayTradeSuccess, alipayTradeFinished:
+			if err := validatePaymentSuccessAmount(&payment, parseAlipayNotifyAmountCent(payload)); err != nil {
+				callbackErr = err
+				return markPaymentCallbackErrorTx(tx, callback, err)
+			}
 			effect, err = s.confirmPaymentSuccessTx(tx, &payment, payload["trade_no"], mustMarshalJSON(payload))
 			if err != nil {
 				_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
@@ -757,6 +766,9 @@ func (s *PaymentService) HandleAlipayNotify(values url.Values) error {
 	if err != nil {
 		return err
 	}
+	if callbackErr != nil {
+		return callbackErr
+	}
 	if effect != nil {
 		s.runPaymentSideEffect(effect)
 	}
@@ -776,6 +788,7 @@ func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
 		return errors.New("微信支付回调缺少 out_trade_no")
 	}
 	var effect *paymentSideEffect
+	var callbackErr error
 	err = repository.DB.Transaction(func(tx *gorm.DB) error {
 		var payment model.PaymentOrder
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("out_trade_no = ?", notifyResult.OutTradeNo).First(&payment).Error; err != nil {
@@ -785,6 +798,7 @@ func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
 			"out_trade_no": notifyResult.OutTradeNo,
 			"trade_state":  notifyResult.TradeStatus,
 			"trade_no":     notifyResult.ProviderTradeNo,
+			"amount_cent":  strconv.FormatInt(notifyResult.AmountCent, 10),
 		})
 		if err != nil {
 			return err
@@ -795,6 +809,10 @@ func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
 
 		switch interpretPaymentTradeState(payment.Channel, notifyResult.TradeStatus) {
 		case model.PaymentStatusPaid:
+			if err := validatePaymentSuccessAmount(&payment, notifyResult.AmountCent); err != nil {
+				callbackErr = err
+				return markPaymentCallbackErrorTx(tx, callback, err)
+			}
 			effect, err = s.confirmPaymentSuccessTx(tx, &payment, notifyResult.ProviderTradeNo, notifyResult.RawJSON)
 			if err != nil {
 				_ = tx.Model(callback).Updates(map[string]any{"error_message": err.Error()}).Error
@@ -834,6 +852,9 @@ func (s *PaymentService) HandleWechatNotify(request *http.Request) error {
 	})
 	if err != nil {
 		return err
+	}
+	if callbackErr != nil {
+		return callbackErr
 	}
 	if effect != nil {
 		s.runPaymentSideEffect(effect)
@@ -2091,6 +2112,58 @@ func buildPaidOrderReceiptCopy(orderType string, amount float64, planName string
 		return "支付成功", fmt.Sprintf("%s已支付成功，金额 %.2f 元。", strings.TrimSpace(planName), amount)
 	}
 	return "支付成功", fmt.Sprintf("%s支付成功，金额 %.2f 元。", label, amount)
+}
+
+func validatePaymentSuccessAmount(payment *model.PaymentOrder, actualAmountCent int64) error {
+	if actualAmountCent <= 0 {
+		return errors.New("支付回调金额缺失")
+	}
+	expectedAmountCent := expectedPaymentAmountCent(payment)
+	if expectedAmountCent <= 0 {
+		return errors.New("本地支付金额无效")
+	}
+	if actualAmountCent != expectedAmountCent {
+		return fmt.Errorf("支付金额不一致: expected=%d actual=%d", expectedAmountCent, actualAmountCent)
+	}
+	return nil
+}
+
+func expectedPaymentAmountCent(payment *model.PaymentOrder) int64 {
+	if payment == nil {
+		return 0
+	}
+	if payment.AmountCent > 0 {
+		return payment.AmountCent
+	}
+	return floatToCents(payment.Amount)
+}
+
+func parseAlipayNotifyAmountCent(payload map[string]string) int64 {
+	for _, key := range []string{"total_amount", "buyer_pay_amount"} {
+		raw := strings.TrimSpace(payload[key])
+		if raw == "" {
+			continue
+		}
+		amount, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return 0
+		}
+		amountCent := floatToCents(amount)
+		if amountCent > 0 {
+			return amountCent
+		}
+	}
+	return 0
+}
+
+func markPaymentCallbackErrorTx(tx *gorm.DB, callback *model.PaymentCallback, callbackErr error) error {
+	if tx == nil || callback == nil || callbackErr == nil {
+		return nil
+	}
+	return tx.Model(callback).Updates(map[string]any{
+		"error_message": callbackErr.Error(),
+		"verified":      true,
+	}).Error
 }
 
 func upsertPaymentCallbackTx(tx *gorm.DB, payment *model.PaymentOrder, notifyID, eventType string, payload map[string]string) (*model.PaymentCallback, error) {

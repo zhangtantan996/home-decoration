@@ -32,11 +32,11 @@ func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 	}
 	seedRecords := []interface{}{
 		&model.Region{Code: "610000", Name: "陕西省", Level: 1, Enabled: true, SortOrder: 1},
-		&model.Region{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, SortOrder: 1},
+		&model.Region{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, ServiceEnabled: true, SortOrder: 1},
 		&model.Region{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true, SortOrder: 1},
 		&model.Region{Code: "610133", Name: "曲江新区", Level: 3, ParentCode: "610100", Enabled: true, SortOrder: 2},
 		&model.Region{Code: "510000", Name: "四川省", Level: 1, Enabled: true, SortOrder: 2},
-		&model.Region{Code: "510100", Name: "成都市", Level: 2, ParentCode: "510000", Enabled: true, SortOrder: 1},
+		&model.Region{Code: "510100", Name: "成都市", Level: 2, ParentCode: "510000", Enabled: true, ServiceEnabled: true, SortOrder: 1},
 		&model.DictionaryCategory{Code: "open_service_provinces", Name: "开放服务省份", Enabled: true},
 		&model.DictionaryCategory{Code: "open_service_cities", Name: "开放服务城市", Enabled: true},
 		&model.SystemDictionary{CategoryCode: "open_service_provinces", Value: "610000", Label: "陕西省", Enabled: true, SortOrder: 1},

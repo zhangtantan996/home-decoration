@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Card, Table, Button, Space, Switch, message, Input, Modal } from 'antd';
+import { Card, Table, Button, Space, Switch, message, Input, Modal, Tag } from 'antd';
 import { DownOutlined, ReloadOutlined, RightOutlined, SearchOutlined } from '@ant-design/icons';
 import { regionApi, type Region } from '../../services/regionApi';
 import type { ColumnsType } from 'antd/es/table';
 import api from '../../services/api';
+import AdminReauthModal from '../../components/AdminReauthModal';
 import './RegionManagement.css';
 
 // 扩展 Region 类型以支持树形结构
@@ -17,15 +18,60 @@ interface RegionListPayload {
     total?: number;
 }
 
+interface ApiEnvelope<T> {
+    code?: number;
+    message?: string;
+    data?: T;
+}
+
+interface PendingServiceToggle {
+    id: number;
+    level: number;
+    name: string;
+    serviceEnabled: boolean;
+    summaryText?: string;
+}
+
 const RegionManagement: React.FC = () => {
     const [data, setData] = useState<TreeRegion[]>([]);
     const [loading, setLoading] = useState(false);
     const [searchText, setSearchText] = useState('');
     const [expandedRowKeys, setExpandedRowKeys] = useState<React.Key[]>([]);
+    const [serviceReauthOpen, setServiceReauthOpen] = useState(false);
+    const [pendingServiceToggle, setPendingServiceToggle] = useState<PendingServiceToggle | null>(null);
 
     useEffect(() => {
         loadRootData();
     }, []);
+
+    const sortRegionsForDisplay = (regions: TreeRegion[]): TreeRegion[] => {
+        return [...regions].sort((a, b) => {
+            if (a.level === 1 && b.level === 1) {
+                const aOpen = Number(a.openCityCount || 0);
+                const bOpen = Number(b.openCityCount || 0);
+                if ((aOpen > 0) !== (bOpen > 0)) {
+                    return aOpen > 0 ? -1 : 1;
+                }
+                if (aOpen !== bOpen) {
+                    return bOpen - aOpen;
+                }
+            }
+
+            if (a.level === 2 && b.level === 2) {
+                if (Boolean(a.serviceEnabled) !== Boolean(b.serviceEnabled)) {
+                    return a.serviceEnabled ? -1 : 1;
+                }
+                if (Boolean(a.enabled) !== Boolean(b.enabled)) {
+                    return a.enabled ? -1 : 1;
+                }
+            }
+
+            if (a.sortOrder !== b.sortOrder) {
+                return a.sortOrder - b.sortOrder;
+            }
+            return a.code.localeCompare(b.code);
+        });
+    };
 
     const normalizeRegion = (region: Partial<Region>): TreeRegion => ({
         id: Number(region.id || 0),
@@ -34,8 +80,12 @@ const RegionManagement: React.FC = () => {
         level: Number(region.level || 0),
         parentCode: String(region.parentCode || ''),
         enabled: Boolean(region.enabled),
+        serviceEnabled: Boolean(region.serviceEnabled),
         sortOrder: Number(region.sortOrder || 0),
         hasChildren: Boolean(region.hasChildren),
+        openCityCount: Number(region.openCityCount || 0),
+        totalCityCount: Number(region.totalCityCount || 0),
+        totalEnabledCityCount: Number(region.totalEnabledCityCount || 0),
     });
 
     // 加载根节点（省级）
@@ -43,7 +93,12 @@ const RegionManagement: React.FC = () => {
         setLoading(true);
         try {
             // 管理员查看所有省份（包括已禁用的）
-            const response = await api.get('/admin/regions', { params: { level: 1, pageSize: 100 } }) as { data?: RegionListPayload };
+            const response = await api.get('/admin/regions', { params: { level: 1, pageSize: 100 } }) as ApiEnvelope<RegionListPayload>;
+            if (response?.code !== 0) {
+                message.error(response?.message || '加载失败');
+                setData([]);
+                return;
+            }
             const provinces = response.data?.list || [];
 
             // 标记所有省份都有子节点，children设为空数组（Ant Design需要）
@@ -52,7 +107,7 @@ const RegionManagement: React.FC = () => {
                 children: province.hasChildren ? [] : undefined,
             }));
 
-            setData(treeData);
+            setData(sortRegionsForDisplay(treeData));
         } catch (error) {
             message.error('加载失败');
         } finally {
@@ -64,14 +119,18 @@ const RegionManagement: React.FC = () => {
     const loadChildren = async (parentCode: string): Promise<TreeRegion[]> => {
         try {
             // 使用管理员API获取所有子节点（包括已禁用的）
-            const response = await api.get(`/admin/regions/children/${parentCode}`) as { data?: Region[] };
+            const response = await api.get(`/admin/regions/children/${parentCode}`) as ApiEnvelope<Region[]>;
+            if (response?.code !== 0) {
+                message.error(response?.message || '加载子节点失败');
+                return [];
+            }
             const children = response.data || [];
 
             // 只有省级和市级有子节点，区县级没有
-            return children.map(child => ({
+            return sortRegionsForDisplay(children.map(child => ({
                 ...normalizeRegion(child),
                 children: child.hasChildren ? [] : undefined,
-            }));
+            })));
         } catch (error) {
             message.error('加载子节点失败');
             return [];
@@ -199,25 +258,7 @@ const RegionManagement: React.FC = () => {
 
     const renderRegionStatus = (enabled: boolean, record: TreeRegion) => {
         if (record.level === 3) {
-            return (
-                <span
-                    style={{
-                        display: 'inline-flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        minWidth: 88,
-                        padding: '4px 10px',
-                        borderRadius: 999,
-                        fontSize: 12,
-                        color: '#64748b',
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                    }}
-                    title="区县仅保留为地址基础数据，不参与服务城市开放开关"
-                >
-                    仅地址数据
-                </span>
-            );
+            return renderAddressOnlyTag('区县仅保留为地址基础数据，不参与服务城市开放开关');
         }
 
         return (
@@ -230,13 +271,96 @@ const RegionManagement: React.FC = () => {
         );
     };
 
+    const renderAddressOnlyTag = (title: string) => (
+        <Tag className="region-management__address-tag" title={title}>
+            仅地址数据
+        </Tag>
+    );
+
+    const buildProvinceServiceSummary = (record: TreeRegion) => {
+        const open = Number(record.openCityCount || 0);
+        const total = Number(record.totalCityCount || record.totalEnabledCityCount || 0);
+        const checked = total > 0 && open === total;
+        return {
+            checked,
+            summaryText: `${open}/${total}`,
+        };
+    };
+
+    const handleToggleService = (record: TreeRegion, serviceEnabled: boolean) => {
+        const provinceSummary = record.level === 1 ? buildProvinceServiceSummary(record).summaryText : undefined;
+        setPendingServiceToggle({
+            id: record.id,
+            level: record.level,
+            name: record.name,
+            serviceEnabled,
+            summaryText: provinceSummary,
+        });
+        setServiceReauthOpen(true);
+    };
+
+    const handleServiceToggleConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
+        if (!pendingServiceToggle) {
+            return;
+        }
+        await regionApi.toggleService(
+            pendingServiceToggle.id,
+            pendingServiceToggle.serviceEnabled,
+            payload.reason || '',
+            payload.recentReauthProof,
+        );
+        message.success(pendingServiceToggle.serviceEnabled ? '服务开放已开启' : '服务开放已关闭');
+        setPendingServiceToggle(null);
+        await reloadExpandedTree();
+    };
+
+    const renderServiceStatus = (_: unknown, record: TreeRegion) => {
+        if (record.level === 3) {
+            return renderAddressOnlyTag('区县仅用于地址信息，不参与服务开放策略');
+        }
+
+        if (record.level === 1) {
+            const { checked } = buildProvinceServiceSummary(record);
+            return (
+                <Space className="region-management__service-cell" size={8}>
+                    <Switch
+                        checked={checked}
+                        onChange={(nextChecked) => handleToggleService(record, nextChecked)}
+                        checkedChildren="全省开通"
+                        unCheckedChildren="全省关闭"
+                    />
+                </Space>
+            );
+        }
+
+        const opened = Boolean(record.serviceEnabled);
+        return (
+            <Space className="region-management__service-cell" size={8}>
+                <Switch
+                    checked={opened}
+                    onChange={(nextChecked) => handleToggleService(record, nextChecked)}
+                    checkedChildren="已开放"
+                    unCheckedChildren="未开放"
+                />
+            </Space>
+        );
+    };
+
+    const renderProvinceProgress = (_: unknown, record: TreeRegion) => {
+        if (record.level !== 1) {
+            return <span className="region-management__progress-placeholder">-</span>;
+        }
+        const { summaryText } = buildProvinceServiceSummary(record);
+        return <span className="region-management__province-progress">{summaryText}</span>;
+    };
+
     const columns: ColumnsType<TreeRegion> = [
         {
             title: '行政区划',
             key: 'region',
             width: 360,
             render: (_, record) => (
-                <div className="region-management__region-cell">
+                <div className={`region-management__region-cell region-management__region-cell--level-${record.level}`}>
                     <div className="region-management__region-name">{record.name || '-'}</div>
                     <div className="region-management__region-code">{record.code || '-'}</div>
                 </div>
@@ -250,11 +374,25 @@ const RegionManagement: React.FC = () => {
             render: getLevelTag,
         },
         {
-            title: '状态',
+            title: '区域启用',
             dataIndex: 'enabled',
             width: 120,
             align: 'center',
             render: renderRegionStatus,
+        },
+        {
+            title: '服务开放',
+            key: 'serviceEnabled',
+            width: 160,
+            align: 'center',
+            render: renderServiceStatus,
+        },
+        {
+            title: '省级开通进度',
+            key: 'provinceServiceProgress',
+            width: 170,
+            align: 'center',
+            render: renderProvinceProgress,
         },
         {
             title: '排序',
@@ -303,12 +441,6 @@ const RegionManagement: React.FC = () => {
                 </Space>
             }
         >
-            <div className="region-management__notice">
-                <p className="region-management__notice-text">
-                    当前页已按省、市、区三级结构展示。已导入全国省级与地市级数据；已导入区县的城市可继续展开。启用子区域时会自动启用上级区域，禁用后会同步影响父级状态。
-                </p>
-            </div>
-
             <Space style={{ marginBottom: 16 }} size="middle">
                 <Input
                     placeholder="搜索名称或代码"
@@ -327,6 +459,15 @@ const RegionManagement: React.FC = () => {
                 loading={loading}
                 rowKey="id"
                 pagination={false}
+                rowClassName={(record) => {
+                    if (record.level === 1) {
+                        return 'region-management__row--province';
+                    }
+                    if (record.level === 2) {
+                        return 'region-management__row--city';
+                    }
+                    return 'region-management__row--district';
+                }}
                 expandable={{
                     expandedRowKeys,
                     onExpandedRowsChange: (keys) => setExpandedRowKeys([...keys]),
@@ -348,8 +489,26 @@ const RegionManagement: React.FC = () => {
                         </span>
                     ),
                 }}
-                scroll={{ x: 760, y: 600 }}
+                scroll={{ x: 1080, y: 600 }}
                 sticky
+            />
+
+            <AdminReauthModal
+                open={serviceReauthOpen}
+                title={pendingServiceToggle?.serviceEnabled ? '开启服务开放' : '关闭服务开放'}
+                description={
+                    pendingServiceToggle
+                        ? pendingServiceToggle.level === 1
+                            ? `将批量更新「${pendingServiceToggle.name}」下属城市的服务开放状态。当前进度：${pendingServiceToggle.summaryText || '-'}。`
+                            : `将更新「${pendingServiceToggle.name}」的服务开放状态。`
+                        : undefined
+                }
+                confirmText={pendingServiceToggle?.serviceEnabled ? '确认开通' : '确认关闭'}
+                onCancel={() => {
+                    setServiceReauthOpen(false);
+                    setPendingServiceToggle(null);
+                }}
+                onConfirmed={handleServiceToggleConfirmed}
             />
         </Card>
     );
