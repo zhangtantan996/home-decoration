@@ -534,7 +534,11 @@ func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
 // UpdateUser 更新用户信息
 func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *time.Time, bio string) error {
 	avatar = image.NormalizeStoredImagePath(avatar)
-	err := repository.DB.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
+	// Capture the current DB handle before spawning goroutines. Tests replace
+	// repository.DB, and reading it from an async goroutine can trigger races.
+	db := repository.DB
+
+	err := db.Model(&model.User{}).Where("id = ?", id).Updates(map[string]interface{}{
 		"nickname": nickname,
 		"avatar":   avatar,
 		"birthday": birthday,
@@ -546,14 +550,14 @@ func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *t
 	}
 
 	// 异步同步到腾讯云 IM
-	go func() {
+	go func(db *gorm.DB) {
 		// 重新查询用户以获取完整信息（或者直接使用传入的新值）
 		// 这里直接使用新值，注意处理avatar可能为空的情况（如果是局部更新）
 		// 但为了保险，建议如果为空则查询数据库，或者简单地 assume 传入的就是最新值
 		// 这里参数是必传的吗？ handler里是 struct binding，可能是空字符串
 		// 为了稳健，查询一次数据库最新的状态
 		var user model.User
-		if err := repository.DB.First(&user, id).Error; err == nil {
+		if err := db.First(&user, id).Error; err == nil {
 			// 处理默认昵称
 			if user.Nickname == "" {
 				suffix := ""
@@ -568,7 +572,7 @@ func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *t
 				log.Printf("[TencentIM] 更新用户同步失败: userID=%d, err=%v", user.ID, err)
 			}
 		}
-	}()
+	}(db)
 
 	return nil
 }
