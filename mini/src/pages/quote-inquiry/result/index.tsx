@@ -11,7 +11,6 @@ import {
   type QuotePriceRange,
 } from '@/services/quote-inquiry';
 import { useAuthStore } from '@/store/auth';
-import { colors } from '@/theme/tokens';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
@@ -402,18 +401,15 @@ const QuoteInquiryResultPage: React.FC = () => {
 
       <View className="quote-inquiry-result__footer" style={fixedBottomBarStyle}>
         <View className="quote-inquiry-result__primary-action" onClick={handleBookConsult}>
-          <Icon name="designer-service" size={28} color="#FFFFFF" />
-          <Text className="quote-inquiry-result__primary-action-text">去选设计师</Text>
+          <Text className="quote-inquiry-result__primary-action-text">选设计师</Text>
         </View>
 
-          <View className="quote-inquiry-result__secondary-actions">
+        <View className="quote-inquiry-result__secondary-actions">
           <View className="quote-inquiry-result__secondary-action" onClick={handleViewCases}>
-            <Icon name="inspiration" size={24} color={colors.gray800} />
-            <Text className="quote-inquiry-result__secondary-action-text">看同风格案例</Text>
+            <Text className="quote-inquiry-result__secondary-action-text">看案例</Text>
           </View>
           <View className="quote-inquiry-result__secondary-action" onClick={handleRegenerateQuote}>
-            <Icon name="plus" size={24} color={colors.gray800} />
-            <Text className="quote-inquiry-result__secondary-action-text">重新生成报价</Text>
+            <Text className="quote-inquiry-result__secondary-action-text">重算报价</Text>
           </View>
         </View>
       </View>
