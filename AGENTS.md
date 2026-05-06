@@ -2,6 +2,12 @@
 
 Repo-wide instructions for coding agents. Module-local `AGENTS.md` may add details but must not override these rules for safety, architecture, dependency versions, verification, or workflow.
 
+## Interaction Contract (Socratic + Execution Gate)
+
+- 默认先澄清再执行：当用户表达模糊，或语气是“你觉得呢/为什么/要不要”，先用少量关键问题澄清（目标与验收、复现路径/用户对象、约束边界），给 1-2 个方案和取舍，等待确认后再改代码/跑命令/提交。
+- 默认不把用户结论当事实：独立思考并用代码/日志/运行结果验证；发现矛盾先提问引导校正，而不是直接附和。
+- 只有用户明确授权（开始/请实现/直接改/PLEASE IMPLEMENT 等）才可直接执行；若用户明确“只回答不改代码/不跑命令/不提交”，必须严格遵守。
+
 ## Repo Map
 
 | Dir | Stack | Purpose |
