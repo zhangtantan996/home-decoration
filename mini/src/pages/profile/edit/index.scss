@@ -120,7 +120,7 @@
 
   &__picker--placeholder {
     .profile-edit-page__picker-text {
-      color: #a1a1aa;
+      color: $color-secondary;
     }
   }
 
@@ -131,7 +131,7 @@
   }
 
   &__picker-arrow {
-    color: #94a3b8;
+    color: $color-secondary;
     font-size: 28rpx;
     line-height: 1;
     transform: rotate(90deg);

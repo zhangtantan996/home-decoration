@@ -3,6 +3,7 @@ import { Text, View } from '@tarojs/components';
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import { Icon } from '@/components/Icon';
+import { colors } from '@/theme/tokens';
 import MiniPageNav, { MINI_PAGE_NAV_EXTRA_BOTTOM } from '@/components/MiniPageNav';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
@@ -125,7 +126,7 @@ const NotificationsSkeleton = () => (
 const EmptyState = ({ activeFilterLabel }: { activeFilterLabel: string }) => (
   <View className="notifications-page__empty-state">
     <View className="notifications-page__empty-icon">
-      <Icon name="notification" size={38} color="#C7C7CC" />
+      <Icon name="notification" size={38} color={colors.secondary} />
     </View>
     <Text className="notifications-page__empty-title">
       {activeFilterLabel === '全部' ? '还没有通知' : `暂无${activeFilterLabel}通知`}
@@ -186,6 +187,7 @@ const NotificationCard = ({
       className={`notifications-page__card ${!item.isRead ? 'is-unread' : ''}`}
       onClick={onOpen}
       onLongPress={onManage}
+      hoverClass="notifications-page__card--pressed"
     >
       <View className="notifications-page__card-head">
         <Text className="notifications-page__card-title line-clamp-1">{item.title}</Text>
@@ -210,6 +212,7 @@ const NotificationCard = ({
               event.stopPropagation?.();
               onOpen();
             }}
+            hoverClass="notifications-page__card-action--pressed"
           >
             <Text className="notifications-page__card-action-text">{actionText}</Text>
           </View>

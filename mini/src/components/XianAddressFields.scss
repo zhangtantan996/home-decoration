@@ -1,3 +1,5 @@
+@import "../theme/tokens";
+
 .xian-address-fields {
   display: flex;
   flex-direction: column;
@@ -40,7 +42,7 @@
 }
 
 .xian-address-fields__value--placeholder {
-  color: #a1a1aa;
+  color: $color-secondary;
   font-weight: 400;
 }
 

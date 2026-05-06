@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .case-gallery-page {
   min-height: 100vh;
   padding: 0 24rpx 40rpx;
@@ -125,7 +127,7 @@
   &__end {
     padding: 30rpx 0 6rpx;
     text-align: center;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 22rpx;
   }
 }

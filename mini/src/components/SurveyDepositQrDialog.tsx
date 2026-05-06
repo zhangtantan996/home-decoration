@@ -160,9 +160,9 @@ export const SurveyDepositQrDialog: React.FC<SurveyDepositQrDialogProps> = ({
       <View className={className('qr-dialog')} onClick={(event) => event.stopPropagation()}>
         <View className={className('qr-header')}>
           <Text className={className('qr-title')}>支付宝扫码支付</Text>
-          <Text className={className('qr-close')} onClick={onClose}>
-            ×
-          </Text>
+          <View className={className('qr-close')} onClick={onClose} hoverClass={`${className('qr-close')}--pressed`}>
+            <Text className={className('qr-close-text')}>×</Text>
+          </View>
         </View>
 
         <View className={className('qr-amount')}>

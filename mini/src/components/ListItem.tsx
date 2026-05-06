@@ -34,6 +34,7 @@ export const ListItem: React.FC<ListItemProps> = ({
     <View 
       className={classes}
       onClick={onClick}
+      hoverClass={onClick ? 'list-item--pressed' : 'none'}
     >
       <View className="list-item__left">
         {icon && <View className="list-item__icon">{icon}</View>}

@@ -1,3 +1,5 @@
+@import "../../theme/tokens";
+
 .notifications-page {
   min-height: 100vh;
   padding-bottom: calc(148rpx + constant(safe-area-inset-bottom));
@@ -150,7 +152,7 @@
     border: 1rpx solid rgba(226, 232, 240, 0.96);
     box-shadow: 0 8rpx 18rpx rgba(15, 23, 42, 0.035);
 
-    &:active {
+    &--pressed {
       opacity: 0.76;
     }
 
@@ -258,7 +260,7 @@
 
   &__card-summary {
     display: block;
-    color: #64748b;
+    color: $color-secondary;
     font-size: 24rpx;
     line-height: 1.48;
     font-weight: 500;
@@ -273,7 +275,7 @@
   }
 
   &__card-time {
-    color: #94a3b8;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.4;
   }
@@ -284,7 +286,7 @@
     align-items: center;
     justify-content: center;
     min-width: 126rpx;
-    height: 54rpx;
+    min-height: 88rpx;
     padding: 0 22rpx;
     border-radius: 999rpx;
     background: #f8fafc;
@@ -297,6 +299,10 @@
     font-size: 22rpx;
     line-height: 1;
     font-weight: 700;
+  }
+
+  &__card-action--pressed {
+    opacity: 0.76;
   }
 
   &__empty-card {

@@ -1,3 +1,5 @@
+@import "../../theme/tokens";
+
 .inspiration-page {
   min-height: 100vh;
   background: #f6f7f8;
@@ -190,6 +192,18 @@
 
   &__active-clear {
     flex-shrink: 0;
+    min-width: 88rpx;
+    min-height: 88rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__active-clear--pressed {
+    opacity: 0.76;
+  }
+
+  &__active-clear-text {
     color: #111111;
     font-size: 24rpx;
     font-weight: 700;
@@ -354,7 +368,7 @@
   &__status {
     display: block;
     padding: 28rpx 0 8rpx;
-    color: #a1a1aa;
+    color: $color-secondary;
     font-size: 22rpx;
     text-align: center;
   }
@@ -427,11 +441,18 @@
 
   &__sheet-close {
     flex-shrink: 0;
-    width: 56rpx;
-    height: 56rpx;
+    width: 88rpx;
+    height: 88rpx;
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  &__sheet-close--pressed {
+    opacity: 0.76;
+  }
+
+  &__sheet-close-text {
     color: #111111;
     font-size: 38rpx;
     line-height: 1;

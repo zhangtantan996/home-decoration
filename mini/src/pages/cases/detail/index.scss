@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .case-detail-page {
   min-height: 100vh;
   background: #f7f7f8;
@@ -305,7 +307,7 @@
   }
 
   &__quote-empty-text {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 24rpx;
   }
 

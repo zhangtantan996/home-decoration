@@ -57,6 +57,7 @@ export const Button: React.FC<ButtonProps> = ({
       style={style}
       disabled={disabled}
       loading={loading}
+      hoverClass={disabled || loading ? 'none' : 'btn--pressed'}
       onClick={onClick}
       {...(isWeapp ? { openType, onGetPhoneNumber } : {})}
     >

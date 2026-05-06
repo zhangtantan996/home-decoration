@@ -1,5 +1,6 @@
 import { View, Input as TaroInput, Text } from '@tarojs/components';
 import React from 'react';
+import { colors } from '@/theme/tokens';
 import './Input.scss';
 
 interface InputProps {
@@ -44,7 +45,7 @@ export const Input: React.FC<InputProps> = ({
         onInput={(e) => onChange?.(e.detail.value)}
         placeholder={placeholder}
         placeholderClass="text-placeholder"
-        placeholderStyle="color: #A1A1AA"
+        placeholderStyle={`color: ${colors.secondary}`}
         type={type as any}
         disabled={disabled}
         maxlength={maxLength}

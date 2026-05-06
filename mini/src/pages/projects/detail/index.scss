@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .project-detail-page {
   min-height: 100vh;
   background-color: #FFFFFF;
@@ -15,7 +17,7 @@
     
     .address {
       font-size: 28rpx;
-      color: #71717A;
+      color: $color-secondary;
     }
   }
 
@@ -80,7 +82,7 @@
 
         .phase-status {
           font-size: 24rpx;
-          color: #71717A;
+          color: $color-secondary;
           margin-bottom: 16rpx;
         }
 

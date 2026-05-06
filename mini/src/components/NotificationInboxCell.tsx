@@ -41,6 +41,7 @@ export const NotificationInboxCell: React.FC<NotificationInboxCellProps> = ({
       className={`notification-inbox-cell ${unread ? 'is-unread' : ''}`}
       onClick={onClick}
       onLongPress={onLongPress}
+      hoverClass={onClick ? 'notification-inbox-cell--pressed' : 'none'}
     >
       {leading ? <View className="notification-inbox-cell__leading">{leading}</View> : null}
 
@@ -78,6 +79,7 @@ export const NotificationInboxCell: React.FC<NotificationInboxCellProps> = ({
                   .filter(Boolean)
                   .join(' ')}
                 onClick={onActionClick}
+                hoverClass="notification-inbox-cell__action--pressed"
               >
                 <Text className="notification-inbox-cell__action-text">{actionText}</Text>
               </View>

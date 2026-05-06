@@ -41,13 +41,21 @@ const AgreementCopy = ({
     <>
       <View className={lineClassName}>
         <Text className={textClassName}>我已阅读并同意</Text>
-        <Text className={linkClassName} onClick={() => onOpenAgreement('terms')}>
-          《用户协议》
-        </Text>
+        <View
+          className={`${linkClassName} ${linkClassName}--tap`}
+          onClick={() => onOpenAgreement('terms')}
+          hoverClass={`${linkClassName}--pressed`}
+        >
+          <Text className={linkClassName}>《用户协议》</Text>
+        </View>
         <Text className={textClassName}>、</Text>
-        <Text className={linkClassName} onClick={() => onOpenAgreement('privacy')}>
-          《隐私政策》
-        </Text>
+        <View
+          className={`${linkClassName} ${linkClassName}--tap`}
+          onClick={() => onOpenAgreement('privacy')}
+          hoverClass={`${linkClassName}--pressed`}
+        >
+          <Text className={linkClassName}>《隐私政策》</Text>
+        </View>
       </View>
       <Text className={sublineClassName}>{AGREEMENT_SUBLINE}</Text>
     </>

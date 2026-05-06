@@ -116,6 +116,7 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
             className={`mini-page-nav__back-button ${showBack ? '' : 'is-hidden'}`}
             style={backButtonStyle}
             onClick={showBack ? onBack : undefined}
+            hoverClass={showBack ? 'mini-page-nav__back-button--pressed' : 'none'}
           >
             {variant === 'overlay' ? (
               <View className="mini-page-nav__icon-stack">

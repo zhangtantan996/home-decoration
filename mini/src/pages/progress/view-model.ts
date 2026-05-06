@@ -328,7 +328,7 @@ export const buildProgressPhaseSections = (
 
   return phases.map((phase) => {
     const meta = resolvePhaseStatusMeta(phase.status);
-    const tasks = (phase.tasks || []).map((task) => ({
+    const tasks = (phase.tasks || []).slice(0, 8).map((task) => ({
       id: String(task.id),
       name: task.name,
       isCompleted: Boolean(task.isCompleted),
@@ -357,7 +357,7 @@ export const buildProgressPhaseSections = (
             : '',
       tone: meta.tone,
       tasks,
-      logs: phaseLogs.map(normalizeLog).map((log) => ({
+      logs: phaseLogs.slice(0, 5).map(normalizeLog).map((log) => ({
         ...log,
         images: log.images.filter((image) => isMiniSafeImageUrl(image)),
       })),

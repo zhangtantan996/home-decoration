@@ -259,11 +259,14 @@ export default function CommentDetailPage() {
       </View>
 
       <View className="comment-detail-page__footer">
-        <View className="comment-detail-page__footer-action" onClick={openReplyComposer}>
+        <View
+          className="comment-detail-page__footer-action"
+          onClick={openReplyComposer}
+          hoverClass="comment-detail-page__footer-action--pressed"
+        >
           <Text className="comment-detail-page__footer-action-text">发布回复</Text>
         </View>
       </View>
     </View>
   );
 }
-

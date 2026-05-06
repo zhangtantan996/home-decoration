@@ -171,7 +171,11 @@ export default function FeedbackSettingsPage() {
               {images.map((item) => (
                 <View key={item.remoteUrl} className="feedback-page__image-card">
                   <Image className="feedback-page__image" src={item.previewUrl} mode="aspectFill" />
-                  <View className="feedback-page__remove" onClick={() => handleRemoveImage(item.remoteUrl)}>
+                  <View
+                    className="feedback-page__remove"
+                    onClick={() => handleRemoveImage(item.remoteUrl)}
+                    hoverClass="feedback-page__remove--pressed"
+                  >
                     <Text className="feedback-page__remove-text">×</Text>
                   </View>
                 </View>

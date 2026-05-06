@@ -1,3 +1,5 @@
+@import "../../theme/tokens";
+
 .progress-page {
   min-height: 100vh;
   background: #f7f7f7;
@@ -193,7 +195,7 @@
   &__hero-address {
     flex: 1;
     min-width: 0;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.5;
     overflow: hidden;
@@ -359,7 +361,7 @@
 
   &__milestone-date {
     margin-top: 6rpx;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 18rpx;
     line-height: 1;
   }
@@ -445,7 +447,7 @@
   }
 
   &__phase-date {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 20rpx;
     line-height: 1.4;
   }
@@ -474,7 +476,7 @@
   }
 
   &__phase-status-text {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 20rpx;
     font-weight: 700;
     line-height: 1;
@@ -539,7 +541,7 @@
     line-height: 1.5;
 
     &.is-done {
-      color: #9ca3af;
+      color: $color-secondary;
       text-decoration: line-through;
     }
   }
@@ -581,7 +583,7 @@
     height: 8rpx;
     margin-top: 10rpx;
     border-radius: 999rpx;
-    background: #9ca3af;
+    background: $color-secondary;
   }
 
   &__phase-log-main {
@@ -590,7 +592,7 @@
   }
 
   &__phase-log-time {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 18rpx;
     line-height: 1.4;
   }
@@ -655,7 +657,7 @@
   }
 
   &__phase-empty-text {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.5;
   }
@@ -676,7 +678,7 @@
     padding: 0 14rpx;
     border-radius: 999rpx;
     background: #f3f4f6;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 20rpx;
     font-weight: 700;
     line-height: 1;
@@ -702,7 +704,7 @@
   &__empty-note {
     display: block;
     margin-top: 12rpx;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 20rpx;
     line-height: 1.5;
   }
@@ -795,7 +797,7 @@
   &__sheet-item-subtitle {
     display: block;
     margin-top: 8rpx;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 20rpx;
     line-height: 1.5;
   }

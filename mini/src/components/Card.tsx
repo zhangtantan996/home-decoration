@@ -32,6 +32,7 @@ export const Card: React.FC<CardProps> = ({
     <View 
       className={classes}
       onClick={onClick}
+      hoverClass={onClick ? 'card--pressed' : 'none'}
       style={style}
     >
       {(title || extra) && (

@@ -29,13 +29,21 @@ const AgreementCopy = ({
   <>
     <View className="mini-sms-login__agreement-line">
       <Text className="mini-sms-login__agreement-text">我已阅读并同意</Text>
-      <Text className="mini-sms-login__agreement-link" onClick={() => onOpenAgreement('terms')}>
-        《用户协议》
-      </Text>
+      <View
+        className="mini-sms-login__agreement-link mini-sms-login__agreement-link--tap"
+        onClick={() => onOpenAgreement('terms')}
+        hoverClass="mini-sms-login__agreement-link--pressed"
+      >
+        <Text className="mini-sms-login__agreement-link">《用户协议》</Text>
+      </View>
       <Text className="mini-sms-login__agreement-text">、</Text>
-      <Text className="mini-sms-login__agreement-link" onClick={() => onOpenAgreement('privacy')}>
-        《隐私政策》
-      </Text>
+      <View
+        className="mini-sms-login__agreement-link mini-sms-login__agreement-link--tap"
+        onClick={() => onOpenAgreement('privacy')}
+        hoverClass="mini-sms-login__agreement-link--pressed"
+      >
+        <Text className="mini-sms-login__agreement-link">《隐私政策》</Text>
+      </View>
     </View>
     <Text className="mini-sms-login__agreement-text mini-sms-login__agreement-text--subline">
       {AGREEMENT_SUBLINE}

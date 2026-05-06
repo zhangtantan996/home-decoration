@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .mini-login {
   min-height: 100vh;
   display: flex;
@@ -118,12 +120,25 @@
   }
 
   &__agreement-text {
-    color: #64748b;
+    color: $color-secondary;
   }
 
   &__agreement-link {
     color: #2563eb;
     font-weight: 600;
+  }
+
+  &__agreement-link--tap,
+  &__dialog-link--tap {
+    min-height: 88rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__agreement-link--pressed,
+  &__dialog-link--pressed {
+    opacity: 0.76;
   }
 
   &__agreement-text--subline {
@@ -167,7 +182,7 @@
   &__helper {
     display: block;
     margin-top: 18rpx;
-    color: #64748b;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.7;
     text-align: center;

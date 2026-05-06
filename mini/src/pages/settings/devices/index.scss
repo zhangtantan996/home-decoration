@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .devices-page {
   &__tip {
     padding: 28rpx 24rpx;
@@ -88,7 +90,7 @@
 
   &__empty-text {
     display: block;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 24rpx;
     line-height: 1.6;
   }

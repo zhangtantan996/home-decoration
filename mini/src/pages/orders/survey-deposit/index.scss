@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .survey-deposit-page {
   min-height: 100vh;
 }
@@ -34,9 +36,21 @@
 }
 
 .survey-deposit-page__qr-close {
+  min-width: 44px;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.survey-deposit-page__qr-close--pressed {
+  opacity: 0.76;
+}
+
+.survey-deposit-page__qr-close-text {
   font-size: 24px;
   line-height: 1;
-  color: #94a3b8;
+  color: $color-secondary;
 }
 
 .survey-deposit-page__qr-amount {
@@ -47,7 +61,7 @@
 .survey-deposit-page__qr-amount-label {
   display: block;
   font-size: 12px;
-  color: #64748b;
+  color: $color-secondary;
 }
 
 .survey-deposit-page__qr-amount-value {
@@ -118,7 +132,7 @@
   margin-top: 6px;
   font-size: 11px;
   text-align: center;
-  color: #94a3b8;
+  color: $color-secondary;
 }
 
 .survey-deposit-page__qr-countdown {
@@ -126,7 +140,7 @@
   margin: 8px 0 0;
   font-size: 12px;
   text-align: center;
-  color: #94a3b8;
+  color: $color-secondary;
 }
 
 .survey-deposit-page__qr-actions {
@@ -161,7 +175,7 @@
 .survey-deposit-page__qr-placeholder-title {
   font-size: 14px;
   line-height: 1.6;
-  color: #64748b;
+  color: $color-secondary;
   text-align: center;
 }
 

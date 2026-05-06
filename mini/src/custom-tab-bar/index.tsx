@@ -3,6 +3,7 @@ import { Text, View } from '@tarojs/components';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Icon, type IconName } from '@/components/Icon';
+import { colors } from '@/theme/tokens';
 import { getUnreadCount } from '@/services/notifications';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
@@ -195,7 +196,7 @@ export default function CustomTabBar() {
                 <Icon
                   name={item.icon}
                   size={28}
-                  color={active ? '#111111' : '#A1A1AA'}
+                  color={active ? '#111111' : colors.secondary}
                 />
                 {showUnreadBadge ? (
                   <View className="floating-tabbar__badge">

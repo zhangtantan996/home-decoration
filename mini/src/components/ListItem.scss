@@ -5,6 +5,7 @@
   align-items: center;
   justify-content: space-between;
   padding: $spacing-md $spacing-lg;
+  min-height: 88rpx;
   background-color: $color-bg-card;
   border-bottom: 1rpx solid $color-border-soft;
   
@@ -12,7 +13,7 @@
     border-bottom: none;
   }
   
-  &--hover:active {
+  &--pressed {
     background-color: $color-bg-page;
   }
 

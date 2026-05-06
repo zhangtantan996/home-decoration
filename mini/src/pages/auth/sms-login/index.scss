@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .mini-sms-login {
   min-height: 100vh;
   display: flex;
@@ -232,7 +234,7 @@
   }
 
   &__agreement-text {
-    color: #64748b;
+    color: $color-secondary;
 
     &--subline {
       margin-top: 4rpx;
@@ -243,8 +245,19 @@
     color: #2563eb;
     font-weight: 600;
   }
+
+  &__agreement-link--tap {
+    min-height: 88rpx;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__agreement-link--pressed {
+    opacity: 0.76;
+  }
 }
 
 .mini-sms-login__placeholder {
-  color: #94a3b8;
+  color: $color-secondary;
 }

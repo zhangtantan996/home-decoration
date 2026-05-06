@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .provider-detail-page {
   min-height: 100vh;
   background: linear-gradient(180deg, #ffffff 0%, #f6f6f7 100%);
@@ -28,7 +30,7 @@
   }
 
   &__hero-placeholder {
-    background: linear-gradient(135deg, #d4d4d8 0%, #a1a1aa 100%);
+    background: linear-gradient(135deg, #d4d4d8 0%, $color-secondary 100%);
   }
 
   &__hero-mask {

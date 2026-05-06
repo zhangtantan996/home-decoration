@@ -223,7 +223,7 @@
   }
 
   &__chip-text {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 28rpx;
     font-weight: 500;
     transition:
@@ -729,7 +729,7 @@
   }
 
   &__quote-popup-close-text {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 36rpx;
     line-height: 1;
     font-weight: 400;
@@ -889,7 +889,7 @@
   }
 
   &__quote-popup-footer-link {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 24rpx;
     font-weight: 500;
     transition: color 0.2s;
