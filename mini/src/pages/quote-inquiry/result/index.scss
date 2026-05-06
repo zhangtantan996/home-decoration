@@ -290,13 +290,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 12rpx;
+    background: var(--quote-result-soft);
     border-radius: 20rpx;
     padding: 10rpx 12rpx;
     margin: -10rpx -12rpx 0;
   }
 
   &__tips-head--pressed {
-    background: rgba(148, 163, 184, 0.16);
+    background: rgba(37, 99, 235, 0.08);
   }
 
   &__tips-head-main {
@@ -320,9 +321,23 @@
   }
 
   &__tips-title {
-    font-size: 28rpx;
+    font-size: 30rpx;
     font-weight: 700;
     color: var(--quote-result-text);
+  }
+
+  &__tips-summary {
+    display: block;
+    margin-top: 18rpx;
+    padding: 0 8rpx;
+    font-size: 24rpx;
+    line-height: 1.7;
+    color: var(--quote-result-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
   }
 
   &__tips-list {

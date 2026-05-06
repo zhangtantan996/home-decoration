@@ -411,7 +411,11 @@ const QuoteInquiryResultPage: React.FC = () => {
                 </Text>
               </View>
             </View>
-          ) : null}
+          ) : (
+            <Text className="quote-inquiry-result__tips-summary">
+              {tips[0] || '以上报价为系统估算结果，实际价格以量房后的正式报价为准。'}
+            </Text>
+          )}
         </View>
       </View>
 
