@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .proposal-detail-page {
   height: 100vh;
   background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
@@ -30,7 +32,7 @@
 
   &__version {
     font-size: 22rpx;
-    color: #94a3b8;
+    color: $color-secondary;
     font-weight: 400;
   }
 
@@ -132,7 +134,7 @@
 
   &__meta-label {
     font-size: 20rpx;
-    color: #94a3b8;
+    color: $color-secondary;
     font-weight: 400;
   }
 
@@ -162,7 +164,7 @@
 
   &__attachment-hint {
     font-size: 20rpx;
-    color: #94a3b8;
+    color: $color-secondary;
   }
 
   /* 底部按钮栏 */
@@ -208,7 +210,7 @@
   &__empty {
     padding: 120rpx 32rpx;
     text-align: center;
-    color: #64748b;
+    color: $color-secondary;
     font-size: 28rpx;
   }
 }

@@ -178,3 +178,16 @@ func TestMerchantIncomeSummaryIncludesFrozenAndAbnormalFunds(t *testing.T) {
 		t.Fatalf("expected rejected withdraw projection, got %+v", data)
 	}
 }
+
+func TestGenerateWithdrawOrderNoFormat(t *testing.T) {
+	orderNo, err := generateWithdrawOrderNo()
+	if err != nil {
+		t.Fatalf("expected order number, got %v", err)
+	}
+	if len(orderNo) != 21 {
+		t.Fatalf("expected order length 21, got %d (%s)", len(orderNo), orderNo)
+	}
+	if orderNo[0] != 'W' {
+		t.Fatalf("expected W prefix, got %s", orderNo)
+	}
+}

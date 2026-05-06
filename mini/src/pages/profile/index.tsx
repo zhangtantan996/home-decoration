@@ -18,6 +18,7 @@ import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
 import { resolveProfileAvatarDisplayUrl } from '@/utils/profileAvatar';
+import { getQuoteInquiryLastResultForUser } from '@/utils/quoteInquiryLastResult';
 
 import './index.scss';
 
@@ -266,9 +267,21 @@ export default function Profile() {
     });
   };
 
-  const handleQuoteGenerator = () => {
+  const handleQuoteInquiry = () => {
     requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/quote-generator/index' });
+      const userId = Number(useAuthStore.getState().user?.id || 0);
+      if (userId > 0) {
+        const last = getQuoteInquiryLastResultForUser(userId);
+        if (last) {
+          const query = last.accessToken
+            ? `id=${last.id}&accessToken=${encodeURIComponent(last.accessToken)}`
+            : `id=${last.id}`;
+          Taro.navigateTo({ url: `/pages/quote-inquiry/result/index?${query}` });
+          return;
+        }
+      }
+
+      Taro.navigateTo({ url: '/pages/quote-inquiry/create/index' });
     });
   };
 
@@ -330,7 +343,7 @@ export default function Profile() {
                 </View>
               </View>
 
-              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleQuoteGenerator}>
+              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleQuoteInquiry}>
                 智能报价
               </Button>
             </View>

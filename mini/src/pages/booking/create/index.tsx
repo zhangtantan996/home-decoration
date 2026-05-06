@@ -630,12 +630,13 @@ const BookingCreatePage: React.FC = () => {
         <View className="booking-create-page__sheet" onClick={stopPropagation}>
           <View className="booking-create-page__sheet-header">
             <Text className="booking-create-page__sheet-title">预算范围</Text>
-            <Text
+            <View
               className="booking-create-page__sheet-close"
               onClick={closeSheet}
+              hoverClass="booking-create-page__sheet-close--pressed"
             >
-              ×
-            </Text>
+              <Text className="booking-create-page__sheet-close-text">×</Text>
+            </View>
           </View>
           <View className="booking-create-page__sheet-list">
             {BUDGET_OPTIONS.map((item) => {
@@ -665,12 +666,13 @@ const BookingCreatePage: React.FC = () => {
         <View className="booking-create-page__sheet" onClick={stopPropagation}>
           <View className="booking-create-page__sheet-header">
             <Text className="booking-create-page__sheet-title">选择户型</Text>
-            <Text
+            <View
               className="booking-create-page__sheet-close"
               onClick={closeSheet}
+              hoverClass="booking-create-page__sheet-close--pressed"
             >
-              ×
-            </Text>
+              <Text className="booking-create-page__sheet-close-text">×</Text>
+            </View>
           </View>
           <View className="booking-create-page__layout-columns">
             <View className="booking-create-page__layout-column">
@@ -752,12 +754,13 @@ const BookingCreatePage: React.FC = () => {
             <Text className="booking-create-page__sheet-title">
               选择上门时间
             </Text>
-            <Text
+            <View
               className="booking-create-page__sheet-close"
               onClick={closeSheet}
+              hoverClass="booking-create-page__sheet-close--pressed"
             >
-              ×
-            </Text>
+              <Text className="booking-create-page__sheet-close-text">×</Text>
+            </View>
           </View>
 
           <View className="booking-create-page__schedule-section">

@@ -80,7 +80,7 @@ const PROVIDER_FILTER_OPTIONS = [
   { id: "company", label: "公司" },
 ] as const;
 
-const HOME_FETCH_PAGE_SIZE = 50;
+const HOME_FETCH_PAGE_SIZE = 15;
 const HIDDEN_DISPLAY_TAGS = new Set(["沟通中"]);
 const HOME_POPUP_STORAGE_KEY = "home-popup-state-v2";
 const TAB_PAGE_PATHS = new Set([

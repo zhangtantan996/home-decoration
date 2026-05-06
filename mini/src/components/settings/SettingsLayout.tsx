@@ -91,6 +91,7 @@ export function SettingsRow({
         className,
       ])}
       onClick={onClick}
+      hoverClass={onClick ? 'settings-row--pressed' : 'none'}
     >
       <View className="settings-row__main">
         <Text className={buildClassName('settings-row__label', [danger ? 'settings-row__label--danger' : undefined])}>

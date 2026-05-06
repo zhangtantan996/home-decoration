@@ -11,6 +11,7 @@ import {
   type QuotePriceRange,
 } from '@/services/quote-inquiry';
 import { useAuthStore } from '@/store/auth';
+import { colors } from '@/theme/tokens';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
@@ -18,6 +19,8 @@ import {
   HOME_PROVIDER_ENTRY_PATH,
   setPendingHomeProviderEntry,
 } from '@/utils/homeProviderEntry';
+import { invalidateQuoteInquiryLastResultById } from '@/utils/quoteInquiryLastResult';
+import { MiniApiError } from '@/utils/request';
 
 import './index.scss';
 
@@ -75,8 +78,17 @@ const QuoteInquiryResultPage: React.FC = () => {
   const token = useAuthStore((state) => state.token);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<QuoteInquiryPublicDetail | null>(null);
-  const [expandedSectionId, setExpandedSectionId] = useState('design');
+  const [expandedSectionId, setExpandedSectionId] = useState('');
+  const [tipsExpanded, setTipsExpanded] = useState(false);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(164), []);
+  const backOrHome = () => {
+    const pages = Taro.getCurrentPages();
+    if (pages.length > 1) {
+      Taro.navigateBack();
+      return;
+    }
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
   const fixedBottomBarStyle = useMemo(
     () =>
       getFixedBottomBarStyle({
@@ -96,7 +108,7 @@ const QuoteInquiryResultPage: React.FC = () => {
     if (!id) {
       Taro.showToast({ title: '缺少报价ID', icon: 'none' });
       setTimeout(() => {
-        Taro.navigateBack();
+        backOrHome();
       }, 1500);
       return;
     }
@@ -107,9 +119,15 @@ const QuoteInquiryResultPage: React.FC = () => {
         const response = await getQuoteInquiryDetail(id, accessToken);
         setDetail(response);
       } catch (error) {
+        if (error instanceof MiniApiError && [403, 404].includes(Number(error.status || 0))) {
+          invalidateQuoteInquiryLastResultById({
+            id,
+            userId: Number(useAuthStore.getState().user?.id || 0) || undefined,
+          });
+        }
         showErrorToast(error, '获取报价详情失败');
         setTimeout(() => {
-          Taro.navigateBack();
+          backOrHome();
         }, 1500);
       } finally {
         setLoading(false);
@@ -120,12 +138,7 @@ const QuoteInquiryResultPage: React.FC = () => {
   });
 
   const handleBack = () => {
-    const pages = Taro.getCurrentPages();
-    if (pages.length > 1) {
-      Taro.navigateBack();
-      return;
-    }
-    Taro.switchTab({ url: '/pages/home/index' });
+    backOrHome();
   };
 
   const handleBookConsult = () => {
@@ -135,6 +148,10 @@ const QuoteInquiryResultPage: React.FC = () => {
       return;
     }
     Taro.switchTab({ url: HOME_PROVIDER_ENTRY_PATH });
+  };
+
+  const handleRegenerateQuote = () => {
+    void Taro.redirectTo({ url: '/pages/quote-inquiry/create/index' });
   };
 
   if (loading || !detail) {
@@ -278,17 +295,17 @@ const QuoteInquiryResultPage: React.FC = () => {
 
         <View className="quote-inquiry-result__info-bar">
           <View className="quote-inquiry-result__info-item">
-            <Icon name="home" size={24} color="#64748B" />
+            <Icon name="home" size={24} color={colors.secondary} />
             <Text className="quote-inquiry-result__info-value">{inquiry.houseLayout}</Text>
           </View>
           <View className="quote-inquiry-result__info-divider" />
           <View className="quote-inquiry-result__info-item">
-            <Icon name="expand" size={24} color="#64748B" />
+            <Icon name="expand" size={24} color={colors.secondary} />
             <Text className="quote-inquiry-result__info-value">{inquiry.area}㎡</Text>
           </View>
           <View className="quote-inquiry-result__info-divider" />
           <View className="quote-inquiry-result__info-item">
-            <Icon name="location-pin" size={24} color="#64748B" />
+            <Icon name="location-pin" size={24} color={colors.secondary} />
             <Text className="quote-inquiry-result__info-value">
               {inquiry.cityName || '待确认城市'}
             </Text>
@@ -329,7 +346,7 @@ const QuoteInquiryResultPage: React.FC = () => {
                         expanded && 'quote-inquiry-result__section-arrow--expanded',
                       ])}
                     >
-                      <Icon name="arrow-down" size={22} color="#64748B" />
+                      <Icon name="arrow-down" size={22} color={colors.secondary} />
                     </View>
                   </View>
                 </View>
@@ -357,43 +374,63 @@ const QuoteInquiryResultPage: React.FC = () => {
         </View>
 
         <View className="quote-inquiry-result__tips-card">
-          <View className="quote-inquiry-result__tips-head">
-            <Icon name="success" size={28} color="#2563EB" />
-            <Text className="quote-inquiry-result__tips-title">报价说明</Text>
+          <View
+            className="quote-inquiry-result__tips-head"
+            onClick={() => setTipsExpanded((current) => !current)}
+            hoverClass="quote-inquiry-result__tips-head--pressed"
+          >
+            <View className="quote-inquiry-result__tips-head-main">
+              <Icon name="success" size={28} color="#2563EB" />
+              <Text className="quote-inquiry-result__tips-title">报价说明</Text>
+            </View>
+            <View
+              className={buildClassName('quote-inquiry-result__tips-arrow', [
+                tipsExpanded && 'quote-inquiry-result__tips-arrow--expanded',
+              ])}
+            >
+              <Icon name="arrow-down" size={22} color={colors.secondary} />
+            </View>
           </View>
-          <View className="quote-inquiry-result__tips-list">
-            {tips.map((tip, index) => (
-              <View className="quote-inquiry-result__tip-item" key={`${tip}-${index}`}>
+          {tipsExpanded ? (
+            <View className="quote-inquiry-result__tips-list">
+              {tips.map((tip, index) => (
+                <View className="quote-inquiry-result__tip-item" key={`${tip}-${index}`}>
+                  <View className="quote-inquiry-result__tip-dot" />
+                  <Text className="quote-inquiry-result__tip-text">{tip}</Text>
+                </View>
+              ))}
+              <View className="quote-inquiry-result__tip-item">
                 <View className="quote-inquiry-result__tip-dot" />
-                <Text className="quote-inquiry-result__tip-text">{tip}</Text>
+                <Text className="quote-inquiry-result__tip-text">
+                  预计工期约 {estimatedDuration} 天，后续会结合量房结果进一步校准。
+                </Text>
               </View>
-            ))}
-            <View className="quote-inquiry-result__tip-item">
-              <View className="quote-inquiry-result__tip-dot" />
-              <Text className="quote-inquiry-result__tip-text">
-                预计工期约 {estimatedDuration} 天，后续会结合量房结果进一步校准。
-              </Text>
+              <View className="quote-inquiry-result__tip-item">
+                <View className="quote-inquiry-result__tip-dot" />
+                <Text className="quote-inquiry-result__tip-text">
+                  以上报价为系统估算结果，实际价格以量房后的正式报价为准。
+                </Text>
+              </View>
             </View>
-            <View className="quote-inquiry-result__tip-item">
-              <View className="quote-inquiry-result__tip-dot" />
-              <Text className="quote-inquiry-result__tip-text">
-                以上报价为系统估算结果，实际价格以量房后的正式报价为准。
-              </Text>
-            </View>
-          </View>
+          ) : (
+            <Text className="quote-inquiry-result__tips-summary">
+              {tips[0] || '以上报价为系统估算结果，实际价格以量房后的正式报价为准。'}
+            </Text>
+          )}
         </View>
       </View>
 
       <View className="quote-inquiry-result__footer" style={fixedBottomBarStyle}>
         <View className="quote-inquiry-result__primary-action" onClick={handleBookConsult}>
-          <Icon name="designer-service" size={28} color="#FFFFFF" />
-          <Text className="quote-inquiry-result__primary-action-text">去选设计师</Text>
+          <Text className="quote-inquiry-result__primary-action-text">选设计师</Text>
         </View>
 
         <View className="quote-inquiry-result__secondary-actions">
           <View className="quote-inquiry-result__secondary-action" onClick={handleViewCases}>
-            <Icon name="inspiration" size={24} color="#1E293B" />
-            <Text className="quote-inquiry-result__secondary-action-text">看同风格案例</Text>
+            <Text className="quote-inquiry-result__secondary-action-text">看案例</Text>
+          </View>
+          <View className="quote-inquiry-result__secondary-action" onClick={handleRegenerateQuote}>
+            <Text className="quote-inquiry-result__secondary-action-text">重算报价</Text>
           </View>
         </View>
       </View>

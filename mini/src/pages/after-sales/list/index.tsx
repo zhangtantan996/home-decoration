@@ -141,6 +141,7 @@ const AfterSalesListPage: React.FC = () => {
                 key={item.id}
                 className="after-sales-list-page__card"
                 onClick={() => openDetail(item.id)}
+                hoverClass="after-sales-list-page__card--pressed"
               >
                 <View className="after-sales-list-page__card-head">
                   <Text className="after-sales-list-page__title">{item.reason}</Text>

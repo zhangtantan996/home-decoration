@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .after-sales-list-page {
   min-height: 100vh;
 
@@ -64,7 +66,7 @@
     border-radius: 999rpx;
     background: transparent;
     border: 1rpx solid transparent;
-    color: #64748b;
+    color: $color-secondary;
     font-size: 24rpx;
     font-weight: 600;
 
@@ -94,7 +96,7 @@
     box-shadow: 0 10rpx 24rpx rgba(15, 23, 42, 0.04);
     padding: 26rpx 24rpx 22rpx;
 
-    &:active {
+    &--pressed {
       opacity: 0.78;
     }
   }

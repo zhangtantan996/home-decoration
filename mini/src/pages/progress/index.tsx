@@ -271,7 +271,7 @@ const PhaseLog = ({
       {item.images.length > 0 ? (
         <ScrollView scrollX className="progress-page__phase-log-gallery" showScrollbar={false}>
           <View className="progress-page__phase-log-gallery-track">
-            {item.images.map((image, index) => (
+            {item.images.slice(0, 3).map((image, index) => (
               <View
                 key={`${item.id}-${image}-${index}`}
                 className="progress-page__phase-log-thumb"
@@ -540,12 +540,12 @@ export default function Progress() {
       const [projectDetail, phaseData, logData] = await Promise.all([
         getProjectDetail(current.id).catch(() => current as ProjectDetail),
         getProjectPhases(current.id).catch(() => ({ phases: [] as ProjectPhase[] })),
-        getProjectLogs(current.id).catch(() => ({ list: [] as ProjectWorkLogRecord[], total: 0, page: 1, pageSize: 20 })),
+        getProjectLogs(current.id).catch(() => ({ list: [] as ProjectWorkLogRecord[], total: 0, page: 1, pageSize: 12 })),
       ]);
 
       setProject(projectDetail);
       setPhases(phaseData.phases || []);
-      setLogs(Array.isArray(logData.list) ? (logData.list as ProjectWorkLogRecord[]) : []);
+      setLogs(Array.isArray(logData.list) ? (logData.list as ProjectWorkLogRecord[]).slice(0, 12) : []);
     } catch (err) {
       showErrorToast(err, '同步进度失败');
     } finally {

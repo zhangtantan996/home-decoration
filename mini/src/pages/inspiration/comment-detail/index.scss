@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .comment-detail-page {
   min-height: 100vh;
   background: #f8f8f9;
@@ -120,7 +122,7 @@
     display: block;
     padding-top: 22rpx;
     text-align: center;
-    color: #a1a1aa;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.4;
   }
@@ -145,7 +147,7 @@
     cursor: pointer;
     transition: all 0.2s ease;
 
-    &:active {
+    &--pressed {
       transform: scale(0.98);
       box-shadow: 0 4rpx 16rpx rgba(102, 126, 234, 0.3);
     }

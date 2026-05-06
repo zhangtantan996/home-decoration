@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .design-quote-page {
   height: 100vh;
   background: linear-gradient(180deg, #f8fafc 0%, #f1f5f9 100%);
@@ -30,7 +32,7 @@
 
   &__subtitle {
     font-size: 22rpx;
-    color: #94a3b8;
+    color: $color-secondary;
   }
 
   /* 费用英雄区 */
@@ -131,7 +133,7 @@
 
   &__meta-label {
     font-size: 20rpx;
-    color: #94a3b8;
+    color: $color-secondary;
     font-weight: 400;
   }
 

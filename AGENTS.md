@@ -2,6 +2,12 @@
 
 Repo-wide instructions for coding agents. Module-local `AGENTS.md` may add details but must not override these rules for safety, architecture, dependency versions, verification, or workflow.
 
+## Interaction Contract (Socratic + Execution Gate)
+
+- 默认先澄清再执行：当用户表达模糊，或语气是“你觉得呢/为什么/要不要”，先用少量关键问题澄清（目标与验收、复现路径/用户对象、约束边界），给 1-2 个方案和取舍，等待确认后再改代码/跑命令/提交。
+- 默认不把用户结论当事实：独立思考并用代码/日志/运行结果验证；发现矛盾先提问引导校正，而不是直接附和。
+- 只有用户明确授权（开始/请实现/直接改/PLEASE IMPLEMENT 等）才可直接执行；若用户明确“只回答不改代码/不跑命令/不提交”，必须严格遵守。
+
 ## Repo Map
 
 | Dir | Stack | Purpose |
@@ -34,6 +40,12 @@ All `npm run dev:*` scripts use `scripts/env/with-env.sh <env>` to load env befo
 npm run dev:user-web
 ```
 
+### User-web Docker stack (gateway path)
+```bash
+npm run dev:user-web:docker
+```
+Starts DB, Redis, API, website, user-web, merchant, admin, and the local gateway for `/app` and cross-surface smoke tests.
+
 ### Docker Compose local stack
 `docker-compose.local.yml` starts all services including a Nginx gateway on **port 5175** that routes to admin, merchant, web, website, and API. Individual ports:
 
@@ -62,12 +74,24 @@ Env-specific runs: `scripts/env/mobile-run.sh <env> android|ios`
 npm run infra              # DB + Redis only
 npm run dev                # infra + API + admin + merchant
 npm run dev:user-web       # infra + API + user-web
+npm run dev:user-web:docker # full local gateway stack for user-web real-path tests
+npm run db:check           # local schema health check
 npm run test:e2e           # default Playwright (merchant on :5174)
 npm run test:identity:acceptance
-npm run verify:user-web    # build + typecheck bundle
+npm run test:e2e:merchant:smoke
+npm run test:e2e:quote:focused
+npm run fixture:user-web
+npm run smoke:user-web:api
+npm run smoke:test
+npm run smoke:release
+npm run regression:nightly
+npm run verify:user-web    # build + fixture + API smoke + user-web E2E
 npm run verify:backend     # go vet + go test
 npm run verify:admin       # lint + build
 npm run verify:merchant    # lint + build
+npm run verify:web
+npm run verify:mini
+npm run verify:mobile
 ```
 
 ### Server (Go)
@@ -87,7 +111,7 @@ All frontends require `--legacy-peer-deps` for npm install.
 ```
 npm run gen:tokens
 npm run check:frontend-style
-npm run check:frontend-style -- --scope admin|merchant|web|website|mini|mobile
+npm run check:frontend-style:<scope>  # scope: admin|merchant|web|website|mini|mobile
 node scripts/frontend-style-guard.mjs --scope <scope> --update-baseline
 ```
 Visual values must come from `shared/design-tokens/tokens.json` and generated outputs. Do not edit generated token files directly.
@@ -114,12 +138,21 @@ cd web && npm run build
 ```
 Note: no `lint` script defined in web.
 
+**website:**
+```
+cd website && npm run dev
+cd website && npm run check
+cd website && npm run build
+```
+
 **mini:**
 ```
 cd mini && npm run dev:weapp      # WeChat dev
 cd mini && npm run dev:h5         # H5 dev on :5176
+cd mini && npm run build:h5
 cd mini && npm run build:weapp    # WeChat production build
 cd mini && npm run lint           # eslint + no-emoji check
+cd mini && npm run typecheck
 cd mini && npm run format         # prettier
 ```
 Uses `tsconfig.typecheck.json` for type checking. Has `@tarojs/plugin-platform-h5` as local file: plugin.
@@ -171,8 +204,10 @@ router/ → handler/ → service/ → repository/
   - `playwright.user-web.real.config.ts`
 - Before running Playwright, verify the right app is actually serving on the target URL.
 - Server: prefer targeted `go test ./internal/<pkg>/...` before `make test`.
+- Schema-sensitive backend changes: run `npm run db:check` after migrations/schema edits.
 - Frontend: prefer build + lint for quick validation; add/update tests when the module already has a test pattern.
 - Frontend style guard: run the scoped `npm run check:frontend-style:*` command for touched frontend surfaces. The guard uses `scripts/frontend-style-baseline.json` to block new style debt while tolerating existing debt.
+- Release/user-web regressions: `npm run smoke:release` covers API health, user-web fixture, identity API acceptance, and user-web API smoke; `npm run smoke:test` adds focused business API smokes; `npm run regression:nightly` runs backend/admin/merchant/web/mobile/mini verification plus the Playwright stack.
 
 ## CI
 

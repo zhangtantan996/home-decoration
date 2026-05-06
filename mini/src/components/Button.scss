@@ -16,7 +16,7 @@
     border: none;
   }
   
-  &:active {
+  &--pressed {
     opacity: 0.8;
   }
   
@@ -33,9 +33,9 @@
   }
   
   &--brand {
-    background-color: $color-brand;
-    color: $color-white;
-    border: 2rpx solid $color-brand;
+    background-color: $color-border-soft;
+    color: $color-primary;
+    border: 2rpx solid $color-border;
   }
 
   &--outline {
@@ -52,10 +52,10 @@
 
   
   &--disabled {
-    opacity: 0.5;
-    background-color: $color-disabled;
-    color: $color-secondary;
-    border-color: $color-disabled;
+    opacity: 1;
+    background-color: $color-border-soft;
+    color: $color-gray-600;
+    border-color: $color-border-soft;
   }
 
   &--block {
@@ -63,7 +63,7 @@
   }
   
   &--sm {
-    height: 64rpx;
+    min-height: 88rpx;
     font-size: $font-body;
     padding: 0 24rpx;
   }

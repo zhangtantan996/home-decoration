@@ -121,7 +121,7 @@ const ReviewsPage: React.FC = () => {
     setLoadError(null);
     try {
       const [reviewRes, statsRes] = await Promise.all([
-        getProviderReviews(providerType, providerId, 1, 50),
+        getProviderReviews(providerType, providerId, 1, 20),
         getReviewStats(providerType, providerId).catch(() => null),
       ]);
       setList(reviewRes.list || []);

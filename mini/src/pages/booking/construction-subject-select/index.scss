@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .construction-select-page {
   &__header {
     margin-bottom: 24px;
@@ -13,7 +15,7 @@
 
   &__subtitle {
     font-size: 14px;
-    color: #71717a;
+    color: $color-secondary;
     display: block;
   }
 
@@ -104,7 +106,7 @@
 
   &__label {
     font-size: 14px;
-    color: #71717a;
+    color: $color-secondary;
   }
 
   &__value {

@@ -189,7 +189,13 @@ const ComplaintCreatePage: React.FC = () => {
                   <Image src={item} mode="aspectFill" style={{ width: '48px', height: '48px', borderRadius: '12px', background: '#F3F4F6' }} />
                   <Text className="text-sm text-gray-600 line-clamp-1">证据 {index + 1}</Text>
                 </View>
-                <Text className="text-sm text-red-500" onClick={() => setEvidenceUrls((prev) => prev.filter((_, currentIndex) => currentIndex !== index))}>删除</Text>
+                <View
+                  className="tap-target"
+                  onClick={() => setEvidenceUrls((prev) => prev.filter((_, currentIndex) => currentIndex !== index))}
+                  hoverClass="tap-target--pressed"
+                >
+                  <Text className="text-sm text-red-500">删除</Text>
+                </View>
               </View>
             ))}
           </View>

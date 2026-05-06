@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .after-sales-detail-page {
   min-height: 100vh;
 
@@ -18,7 +20,7 @@
 
   &__empty-evidence {
     padding: 24rpx 0 4rpx;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 24rpx;
     line-height: 1.5;
     text-align: center;

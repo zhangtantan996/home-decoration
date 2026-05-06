@@ -52,11 +52,11 @@ view, text, image, navigator, scroll-view, swiper, button, input, textarea {
 }
 
 .text-brand {
-  color: $color-brand;
+  color: $color-primary;
 }
 
 .text-placeholder {
-  color: $color-placeholder;
+  color: $color-secondary;
 }
 
 .text-success {
@@ -65,6 +65,18 @@ view, text, image, navigator, scroll-view, swiper, button, input, textarea {
 
 .text-error {
   color: $color-error;
+}
+
+.tap-target {
+  min-width: 88rpx;
+  min-height: 88rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.tap-target--pressed {
+  opacity: 0.76;
 }
 
 .bg-white {
@@ -274,7 +286,7 @@ view, text, image, navigator, scroll-view, swiper, button, input, textarea {
 }
 
 .text-gray-400 {
-  color: $color-placeholder;
+  color: $color-secondary;
 }
 
 .text-gray-500 {

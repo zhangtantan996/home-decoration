@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .proposal-list-page {
   padding: 24rpx;
   min-height: 100vh;
@@ -14,7 +16,7 @@
       font-size: 28rpx;
 
       .label {
-        color: #71717A;
+        color: $color-secondary;
       }
 
       .value {

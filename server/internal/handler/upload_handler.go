@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 	"image"
 	"io"
@@ -89,15 +90,41 @@ func validateUploadFileHeader(file *multipart.FileHeader, allowedExts map[string
 	}
 
 	ext := strings.ToLower(filepath.Ext(filepath.Base(file.Filename)))
-	if _, ok := allowedExts[ext]; !ok {
-		return "", errors.New("不支持的文件格式")
-	}
-
 	contentType, sample, err := sniffUploadFile(file)
 	if err != nil {
 		return "", errors.New("读取上传文件失败")
 	}
 	headerContentType := normalizeContentType(file.Header.Get("Content-Type"))
+
+	if _, ok := allowedExts[ext]; !ok {
+		if isDangerousUploadContent(contentType, sample) || isDangerousUploadContent(headerContentType, sample) {
+			return "", errors.New("不允许上传可执行或脚本文件")
+		}
+
+		if canonicalExt, ok := imageExtByContentType[contentType]; ok {
+			if _, allowed := allowedExts[canonicalExt]; allowed {
+				return canonicalExt, nil
+			}
+			return "", errors.New("不支持的图片格式")
+		}
+
+		if canonicalExt, ok := imageExtByContentType[headerContentType]; ok {
+			if _, allowed := allowedExts[canonicalExt]; allowed {
+				return canonicalExt, nil
+			}
+			return "", errors.New("不支持的图片格式")
+		}
+
+		if format := detectUnsupportedImageFormat(contentType, headerContentType, sample); format != "" {
+			return "", fmt.Errorf("暂不支持%s图片，请先转换为 JPG/PNG/WEBP 后上传", format)
+		}
+
+		if normalizedExt, ok := validateKnownRasterImageByDecode(file, ext, allowedExts); ok {
+			return normalizedExt, nil
+		}
+
+		return "", errors.New("不支持的文件格式")
+	}
 
 	if allowedTypes, isImage := imageContentTypesByExt[ext]; isImage {
 		if isDangerousUploadContent(contentType, sample) || isDangerousUploadContent(headerContentType, sample) {
@@ -284,10 +311,16 @@ func saveCaseUpload(c *gin.Context, ownerID uint64, filenamePrefix string) {
 func UploadFile(c *gin.Context) {
 	// 获取当前登录用户ID
 	userID := c.GetUint64("userId")
+	category := strings.ToLower(strings.TrimSpace(c.PostForm("category")))
 
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, 400, "请选择要上传的文件")
+		return
+	}
+
+	if category == "avatar" {
+		saveUserAvatarUpload(c, userID, file)
 		return
 	}
 
@@ -319,6 +352,46 @@ func UploadFile(c *gin.Context) {
 		"filename": file.Filename,
 		"size":     file.Size,
 		"type":     ext,
+	})
+}
+
+func saveUserAvatarUpload(c *gin.Context, userID uint64, file *multipart.FileHeader) {
+	if file.Size > 5*1024*1024 {
+		response.Error(c, 400, "头像大小不能超过5MB")
+		return
+	}
+
+	ext, err := validateUploadFileHeader(file, avatarUploadAllowedExts)
+	if err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	filename := fmt.Sprintf("avatar_%d_%d%s", userID, time.Now().UnixNano(), ext)
+	avatarPath := buildUploadPublicPath("avatars", filename)
+	asset, err := persistUploadedFileWithSpec(file, avatarPath, &imgutil.UploadAssetSpec{
+		ThumbnailMaxWidth:  320,
+		ThumbnailMaxHeight: 320,
+	})
+	if err != nil {
+		if smallErr, ok := imgutil.IsImageTooSmallError(err); ok {
+			response.Error(c, 400, smallErr.Error())
+			return
+		}
+		response.Error(c, 500, "处理头像失败")
+		return
+	}
+
+	response.Success(c, gin.H{
+		"url":           asset.URL,
+		"path":          asset.Path,
+		"filename":      file.Filename,
+		"size":          file.Size,
+		"type":          ext,
+		"thumbnailUrl":  asset.ThumbnailURL,
+		"thumbnailPath": asset.ThumbnailPath,
+		"width":         asset.Width,
+		"height":        asset.Height,
 	})
 }
 

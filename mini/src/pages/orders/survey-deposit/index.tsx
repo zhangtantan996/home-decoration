@@ -95,6 +95,7 @@ const DetailRow: React.FC<DetailRowProps> = ({
   <View
     className={`order-detail-page__row${multiline ? ' order-detail-page__row--multiline' : ''}${onClick ? ' order-detail-page__row--clickable' : ''}`}
     onClick={onClick}
+    hoverClass={onClick ? 'order-detail-page__row--pressed' : 'none'}
   >
     <View className="order-detail-page__row-main">
       <Text className="order-detail-page__row-label">{label}</Text>
@@ -429,7 +430,11 @@ const SurveyDepositOrderPage: React.FC = () => {
               <DetailRow
                 label="订单编号"
                 value={orderNo}
-                extra={<Text className="order-detail-page__row-link" onClick={() => handleCopy(orderNo)}>复制</Text>}
+                extra={(
+                  <View className="order-detail-page__row-link" onClick={() => handleCopy(orderNo)}>
+                    <Text className="order-detail-page__row-link-text">复制</Text>
+                  </View>
+                )}
               />
             </View>
           </Card>

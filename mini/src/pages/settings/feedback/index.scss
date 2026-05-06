@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .feedback-page {
   .settings-layout__footer {
     margin-top: 28rpx;
@@ -104,7 +106,7 @@
   }
 
   &__counter {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.4;
   }
@@ -117,7 +119,7 @@
   }
 
   &__gallery-copy {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 22rpx;
   }
 
@@ -147,13 +149,17 @@
     position: absolute;
     top: 10rpx;
     right: 10rpx;
-    width: 40rpx;
-    height: 40rpx;
-    border-radius: 20rpx;
+    width: 88rpx;
+    height: 88rpx;
+    border-radius: 44rpx;
     display: flex;
     align-items: center;
     justify-content: center;
     background: rgba(17, 17, 17, 0.72);
+
+    &--pressed {
+      opacity: 0.76;
+    }
   }
 
   &__remove-text {

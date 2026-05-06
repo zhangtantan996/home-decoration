@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .construction-waiting-page {
   &__card {
     background: #fff;
@@ -59,7 +61,7 @@
 
   &__subtitle {
     font-size: 14px;
-    color: #71717a;
+    color: $color-secondary;
     display: block;
     margin-bottom: 24px;
   }
@@ -84,7 +86,7 @@
 
   &__label {
     font-size: 14px;
-    color: #71717a;
+    color: $color-secondary;
   }
 
   &__value-group {
@@ -108,7 +110,7 @@
 
   &__notice-text {
     font-size: 14px;
-    color: #92400e;
+    color: $color-primary;
     text-align: center;
     display: block;
   }

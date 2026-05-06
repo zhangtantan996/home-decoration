@@ -1,3 +1,5 @@
+@import "../theme/tokens";
+
 .floating-tabbar {
   position: fixed;
   left: 0;
@@ -95,7 +97,7 @@
   }
 
   &__label {
-    color: #a1a1aa;
+    color: $color-secondary;
     font-size: 20rpx;
     font-weight: 500;
     line-height: 1.2;

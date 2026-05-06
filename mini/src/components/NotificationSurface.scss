@@ -68,7 +68,7 @@
     margin-top: 10rpx;
     font-size: 24rpx;
     line-height: 1.5;
-    color: #8e8e93;
+    color: $color-secondary;
   }
 
   &__summary {
@@ -102,7 +102,7 @@
     display: block;
     font-size: 20rpx;
     line-height: 1.4;
-    color: #8e8e93;
+    color: $color-secondary;
   }
 
   &__metric-value {
@@ -120,12 +120,12 @@
     margin-top: 8rpx;
     font-size: 20rpx;
     line-height: 1.45;
-    color: #b0b3b8;
+    color: $color-secondary;
   }
 
   &__metric.is-emphasis &__metric-label,
   &__metric.is-emphasis &__metric-hint {
-    color: rgba(180, 83, 9, 0.7);
+    color: $color-primary;
   }
 
   &__metric.is-emphasis &__metric-value {
@@ -154,7 +154,7 @@
     display: block;
     font-size: 20rpx;
     line-height: 1.4;
-    color: #8e8e93;
+    color: $color-secondary;
   }
 
   &__value {
@@ -179,7 +179,7 @@
     margin-top: 6rpx;
     font-size: 20rpx;
     line-height: 1.45;
-    color: #b0b3b8;
+    color: $color-secondary;
     word-break: break-word;
   }
 }
@@ -270,7 +270,7 @@
     display: block;
     margin-top: 8rpx;
     padding-left: 2rpx;
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 21rpx;
     line-height: 1.55;
 
@@ -412,7 +412,7 @@
   margin-top: 16rpx;
   padding: 18rpx 18rpx 0;
   border-top: 1rpx solid #edf2f7;
-  color: #94a3b8;
+  color: $color-secondary;
   font-size: 21rpx;
   line-height: 1.55;
 }
@@ -529,6 +529,10 @@
     background: linear-gradient(180deg, #ffffff 0%, #fffdfa 100%);
   }
 
+  &--pressed {
+    opacity: 0.76;
+  }
+
   &__leading {
     flex-shrink: 0;
     margin-top: 6rpx;
@@ -557,7 +561,7 @@
   &__time {
     flex-shrink: 0;
     font-size: 20rpx;
-    color: #c7c7cc;
+    color: $color-secondary;
   }
 
   &__title-row {
@@ -608,7 +612,7 @@
     border-radius: 999rpx;
     background: #f2f2f7;
     font-size: 20rpx;
-    color: #8e8e93;
+    color: $color-secondary;
 
     &.is-brand {
       background: rgba(245, 158, 11, 0.1);
@@ -631,7 +635,7 @@
     align-items: center;
     justify-content: center;
     min-width: 128rpx;
-    height: 56rpx;
+    min-height: 88rpx;
     padding: 0 22rpx;
     border-radius: 999rpx;
     border: 1rpx solid transparent;
@@ -654,19 +658,23 @@
     &.is-system {
       background: rgba(100, 116, 139, 0.08);
       border-color: rgba(100, 116, 139, 0.15);
-      color: #64748b;
+      color: $color-secondary;
     }
 
     &.is-neutral {
       background: #f8fafc;
       border-color: #e2e8f0;
-      color: #94a3b8;
+      color: $color-secondary;
     }
 
     &.is-secondary {
       background: #ffffff;
       border-color: #ececec;
-      color: #8e8e93;
+      color: $color-secondary;
+    }
+
+    &--pressed {
+      opacity: 0.76;
     }
   }
 

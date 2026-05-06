@@ -1,3 +1,5 @@
+@import "../../../theme/tokens";
+
 .security-form-page {
   &__summary {
     padding: 28rpx 24rpx 30rpx;
@@ -14,7 +16,7 @@
   &__summary-copy {
     display: block;
     margin-top: 10rpx;
-    color: #64748b;
+    color: $color-secondary;
     font-size: 24rpx;
     line-height: 1.7;
   }

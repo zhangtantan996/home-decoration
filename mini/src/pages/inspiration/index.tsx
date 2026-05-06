@@ -10,6 +10,7 @@ import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import type { FavoriteItemDTO, InspirationItemDTO } from '@/services/dto';
 import { favoriteService, inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
+import { colors } from '@/theme/tokens';
 import { setCustomTabBarHidden, syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getInspirationCoverImage } from '@/utils/inspirationImages';
@@ -48,7 +49,8 @@ interface InspirationFilterState {
 }
 
 const ALL_FILTER_VALUE = '__all__';
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 12;
+const MAX_RENDERED_CASES = 36;
 const INSPIRATION_CASE_SYNC_KEY = 'inspiration_case_sync';
 const INSPIRATION_FILTER_KEY = 'inspiration_filter_state';
 const FILTER_SHEET_ANIMATION_MS = 280;
@@ -360,7 +362,7 @@ export default function Inspiration() {
       }
 
       const incoming = caseData.list || [];
-      setCases((prev) => (reset ? incoming : [...prev, ...incoming]));
+      setCases((prev) => (reset ? incoming : [...prev, ...incoming]).slice(-MAX_RENDERED_CASES));
       setCasesPage(targetPage + 1);
 
       const hasMoreByTotal = (caseData.total || 0) > targetPage * PAGE_SIZE;
@@ -421,7 +423,7 @@ export default function Inspiration() {
       }
 
       const incoming = res.list || [];
-      setFavorites((prev) => dedupeFavorites(reset ? incoming : [...prev, ...incoming]));
+      setFavorites((prev) => dedupeFavorites(reset ? incoming : [...prev, ...incoming]).slice(-MAX_RENDERED_CASES));
       setFavoritesPage(targetPage + 1);
 
       const hasMoreByTotal = (res.total || 0) > targetPage * PAGE_SIZE;
@@ -735,7 +737,7 @@ export default function Inspiration() {
               void handleLike(item);
             }}
           >
-            <Icon name="favorites" size={22} color={item.isLiked ? '#2c3e50' : '#9ca3af'} />
+            <Icon name="favorites" size={22} color={item.isLiked ? '#2c3e50' : colors.secondary} />
             <Text className="inspiration-page__metric-text">{compactCount(item.likeCount)}</Text>
           </View>
         </View>
@@ -846,7 +848,13 @@ export default function Inspiration() {
                 </View>
               ))}
             </View>
-            <Text className="inspiration-page__active-clear" onClick={handleClearFilters}>清空</Text>
+            <View
+              className="inspiration-page__active-clear"
+              onClick={handleClearFilters}
+              hoverClass="inspiration-page__active-clear--pressed"
+            >
+              <Text className="inspiration-page__active-clear-text">清空</Text>
+            </View>
           </View>
         ) : null}
 
@@ -894,7 +902,13 @@ export default function Inspiration() {
             <View className="inspiration-page__sheet-handle" />
             <View className="inspiration-page__sheet-head">
               <Text className="inspiration-page__sheet-title">筛选</Text>
-              <Text className="inspiration-page__sheet-close" onClick={handleCloseFilterSheet}>×</Text>
+              <View
+                className="inspiration-page__sheet-close"
+                onClick={handleCloseFilterSheet}
+                hoverClass="inspiration-page__sheet-close--pressed"
+              >
+                <Text className="inspiration-page__sheet-close-text">×</Text>
+              </View>
             </View>
 
             <View className="inspiration-page__sheet-body">

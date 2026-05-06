@@ -127,13 +127,18 @@ const CounterCard: React.FC<CounterCardProps> = ({
     <View className="quote-inquiry-create__counter-card">
       <Text className="quote-inquiry-create__counter-title">{label}</Text>
       <View className="quote-inquiry-create__counter-actions">
-        <View className="quote-inquiry-create__counter-btn" onClick={onDecrease}>
+        <View
+          className="quote-inquiry-create__counter-btn"
+          onClick={onDecrease}
+          hoverClass="quote-inquiry-create__counter-btn--pressed"
+        >
           <Text className="quote-inquiry-create__counter-btn-symbol">−</Text>
         </View>
         <Text className="quote-inquiry-create__counter-value">{value}</Text>
         <View
           className="quote-inquiry-create__counter-btn quote-inquiry-create__counter-btn--active"
           onClick={onIncrease}
+          hoverClass="quote-inquiry-create__counter-btn--pressed"
         >
           <Text className="quote-inquiry-create__counter-btn-symbol quote-inquiry-create__counter-btn-symbol--active">
             +
@@ -364,6 +369,7 @@ const QuoteInquiryCreatePage: React.FC = () => {
           <View className="quote-inquiry-create__field">
             <Text className="quote-inquiry-create__field-label">房屋位置</Text>
             <XianAddressFields
+              className="quote-inquiry-create__address-fields"
               value={{
                 districtName: form.districtName,
                 districtCode: form.districtCode,
