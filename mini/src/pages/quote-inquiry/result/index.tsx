@@ -11,6 +11,7 @@ import {
   type QuotePriceRange,
 } from '@/services/quote-inquiry';
 import { useAuthStore } from '@/store/auth';
+import { colors } from '@/theme/tokens';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
@@ -294,17 +295,17 @@ const QuoteInquiryResultPage: React.FC = () => {
 
         <View className="quote-inquiry-result__info-bar">
           <View className="quote-inquiry-result__info-item">
-            <Icon name="home" size={24} color="#64748B" />
+            <Icon name="home" size={24} color={colors.secondary} />
             <Text className="quote-inquiry-result__info-value">{inquiry.houseLayout}</Text>
           </View>
           <View className="quote-inquiry-result__info-divider" />
           <View className="quote-inquiry-result__info-item">
-            <Icon name="expand" size={24} color="#64748B" />
+            <Icon name="expand" size={24} color={colors.secondary} />
             <Text className="quote-inquiry-result__info-value">{inquiry.area}㎡</Text>
           </View>
           <View className="quote-inquiry-result__info-divider" />
           <View className="quote-inquiry-result__info-item">
-            <Icon name="location-pin" size={24} color="#64748B" />
+            <Icon name="location-pin" size={24} color={colors.secondary} />
             <Text className="quote-inquiry-result__info-value">
               {inquiry.cityName || '待确认城市'}
             </Text>
@@ -345,7 +346,7 @@ const QuoteInquiryResultPage: React.FC = () => {
                         expanded && 'quote-inquiry-result__section-arrow--expanded',
                       ])}
                     >
-                      <Icon name="arrow-down" size={22} color="#64748B" />
+                      <Icon name="arrow-down" size={22} color={colors.secondary} />
                     </View>
                   </View>
                 </View>
@@ -387,7 +388,7 @@ const QuoteInquiryResultPage: React.FC = () => {
                 tipsExpanded && 'quote-inquiry-result__tips-arrow--expanded',
               ])}
             >
-              <Icon name="arrow-down" size={22} color="#64748B" />
+              <Icon name="arrow-down" size={22} color={colors.secondary} />
             </View>
           </View>
           {tipsExpanded ? (

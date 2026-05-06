@@ -297,7 +297,7 @@
   }
 
   &__tips-head--pressed {
-    background: rgba(37, 99, 235, 0.08);
+    transform: translateY(1rpx);
   }
 
   &__tips-head-main {
@@ -327,7 +327,6 @@
   }
 
   &__tips-summary {
-    display: block;
     margin-top: 18rpx;
     padding: 0 8rpx;
     font-size: 24rpx;
