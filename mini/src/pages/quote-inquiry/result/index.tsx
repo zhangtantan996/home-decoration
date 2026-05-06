@@ -11,6 +11,7 @@ import {
   type QuotePriceRange,
 } from '@/services/quote-inquiry';
 import { useAuthStore } from '@/store/auth';
+import { colors } from '@/theme/tokens';
 import { openAuthLoginPage } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
 import { getFixedBottomBarStyle, getPageBottomSpacerStyle } from '@/utils/fixedLayout';
@@ -18,6 +19,8 @@ import {
   HOME_PROVIDER_ENTRY_PATH,
   setPendingHomeProviderEntry,
 } from '@/utils/homeProviderEntry';
+import { invalidateQuoteInquiryLastResultById } from '@/utils/quoteInquiryLastResult';
+import { MiniApiError } from '@/utils/request';
 
 import './index.scss';
 
@@ -77,6 +80,14 @@ const QuoteInquiryResultPage: React.FC = () => {
   const [detail, setDetail] = useState<QuoteInquiryPublicDetail | null>(null);
   const [expandedSectionId, setExpandedSectionId] = useState('design');
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(164), []);
+  const backOrHome = () => {
+    const pages = Taro.getCurrentPages();
+    if (pages.length > 1) {
+      Taro.navigateBack();
+      return;
+    }
+    Taro.switchTab({ url: '/pages/home/index' });
+  };
   const fixedBottomBarStyle = useMemo(
     () =>
       getFixedBottomBarStyle({
@@ -96,7 +107,7 @@ const QuoteInquiryResultPage: React.FC = () => {
     if (!id) {
       Taro.showToast({ title: '缺少报价ID', icon: 'none' });
       setTimeout(() => {
-        Taro.navigateBack();
+        backOrHome();
       }, 1500);
       return;
     }
@@ -107,9 +118,15 @@ const QuoteInquiryResultPage: React.FC = () => {
         const response = await getQuoteInquiryDetail(id, accessToken);
         setDetail(response);
       } catch (error) {
+        if (error instanceof MiniApiError && [403, 404].includes(Number(error.status || 0))) {
+          invalidateQuoteInquiryLastResultById({
+            id,
+            userId: Number(useAuthStore.getState().user?.id || 0) || undefined,
+          });
+        }
         showErrorToast(error, '获取报价详情失败');
         setTimeout(() => {
-          Taro.navigateBack();
+          backOrHome();
         }, 1500);
       } finally {
         setLoading(false);
@@ -120,12 +137,7 @@ const QuoteInquiryResultPage: React.FC = () => {
   });
 
   const handleBack = () => {
-    const pages = Taro.getCurrentPages();
-    if (pages.length > 1) {
-      Taro.navigateBack();
-      return;
-    }
-    Taro.switchTab({ url: '/pages/home/index' });
+    backOrHome();
   };
 
   const handleBookConsult = () => {
@@ -135,6 +147,10 @@ const QuoteInquiryResultPage: React.FC = () => {
       return;
     }
     Taro.switchTab({ url: HOME_PROVIDER_ENTRY_PATH });
+  };
+
+  const handleRegenerateQuote = () => {
+    void Taro.redirectTo({ url: '/pages/quote-inquiry/create/index' });
   };
 
   if (loading || !detail) {
@@ -390,10 +406,14 @@ const QuoteInquiryResultPage: React.FC = () => {
           <Text className="quote-inquiry-result__primary-action-text">去选设计师</Text>
         </View>
 
-        <View className="quote-inquiry-result__secondary-actions">
+          <View className="quote-inquiry-result__secondary-actions">
           <View className="quote-inquiry-result__secondary-action" onClick={handleViewCases}>
-            <Icon name="inspiration" size={24} color="#1E293B" />
+            <Icon name="inspiration" size={24} color={colors.gray800} />
             <Text className="quote-inquiry-result__secondary-action-text">看同风格案例</Text>
+          </View>
+          <View className="quote-inquiry-result__secondary-action" onClick={handleRegenerateQuote}>
+            <Icon name="plus" size={24} color={colors.gray800} />
+            <Text className="quote-inquiry-result__secondary-action-text">重新生成报价</Text>
           </View>
         </View>
       </View>

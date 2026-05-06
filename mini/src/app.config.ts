@@ -18,7 +18,6 @@ export default {
     'pages/profile/index',
     'pages/profile/edit/index',
     'pages/profile/favorites/index',
-    'pages/quote-generator/index',
   ],
 
   subPackages: [

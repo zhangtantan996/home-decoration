@@ -7,11 +7,13 @@ import MiniPageNav from '@/components/MiniPageNav';
 import { createQuoteInquiry, type QuoteInquiryPublicDetail } from '@/services/quote-inquiry';
 import { getErrorMessage } from '@/utils/error';
 import { getPageBottomSpacerStyle } from '@/utils/fixedLayout';
+import { setQuoteInquiryLastResult } from '@/utils/quoteInquiryLastResult';
 import {
   clearQuoteInquirySubmitDraft,
   getQuoteInquirySubmitDraft,
 } from '@/utils/quoteInquirySubmitDraft';
 import { XIAN_CITY_CODE } from '@/utils/xianAddress';
+import { useAuthStore } from '@/store/auth';
 
 import './index.scss';
 
@@ -51,6 +53,11 @@ const QuoteInquirySubmittingPage: React.FC = () => {
     (response: QuoteInquiryPublicDetail) => {
       clearCountdownTimer();
       clearQuoteInquirySubmitDraft();
+      const userId = Number(useAuthStore.getState().user?.id || 0);
+      setQuoteInquiryLastResult(
+        { id: response.inquiry.id, accessToken: response.accessToken },
+        userId > 0 ? userId : undefined,
+      );
       const query = response.accessToken
         ? `id=${response.inquiry.id}&accessToken=${encodeURIComponent(response.accessToken)}`
         : `id=${response.inquiry.id}`;

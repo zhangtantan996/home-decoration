@@ -83,7 +83,7 @@
     width: 48rpx;
     height: 48rpx;
     border-radius: 50%;
-    background: #f3f4f6;
+    background: $color-gray-50;
     border: 1rpx solid #d1d5db;
     display: flex;
     align-items: center;
@@ -97,7 +97,7 @@
   }
 
   &__progress-dot-text {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 22rpx;
     font-weight: 700;
 
@@ -112,7 +112,7 @@
     font-weight: 600;
 
     &--muted {
-      color: #9ca3af;
+      color: $color-secondary;
     }
   }
 
@@ -125,7 +125,7 @@
   &__form-card,
   &__preview-card {
     background: #ffffff;
-    border: 1rpx solid #e5e7eb;
+    border: 1rpx solid $color-gray-200;
     box-shadow: 0 8rpx 28rpx rgba(17, 24, 39, 0.05);
   }
 
@@ -158,7 +158,7 @@
   &__field-hint {
     display: block;
     margin-top: 12rpx;
-    color: #94a3b8;
+    color: $color-secondary;
     font-size: 22rpx;
     line-height: 1.5;
 
@@ -168,6 +168,32 @@
 
     &--error {
       color: #dc2626;
+    }
+  }
+
+  &__address-fields {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14rpx;
+
+    .xian-address-fields__row {
+      min-height: 88rpx;
+      padding: 0 20rpx;
+      border-radius: 22rpx;
+      gap: 12rpx;
+    }
+
+    .xian-address-fields__label {
+      font-size: 24rpx;
+    }
+
+    .xian-address-fields__value {
+      font-size: 28rpx;
+    }
+
+    .xian-address-fields__error,
+    .xian-address-fields__detail {
+      grid-column: 1 / -1;
     }
   }
 
@@ -185,8 +211,8 @@
     .input-wrapper__field {
       height: 96rpx;
       border-radius: 24rpx;
-      border: 1rpx solid #e5e7eb;
-      background: #f9fafb;
+      border: 1rpx solid $color-gray-200;
+      background: $color-gray-50;
       padding: 0 24rpx;
       color: #111827;
       font-size: 28rpx;
@@ -196,8 +222,8 @@
 
   &__input-shell {
     border-radius: 24rpx;
-    border: 1rpx solid #e5e7eb;
-    background: #f9fafb;
+    border: 1rpx solid $color-gray-200;
+    background: $color-gray-50;
     display: flex;
     align-items: center;
     min-height: 96rpx;
@@ -219,7 +245,7 @@
   }
 
   &__input-unit {
-    color: #9ca3af;
+    color: $color-secondary;
     font-size: 24rpx;
     font-weight: 600;
   }
@@ -231,10 +257,10 @@
   }
 
   &__counter-card {
-    background: #f9fafb;
-    border: 1rpx solid #e5e7eb;
+    background: $color-gray-50;
+    border: 1rpx solid $color-gray-200;
     border-radius: 24rpx;
-    padding: 18rpx 14rpx;
+    padding: 16rpx 12rpx;
     text-align: center;
   }
 
@@ -249,41 +275,45 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 10rpx;
+    gap: 8rpx;
   }
 
   &__counter-btn {
-    width: 54rpx;
-    height: 54rpx;
-    border-radius: 16rpx;
-    background: #ffffff;
-    border: 1rpx solid #e5e7eb;
+    min-width: 68rpx;
+    min-height: 68rpx;
+    border-radius: 20rpx;
+    background: $color-gray-50;
+    border: 1rpx solid $color-gray-200;
     display: flex;
     align-items: center;
     justify-content: center;
 
     &--active {
-      background: #111827;
-      border-color: #111827;
+      background: #ffffff;
+      border-color: $color-gray-200;
+    }
+
+    &--pressed {
+      opacity: 0.76;
     }
   }
 
   &__counter-btn-symbol {
-    color: #9ca3af;
-    font-size: 26rpx;
+    color: $color-secondary;
+    font-size: 24rpx;
     font-weight: 700;
     line-height: 1;
 
     &--active {
-      color: #ffffff;
+      color: #111827;
     }
   }
 
   &__counter-value {
-    width: 44rpx;
+    width: 36rpx;
     text-align: center;
     color: #111827;
-    font-size: 34rpx;
+    font-size: 32rpx;
     font-weight: 700;
     line-height: 1;
   }
@@ -314,8 +344,8 @@
     min-height: 82rpx;
     border-radius: 24rpx;
     padding: 0 18rpx;
-    background: #f9fafb;
-    border: 1rpx solid #e5e7eb;
+    background: $color-gray-50;
+    border: 1rpx solid $color-gray-200;
     display: flex;
     align-items: center;
     justify-content: center;

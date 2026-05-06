@@ -1,10 +1,12 @@
+@import "../../../theme/tokens";
+
 .quote-inquiry-result {
   --quote-result-bg: #f5f7fa;
   --quote-result-card: #ffffff;
   --quote-result-primary: #2563eb;
   --quote-result-primary-dark: #1d4ed8;
   --quote-result-text: #1e293b;
-  --quote-result-muted: #64748b;
+  --quote-result-muted: $color-secondary;
   --quote-result-border: #e2e8f0;
   --quote-result-soft: #eff6ff;
   min-height: 100vh;
