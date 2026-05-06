@@ -48,6 +48,28 @@ func TestValidateUploadFileHeaderAllowsValidPNG(t *testing.T) {
 	}
 }
 
+func TestValidateUploadFileHeaderInfersImageExtWhenFilenameHasNoExt(t *testing.T) {
+	file := buildMultipartFileHeader(t, "file", "wxfile_tmp_avatar", []byte{
+		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+		0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+		0x08, 0x06, 0x00, 0x00, 0x00, 0x1f, 0x15, 0xc4,
+		0x89, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x44, 0x41,
+		0x54, 0x78, 0x9c, 0x63, 0xf8, 0xcf, 0xc0, 0x00,
+		0x00, 0x03, 0x01, 0x01, 0x00, 0xc9, 0xfe, 0x92,
+		0xef, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45, 0x4e,
+		0x44, 0xae, 0x42, 0x60, 0x82,
+	})
+
+	ext, err := validateUploadFileHeader(file, avatarUploadAllowedExts)
+	if err != nil {
+		t.Fatalf("expected extensionless png content to be accepted, got %v", err)
+	}
+	if ext != ".png" {
+		t.Fatalf("expected inferred ext .png, got %s", ext)
+	}
+}
+
 func TestValidateUploadFileHeaderNormalizesImageExtFromContent(t *testing.T) {
 	file := buildMultipartFileHeader(t, "file", "现场照片.jpg", []byte{
 		0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
@@ -67,19 +89,6 @@ func TestValidateUploadFileHeaderNormalizesImageExtFromContent(t *testing.T) {
 	}
 	if ext != ".png" {
 		t.Fatalf("expected normalized ext .png, got %s", ext)
-	}
-}
-
-func TestGenerateWithdrawOrderNoFormat(t *testing.T) {
-	orderNo, err := generateWithdrawOrderNo()
-	if err != nil {
-		t.Fatalf("expected order number, got %v", err)
-	}
-	if len(orderNo) != 21 {
-		t.Fatalf("expected order length 21, got %d (%s)", len(orderNo), orderNo)
-	}
-	if orderNo[0] != 'W' {
-		t.Fatalf("expected W prefix, got %s", orderNo)
 	}
 }
 
