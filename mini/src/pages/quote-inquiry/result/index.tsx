@@ -77,7 +77,8 @@ const QuoteInquiryResultPage: React.FC = () => {
   const token = useAuthStore((state) => state.token);
   const [loading, setLoading] = useState(true);
   const [detail, setDetail] = useState<QuoteInquiryPublicDetail | null>(null);
-  const [expandedSectionId, setExpandedSectionId] = useState('design');
+  const [expandedSectionId, setExpandedSectionId] = useState('');
+  const [tipsExpanded, setTipsExpanded] = useState(false);
   const pageBottomStyle = useMemo(() => getPageBottomSpacerStyle(164), []);
   const backOrHome = () => {
     const pages = Taro.getCurrentPages();
@@ -372,30 +373,45 @@ const QuoteInquiryResultPage: React.FC = () => {
         </View>
 
         <View className="quote-inquiry-result__tips-card">
-          <View className="quote-inquiry-result__tips-head">
-            <Icon name="success" size={28} color="#2563EB" />
-            <Text className="quote-inquiry-result__tips-title">报价说明</Text>
+          <View
+            className="quote-inquiry-result__tips-head"
+            onClick={() => setTipsExpanded((current) => !current)}
+            hoverClass="quote-inquiry-result__tips-head--pressed"
+          >
+            <View className="quote-inquiry-result__tips-head-main">
+              <Icon name="success" size={28} color="#2563EB" />
+              <Text className="quote-inquiry-result__tips-title">报价说明</Text>
+            </View>
+            <View
+              className={buildClassName('quote-inquiry-result__tips-arrow', [
+                tipsExpanded && 'quote-inquiry-result__tips-arrow--expanded',
+              ])}
+            >
+              <Icon name="arrow-down" size={22} color="#64748B" />
+            </View>
           </View>
-          <View className="quote-inquiry-result__tips-list">
-            {tips.map((tip, index) => (
-              <View className="quote-inquiry-result__tip-item" key={`${tip}-${index}`}>
+          {tipsExpanded ? (
+            <View className="quote-inquiry-result__tips-list">
+              {tips.map((tip, index) => (
+                <View className="quote-inquiry-result__tip-item" key={`${tip}-${index}`}>
+                  <View className="quote-inquiry-result__tip-dot" />
+                  <Text className="quote-inquiry-result__tip-text">{tip}</Text>
+                </View>
+              ))}
+              <View className="quote-inquiry-result__tip-item">
                 <View className="quote-inquiry-result__tip-dot" />
-                <Text className="quote-inquiry-result__tip-text">{tip}</Text>
+                <Text className="quote-inquiry-result__tip-text">
+                  预计工期约 {estimatedDuration} 天，后续会结合量房结果进一步校准。
+                </Text>
               </View>
-            ))}
-            <View className="quote-inquiry-result__tip-item">
-              <View className="quote-inquiry-result__tip-dot" />
-              <Text className="quote-inquiry-result__tip-text">
-                预计工期约 {estimatedDuration} 天，后续会结合量房结果进一步校准。
-              </Text>
+              <View className="quote-inquiry-result__tip-item">
+                <View className="quote-inquiry-result__tip-dot" />
+                <Text className="quote-inquiry-result__tip-text">
+                  以上报价为系统估算结果，实际价格以量房后的正式报价为准。
+                </Text>
+              </View>
             </View>
-            <View className="quote-inquiry-result__tip-item">
-              <View className="quote-inquiry-result__tip-dot" />
-              <Text className="quote-inquiry-result__tip-text">
-                以上报价为系统估算结果，实际价格以量房后的正式报价为准。
-              </Text>
-            </View>
-          </View>
+          ) : null}
         </View>
       </View>
 

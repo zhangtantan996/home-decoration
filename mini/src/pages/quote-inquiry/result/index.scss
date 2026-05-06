@@ -288,7 +288,35 @@
   &__tips-head {
     display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 12rpx;
+    border-radius: 20rpx;
+    padding: 10rpx 12rpx;
+    margin: -10rpx -12rpx 0;
+  }
+
+  &__tips-head--pressed {
+    background: rgba(148, 163, 184, 0.16);
+  }
+
+  &__tips-head-main {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+  }
+
+  &__tips-arrow {
+    width: 40rpx;
+    height: 40rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transform: rotate(0deg);
+    transition: transform 0.25s ease;
+  }
+
+  &__tips-arrow--expanded {
+    transform: rotate(180deg);
   }
 
   &__tips-title {
