@@ -255,18 +255,20 @@ export default function LoginPage() {
 
       <View className={`mini-login__agreement ${agreementTouched && !agreed ? 'mini-login__agreement--error' : ''}`}>
         <View className="mini-login__agreement-row">
-          <View
-            className={`mini-login__checkbox ${agreed ? 'mini-login__checkbox--checked' : ''}`}
-            onClick={() => {
-              setAgreed((prev) => {
-                const next = !prev;
-                setAuthAgreementAccepted(next);
-                return next;
-              });
-              setAgreementTouched(false);
-            }}
-          >
-            <View className="mini-login__checkbox-inner" />
+          <View className="mini-login__checkbox-slot">
+            <View
+              className={`mini-login__checkbox ${agreed ? 'mini-login__checkbox--checked' : ''}`}
+              onClick={() => {
+                setAgreed((prev) => {
+                  const next = !prev;
+                  setAuthAgreementAccepted(next);
+                  return next;
+                });
+                setAgreementTouched(false);
+              }}
+            >
+              <View className="mini-login__checkbox-inner" />
+            </View>
           </View>
           <View className="mini-login__agreement-copy">
             <AgreementCopy variant="agreement" onOpenAgreement={handleOpenAgreement} />

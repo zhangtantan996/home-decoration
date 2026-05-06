@@ -68,10 +68,18 @@
     max-width: 100%;
   }
 
+  &__checkbox-slot {
+    // Align the visual checkbox to the center of the first agreement line
+    // (30rpx * 1.72 ~= 52rpx), so it stays consistent across devices.
+    height: 52rpx;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+  }
+
   &__checkbox {
     width: 34rpx;
     height: 34rpx;
-    margin-top: 8rpx;
     border-radius: 17rpx;
     border: 2rpx solid #cbd5e1;
     display: flex;
@@ -116,7 +124,7 @@
   &__agreement-text,
   &__agreement-link {
     font-size: 30rpx;
-    line-height: 1.72;
+    line-height: 52rpx;
   }
 
   &__agreement-text {
