@@ -124,6 +124,11 @@ export const resolveMiniNotificationRoute = (actionUrl?: string) => {
     return `/pages/quote-tasks/detail/index?id=${match[1]}`;
   }
 
+  match = normalized.match(/^\/quote-pk\/tasks\/(\d+)$/);
+  if (match) {
+    return `/pages/quote-pk/comparison/index?id=${match[1]}`;
+  }
+
   match = normalized.match(/^\/after-sales\/(\d+)$/);
   if (match) {
     return `/pages/after-sales/detail/index?id=${match[1]}`;

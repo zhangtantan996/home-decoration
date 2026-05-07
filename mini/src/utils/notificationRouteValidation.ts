@@ -15,6 +15,7 @@ import {
   listProjectChangeOrders,
 } from '@/services/projects';
 import { getProposalDetail } from '@/services/proposals';
+import { getQuoteComparison } from '@/services/quote-pk';
 import { getQuoteTaskDetail } from '@/services/quoteTasks';
 import { MiniApiError } from '@/utils/request';
 
@@ -171,6 +172,14 @@ const validateRouteInternal = async (pagePath: string): Promise<NotificationRout
   if (match) {
     return withGuard(async () => {
       await getQuoteTaskDetail(Number(match?.[1] || 0));
+      return true;
+    });
+  }
+
+  match = pagePath.match(/^\/pages\/quote-pk\/comparison\/index\?id=(\d+)$/);
+  if (match) {
+    return withGuard(async () => {
+      await getQuoteComparison(Number(match?.[1] || 0));
       return true;
     });
   }

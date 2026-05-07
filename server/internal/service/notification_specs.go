@@ -509,6 +509,7 @@ func notificationRouteSupportedInMini(actionURL string) bool {
 		strings.HasPrefix(normalized, "/projects/"),
 		strings.HasPrefix(normalized, "/proposals/"),
 		strings.HasPrefix(normalized, "/quote-tasks/"),
+		strings.HasPrefix(normalized, "/quote-pk/tasks/"),
 		strings.HasPrefix(normalized, "/me/notifications"):
 		return true
 	default:
@@ -749,6 +750,9 @@ func (s *NotificationService) resolveNotificationActionStatus(notification model
 	case NotificationTypeContractPendingConfirm:
 		return resolveContractActionStatus(notification.RelatedID)
 	case "quote.submitted":
+		if notification.RelatedType == "quote_task" {
+			return resolveLegacyQuoteTaskActionStatus(notification)
+		}
 		return resolveQuoteListActionStatus(notification.RelatedID)
 	case "project.milestone.submitted":
 		return resolveMilestoneActionStatus(notification.RelatedID)
@@ -872,6 +876,36 @@ func resolveQuoteListActionStatus(relatedID uint64) string {
 		return NotificationActionStatusPending
 	}
 	return NotificationActionStatusProcessed
+}
+
+func resolveLegacyQuoteTaskActionStatus(notification model.Notification) string {
+	if notification.RelatedID == 0 {
+		return NotificationActionStatusPending
+	}
+
+	var task model.QuoteTask
+	if err := repository.DB.Select("status").First(&task, notification.RelatedID).Error; err != nil {
+		return NotificationActionStatusPending
+	}
+
+	switch task.Status {
+	case "expired":
+		return NotificationActionStatusExpired
+	case "completed":
+		return NotificationActionStatusProcessed
+	}
+
+	if strings.EqualFold(strings.TrimSpace(notification.UserType), "provider") && notification.UserID > 0 {
+		var provider model.Provider
+		if err := repository.DB.Select("id").Where("user_id = ?", notification.UserID).First(&provider).Error; err == nil && provider.ID > 0 {
+			var submission model.QuotePKSubmission
+			if err := repository.DB.Select("id").Where("quote_task_id = ? AND provider_id = ?", notification.RelatedID, provider.ID).First(&submission).Error; err == nil {
+				return NotificationActionStatusProcessed
+			}
+		}
+	}
+
+	return NotificationActionStatusPending
 }
 
 func resolveMilestoneActionStatus(relatedID uint64) string {

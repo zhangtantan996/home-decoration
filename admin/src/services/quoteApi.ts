@@ -752,7 +752,7 @@ export const adminQuoteApi = {
     }) =>
         unwrapEnvelope<{ quoteListId: number; created: boolean }>(
             await api.post('/admin/quote-lists/rebuild-from-legacy', payload),
-            '重建 legacy quote-pk 报价单失败'
+            '重建历史报价单失败'
         ),
     listProviderPriceBookInspection: async (params?: { keyword?: string }) =>
         unwrapEnvelope<{ list: ProviderPriceBookInspectionItem[] }>(

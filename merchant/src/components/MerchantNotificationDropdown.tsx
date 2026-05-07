@@ -12,6 +12,7 @@ import {
 } from '../utils/notificationWebSocket';
 import { formatServerDate } from '../utils/serverTime';
 import { toSafeNotificationContent } from '../utils/userFacingText';
+import { resolveMerchantNotificationPath } from '../utils/notificationNavigation';
 
 interface Notification {
     id: number;
@@ -33,6 +34,7 @@ type NotificationListResponse = { data?: { list?: Notification[] } };
 type UnreadCountResponse = { data?: { count?: number } };
 
 const POLL_INTERVAL_MS = 15000;
+
 const POLL_BUSINESS_KEY = 'merchant.notification.unread_poll';
 const POLL_POLICY: AutoRetryPolicy = {
     maxAutoAttempts: Number.MAX_SAFE_INTEGER,
@@ -348,8 +350,9 @@ const MerchantNotificationDropdown: React.FC = () => {
                 setUnreadCount(prev => Math.max(0, prev - 1));
             }
 
-            if (item.actionUrl) {
-                window.location.href = withRouterBasename(item.actionUrl);
+            const targetPath = resolveMerchantNotificationPath(item.actionUrl);
+            if (targetPath) {
+                window.location.href = withRouterBasename(targetPath);
             } else if (item.relatedType === 'booking' && item.relatedId) {
                 window.location.href = withRouterBasename('/bookings');
             } else if (item.relatedType === 'proposal' && item.relatedId) {

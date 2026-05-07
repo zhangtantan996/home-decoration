@@ -19,13 +19,6 @@ export interface QuoteTask {
   updatedAt: string;
 }
 
-export interface SubmitQuoteRequest {
-  totalPrice: number;
-  duration: number;
-  materials?: string;
-  description?: string;
-}
-
 export const merchantQuotePKApi = {
   getQuoteTasks: (): Promise<QuoteTask[]> => {
     return api.get('/merchant/quote-pk/tasks').then((payload) => {
@@ -40,9 +33,5 @@ export const merchantQuotePKApi = {
 
       return [];
     });
-  },
-
-  submitQuote: (taskId: number, data: SubmitQuoteRequest): Promise<void> => {
-    return api.post(`/merchant/quote-pk/tasks/${taskId}/submit`, data).then(() => undefined);
   },
 };

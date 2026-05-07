@@ -3,8 +3,10 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -104,5 +106,23 @@ func TestLegacyQuotePKMutationEndpointsRetired(t *testing.T) {
 				t.Fatalf("unexpected error code: got=%q want=%q", envelope.Data.ErrorCode, legacyQuotePKRetiredCode)
 			}
 		})
+	}
+}
+
+func TestRespondQuotePKErrorDoesNotExposeInternalError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	respondQuotePKError(c, "test quote pk", errors.New("查询报价任务失败: ERROR: relation quote_tasks does not exist"), "获取报价任务失败，请稍后重试")
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("unexpected http status: got=%d want=%d", recorder.Code, http.StatusInternalServerError)
+	}
+	if strings.Contains(recorder.Body.String(), "relation quote_tasks") || strings.Contains(recorder.Body.String(), "查询报价任务失败") {
+		t.Fatalf("response exposes internal error: %s", recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "获取报价任务失败，请稍后重试") {
+		t.Fatalf("response missing safe fallback message: %s", recorder.Body.String())
 	}
 }

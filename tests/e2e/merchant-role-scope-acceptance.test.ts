@@ -9,7 +9,7 @@ import {
 } from './helpers/merchant';
 
 function clearRateLimit() {
-  execFileSync('bash', ['./scripts/user-web-clear-rate-limit.sh'], {
+  execFileSync(process.execPath, ['./scripts/user-web-clear-rate-limit.mjs'], {
     cwd: process.cwd(),
     stdio: 'ignore',
   });

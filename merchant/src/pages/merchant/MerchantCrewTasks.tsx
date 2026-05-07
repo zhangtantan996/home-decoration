@@ -231,8 +231,8 @@ const MerchantCrewTasks: React.FC = () => {
     <>
         <MerchantPageShell>
         <MerchantPageHeader
-          title="历史工长任务（兼容入口）"
-          description="新报价主链已迁到施工报价、价格库和项目履约；这里仅保留旧入口兼容和历史待办承接，不再作为主作业入口。"
+          title="工长任务记录"
+          description="施工报价、价格维护和项目履约请前往对应页面处理；当前页面用于查看已归档任务记录。"
           extra={(
             <Button icon={<ReloadOutlined />} onClick={() => void loadData()} loading={loading}>
               刷新
@@ -277,8 +277,8 @@ const MerchantCrewTasks: React.FC = () => {
           <Alert
             showIcon
             type="info"
-            message="主作业面已切到“报价经营”"
-            description="新的施工报价任务请到“施工报价”，价格维护请到“价格库”，项目执行与变更请到“项目履约 / 变更”。当前页面只为旧深链和历史任务保留兼容入口。"
+            message="请前往对应页面继续处理"
+            description="施工报价任务请到“施工报价”，价格维护请到“价格库”，项目执行与变更请到“项目履约 / 变更”。当前页面用于查看已归档任务记录。"
             action={(
               <Space size={8}>
                 <Button size="small" type="primary" onClick={() => navigate('/quote-lists')}>

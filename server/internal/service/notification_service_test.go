@@ -20,6 +20,7 @@ func setupNotificationServiceTestDB(t *testing.T) *gorm.DB {
 	if err := db.AutoMigrate(
 		&model.Notification{},
 		&model.SysAdmin{},
+		&model.User{},
 		&model.UserSettings{},
 		&model.BudgetConfirmation{},
 		&model.DesignFeeQuote{},
@@ -27,7 +28,10 @@ func setupNotificationServiceTestDB(t *testing.T) *gorm.DB {
 		&model.Proposal{},
 		&model.Contract{},
 		&model.Order{},
+		&model.Provider{},
 		&model.QuoteList{},
+		&model.QuoteTask{},
+		&model.QuotePKSubmission{},
 		&model.Milestone{},
 		&model.Project{},
 		&model.ChangeOrder{},
@@ -496,6 +500,129 @@ func TestNotificationServiceGetUserNotificationsBuildsActionMetadata(t *testing.
 	}
 }
 
+func TestNotificationServiceLegacyQuoteTaskUserActionStatusTracksTaskLifecycle(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+
+	task := model.QuoteTask{
+		Base:   model.Base{ID: 501},
+		UserID: 9001,
+		Status: "in_progress",
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create quote task: %v", err)
+	}
+	notification := model.Notification{
+		Base:        model.Base{ID: 601},
+		UserID:      9001,
+		UserType:    "user",
+		Title:       "报价待确认",
+		Content:     "已有商家提交报价",
+		Type:        "quote.submitted",
+		RelatedID:   task.ID,
+		RelatedType: "quote_task",
+		ActionURL:   "/quote-pk/tasks/501",
+	}
+	if err := db.Create(&notification).Error; err != nil {
+		t.Fatalf("create notification: %v", err)
+	}
+
+	svc := &NotificationService{}
+	items, _, err := svc.GetUserNotifications(9001, "user", 1, 10)
+	if err != nil {
+		t.Fatalf("GetUserNotifications pending: %v", err)
+	}
+	if len(items) != 1 || items[0].ActionStatus != NotificationActionStatusPending {
+		t.Fatalf("expected pending legacy quote action, got %+v", items)
+	}
+
+	if err := db.Model(&model.QuoteTask{}).Where("id = ?", task.ID).Update("status", "completed").Error; err != nil {
+		t.Fatalf("complete task: %v", err)
+	}
+
+	items, _, err = svc.GetUserNotifications(9001, "user", 1, 10)
+	if err != nil {
+		t.Fatalf("GetUserNotifications processed: %v", err)
+	}
+	if len(items) != 1 || items[0].ActionStatus != NotificationActionStatusProcessed {
+		t.Fatalf("expected processed legacy quote action after completion, got %+v", items)
+	}
+}
+
+func TestNotificationServiceLegacyQuoteTaskProviderActionStatusTracksSubmission(t *testing.T) {
+	db := setupNotificationServiceTestDB(t)
+
+	user := model.User{
+		Base:     model.Base{ID: 4101},
+		Phone:    "13800138101",
+		Nickname: "工长甲",
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create provider user: %v", err)
+	}
+	provider := model.Provider{
+		Base:         model.Base{ID: 4201},
+		UserID:       user.ID,
+		ProviderType: 3,
+		DisplayName:  "工长甲",
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	task := model.QuoteTask{
+		Base:   model.Base{ID: 502},
+		UserID: 9002,
+		Status: "in_progress",
+	}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create quote task: %v", err)
+	}
+	notification := model.Notification{
+		Base:        model.Base{ID: 602},
+		UserID:      user.ID,
+		UserType:    "provider",
+		Title:       "新的报价任务待处理",
+		Content:     "请尽快提交报价",
+		Type:        "quote.submitted",
+		RelatedID:   task.ID,
+		RelatedType: "quote_task",
+		ActionURL:   "/quote-pk/tasks?quoteTaskId=502",
+	}
+	if err := db.Create(&notification).Error; err != nil {
+		t.Fatalf("create notification: %v", err)
+	}
+
+	svc := &NotificationService{}
+	items, _, err := svc.GetUserNotifications(user.ID, "provider", 1, 10)
+	if err != nil {
+		t.Fatalf("GetUserNotifications pending: %v", err)
+	}
+	if len(items) != 1 || items[0].ActionStatus != NotificationActionStatusPending {
+		t.Fatalf("expected pending provider legacy quote action, got %+v", items)
+	}
+
+	submission := model.QuotePKSubmission{
+		Base:        model.Base{ID: 701},
+		QuoteTaskID: task.ID,
+		ProviderID:  provider.ID,
+		TotalPrice:  98000,
+		Duration:    45,
+		Status:      "pending",
+	}
+	if err := db.Create(&submission).Error; err != nil {
+		t.Fatalf("create quote submission: %v", err)
+	}
+
+	items, _, err = svc.GetUserNotifications(user.ID, "provider", 1, 10)
+	if err != nil {
+		t.Fatalf("GetUserNotifications processed: %v", err)
+	}
+	if len(items) != 1 || items[0].ActionStatus != NotificationActionStatusProcessed {
+		t.Fatalf("expected processed provider legacy quote action after submission, got %+v", items)
+	}
+}
+
 func TestNotificationRouteSupportedInMiniCoversMainFlowRoutes(t *testing.T) {
 	cases := []struct {
 		route    string
@@ -505,6 +632,7 @@ func TestNotificationRouteSupportedInMiniCoversMainFlowRoutes(t *testing.T) {
 		{"/bookings/1001/design-quote", true},
 		{"/projects/2002/completion", true},
 		{"/orders/3003", true},
+		{"/quote-pk/tasks/88", true},
 		{"/refunds/10", false},
 		{"/admin/quotes/88", false},
 	}

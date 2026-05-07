@@ -153,9 +153,9 @@ func (s *QuoteService) RebuildQuoteListFromLegacy(input *LegacyQuotePKRebuildInp
 	var legacyTask model.QuoteTask
 	if err := repository.DB.First(&legacyTask, input.LegacyTaskID).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("legacy quote-pk 任务不存在")
+			return nil, errors.New("历史报价任务不存在")
 		}
-		return nil, fmt.Errorf("查询 legacy quote-pk 任务失败: %w", err)
+		return nil, fmt.Errorf("查询历史报价任务失败: %w", err)
 	}
 
 	var existing model.QuoteList
@@ -165,7 +165,7 @@ func (s *QuoteService) RebuildQuoteListFromLegacy(input *LegacyQuotePKRebuildInp
 		First(&existing).Error; err == nil {
 		return &LegacyQuotePKRebuildResult{QuoteListID: existing.ID, Created: false}, nil
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("查询 legacy 重建报价单失败: %w", err)
+		return nil, fmt.Errorf("查询历史报价重建单失败: %w", err)
 	}
 
 	tx := repository.DB.Begin()
@@ -186,7 +186,7 @@ func (s *QuoteService) RebuildQuoteListFromLegacy(input *LegacyQuotePKRebuildInp
 		ScenarioType:           "legacy_quote_pk",
 	}
 	if quoteList.Title == "" {
-		quoteList.Title = fmt.Sprintf("legacy quote-pk 重建 #%d", legacyTask.ID)
+		quoteList.Title = fmt.Sprintf("历史报价重建 #%d", legacyTask.ID)
 	}
 
 	if input.QuantityBaseID > 0 {
@@ -225,7 +225,7 @@ func (s *QuoteService) RebuildQuoteListFromLegacy(input *LegacyQuotePKRebuildInp
 	}
 
 	if err := tx.Commit().Error; err != nil {
-		return nil, fmt.Errorf("提交 legacy 重建报价单失败: %w", err)
+		return nil, fmt.Errorf("提交历史报价重建单失败: %w", err)
 	}
 	return &LegacyQuotePKRebuildResult{QuoteListID: quoteList.ID, Created: true}, nil
 }
