@@ -11,10 +11,28 @@ import (
 	"gorm.io/gorm"
 )
 
+// RoleContext 统一身份上下文 — 从 token claims 或 DB 解析得出
 type RoleContext struct {
+	ActiveRole      string  // owner / provider / supervisor / admin
+	ProviderID      *uint64 // 仅 provider 有效
+	ProviderSubType string  // designer / company / foreman（仅 provider 有效）
+	SupervisorID    *uint64 // 仅 supervisor 有效
+	AdminProfileID  *uint64 // 仅 admin 有效
+	IdentityID      *uint64 // user_identities.id
+	IdentityRefID   *uint64 // 指向 profiles 表的 ref id（按 identity_type 区分）
+}
+
+// UnifiedIdentityContext 统一身份中心claims — 用于 token 签发和中间件解析
+type UnifiedIdentityContext struct {
+	UserID          uint64
+	UserPublicID    string
 	ActiveRole      string
+	IdentityID      *uint64
+	IdentityRefID   *uint64
 	ProviderID      *uint64
 	ProviderSubType string
+	SupervisorID    *uint64
+	AdminProfileID  *uint64
 }
 
 func NormalizeRoleForResponse(raw string) (string, string) {
@@ -45,11 +63,34 @@ func GetRoleContextForResponse(user *model.User) (RoleContext, bool) {
 		providerID := *resolved.ProviderID
 		ctx.ProviderID = &providerID
 	}
+	if resolved.SupervisorID != nil {
+		svID := *resolved.SupervisorID
+		ctx.SupervisorID = &svID
+	}
+	if resolved.AdminProfileID != nil {
+		apID := *resolved.AdminProfileID
+		ctx.AdminProfileID = &apID
+	}
+	if resolved.IdentityID != nil {
+		idID := *resolved.IdentityID
+		ctx.IdentityID = &idID
+	}
+	if resolved.IdentityRefID != nil {
+		refID := *resolved.IdentityRefID
+		ctx.IdentityRefID = &refID
+	}
 
 	if ctx.ActiveRole != "provider" {
 		ctx.ProviderID = nil
 		ctx.ProviderSubType = ""
-	} else if ctx.ProviderSubType == "" {
+	}
+	if ctx.ActiveRole != "supervisor" {
+		ctx.SupervisorID = nil
+	}
+	if ctx.ActiveRole != "admin" {
+		ctx.AdminProfileID = nil
+	}
+	if ctx.ActiveRole == "provider" && ctx.ProviderSubType == "" {
 		ctx.ProviderSubType = "designer"
 	}
 
@@ -64,6 +105,8 @@ func normalizeRoleValue(raw string) (string, string) {
 		return "admin", ""
 	case "provider":
 		return "provider", ""
+	case "supervisor":
+		return "supervisor", ""
 	case "designer":
 		return "provider", "designer"
 	case "company":
@@ -118,6 +161,13 @@ func roleHintFromUserType(userType int8) (string, string) {
 	default:
 		return "owner", ""
 	}
+}
+
+func roleHintFromUser(user *model.User) (string, string) {
+	if user == nil {
+		return "owner", ""
+	}
+	return roleHintFromUserType(user.UserType)
 }
 
 func coerceUint64(raw interface{}) (*uint64, bool) {
@@ -204,10 +254,34 @@ func getRoleContextFromClaims(claims jwt.MapClaims) (*RoleContext, bool) {
 		providerID = v
 	}
 
+	var supervisorID *uint64
+	if v, ok := coerceUint64(claims["supervisorId"]); ok {
+		supervisorID = v
+	}
+
+	var adminProfileID *uint64
+	if v, ok := coerceUint64(claims["adminProfileId"]); ok {
+		adminProfileID = v
+	}
+
+	var identityID *uint64
+	if v, ok := coerceUint64(claims["identityId"]); ok {
+		identityID = v
+	}
+
+	var identityRefID *uint64
+	if v, ok := coerceUint64(claims["identityRefId"]); ok {
+		identityRefID = v
+	}
+
 	ctx := &RoleContext{
 		ActiveRole:      normalizedRole,
 		ProviderID:      providerID,
 		ProviderSubType: providerSubType,
+		SupervisorID:    supervisorID,
+		AdminProfileID:  adminProfileID,
+		IdentityID:      identityID,
+		IdentityRefID:   identityRefID,
 	}
 
 	if ctx.ActiveRole != "provider" {
@@ -215,6 +289,14 @@ func getRoleContextFromClaims(claims jwt.MapClaims) (*RoleContext, bool) {
 		ctx.ProviderSubType = ""
 	} else if ctx.ProviderSubType == "" {
 		ctx.ProviderSubType = "designer"
+	}
+
+	if ctx.ActiveRole != "supervisor" {
+		ctx.SupervisorID = nil
+	}
+
+	if ctx.ActiveRole != "admin" {
+		ctx.AdminProfileID = nil
 	}
 
 	return ctx, true
@@ -225,7 +307,7 @@ func getUserRoleContext(user *model.User) (*RoleContext, error) {
 		return nil, errors.New("user is nil")
 	}
 
-	desiredRole, desiredSubType := roleHintFromUserType(user.UserType)
+	desiredRole, desiredSubType := roleHintFromUser(user)
 
 	var identities []model.UserIdentity
 	err := repository.DB.Where("user_id = ? AND status = ?", user.ID, 1).
@@ -248,12 +330,18 @@ func getUserRoleContext(user *model.User) (*RoleContext, error) {
 				continue
 			}
 
+			// 设置身份ID
+			idID := identities[idx].ID
+			candidate.IdentityID = &idID
+			candidate.IdentityRefID = identities[idx].IdentityRefID
+
 			if first == nil {
 				first = candidate
 			}
 
 			if candidate.ActiveRole == "owner" && ownerCandidate == nil {
 				ownerCandidate = candidate
+				return candidate, nil
 			}
 
 			if candidate.ActiveRole == desiredRole {
@@ -283,57 +371,97 @@ func resolveRoleContextFromIdentity(userID uint64, identity *model.UserIdentity)
 
 	activeRole, derivedSubType := normalizeRoleValue(identity.IdentityType)
 	ctx := &RoleContext{ActiveRole: activeRole}
-	if activeRole != "provider" {
-		return ctx, nil
-	}
 
-	ctx.ProviderSubType = derivedSubType
+	switch activeRole {
+	case "provider":
+		ctx.ProviderSubType = derivedSubType
 
-	var provider model.Provider
-	providerLoaded := false
+		var provider model.Provider
+		providerLoaded := false
 
-	if identity.IdentityRefID != nil {
-		if err := repository.DB.First(&provider, *identity.IdentityRefID).Error; err == nil {
-			providerLoaded = true
-			providerID := provider.ID
-			ctx.ProviderID = &providerID
-		} else if isMissingTableError(err) {
-			return ctx, nil
+		if identity.IdentityRefID != nil {
+			if err := repository.DB.First(&provider, *identity.IdentityRefID).Error; err == nil {
+				providerLoaded = true
+				providerID := provider.ID
+				ctx.ProviderID = &providerID
+			} else if isMissingTableError(err) {
+				return ctx, nil
+			}
 		}
-	}
 
-	if !providerLoaded {
-		if err := repository.DB.Where("user_id = ?", userID).Order("id ASC").First(&provider).Error; err == nil {
-			providerLoaded = true
-			providerID := provider.ID
-			ctx.ProviderID = &providerID
-		} else if isMissingTableError(err) {
-			return ctx, nil
-		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, err
+		if !providerLoaded {
+			if err := repository.DB.Where("user_id = ?", userID).Order("id ASC").First(&provider).Error; err == nil {
+				providerLoaded = true
+				providerID := provider.ID
+				ctx.ProviderID = &providerID
+			} else if isMissingTableError(err) {
+				return ctx, nil
+			} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
 		}
-	}
 
-	if providerLoaded {
-		subType := providerSubTypeFromProvider(&provider)
-		if subType != "" {
-			ctx.ProviderSubType = subType
+		if providerLoaded {
+			subType := providerSubTypeFromProvider(&provider)
+			if subType != "" {
+				ctx.ProviderSubType = subType
+			}
+			if ctx.ProviderID == nil {
+				providerID := provider.ID
+				ctx.ProviderID = &providerID
+			}
 		}
-		if ctx.ProviderID == nil {
-			providerID := provider.ID
-			ctx.ProviderID = &providerID
-		}
-	}
 
-	if ctx.ProviderSubType == "" {
-		ctx.ProviderSubType = "designer"
+		if ctx.ProviderSubType == "" {
+			ctx.ProviderSubType = "designer"
+		}
+
+	case "supervisor":
+		var profile model.SupervisorProfile
+		if identity.IdentityRefID != nil {
+			if err := repository.DB.First(&profile, *identity.IdentityRefID).Error; err == nil {
+				svID := profile.ID
+				ctx.SupervisorID = &svID
+			} else if !isMissingTableError(err) && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
+
+		if ctx.SupervisorID == nil {
+			if err := repository.DB.Where("user_id = ?", userID).Order("id ASC").First(&profile).Error; err == nil {
+				svID := profile.ID
+				ctx.SupervisorID = &svID
+			} else if !isMissingTableError(err) && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
+
+	case "admin":
+		var profile model.AdminProfile
+		if identity.IdentityRefID != nil {
+			if err := repository.DB.First(&profile, *identity.IdentityRefID).Error; err == nil {
+				apID := profile.ID
+				ctx.AdminProfileID = &apID
+			} else if !isMissingTableError(err) && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
+
+		if ctx.AdminProfileID == nil {
+			if err := repository.DB.Where("user_id = ?", userID).Order("id ASC").First(&profile).Error; err == nil {
+				apID := profile.ID
+				ctx.AdminProfileID = &apID
+			} else if !isMissingTableError(err) && !errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, err
+			}
+		}
 	}
 
 	return ctx, nil
 }
 
 func getLegacyRoleContext(user *model.User) *RoleContext {
-	activeRole, desiredSubType := roleHintFromUserType(user.UserType)
+	activeRole, desiredSubType := roleHintFromUser(user)
 	ctx := &RoleContext{ActiveRole: activeRole, ProviderSubType: desiredSubType}
 
 	if activeRole != "provider" {

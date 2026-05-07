@@ -71,6 +71,9 @@ func (s *WechatAuthService) Login(code, clientIP string, jwtCfg *config.JWTConfi
 		if user.Status != 1 {
 			return nil, errors.New("账号已被禁用")
 		}
+		if err := ensureOwnerIdentityRecord(repository.DB, user.ID); err != nil {
+			return nil, err
+		}
 
 		tokenResp, err := issueTokenResponse(&user, jwtCfg)
 		if err != nil {
@@ -248,6 +251,9 @@ func (s *WechatAuthService) findOrCreateUserByPhone(phone string) (*model.User, 
 	var user model.User
 	err := repository.DB.Where("phone = ?", phone).First(&user).Error
 	if err == nil {
+		if ensureErr := ensureOwnerIdentityRecord(repository.DB, user.ID); ensureErr != nil {
+			return nil, ensureErr
+		}
 		return &user, nil
 	}
 
@@ -270,6 +276,9 @@ func (s *WechatAuthService) findOrCreateUserByPhone(phone string) (*model.User, 
 	if err := repository.DB.Create(&user).Error; err != nil {
 		return nil, err
 	}
+	if err := ensureOwnerIdentityRecord(repository.DB, user.ID); err != nil {
+		return nil, err
+	}
 
 	go func(u model.User) {
 		fullAvatar := image.GetFullImageURL(u.Avatar)
@@ -287,7 +296,7 @@ func issueTokenResponse(user *model.User, cfg *config.JWTConfig) (*TokenResponse
 		return nil, err
 	}
 
-	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx, "")
 	if err != nil {
 		return nil, err
 	}

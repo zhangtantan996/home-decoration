@@ -32,12 +32,39 @@ function getNpxCommand() {
   return process.platform === 'win32' ? 'npx.cmd' : 'npx';
 }
 
+function getNpmCommand() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
+
 function getPsqlCommand() {
   return process.platform === 'win32' ? 'psql.exe' : 'psql';
 }
 
 function getDockerCommand() {
   return process.platform === 'win32' ? 'docker.exe' : 'docker';
+}
+
+function runRateLimitReset(stage) {
+  const startedAtMs = Date.now();
+  const child = spawnSync(
+    getNpmCommand(),
+    ['run', 'reset:user-web:rate-limit'],
+    {
+      cwd: rootDir,
+      env: runEnv,
+      encoding: 'utf8',
+      stdio: 'pipe',
+    },
+  );
+
+  return {
+    stage,
+    status: child.status === 0 ? 'passed' : 'failed',
+    exitCode: child.status ?? 1,
+    durationMs: Date.now() - startedAtMs,
+    stdout: (child.stdout || '').trim(),
+    stderr: `${(child.stderr || '').trim()}${child.error ? `\n${String(child.error.message || child.error)}` : ''}`.trim(),
+  };
 }
 
 function runCleanupViaDockerPsql() {
@@ -158,6 +185,15 @@ function renderSummaryMarkdown(summary) {
   }
 
   lines.push('');
+  lines.push('## 限流清理');
+  lines.push('');
+  lines.push('| Stage | Status | ExitCode | Duration(s) |');
+  lines.push('|---|---:|---:|---:|');
+  for (const reset of summary.rateLimitResets || []) {
+    lines.push(`| ${reset.stage} | ${reset.status} | ${reset.exitCode} | ${(reset.durationMs / 1000).toFixed(2)} |`);
+  }
+
+  lines.push('');
   lines.push('## 清理结果');
   lines.push('');
   lines.push(`- 模式: ${summary.cleanup.mode}`);
@@ -215,8 +251,14 @@ async function main() {
 
   console.log(`[identity-acceptance] safety check passed. runId=${runId}, api=${apiBaseUrl}, admin=${adminOrigin}, prefix=${phonePrefix}`);
 
+  console.log('\n[identity-acceptance] Resetting login limiter before API acceptance...\n');
+  const resetBeforeApi = runRateLimitReset('before-api');
+
   console.log('\n[identity-acceptance] Running API acceptance project...\n');
   const apiProject = runPlaywrightProject('identity-api');
+
+  console.log('\n[identity-acceptance] Resetting login limiter before Admin UI acceptance...\n');
+  const resetBeforeUi = runRateLimitReset('before-ui');
 
   console.log('\n[identity-acceptance] Running Admin UI acceptance project...\n');
   const uiProject = runPlaywrightProject('identity-admin-ui');
@@ -226,7 +268,8 @@ async function main() {
 
   const apiFailed = apiProject.exitCode !== 0;
   const uiFailed = uiProject.exitCode !== 0;
-  const shouldBlock = apiFailed || (uiStrict && uiFailed);
+  const resetFailed = resetBeforeApi.exitCode !== 0 || resetBeforeUi.exitCode !== 0;
+  const shouldBlock = apiFailed || (uiStrict && uiFailed) || resetFailed;
 
   const finishedAt = new Date();
   const summary = {
@@ -241,9 +284,10 @@ async function main() {
     },
     gate: {
       uiStrict,
-      policy: uiStrict ? 'api+ui strict block' : 'api block + ui warning',
+      policy: uiStrict ? 'api+ui strict block + rate-limit reset required' : 'api block + ui warning + rate-limit reset required',
     },
     projects: [apiProject, uiProject],
+    rateLimitResets: [resetBeforeApi, resetBeforeUi],
     cleanup,
     finalStatus: shouldBlock ? 'failed' : 'passed',
     paths: {

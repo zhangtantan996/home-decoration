@@ -53,16 +53,57 @@ interface IdentityApplicationListData {
   total: number;
 }
 
+const MAX_RATE_LIMIT_RETRIES = 2;
+const RATE_LIMIT_RETRY_DELAY_MS = 1200;
+
+function isRateLimited(result: ApiCallResult<any>) {
+  if (result.status === 429) {
+    return true;
+  }
+  if (Number(result.body?.code) === 429) {
+    return true;
+  }
+  return false;
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function postWithRateLimitRetry<T>(
+  api: APIRequestContext,
+  apiBaseUrl: string,
+  path: string,
+  payload: unknown,
+  token: string | undefined,
+  scene: string,
+): Promise<ApiCallResult<T>> {
+  let attempt = 0;
+  let result = await apiPost<T>(api, apiBaseUrl, path, payload, token);
+
+  while (isRateLimited(result) && attempt < MAX_RATE_LIMIT_RETRIES) {
+    attempt += 1;
+    await sleep(RATE_LIMIT_RETRY_DELAY_MS * attempt);
+    result = await apiPost<T>(api, apiBaseUrl, path, payload, token);
+  }
+
+  if (attempt > 0 && isRateLimited(result)) {
+    throw new Error(`${scene} reached 429 after retry`);
+  }
+
+  return result;
+}
+
 export async function loginUserByCode(
   api: APIRequestContext,
   apiBaseUrl: string,
   phone: string,
 ): Promise<LoginData> {
-  const loginResult = await apiPost<LoginData>(api, apiBaseUrl, '/auth/login', {
+  const loginResult = await postWithRateLimitRetry<LoginData>(api, apiBaseUrl, '/auth/login', {
     phone,
     type: 'code',
     code: '123456',
-  });
+  }, undefined, 'user login');
 
   expectNoServerError(loginResult.status, 'user login must not return 5xx');
   expectSuccessCode(loginResult, 'user login should succeed');
@@ -76,10 +117,10 @@ export async function adminLogin(
   username: string,
   password: string,
 ): Promise<AdminLoginData> {
-  const result = await apiPost<AdminLoginData>(api, apiBaseUrl, '/admin/login', {
+  const result = await postWithRateLimitRetry<AdminLoginData>(api, apiBaseUrl, '/admin/login', {
     username,
     password,
-  });
+  }, undefined, 'admin login');
 
   expectNoServerError(result.status, 'admin login must not return 5xx');
   expectSuccessCode(result, 'admin login should succeed');

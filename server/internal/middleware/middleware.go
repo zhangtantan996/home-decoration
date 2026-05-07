@@ -212,7 +212,7 @@ func JWT(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// 新 token(activeRole 字段)
+		// 新 token(activeRole 字段) — 统一身份中心 claims
 		if activeRoleRaw, ok := claims["activeRole"]; ok {
 			if activeRole, ok := activeRoleRaw.(string); ok && activeRole != "" {
 				c.Set("activeRole", activeRole)
@@ -224,6 +224,18 @@ func JWT(secret string) gin.HandlerFunc {
 				if providerSubType, ok := providerSubTypeRaw.(string); ok && providerSubType != "" {
 					c.Set("providerSubType", providerSubType)
 				}
+			}
+			if supervisorID, ok := claimToUint64(claims["supervisorId"]); ok {
+				c.Set("supervisorId", supervisorID)
+			}
+			if adminProfileID, ok := claimToUint64(claims["adminProfileId"]); ok {
+				c.Set("adminProfileId", adminProfileID)
+			}
+			if identityID, ok := claimToUint64(claims["identityId"]); ok {
+				c.Set("identityId", identityID)
+			}
+			if identityRefID, ok := claimToUint64(claims["identityRefId"]); ok {
+				c.Set("identityRefId", identityRefID)
 			}
 			c.Next()
 			return
@@ -308,6 +320,23 @@ func AdminJWT(secret string) gin.HandlerFunc {
 			}
 			c.Set("admin_id", adminID)
 			c.Set("adminId", adminID)
+
+			// 统一身份中心：查找 admin_profiles + user_identities(admin) 并设置 userId
+			var adminProfile model.AdminProfile
+			if err := repository.DB.Where("sys_admin_id = ? AND status = 1", adminID).First(&adminProfile).Error; err == nil {
+				c.Set("adminProfileId", adminProfile.ID)
+				c.Set("userId", adminProfile.UserID)
+				c.Set("activeRole", "admin")
+
+				// 查找对应的 user_identity
+				var identity model.UserIdentity
+				if err := repository.DB.Where("user_id = ? AND identity_type = ? AND identity_ref_id = ? AND status = ?", adminProfile.UserID, "admin", adminProfile.ID, 1).First(&identity).Error; err == nil {
+					c.Set("identityId", identity.ID)
+					if identity.IdentityRefID != nil {
+						c.Set("identityRefId", *identity.IdentityRefID)
+					}
+				}
+			}
 		}
 		if username, ok := claims["username"]; ok {
 			c.Set("username", username)

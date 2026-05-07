@@ -70,21 +70,22 @@ func MerchantJWT(secret string) gin.HandlerFunc {
 			return
 		}
 
-		// 存储商家信息到上下文
-		if providerID, ok := claims["providerId"]; ok {
-			c.Set("providerId", uint64(providerID.(float64)))
+		// 存储商家信息到上下文 — 统一身份中心：activeRole=provider
+		c.Set("activeRole", "provider")
+		if providerID, ok := claimToUint64(claims["providerId"]); ok {
+			c.Set("providerId", providerID)
 		}
-		if materialShopID, ok := claims["materialShopId"]; ok {
-			c.Set("materialShopId", uint64(materialShopID.(float64)))
+		if materialShopID, ok := claimToUint64(claims["materialShopId"]); ok {
+			c.Set("materialShopId", materialShopID)
 		}
-		if providerType, ok := claims["providerType"]; ok {
-			c.Set("providerType", int8(providerType.(float64)))
+		if providerType, ok := claimToUint64(claims["providerType"]); ok {
+			c.Set("providerType", int8(providerType))
 		}
 		if merchantKind, ok := claims["merchantKind"]; ok {
 			c.Set("merchantKind", merchantKind)
 		}
-		if userId, ok := claims["userId"]; ok {
-			c.Set("userId", uint64(userId.(float64)))
+		if userId, ok := claimToUint64(claims["userId"]); ok {
+			c.Set("userId", userId)
 		}
 		if userPublicID, ok := claims["userPublicId"]; ok {
 			c.Set("userPublicId", userPublicID)
@@ -93,6 +94,16 @@ func MerchantJWT(secret string) gin.HandlerFunc {
 		}
 		if phone, ok := claims["phone"]; ok {
 			c.Set("phone", phone)
+		}
+		// 统一身份中心字段
+		if identityID, ok := claimToUint64(claims["identityId"]); ok {
+			c.Set("identityId", identityID)
+		}
+		if identityRefID, ok := claimToUint64(claims["identityRefId"]); ok {
+			c.Set("identityRefId", identityRefID)
+		}
+		if providerSubType, ok := claims["providerSubType"].(string); ok && providerSubType != "" {
+			c.Set("providerSubType", providerSubType)
 		}
 
 		c.Next()

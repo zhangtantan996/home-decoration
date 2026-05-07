@@ -27,7 +27,7 @@
     "check:frontend-style:mini": "node scripts/frontend-style-guard.mjs --scope mini",
     "check:frontend-style:mobile": "node scripts/frontend-style-guard.mjs --scope mobile",
     "fixture:user-web": "./scripts/user-web-fixture.sh",
-    "reset:user-web:rate-limit": "./scripts/user-web-clear-rate-limit.sh",
+    "reset:user-web:rate-limit": "node scripts/user-web-clear-rate-limit.mjs",
     "smoke:user-web:api": "npm run reset:user-web:rate-limit && ./scripts/user-web-real-api-smoke.sh",
     "verify:user-web": "npm run build:web && npm run fixture:user-web && npm run smoke:user-web:api && npm run test:e2e:user-web && npm run test:e2e:user-web:real",
     "verify:backend": "./scripts/verify-backend.sh",
