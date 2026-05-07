@@ -106,6 +106,13 @@ fi
 
 release_load_deploy_env
 
+if [[ -z "${DB_PASSWORD:-}" && -n "${DATABASE_PASSWORD:-}" ]]; then
+  export DB_PASSWORD="${DATABASE_PASSWORD}"
+fi
+if [[ -z "${DATABASE_PASSWORD:-}" && -n "${DB_PASSWORD:-}" ]]; then
+  export DATABASE_PASSWORD="${DB_PASSWORD}"
+fi
+
 is_truthy() {
   case "$(printf '%s' "${1:-}" | tr '[:upper:]' '[:lower:]' | xargs)" in
     1|true|yes|on)
@@ -220,8 +227,73 @@ validate_transport_safety() {
   fi
 }
 
+validate_release_placeholders() {
+	local keys=(
+		JWT_SECRET
+		ENCRYPTION_KEY
+		REDIS_PASSWORD
+		SERVER_PUBLIC_URL
+		VITE_PUBLIC_SITE_URL
+		VITE_API_URL
+	)
+
+	if tinode_required; then
+		keys+=(
+			TINODE_UID_ENCRYPTION_KEY
+			TINODE_AUTH_TOKEN_KEY
+			TINODE_API_KEY_SALT
+		)
+	fi
+
+	if is_truthy "${ALIPAY_ENABLED:-false}"; then
+		keys+=(
+			ALIPAY_APP_ID
+			ALIPAY_APP_PRIVATE_KEY
+			ALIPAY_PUBLIC_KEY
+		)
+	fi
+
+	local key value
+	for key in "${keys[@]}"; do
+		value="$(printf '%s' "${!key:-}" | xargs)"
+		if [[ -z "${value}" ]]; then
+			echo "Production deploy requires ${key} to be set." >&2
+			exit 1
+		fi
+		if [[ "${value}" =~ replace_with_ || "${value}" =~ yourdomain\.com || "${value}" =~ example\.internal || "${value}" =~ example\.com ]]; then
+			echo "Production deploy found placeholder value in ${key}." >&2
+			exit 1
+		fi
+	done
+
+	local dbPasswordValue
+	dbPasswordValue="$(printf '%s' "${DB_PASSWORD:-${DATABASE_PASSWORD:-}}" | xargs)"
+	if [[ -z "${dbPasswordValue}" ]]; then
+		echo "Production deploy requires DB_PASSWORD or DATABASE_PASSWORD to be set." >&2
+		exit 1
+	fi
+	if [[ "${dbPasswordValue}" =~ replace_with_ || "${dbPasswordValue}" =~ yourdomain\.com || "${dbPasswordValue}" =~ example\.internal || "${dbPasswordValue}" =~ example\.com ]]; then
+		echo "Production deploy found placeholder value in DB_PASSWORD/DATABASE_PASSWORD." >&2
+		exit 1
+	fi
+}
+
+tinode_required() {
+	if is_truthy "${TINODE_ENABLED:-false}" || is_truthy "${TINODE_REQUIRED:-false}"; then
+		return 0
+	fi
+	if [[ "${COMPOSE_FILE}" == *".managed.yml" ]]; then
+		return 0
+	fi
+	if [[ -n "${TINODE_DATABASE_DSN:-}" || -n "${TINODE_SERVER_URL:-}" ]]; then
+		return 0
+	fi
+	return 1
+}
+
 validate_transport_safety
 validate_release_runtime
+validate_release_placeholders
 
 cd "${REPO_ROOT}"
 

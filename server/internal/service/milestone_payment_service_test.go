@@ -263,7 +263,7 @@ func TestGetMilestonePaymentStatus(t *testing.T) {
 
 	// 测试获取付款状态
 	service := &MilestonePaymentService{}
-	status, err := service.GetMilestonePaymentStatus(project.ID)
+	status, err := service.GetMilestonePaymentStatus(project.ID, user.ID)
 	assert.NoError(t, err)
 	assert.NotNil(t, status)
 

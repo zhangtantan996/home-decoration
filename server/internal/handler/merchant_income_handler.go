@@ -8,6 +8,7 @@ import (
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
+	"home-decoration-server/pkg/utils"
 	"io"
 	"time"
 
@@ -379,7 +380,7 @@ func MerchantWithdrawList(c *gin.Context) {
 			"id":              w.ID,
 			"orderNo":         w.OrderNo,
 			"amount":          w.Amount,
-			"bankAccount":     maskBankAccount(w.BankAccount),
+			"bankAccount":     utils.MaskBankAccount(w.BankAccount),
 			"bankName":        w.BankName,
 			"status":          w.Status,
 			"statusLabel":     getWithdrawStatusLabel(w.Status),
@@ -413,14 +414,6 @@ func getWithdrawStatusLabel(status int8) string {
 	default:
 		return "未知"
 	}
-}
-
-// maskBankAccount 银行账号脱敏
-func maskBankAccount(account string) string {
-	if len(account) <= 8 {
-		return account
-	}
-	return account[:4] + "****" + account[len(account)-4:]
 }
 
 // MerchantWithdrawCreate 申请提现（需要二次验证）
@@ -487,7 +480,7 @@ func MerchantWithdrawCreate(c *gin.Context) {
 			ProviderID:  providerID,
 			OrderNo:     orderNo,
 			Amount:      withdrawAmount,
-			BankAccount: maskBankAccount(account.AccountNo),
+			BankAccount: account.MaskedAccountNo(),
 			BankName:    account.BankName,
 			Status:      model.MerchantWithdrawStatusPendingReview,
 		}
@@ -532,7 +525,7 @@ func MerchantBankAccountList(c *gin.Context) {
 		list[i] = gin.H{
 			"id":          acc.ID,
 			"accountName": acc.AccountName,
-			"accountNo":   maskBankAccount(acc.AccountNo),
+			"accountNo":   acc.MaskedAccountNo(),
 			"bankName":    acc.BankName,
 			"branchName":  acc.BranchName,
 			"isDefault":   acc.IsDefault,
@@ -590,7 +583,7 @@ func MerchantBankAccountCreate(c *gin.Context) {
 	account := model.MerchantBankAccount{
 		ProviderID:  providerID,
 		AccountName: input.AccountName,
-		AccountNo:   input.AccountNo, // TODO: 生产环境需要加密
+		AccountNo:   input.AccountNo,
 		BankName:    input.BankName,
 		BranchName:  input.BranchName,
 		IsDefault:   input.IsDefault,

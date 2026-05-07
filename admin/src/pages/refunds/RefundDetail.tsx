@@ -35,6 +35,17 @@ const parseEvidence = (value: unknown): string[] => {
     return [];
 };
 
+const isSafeEvidenceURL = (url: string): boolean => {
+    const lower = url.trim().toLowerCase();
+    if (lower.startsWith('javascript:') || lower.startsWith('data:') || lower.startsWith('vbscript:')) {
+        return false;
+    }
+    if (lower.startsWith('http://') || lower.startsWith('https://')) {
+        return true;
+    }
+    return false;
+};
+
 const downloadJson = (filename: string, payload: unknown) => {
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -233,7 +244,11 @@ const RefundDetail: React.FC = () => {
                                 {evidence.length === 0 ? '-' : (
                                     <Space direction="vertical">
                                         {evidence.map((url) => (
-                                            <a key={url} href={url} target="_blank" rel="noreferrer">{url}</a>
+                                            isSafeEvidenceURL(url) ? (
+                                                <a key={url} href={url} target="_blank" rel="noreferrer noopener">{url}</a>
+                                            ) : (
+                                                <span key={url}>{url}</span>
+                                            )
                                         ))}
                                     </Space>
                                 )}

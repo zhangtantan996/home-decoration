@@ -2,6 +2,7 @@ package service
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -11,11 +12,48 @@ import (
 )
 
 const (
-	smsBusinessPurposeMerchantApplyApproved = "merchant_apply_approved"
-	smsBusinessPurposeMerchantApplyRejected = "merchant_apply_rejected"
+	smsBusinessPurposeMerchantApplySubmitted = "merchant_apply_submitted"
+	smsBusinessPurposeMerchantApplyApproved  = "merchant_apply_approved"
+	smsBusinessPurposeMerchantApplyRejected  = "merchant_apply_rejected"
 )
 
+func SendMerchantApplicationSubmittedSMS(phone string) error {
+	return sendMerchantApplicationBusinessSMS(
+		phone,
+		smsBusinessPurposeMerchantApplySubmitted,
+		strings.TrimSpace(os.Getenv("SMS_TEMPLATE_CODE_MERCHANT_APPLY_SUBMITTED")),
+		map[string]string{
+			"status": "待审核",
+		},
+	)
+}
+
 func SendMerchantApplicationReviewSMS(phone string, approved bool, reason string) error {
+	templateCode := ""
+	templateKey := smsBusinessPurposeMerchantApplyRejected
+	params := map[string]string{
+		"status": "未通过",
+		"reason": strings.TrimSpace(reason),
+	}
+
+	cfg := config.GetConfig()
+	if cfg != nil {
+		templateCode = strings.TrimSpace(cfg.SMS.TemplateCodeMerchantApplyRejected)
+	}
+	if approved {
+		if cfg != nil {
+			templateCode = strings.TrimSpace(cfg.SMS.TemplateCodeMerchantApplyApproved)
+		}
+		templateKey = smsBusinessPurposeMerchantApplyApproved
+		params = map[string]string{
+			"status": "通过",
+		}
+	}
+
+	return sendMerchantApplicationBusinessSMS(phone, templateKey, templateCode, params)
+}
+
+func sendMerchantApplicationBusinessSMS(phone, templateKey, templateCode string, params map[string]string) error {
 	phone = strings.TrimSpace(phone)
 	if phone == "" {
 		return nil
@@ -35,24 +73,10 @@ func SendMerchantApplicationReviewSMS(phone string, approved bool, reason string
 		return fmt.Errorf("当前短信服务商不支持业务短信")
 	}
 
-	templateCode := strings.TrimSpace(cfg.SMS.TemplateCodeMerchantApplyRejected)
-	templateKey := smsBusinessPurposeMerchantApplyRejected
-	params := map[string]string{
-		"status": "未通过",
-		"reason": strings.TrimSpace(reason),
-	}
-	if approved {
-		templateCode = strings.TrimSpace(cfg.SMS.TemplateCodeMerchantApplyApproved)
-		templateKey = smsBusinessPurposeMerchantApplyApproved
-		params = map[string]string{
-			"status": "通过",
-		}
-	}
-
 	result, sendErr := sender.SendTemplateMessage(SMSTemplateMessageRequest{
 		Phone:        phone,
 		TemplateKey:  templateKey,
-		TemplateCode: templateCode,
+		TemplateCode: strings.TrimSpace(templateCode),
 		Params:       params,
 	})
 	persistBusinessSMSAudit(templateKey, phone, result, sendErr)

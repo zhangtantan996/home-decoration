@@ -1002,9 +1002,7 @@ createProviderApplication:
 		input.Role,
 		firstNonEmptyMerchantApplicantName(input.CompanyName, input.RealName),
 	)
-
-	// 9. TODO: 发送短信通知
-	// sendSMS(input.Phone, "您的商家入驻申请已提交，预计1-3个工作日内完成审核")
+	_ = service.SendMerchantApplicationSubmittedSMS(input.Phone)
 
 	response.Success(c, gin.H{
 		"applicationId": application.ID,
@@ -1906,8 +1904,6 @@ func AdminApproveApplication(c *gin.Context) {
 		}
 	}()
 
-	// TODO: 发送短信通知
-	// sendSMS(app.Phone, "恭喜！您的商家入驻申请已通过审核，请使用手机号登录商家中心")
 	service.NewNotificationDispatcher().NotifyMerchantApplicationApproved(user.ID, app.ID, service.ResolveProviderDisplayName(provider, &user))
 	_ = service.SendMerchantApplicationReviewSMS(app.Phone, true, "")
 
@@ -1969,8 +1965,6 @@ func AdminRejectApplication(c *gin.Context) {
 		return
 	}
 
-	// TODO: 发送短信通知
-	// sendSMS(app.Phone, "您的商家入驻申请未通过审核，原因："+input.Reason)
 	service.NewNotificationDispatcher().NotifyMerchantApplicationRejected(app.UserID, app.ID, input.Reason)
 	_ = service.SendMerchantApplicationReviewSMS(app.Phone, false, input.Reason)
 

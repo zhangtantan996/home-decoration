@@ -1,8 +1,6 @@
 import type { UserConfigExport } from "@tarojs/cli";
 
-const PROD_API_BASE = "https://api.hezeyunchuang.com/api/v1";
 const LOCAL_API_BASE = "http://127.0.0.1:8080/api/v1";
-const PROD_H5_URL = "https://hezeyunchuang.com/app/";
 const LOCAL_H5_URL = "http://localhost:5176/";
 
 type AppEnv = "local" | "test" | "staging" | "production";
@@ -42,18 +40,28 @@ const resolveProdApiBase = () => {
   if (injectedApiBase) {
     return injectedApiBase;
   }
+  if (APP_ENV === "production") {
+    throw new Error("TARO_APP_API_BASE is required for production mini builds");
+  }
+  return LOCAL_API_BASE;
+};
 
-  return APP_ENV === "production" ? PROD_API_BASE : LOCAL_API_BASE;
+const resolveH5Url = () => {
+  const injectedH5Url = (process.env.TARO_APP_H5_URL || "").trim();
+  if (injectedH5Url) {
+    return injectedH5Url;
+  }
+  if (APP_ENV === "production") {
+    throw new Error("TARO_APP_H5_URL is required for production mini builds");
+  }
+  return LOCAL_H5_URL;
 };
 
 export default {
   env: {
     TARO_APP_ENV: JSON.stringify(APP_ENV),
     TARO_APP_API_BASE: JSON.stringify(resolveProdApiBase()),
-    TARO_APP_H5_URL: JSON.stringify(
-      process.env.TARO_APP_H5_URL ||
-        (APP_ENV === "production" ? PROD_H5_URL : LOCAL_H5_URL),
-    ),
+    TARO_APP_H5_URL: JSON.stringify(resolveH5Url()),
     TARO_APP_TINODE_URL: JSON.stringify(process.env.TARO_APP_TINODE_URL || ""),
     TARO_APP_TINODE_API_KEY: JSON.stringify(
       process.env.TARO_APP_TINODE_API_KEY || "",

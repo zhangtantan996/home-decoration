@@ -4,7 +4,8 @@ import { parseAbsoluteUrl, replaceAbsoluteUrlOrigin } from '@/utils/url';
 
 const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 const UNSTABLE_IMAGE_HOST_FRAGMENTS = ['images.unsplash.com', 'via.placeholder.com'];
-const KNOWN_SECURE_FIRST_PARTY_HOSTS = new Set(['api.hezeyunchuang.com']);
+const firstPartyHost = parseAbsoluteUrl(API_ORIGIN)?.hostname || '';
+const KNOWN_SECURE_FIRST_PARTY_HOSTS = new Set(firstPartyHost ? [firstPartyHost] : []);
 export const DEFAULT_PROVIDER_AVATAR_URL = `${API_ORIGIN}/static/inspiration/default-avatar.png`;
 export const DEFAULT_PROVIDER_COVER_URL = `${API_ORIGIN}/static/inspiration/default-cover.png`;
 

@@ -2,8 +2,10 @@ package handler
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/service"
@@ -21,20 +23,21 @@ func CreateInspectionChecklist(c *gin.Context) {
 	}
 
 	var req struct {
-		MilestoneID uint64                   `json:"milestoneId" binding:"required"`
-		Category    string                   `json:"category" binding:"required"`
-		Items       []model.InspectionItem   `json:"items" binding:"required"`
+		MilestoneID uint64                 `json:"milestoneId" binding:"required"`
+		Category    string                 `json:"category" binding:"required"`
+		Items       []model.InspectionItem `json:"items" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	userID := c.GetUint64("userID")
+	userID := getCurrentUserID(c)
+	providerID := c.GetUint64("providerId")
 	svc := &service.InspectionService{}
-	checklist, err := svc.CreateInspectionChecklist(projectID, req.MilestoneID, userID, req.Category, req.Items)
+	checklist, err := svc.CreateInspectionChecklist(projectID, req.MilestoneID, userID, providerID, req.Category, req.Items)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "create inspection checklist", err)
 		return
 	}
 
@@ -55,10 +58,12 @@ func GetInspectionChecklist(c *gin.Context) {
 		return
 	}
 
+	userID := getCurrentUserID(c)
+	providerID := c.GetUint64("providerId")
 	svc := &service.InspectionService{}
-	checklist, err := svc.GetInspectionChecklist(projectID, milestoneID)
+	checklist, err := svc.GetInspectionChecklist(projectID, milestoneID, userID, providerID)
 	if err != nil {
-		response.Error(c, http.StatusNotFound, err.Error())
+		respondInspectionError(c, "get inspection checklist", err)
 		return
 	}
 
@@ -99,15 +104,16 @@ func UpdateInspectionChecklist(c *gin.Context) {
 		Notes string                 `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	userID := c.GetUint64("userID")
+	userID := getCurrentUserID(c)
+	providerID := c.GetUint64("providerId")
 	svc := &service.InspectionService{}
-	checklist, err := svc.UpdateInspectionChecklist(checklistID, userID, req.Items, req.Notes)
+	checklist, err := svc.UpdateInspectionChecklist(checklistID, userID, providerID, req.Items, req.Notes)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "update inspection checklist", err)
 		return
 	}
 
@@ -122,10 +128,10 @@ func AcceptAllMilestones(c *gin.Context) {
 		return
 	}
 
-	userID := c.GetUint64("userID")
+	userID := getCurrentUserID(c)
 	svc := &service.InspectionService{}
 	if err := svc.AcceptAllMilestones(projectID, userID); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "accept all milestones", err)
 		return
 	}
 
@@ -145,7 +151,7 @@ func GetInspectionTemplate(c *gin.Context) {
 	svc := &service.InspectionService{}
 	template, err := svc.GetInspectionTemplate(category)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "get inspection template", err)
 		return
 	}
 
@@ -175,10 +181,10 @@ func SubmitInspection(c *gin.Context) {
 		return
 	}
 
-	providerID := c.GetUint64("userID")
+	providerID := c.GetUint64("providerId")
 	svc := &service.InspectionService{}
 	if err := svc.SubmitInspection(milestoneID, providerID); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "submit inspection", err)
 		return
 	}
 
@@ -200,14 +206,14 @@ func InspectMilestone(c *gin.Context) {
 		Notes  string `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	userID := c.GetUint64("userID")
+	userID := getCurrentUserID(c)
 	svc := &service.InspectionService{}
 	if err := svc.InspectMilestone(milestoneID, userID, req.Passed, req.Notes); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "inspect milestone", err)
 		return
 	}
 
@@ -233,14 +239,14 @@ func RequestRectification(c *gin.Context) {
 		Notes string `json:"notes" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	userID := c.GetUint64("userID")
+	userID := getCurrentUserID(c)
 	svc := &service.InspectionService{}
 	if err := svc.RequestRectification(milestoneID, userID, req.Notes); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "request rectification", err)
 		return
 	}
 
@@ -261,18 +267,62 @@ func ResubmitInspection(c *gin.Context) {
 		Notes string `json:"notes" binding:"required"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	providerID := c.GetUint64("userID")
+	providerID := c.GetUint64("providerId")
 	svc := &service.InspectionService{}
 	if err := svc.ResubmitInspection(milestoneID, providerID, req.Notes); err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondInspectionError(c, "resubmit inspection", err)
 		return
 	}
 
 	response.Success(c, gin.H{
 		"message": "整改完成，已重新提交验收",
 	})
+}
+
+func respondInspectionError(c *gin.Context, operation string, err error) {
+	if err == nil {
+		return
+	}
+
+	message := strings.TrimSpace(err.Error())
+	switch {
+	case strings.Contains(message, "无权"):
+		response.Forbidden(c, safeInspectionMessage(message, "无权操作"))
+	case strings.Contains(message, "不存在"), strings.Contains(message, "未找到"):
+		response.NotFound(c, safeInspectionMessage(message, "验收记录不存在"))
+	case strings.Contains(message, "已验收"),
+		strings.Contains(message, "未提交验收"),
+		strings.Contains(message, "节点未提交验收"),
+		strings.Contains(message, "只有验收不通过"):
+		response.Conflict(c, safeInspectionConflictMessage(message))
+	case strings.Contains(message, "不能为空"):
+		response.BadRequest(c, safeInspectionMessage(message, "参数错误"))
+	default:
+		log.Printf("[Inspection] %s failed: %v", operation, err)
+		response.ServerError(c, "操作失败，请稍后重试")
+	}
+}
+
+func safeInspectionMessage(message, fallback string) string {
+	if strings.TrimSpace(message) == "" {
+		return fallback
+	}
+	return message
+}
+
+func safeInspectionConflictMessage(message string) string {
+	switch {
+	case strings.Contains(message, "只有验收不通过"):
+		return "当前节点暂不能重新提交验收"
+	case strings.Contains(message, "未提交验收"):
+		return "当前节点尚未提交验收"
+	case strings.Contains(message, "已验收"):
+		return "当前节点已验收"
+	default:
+		return "当前节点状态不允许此操作"
+	}
 }

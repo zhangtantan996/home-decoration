@@ -17,6 +17,16 @@ import (
 	"gorm.io/gorm"
 )
 
+func countSMSAuditLogsByPurpose(t *testing.T, purpose string) int64 {
+	t.Helper()
+
+	var count int64
+	if err := repository.DB.Model(&model.SMSAuditLog{}).Where("purpose = ?", purpose).Count(&count).Error; err != nil {
+		t.Fatalf("count sms audit logs: %v", err)
+	}
+	return count
+}
+
 func setupMerchantRound4TestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 	t.Setenv("SMS_FIXED_CODE_MODE", "true")
@@ -991,6 +1001,192 @@ func TestMerchantVerifyOnboardingPhone_ApplyMode(t *testing.T) {
 	}
 	if resp.Code != 0 || !resp.Data.OK || strings.TrimSpace(resp.Data.VerificationToken) == "" || resp.Data.VerifiedPhone != "13800138000" {
 		t.Fatalf("unexpected response: %+v body=%s", resp, w.Body.String())
+	}
+}
+
+func TestFreezeMerchantIdentityOnlyFreezesMatchingRef(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	user := model.User{
+		Phone:    "13800138888",
+		Nickname: "多身份用户",
+		Status:   1,
+	}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+
+	firstProvider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 1,
+		DisplayName:  "服务商A",
+		SubType:      "designer",
+		Verified:     true,
+		Status:       merchantProviderStatusActive,
+	}
+	secondProvider := model.Provider{
+		UserID:       user.ID,
+		ProviderType: 2,
+		DisplayName:  "服务商B",
+		SubType:      "company",
+		Verified:     true,
+		Status:       merchantProviderStatusActive,
+	}
+	if err := repository.DB.Create(&firstProvider).Error; err != nil {
+		t.Fatalf("create first provider failed: %v", err)
+	}
+	if err := repository.DB.Create(&secondProvider).Error; err != nil {
+		t.Fatalf("create second provider failed: %v", err)
+	}
+
+	firstRefID := firstProvider.ID
+	secondRefID := secondProvider.ID
+	firstIdentity := model.UserIdentity{
+		UserID:        user.ID,
+		IdentityType:  merchantIdentityTypeProvider,
+		IdentityRefID: &firstRefID,
+		Status:        merchantIdentityStatusActive,
+		Verified:      true,
+	}
+	secondIdentity := model.UserIdentity{
+		UserID:        user.ID,
+		IdentityType:  merchantIdentityTypeProvider,
+		IdentityRefID: &secondRefID,
+		Status:        merchantIdentityStatusActive,
+		Verified:      true,
+	}
+	if err := repository.DB.Create(&firstIdentity).Error; err != nil {
+		t.Fatalf("create first identity failed: %v", err)
+	}
+	if err := repository.DB.Create(&secondIdentity).Error; err != nil {
+		t.Fatalf("create second identity failed: %v", err)
+	}
+
+	if err := freezeMerchantIdentity(repository.DB, user.ID, &merchantActiveIdentity{
+		kind: merchantIdentityTypeProvider,
+		id:   firstProvider.ID,
+	}); err != nil {
+		t.Fatalf("freeze merchant identity failed: %v", err)
+	}
+
+	var frozenFirst model.UserIdentity
+	if err := repository.DB.First(&frozenFirst, firstIdentity.ID).Error; err != nil {
+		t.Fatalf("reload first identity failed: %v", err)
+	}
+	if frozenFirst.Status != merchantIdentityStatusFrozen || frozenFirst.Verified {
+		t.Fatalf("first identity should be frozen: %+v", frozenFirst)
+	}
+
+	var untouchedSecond model.UserIdentity
+	if err := repository.DB.First(&untouchedSecond, secondIdentity.ID).Error; err != nil {
+		t.Fatalf("reload second identity failed: %v", err)
+	}
+	if untouchedSecond.Status != merchantIdentityStatusActive || !untouchedSecond.Verified {
+		t.Fatalf("second identity should stay active: %+v", untouchedSecond)
+	}
+}
+
+func TestMerchantApply_PersistsSubmittedSMSAudit(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	input := newValidDesignerApplyInput()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MerchantApply(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if count := countSMSAuditLogsByPurpose(t, "merchant_apply_submitted"); count != 1 {
+		t.Fatalf("expected 1 submitted sms audit log, got %d", count)
+	}
+}
+
+func TestAdminApproveApplication_PersistsApprovedSMSAudit(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	user := model.User{Phone: "13800138108", Nickname: "审核通过用户", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+
+	portfolio, _ := json.Marshal([]PortfolioCaseInput{{Title: "案例A", Description: "说明", Images: []string{"/case-a.jpg", "/case-b.jpg", "/case-c.jpg", "/case-d.jpg"}, Style: "现代", Area: "90㎡"}})
+	serviceArea, _ := json.Marshal([]string{"610100"})
+	styles, _ := json.Marshal([]string{"现代"})
+	pricing, _ := json.Marshal(map[string]float64{"flat": 1200})
+	app := model.MerchantApplication{
+		UserID:              user.ID,
+		Phone:               user.Phone,
+		ApplicantType:       "personal",
+		Role:                "designer",
+		EntityType:          "personal",
+		RealName:            "审核通过用户",
+		Avatar:              "/avatar.jpg",
+		IDCardNo:            "11010519491231002X",
+		IDCardFront:         "/front.jpg",
+		IDCardBack:          "/back.jpg",
+		ServiceArea:         string(serviceArea),
+		Styles:              string(styles),
+		PricingJSON:         string(pricing),
+		Introduction:        "测试简介",
+		PortfolioCases:      string(portfolio),
+		LegalAcceptanceJSON: `{"accepted":true}`,
+		Status:              0,
+	}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Set("adminId", uint64(66))
+	AdminApproveApplication(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if count := countSMSAuditLogsByPurpose(t, "merchant_apply_approved"); count != 1 {
+		t.Fatalf("expected 1 approved sms audit log, got %d", count)
+	}
+}
+
+func TestAdminRejectApplication_PersistsRejectedSMSAudit(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+
+	user := model.User{Phone: "13800138109", Nickname: "审核拒绝用户", Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
+
+	app := model.MerchantApplication{
+		UserID:        user.ID,
+		Phone:         user.Phone,
+		ApplicantType: "personal",
+		Role:          "designer",
+		EntityType:    "personal",
+		RealName:      "审核拒绝用户",
+		Avatar:        "/avatar.jpg",
+		Status:        0,
+	}
+	if err := repository.DB.Create(&app).Error; err != nil {
+		t.Fatalf("create app failed: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Set("adminId", uint64(77))
+	c.Request = newJSONRequest(t, http.MethodPost, map[string]string{"reason": "资料不清晰"})
+	AdminRejectApplication(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	if count := countSMSAuditLogsByPurpose(t, "merchant_apply_rejected"); count != 1 {
+		t.Fatalf("expected 1 rejected sms audit log, got %d", count)
 	}
 }
 

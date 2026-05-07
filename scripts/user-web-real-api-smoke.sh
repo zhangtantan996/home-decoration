@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_BASE=${USER_WEB_REAL_API_BASE:-http://127.0.0.1:8080/api/v1}
+API_BASE=${USER_WEB_REAL_API_BASE:-}
+DEFAULT_API_BASE_PRIMARY=${USER_WEB_REAL_API_BASE_PRIMARY:-http://127.0.0.1:8080/api/v1}
+DEFAULT_API_BASE_FALLBACK=${USER_WEB_REAL_API_BASE_FALLBACK:-http://127.0.0.1:5175/api/v1}
 PHONE=${USER_WEB_FIXTURE_PHONE:-19999100001}
 PROVIDER_ID=${USER_WEB_FIXTURE_PROVIDER_ID:-99101}
 BOOKING_ID=${USER_WEB_FIXTURE_BOOKING_ID:-99110}
@@ -23,6 +25,25 @@ assert_code_zero() {
     exit 1
   fi
 }
+
+probe_api_base() {
+  local candidate=$1
+  if [ -z "$candidate" ]; then
+    return 1
+  fi
+  curl -fsS "$candidate/health" >/dev/null 2>&1
+}
+
+if [ -z "$API_BASE" ]; then
+  if probe_api_base "$DEFAULT_API_BASE_PRIMARY"; then
+    API_BASE="$DEFAULT_API_BASE_PRIMARY"
+  elif probe_api_base "$DEFAULT_API_BASE_FALLBACK"; then
+    API_BASE="$DEFAULT_API_BASE_FALLBACK"
+  else
+    echo "[user-web-real-api-smoke] no reachable api base (tried: $DEFAULT_API_BASE_PRIMARY, $DEFAULT_API_BASE_FALLBACK)" >&2
+    exit 1
+  fi
+fi
 
 echo "[user-web-real-api-smoke] send-code"
 send=$(curl -sS -X POST "$API_BASE/auth/send-code" -H 'Content-Type: application/json' -d "{\"phone\":\"$PHONE\",\"purpose\":\"login\"}")

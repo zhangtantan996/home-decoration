@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
@@ -38,7 +40,7 @@ func (h *MilestonePaymentHandler) CreateMilestonePaymentPlan(c *gin.Context) {
 
 	var req CreateMilestonePaymentPlanRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.Error(c, http.StatusBadRequest, "参数错误: "+err.Error())
+		response.Error(c, http.StatusBadRequest, "参数错误")
 		return
 	}
 
@@ -50,7 +52,7 @@ func (h *MilestonePaymentHandler) CreateMilestonePaymentPlan(c *gin.Context) {
 
 	milestones, err := h.service.CreateMilestonePaymentPlan(input)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondMilestonePaymentError(c, "create milestone payment plan", err)
 		return
 	}
 
@@ -82,14 +84,12 @@ func (h *MilestonePaymentHandler) ReleaseMilestonePayment(c *gin.Context) {
 		return
 	}
 
-	// 从JWT获取用户ID
-	userID, exists := c.Get("userID")
-	if !exists {
+	userID := getCurrentUserID(c)
+	if userID == 0 {
 		response.Error(c, http.StatusUnauthorized, "未授权")
 		return
 	}
 
-	// 从查询参数获取项目ID
 	projectIDStr := c.Query("projectId")
 	projectID, err := strconv.ParseUint(projectIDStr, 10, 64)
 	if err != nil {
@@ -97,9 +97,9 @@ func (h *MilestonePaymentHandler) ReleaseMilestonePayment(c *gin.Context) {
 		return
 	}
 
-	result, err := h.service.ReleaseMilestonePayment(projectID, milestoneID, userID.(uint64))
+	result, err := h.service.ReleaseMilestonePayment(projectID, milestoneID, userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondMilestonePaymentError(c, "release milestone payment", err)
 		return
 	}
 
@@ -119,11 +119,37 @@ func (h *MilestonePaymentHandler) GetMilestonePayments(c *gin.Context) {
 		return
 	}
 
-	status, err := h.service.GetMilestonePaymentStatus(projectID)
+	userID := getCurrentUserID(c)
+	status, err := h.service.GetMilestonePaymentStatus(projectID, userID)
 	if err != nil {
-		response.Error(c, http.StatusInternalServerError, err.Error())
+		respondMilestonePaymentError(c, "get milestone payments", err)
 		return
 	}
 
 	response.Success(c, status)
+}
+
+func respondMilestonePaymentError(c *gin.Context, operation string, err error) {
+	if err == nil {
+		return
+	}
+
+	message := strings.TrimSpace(err.Error())
+	switch {
+	case strings.Contains(message, "项目ID不能为空"):
+		response.Error(c, http.StatusBadRequest, "项目ID不能为空")
+	case strings.Contains(message, "项目不存在"):
+		response.Error(c, http.StatusNotFound, "项目不存在")
+	case strings.Contains(message, "无权查看") || strings.Contains(message, "只有项目所有者"):
+		response.Error(c, http.StatusForbidden, "无权操作此项目")
+	case strings.Contains(message, "节点不存在"):
+		response.Error(c, http.StatusNotFound, "节点不存在")
+	case strings.Contains(message, "节点未通过验收") || strings.Contains(message, "节点已完成结算") || strings.Contains(message, "已创建节点付款计划"):
+		response.Error(c, http.StatusConflict, message)
+	case strings.Contains(message, "施工报价必须大于0") || strings.Contains(message, "节点百分比总和必须为100"):
+		response.Error(c, http.StatusBadRequest, message)
+	default:
+		log.Printf("[MilestonePayment] %s failed: %v", operation, err)
+		response.Error(c, http.StatusInternalServerError, "节点付款处理失败，请稍后重试")
+	}
 }

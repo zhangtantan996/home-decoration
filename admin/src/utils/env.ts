@@ -71,6 +71,13 @@ export const getApiBaseUrl = (): string => {
         return configured.replace(/\/+$/, '');
     }
 
+    if (typeof window !== 'undefined') {
+        const hostname = window.location.hostname;
+        if (hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1') {
+            return 'http://localhost:8080/api/v1';
+        }
+    }
+
     return getRuntimeMode() === 'local' ? 'http://localhost:8080/api/v1' : '/api/v1';
 };
 

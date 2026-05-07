@@ -162,7 +162,7 @@ func (s *MilestonePaymentService) ReleaseMilestonePayment(projectID, milestoneID
 }
 
 // GetMilestonePaymentStatus 获取项目节点付款状态
-func (s *MilestonePaymentService) GetMilestonePaymentStatus(projectID uint64) (map[string]interface{}, error) {
+func (s *MilestonePaymentService) GetMilestonePaymentStatus(projectID uint64, userID uint64) (map[string]interface{}, error) {
 	if projectID == 0 {
 		return nil, errors.New("项目ID不能为空")
 	}
@@ -171,6 +171,10 @@ func (s *MilestonePaymentService) GetMilestonePaymentStatus(projectID uint64) (m
 	var project model.Project
 	if err := repository.DB.First(&project, projectID).Error; err != nil {
 		return nil, fmt.Errorf("项目不存在: %w", err)
+	}
+
+	if project.OwnerID != userID {
+		return nil, errors.New("无权查看此项目付款信息")
 	}
 
 	// 获取托管账户

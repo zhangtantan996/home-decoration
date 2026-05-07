@@ -6,7 +6,9 @@ DOCKER_BIN="${DOCKER_BIN:-$(command -v docker || true)}"
 DB_CONTAINER="${QUOTE_DB_CONTAINER:-}"
 DB_URL="${QUOTE_DB_URL:-${USER_WEB_FIXTURE_DB_URL:-}}"
 API_CONTAINER="${QUOTE_API_CONTAINER:-home_decor_api_local}"
-API_BASE_URL="${E2E_API_BASE_URL:-http://127.0.0.1:8080/api/v1}"
+API_BASE_URL="${E2E_API_BASE_URL:-}"
+API_BASE_PRIMARY="${QUOTE_API_BASE_PRIMARY:-http://127.0.0.1:8080/api/v1}"
+API_BASE_FALLBACK="${QUOTE_API_BASE_FALLBACK:-http://127.0.0.1:5175/api/v1}"
 ADMIN_PASSWORD_HASH='$2a$10$QEEz3QXaeR8E1MJ/P6U.0ut1TtEFu0Tq1n7iOuMVN3v8CE6SE5wGe'
 
 if [[ -z "${DB_URL}" && -z "${DOCKER_BIN}" ]]; then
@@ -53,8 +55,16 @@ trap cleanup EXIT
 
 reset_rate_limit() {
   if [[ -x "${ROOT_DIR}/scripts/user-web-clear-rate-limit.sh" ]]; then
-    "${ROOT_DIR}/scripts/user-web-clear-rate-limit.sh" >/dev/null 2>&1 || true
+    "${ROOT_DIR}/scripts/user-web-clear-rate-limit.sh" >/dev/null
   fi
+}
+
+resolve_api_base_url() {
+  local candidate="$1"
+  if [[ -z "$candidate" ]]; then
+    return 1
+  fi
+  curl -fsS "${candidate}/health" >/dev/null 2>&1
 }
 
 request_json() {
@@ -110,6 +120,17 @@ request_json() {
 
 reset_rate_limit
 
+if [[ -z "${API_BASE_URL}" ]]; then
+  if resolve_api_base_url "${API_BASE_PRIMARY}"; then
+    API_BASE_URL="${API_BASE_PRIMARY}"
+  elif resolve_api_base_url "${API_BASE_FALLBACK}"; then
+    API_BASE_URL="${API_BASE_FALLBACK}"
+  else
+    echo "no reachable API base url (tried: ${API_BASE_PRIMARY}, ${API_BASE_FALLBACK})" >&2
+    exit 1
+  fi
+fi
+
 if [[ -f "erp报价.xls" && -n "${DOCKER_BIN}" ]] && "${DOCKER_BIN}" ps --format '{{.Names}}' | grep -qx "${API_CONTAINER}"; then
   "${DOCKER_BIN}" cp "erp报价.xls" "${API_CONTAINER}:/app/erp报价.xls"
 fi
@@ -151,6 +172,7 @@ admin_json="${tmp_dir}/admin.json"
 category_json="${tmp_dir}/category.json"
 library_item_json="${tmp_dir}/library_item.json"
 merchant_json="${tmp_dir}/merchant.json"
+designer_merchant_json="${tmp_dir}/designer_merchant.json"
 price_book_save_json="${tmp_dir}/price_book_save.json"
 price_book_publish_json="${tmp_dir}/price_book_publish.json"
 task_create_json="${tmp_dir}/task_create.json"
@@ -160,6 +182,9 @@ task_validate_json="${tmp_dir}/task_validate.json"
 task_recommend_json="${tmp_dir}/task_recommend.json"
 task_select_json="${tmp_dir}/task_select.json"
 task_generate_json="${tmp_dir}/task_generate.json"
+merchant_preparation_json="${tmp_dir}/merchant_preparation.json"
+merchant_quantity_payload_json="${tmp_dir}/merchant_quantity_payload.json"
+merchant_quantity_update_json="${tmp_dir}/merchant_quantity_update.json"
 merchant_task_json="${tmp_dir}/merchant_task.json"
 merchant_submit_json="${tmp_dir}/merchant_submit.json"
 submit_to_user_json="${tmp_dir}/submit_to_user.json"
@@ -209,6 +234,19 @@ print(payload["data"]["token"])
 PY
 )"
 
+designer_phone="$(psql_query "SELECT COALESCE(u.phone, '') FROM providers p JOIN users u ON u.id = p.user_id WHERE p.id = ${designer_provider_id} LIMIT 1;")"
+if [[ -z "${designer_phone:-}" ]]; then
+  designer_phone="${merchant_phone}"
+fi
+request_json POST "${API_BASE_URL}/merchant/login" "${designer_merchant_json}" "{\"phone\":\"${designer_phone}\",\"code\":\"123456\"}"
+designer_token="$(python3 - <<'PY' "${designer_merchant_json}"
+import json,sys
+payload=json.load(open(sys.argv[1]))
+assert payload["code"] == 0, payload
+print(payload["data"]["token"])
+PY
+)"
+
 request_json PUT "${API_BASE_URL}/merchant/price-book" "${price_book_save_json}" "{\"remark\":\"工长日常价格库\",\"items\":[{\"standardItemId\":${library_item_id},\"unit\":\"㎡\",\"unitPriceCent\":1800,\"minChargeCent\":12000,\"remark\":\"基础防水单价\",\"status\":1}]}" "${merchant_token}"
 request_json POST "${API_BASE_URL}/merchant/price-book/publish" "${price_book_publish_json}" '{}' "${merchant_token}"
 
@@ -231,6 +269,43 @@ PY
 )"
 
 request_json PUT "${API_BASE_URL}/admin/quote-tasks/${task_id}/prerequisites" "${task_prerequisites_json}" '{"area":89,"layout":"3室2厅","renovationType":"全屋翻新","constructionScope":"防水","serviceAreas":["浦东新区"],"workTypes":["waterproof"],"notes":"workflow smoke"}' "${admin_token}"
+request_json GET "${API_BASE_URL}/merchant/quote-tasks/${task_id}/preparation" "${merchant_preparation_json}" '' "${designer_token}"
+python3 - <<'PY' "${merchant_preparation_json}" "${merchant_quantity_payload_json}"
+import json, sys
+payload = json.load(open(sys.argv[1]))
+assert payload.get("code") == 0, payload
+sections = (payload.get("data") or {}).get("templateSections") or []
+dedup = set()
+items = []
+for section in sections:
+    for row in (section or {}).get("rows") or []:
+        if not row.get("applicable", True):
+            continue
+        standard_id = int(row.get("standardItemId") or 0)
+        if standard_id <= 0 or standard_id in dedup:
+            continue
+        quantity = row.get("inputQuantity")
+        if quantity is None or float(quantity) <= 0:
+            quantity = row.get("suggestedQuantity")
+        if quantity is None or float(quantity) <= 0:
+            quantity = 1
+        items.append({
+            "standardItemId": standard_id,
+            "quantity": float(quantity),
+            "baselineNote": "workflow smoke baseline",
+        })
+        dedup.add(standard_id)
+
+assert items, payload
+with open(sys.argv[2], "w", encoding="utf-8") as fp:
+    json.dump({"items": items}, fp, ensure_ascii=False)
+PY
+request_json PUT "${API_BASE_URL}/merchant/quote-tasks/${task_id}/quantity-items" "${merchant_quantity_update_json}" "$(cat "${merchant_quantity_payload_json}")" "${designer_token}"
+python3 - <<'PY' "${merchant_quantity_update_json}"
+import json,sys
+payload=json.load(open(sys.argv[1]))
+assert payload.get("code") == 0, payload
+PY
 request_json POST "${API_BASE_URL}/admin/quote-tasks/${task_id}/validate-prerequisites" "${task_validate_json}" '{}' "${admin_token}"
 request_json POST "${API_BASE_URL}/admin/quote-tasks/${task_id}/recommend-foremen" "${task_recommend_json}" '{}' "${admin_token}"
 request_json POST "${API_BASE_URL}/admin/quote-tasks/${task_id}/select-foremen" "${task_select_json}" "{\"providerIds\":[${merchant_provider_id}]}" "${admin_token}"

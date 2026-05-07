@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"errors"
 	"fmt"
 	appconfig "home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
@@ -13,6 +14,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // ==================== 管理员管理 API ====================
@@ -655,49 +658,84 @@ func AdminListTransactions(c *gin.Context) {
 // AdminWithdraw 账户提现
 func AdminWithdraw(c *gin.Context) {
 	accountId := c.Param("accountId")
+	adminID := c.GetUint64("admin_id")
+	rawReason, _ := c.Get("admin_reason")
+	reasonStr := fmt.Sprintf("%v", rawReason)
+	errEscrowNotFound := errors.New("escrow account not found")
+	errInsufficientBalance := errors.New("insufficient balance")
+
 	var req struct {
-		Amount float64 `json:"amount" binding:"required"`
+		Amount float64 `json:"amount" binding:"required,gt=0"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "参数错误")
+		response.BadRequest(c, "参数错误：提现金额必须大于0")
 		return
 	}
 
-	var account model.EscrowAccount
-	if err := repository.DB.First(&account, accountId).Error; err != nil {
-		response.NotFound(c, "账户不存在")
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var account model.EscrowAccount
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).First(&account, accountId).Error; err != nil {
+			return errEscrowNotFound
+		}
+
+		if account.AvailableAmount < req.Amount {
+			return errInsufficientBalance
+		}
+
+		transaction := model.Transaction{
+			OrderID:     fmt.Sprintf("WD%d%d", time.Now().Unix(), account.ID),
+			EscrowID:    account.ID,
+			Type:        "withdraw",
+			Amount:      req.Amount,
+			FromUserID:  account.UserID,
+			FromAccount: "托管账户",
+			ToUserID:    account.UserID,
+			ToAccount:   "用户账户",
+			Status:      1,
+			Remark:      "管理员操作提现，原因：" + reasonStr,
+		}
+		now := time.Now()
+		transaction.CompletedAt = &now
+
+		if err := tx.Create(&transaction).Error; err != nil {
+			return fmt.Errorf("创建交易记录失败: %w", err)
+		}
+
+		account.AvailableAmount -= req.Amount
+		if err := tx.Save(&account).Error; err != nil {
+			return fmt.Errorf("更新账户余额失败: %w", err)
+		}
+
+		auditSvc := &service.AuditLogService{}
+		return auditSvc.CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    adminID,
+			OperationType: "admin_withdraw",
+			ResourceType:  "escrow_account",
+			ResourceID:    account.ID,
+			Reason:        reasonStr,
+			Result:        "success",
+			Metadata: map[string]interface{}{
+				"amount":    req.Amount,
+				"accountId": account.ID,
+				"balance":   account.AvailableAmount,
+			},
+		})
+	})
+
+	if err != nil {
+		switch {
+		case errors.Is(err, errEscrowNotFound):
+			response.NotFound(c, "账户不存在")
+			return
+		case errors.Is(err, errInsufficientBalance):
+			response.BadRequest(c, "余额不足")
+			return
+		}
+		fmt.Printf("[AdminWithdraw] transaction failed: admin_id=%d account_id=%s err=%v\n", adminID, accountId, err)
+		response.ServerError(c, "提现处理失败，请稍后重试")
 		return
 	}
-
-	if account.AvailableAmount < req.Amount {
-		response.BadRequest(c, "余额不足")
-		return
-	}
-
-	// 创建提现交易记录
-	transaction := model.Transaction{
-		OrderID:     fmt.Sprintf("WD%d%d", time.Now().Unix(), account.ID),
-		EscrowID:    account.ID,
-		Type:        "withdraw",
-		Amount:      req.Amount,
-		FromUserID:  account.UserID,
-		FromAccount: "托管账户",
-		ToUserID:    account.UserID,
-		ToAccount:   "用户账户",
-		Status:      1, // 直接标记为成功
-		Remark:      "管理员操作提现",
-	}
-	now := time.Now()
-	transaction.CompletedAt = &now
-
-	if err := repository.DB.Create(&transaction).Error; err != nil {
-		response.ServerError(c, "创建交易记录失败")
-		return
-	}
-
-	// 更新账户余额
-	account.AvailableAmount -= req.Amount
-	repository.DB.Save(&account)
 
 	response.Success(c, nil)
 }

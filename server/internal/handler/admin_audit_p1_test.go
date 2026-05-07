@@ -105,3 +105,36 @@ func TestAdminWithdrawApproveWritesBusinessAuditLog(t *testing.T) {
 		t.Fatalf("unexpected audit log: %+v", logEntry)
 	}
 }
+
+func TestAdminWithdrawReturnsBusinessErrorForInsufficientBalance(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := newAdminAuditTestDB(t)
+	if err := db.AutoMigrate(&model.EscrowAccount{}, &model.Transaction{}, &model.AuditLog{}); err != nil {
+		t.Fatalf("auto migrate escrow tables: %v", err)
+	}
+	withAdminAuditRepositoryDB(t, db)
+
+	account := model.EscrowAccount{
+		Base:            model.Base{ID: 801},
+		UserID:          901,
+		AvailableAmount: 100,
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create account: %v", err)
+	}
+
+	payload, _ := json.Marshal(map[string]float64{"amount": 120})
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/admin/finance/escrow-accounts/801/withdraw", bytes.NewReader(payload))
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Params = gin.Params{{Key: "accountId", Value: "801"}}
+	c.Set("admin_id", uint64(7003))
+	c.Set("admin_reason", "测试余额不足")
+
+	AdminWithdraw(c)
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for insufficient balance, got %d body=%s", w.Code, w.Body.String())
+	}
+}

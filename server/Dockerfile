@@ -35,5 +35,7 @@ COPY --from=builder /app/config.yaml .
 # Expose port
 EXPOSE 8080
 
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 CMD wget -qO- http://127.0.0.1:8080/api/v1/health >/dev/null || exit 1
+
 # Run
 CMD ["./main"]

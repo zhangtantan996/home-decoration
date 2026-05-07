@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-API_BASE=${PHASE2_API_BASE:-http://127.0.0.1:8080/api/v1}
+API_BASE=${PHASE2_API_BASE:-}
+DEFAULT_API_BASE_PRIMARY=${PHASE2_API_BASE_PRIMARY:-http://127.0.0.1:8080/api/v1}
+DEFAULT_API_BASE_FALLBACK=${PHASE2_API_BASE_FALLBACK:-http://127.0.0.1:5175/api/v1}
 USER_PHONE=${PHASE2_USER_PHONE:-19999100001}
 MERCHANT_PHONE=${PHASE2_MERCHANT_PHONE:-19999100002}
 PROJECT_ID=${PHASE2_PROJECT_ID:-99140}
@@ -22,6 +24,25 @@ assert_code_zero() {
   fi
 }
 
+probe_api_base() {
+  local candidate=$1
+  if [ -z "$candidate" ]; then
+    return 1
+  fi
+  curl -fsS "$candidate/health" >/dev/null 2>&1
+}
+
+if [ -z "$API_BASE" ]; then
+  if probe_api_base "$DEFAULT_API_BASE_PRIMARY"; then
+    API_BASE="$DEFAULT_API_BASE_PRIMARY"
+  elif probe_api_base "$DEFAULT_API_BASE_FALLBACK"; then
+    API_BASE="$DEFAULT_API_BASE_FALLBACK"
+  else
+    echo "[phase2-smoke] no reachable api base (tried: $DEFAULT_API_BASE_PRIMARY, $DEFAULT_API_BASE_FALLBACK)" >&2
+    exit 1
+  fi
+fi
+
 clear_rate_limits() {
   (
     if [[ -n "${PHASE2_REDIS_CONTAINER+x}" ]]; then
@@ -37,7 +58,7 @@ clear_rate_limits() {
       export USER_WEB_FIXTURE_REDIS_PASSWORD="$PHASE2_REDIS_PASSWORD"
     fi
     "$ROOT_DIR/scripts/user-web-clear-rate-limit.sh"
-  ) >/dev/null 2>&1 || true
+  ) >/dev/null
 }
 
 send_login_code() {

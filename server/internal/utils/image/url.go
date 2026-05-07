@@ -24,10 +24,14 @@ func normalizeConfiguredURLValue(raw string) string {
 	return trimmed
 }
 
-// GetFullImageURL 将相对路径转换为完整的 URL
+// GetFullImageURL 将相对路径转换为完整的 URL，拒绝危险协议和未授权的外部域名
 func GetFullImageURL(path string) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
+		return ""
+	}
+
+	if isUnsafeOutboundScheme(path) {
 		return ""
 	}
 
@@ -35,8 +39,10 @@ func GetFullImageURL(path string) string {
 	if parsed, ok := parseAbsoluteURL(path); ok {
 		if isLocalAssetPath(parsed.Path) && matchesConfiguredPublicAssetHost(parsed.Hostname(), cfg) {
 			path = parsed.Path
-		} else {
+		} else if matchesConfiguredPublicAssetHost(parsed.Hostname(), cfg) {
 			return normalizeConfiguredHTTPS(path, cfg)
+		} else {
+			return path
 		}
 	}
 
@@ -73,6 +79,18 @@ func GetFullImageURLs(paths []string) []string {
 func isLocalAssetPath(path string) bool {
 	for _, prefix := range localAssetPrefixes {
 		if strings.HasPrefix(path, prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+var unsafeSchemes = []string{"javascript:", "data:", "vbscript:", "file:", "about:"}
+
+func isUnsafeOutboundScheme(raw string) bool {
+	lower := strings.ToLower(raw)
+	for _, scheme := range unsafeSchemes {
+		if strings.HasPrefix(lower, scheme) {
 			return true
 		}
 	}
