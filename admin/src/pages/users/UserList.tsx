@@ -15,14 +15,15 @@ import {
   Alert,
   Checkbox,
   Dropdown,
+  Segmented,
 } from "antd";
 import {
   SearchOutlined,
   ReloadOutlined,
-  PlusOutlined,
   DeleteOutlined,
   LinkOutlined,
   SettingOutlined,
+  InfoCircleOutlined,
 } from "@ant-design/icons";
 import {
   adminUserApi,
@@ -99,9 +100,18 @@ const userRoleMap: Record<string, { text: string; color: string }> = {
   company: { text: "装修公司", color: "green" },
   foreman: { text: "工长", color: "orange" },
   material_shop: { text: "主材商", color: "purple" },
-  admin: { text: "管理员", color: "red" },
   provider: { text: "服务商", color: "green" },
+  supervisor: { text: "监理", color: "geekblue" },
 };
+
+const USER_TYPE_OPTIONS = [
+  { label: "业主", value: "owner" },
+  { label: "设计师", value: "designer" },
+  { label: "装修公司", value: "company" },
+  { label: "工长", value: "foreman" },
+  { label: "主材商", value: "material_shop" },
+  { label: "监理", value: "supervisor" },
+];
 
 const roleTypeHelpText: Record<string, string> = {
   company:
@@ -119,7 +129,7 @@ const UserList: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [keyword, setKeyword] = useState("");
-  const [roleType, setRoleType] = useState<string | undefined>();
+  const [roleType, setRoleType] = useState<string>("owner");
   const [modalVisible, setModalVisible] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
@@ -164,18 +174,18 @@ const UserList: React.FC = () => {
   const handleStatusChange = async (id: number, status: number) => {
     const target = users.find((item) => item.id === id);
     Modal.confirm({
-      title: status === 1 ? "确认允许登录" : "确认禁止登录",
+      title: status === 1 ? "确认启用登录" : "确认禁用登录",
       content:
         status === 1
-          ? `将恢复「${target?.nickname || target?.phone || id}」的登录能力；其绑定主体是否公开展示仍按主体上线、认证和入驻结果计算。`
-          : `将禁止「${target?.nickname || target?.phone || id}」登录系统；其绑定主体也会从公开展示和业务分发中移除。`,
-      okText: status === 1 ? "确认允许" : "确认禁止",
+          ? `将恢复「${target?.nickname || target?.phone || id}」的登录能力。该操作只影响账号登录，不直接修改绑定主体的经营状态。`
+          : `将禁止「${target?.nickname || target?.phone || id}」继续登录。该操作只影响账号登录，不直接修改绑定主体的经营状态。`,
+      okText: status === 1 ? "确认启用" : "确认禁用",
       cancelText: "取消",
       okButtonProps: status === 1 ? undefined : { danger: true },
       onOk: async () => {
         try {
           await adminUserApi.updateStatus(id, status);
-          message.success(status === 1 ? "已允许登录" : "已禁止登录");
+          message.success(status === 1 ? "已启用登录" : "已禁用登录");
           loadData();
         } catch (error) {
           message.error("操作失败");
@@ -187,6 +197,9 @@ const UserList: React.FC = () => {
   const resolvePrimaryEntityPath = (record: User) => {
     if (record.primaryEntityType === "material_shop") {
       return "/materials/list";
+    }
+    if (record.primaryEntityType === "supervisor" || record.roleType === "supervisor") {
+      return "/supervisors/list";
     }
     switch (record.roleType) {
       case "designer":
@@ -216,27 +229,21 @@ const UserList: React.FC = () => {
     return <StatusTag status="approved" text="正常" />;
   };
 
-  const openModal = (user?: User) => {
-    setEditingUser(user || null);
-    if (user) {
-      form.setFieldsValue(user);
-    } else {
-      form.resetFields();
-      form.setFieldsValue({ status: 1, userType: 1 });
-    }
+  const openModal = (user: User) => {
+    setEditingUser(user);
+    form.setFieldsValue(user);
     setModalVisible(true);
   };
 
   const handleSubmit = async () => {
     try {
       const values = await form.validateFields();
-      if (editingUser) {
-        await adminUserApi.update(editingUser.id, values);
-        message.success("更新成功");
-      } else {
-        await adminUserApi.create(values);
-        message.success("创建成功");
+      if (!editingUser) {
+        message.error("当前只支持编辑已有账号");
+        return;
       }
+      await adminUserApi.update(editingUser.id, values);
+      message.success("更新成功");
       setModalVisible(false);
       loadData();
     } catch (error) {
@@ -403,15 +410,15 @@ const UserList: React.FC = () => {
       render: (_: unknown, record: User) => record.primaryEntityId || "-",
     },
     {
-      title: "登录状态",
+      title: "账号状态",
       key: "status",
       dataIndex: "status",
       width: 130,
       render: (val: number, record: User) => (
         <Switch
           checked={val === 1}
-          checkedChildren="允许登录"
-          unCheckedChildren="禁止登录"
+          checkedChildren="启用登录"
+          unCheckedChildren="禁用登录"
           onChange={(checked) => handleStatusChange(record.id, checked ? 1 : 0)}
         />
       ),
@@ -495,7 +502,7 @@ const UserList: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="用户管理"
-        description="管理平台账号总控；账号禁用后，绑定主体同步从公开展示和业务分发中移除。"
+        description="只管理登录账号，不直接改变服务商或主材主体的经营状态。"
       />
 
       <ToolbarCard>
@@ -508,20 +515,6 @@ const UserList: React.FC = () => {
             onPressEnter={handleSearch}
             style={{ width: 200 }}
           />
-          <Select
-            placeholder="用户类型"
-            allowClear
-            style={{ width: 120 }}
-            value={roleType}
-            onChange={setRoleType}
-            options={[
-              { value: "owner", label: "业主" },
-              { value: "designer", label: "设计师" },
-              { value: "company", label: "装修公司" },
-              { value: "foreman", label: "工长" },
-              { value: "material_shop", label: "主材商" },
-            ]}
-          />
           <Button
             type="primary"
             icon={<SearchOutlined />}
@@ -531,13 +524,6 @@ const UserList: React.FC = () => {
           </Button>
           <Button icon={<ReloadOutlined />} onClick={loadData}>
             刷新
-          </Button>
-          <Button
-            type="primary"
-            icon={<PlusOutlined />}
-            onClick={() => openModal()}
-          >
-            新增用户
           </Button>
           <Dropdown
             trigger={["click"]}
@@ -570,16 +556,23 @@ const UserList: React.FC = () => {
         </div>
       </ToolbarCard>
 
-      {roleType && roleTypeHelpText[roleType] && (
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message={roleTypeHelpText[roleType]}
-        />
-      )}
-
       <Card className="hz-table-card">
+        <div className="user-type-filter">
+          <Segmented
+            size="large"
+            options={USER_TYPE_OPTIONS}
+            value={roleType}
+            onChange={(value) => {
+              setRoleType(value as string);
+              setPage(1);
+            }}
+          />
+          {roleTypeHelpText[roleType] && (
+            <Tooltip title={roleTypeHelpText[roleType]}>
+              <InfoCircleOutlined className="user-type-filter-help" />
+            </Tooltip>
+          )}
+        </div>
         <div ref={tableContainerRef}>
           <Table
             className={tableClassName}
@@ -616,7 +609,7 @@ const UserList: React.FC = () => {
       </Card>
 
       <Modal
-        title={editingUser ? "编辑用户" : "新增用户"}
+        title="编辑账号"
         open={modalVisible}
         onCancel={() => setModalVisible(false)}
         onOk={handleSubmit}
@@ -634,24 +627,16 @@ const UserList: React.FC = () => {
             <Input placeholder="请输入昵称" />
           </Form.Item>
           <Form.Item
-            name="userType"
-            label="基础账号类型"
-            extra="用户管理只维护基础账号类型；设计师/工长/装修公司/主材商以已绑定身份为准。"
-            rules={[{ required: true }]}
+            label="账号类型"
+            extra="用户管理只维护登录账号；主体身份以已绑定的服务商或主材门店为准。"
           >
-            <Select
-              options={[
-                { value: 1, label: "业主" },
-                { value: 2, label: "商家账号" },
-                { value: 4, label: "管理员" },
-              ]}
-            />
+            <Input value={editingUser?.roleLabel || editingUser?.roleType || "-"} disabled />
           </Form.Item>
           <Form.Item name="status" label="账号状态">
             <Select
               options={[
-                { value: 1, label: "允许登录" },
-                { value: 0, label: "禁止登录" },
+                { value: 1, label: "启用登录" },
+                { value: 0, label: "禁用登录" },
               ]}
             />
           </Form.Item>

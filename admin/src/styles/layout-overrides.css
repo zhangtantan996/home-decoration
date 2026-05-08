@@ -1398,6 +1398,30 @@ body {
   width: 220px;
 }
 
+.user-type-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.user-type-filter .ant-segmented {
+  border-radius: 6px;
+}
+
+.user-type-filter-help {
+  color: rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+
+.user-type-filter-help:hover {
+  color: rgba(0, 0, 0, 0.65);
+}
+
 .provider-list-column-settings {
   width: 220px;
 }
