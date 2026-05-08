@@ -49,6 +49,9 @@ type AdminBusinessFlowAction struct {
 	Method         string                 `json:"method,omitempty"`
 	APIPath        string                 `json:"apiPath,omitempty"`
 	Route          string                 `json:"route,omitempty"`
+	TargetRoute    string                 `json:"targetRoute,omitempty"`
+	TargetModule   string                 `json:"targetModule,omitempty"`
+	Focus          string                 `json:"focus,omitempty"`
 	Payload        map[string]interface{} `json:"payload,omitempty"`
 	Danger         bool                   `json:"danger,omitempty"`
 	RequiresReason bool                   `json:"requiresReason"`
@@ -126,6 +129,7 @@ type AdminBusinessFlowDetail struct {
 	Project                 *model.Project                   `json:"project,omitempty"`
 	Milestones              []model.Milestone                `json:"milestones,omitempty"`
 	Orders                  []AdminBusinessFlowOrderSnapshot `json:"orders,omitempty"`
+	PaymentOrders           []model.PaymentOrder             `json:"paymentOrders,omitempty"`
 	ChangeOrders            []ChangeOrderView                `json:"changeOrders,omitempty"`
 	EscrowAccount           *model.EscrowAccount             `json:"escrowAccount,omitempty"`
 	Transactions            []model.Transaction              `json:"transactions,omitempty"`
@@ -160,6 +164,7 @@ type adminBusinessFlowContext struct {
 	milestones             []model.Milestone
 	orders                 []model.Order
 	paymentPlans           []model.PaymentPlan
+	paymentOrders          []model.PaymentOrder
 	changeOrders           []ChangeOrderView
 	escrow                 *model.EscrowAccount
 	transactions           []model.Transaction
@@ -461,6 +466,11 @@ func (s *AdminBusinessFlowService) loadRelatedObjects(ctx *adminBusinessFlowCont
 			return err
 		}
 	}
+	paymentOrders, err := s.loadPaymentOrders(ctx)
+	if err != nil {
+		return err
+	}
+	ctx.paymentOrders = paymentOrders
 
 	if ctx.project != nil {
 		changeOrders, err := (&ChangeOrderService{}).listByProject(ctx.project.ID)
@@ -508,6 +518,48 @@ func (s *AdminBusinessFlowService) loadRelatedObjects(ctx *adminBusinessFlowCont
 	}
 	ctx.auditLogs = auditLogs
 	return nil
+}
+
+func (s *AdminBusinessFlowService) loadPaymentOrders(ctx *adminBusinessFlowContext) ([]model.PaymentOrder, error) {
+	clauses := make([]string, 0, 3)
+	args := make([]interface{}, 0, 6)
+
+	if bookingID := sourceBookingID(ctx); bookingID > 0 {
+		clauses = append(clauses, "(biz_type IN ? AND biz_id = ?)")
+		args = append(args, []string{model.PaymentBizTypeBookingIntent, model.PaymentBizTypeBookingSurveyDeposit}, bookingID)
+	}
+
+	orderIDs := make([]uint64, 0, len(ctx.orders))
+	for _, order := range ctx.orders {
+		if order.ID > 0 {
+			orderIDs = append(orderIDs, order.ID)
+		}
+	}
+	if len(orderIDs) > 0 {
+		clauses = append(clauses, "(biz_type = ? AND biz_id IN ?)")
+		args = append(args, model.PaymentBizTypeOrder, orderIDs)
+	}
+
+	planIDs := make([]uint64, 0, len(ctx.paymentPlans))
+	for _, plan := range ctx.paymentPlans {
+		if plan.ID > 0 {
+			planIDs = append(planIDs, plan.ID)
+		}
+	}
+	if len(planIDs) > 0 {
+		clauses = append(clauses, "(biz_type = ? AND biz_id IN ?)")
+		args = append(args, model.PaymentBizTypePaymentPlan, planIDs)
+	}
+
+	if len(clauses) == 0 {
+		return nil, nil
+	}
+
+	var paymentOrders []model.PaymentOrder
+	if err := repository.DB.Where(strings.Join(clauses, " OR "), args...).Order("created_at DESC, id DESC").Find(&paymentOrders).Error; err != nil {
+		return nil, err
+	}
+	return paymentOrders, nil
 }
 
 func (s *AdminBusinessFlowService) loadPrimaryProposal(ctx *adminBusinessFlowContext) (*model.Proposal, error) {
@@ -991,6 +1043,20 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 		}
 		actions = append(actions, action)
 	}
+	navigateAction := func(key, label, permission, route, module, focus string, payload map[string]interface{}) AdminBusinessFlowAction {
+		return AdminBusinessFlowAction{
+			Key:            key,
+			Label:          label,
+			Kind:           "navigate",
+			Permission:     permission,
+			Route:          route,
+			TargetRoute:    route,
+			TargetModule:   module,
+			Focus:          focus,
+			Payload:        payload,
+			RequiresReason: false,
+		}
+	}
 
 	for _, key := range ctx.summary.AvailableActions {
 		switch key {
@@ -1013,11 +1079,13 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 				}
 				appendAction(AdminBusinessFlowAction{Key: key, Label: "施工报价确认", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/construction/quote/confirm", ctx.project.ID), Payload: payload, RequiresReason: true})
 			} else if ctx.quoteTask != nil {
-				appendAction(AdminBusinessFlowAction{Key: key, Label: "施工报价确认", Kind: "navigate", Permission: "project:edit", Route: fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID), Payload: map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID}, RequiresReason: false})
+				appendAction(navigateAction(key, "施工报价确认", "project:edit", fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID), "quote_erp", "quote_compare", map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID}))
 			}
 		case "reject_construction_quote":
 			if ctx.quoteTask != nil {
-				appendAction(AdminBusinessFlowAction{Key: key, Label: "施工报价处理", Kind: "navigate", Permission: "project:edit", Route: fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID), Payload: map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID}, Danger: true, RequiresReason: false})
+				action := navigateAction(key, "施工报价处理", "project:edit", fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID), "quote_erp", "quote_compare", map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID})
+				action.Danger = true
+				appendAction(action)
 			}
 		case "start_project":
 			if ctx.project != nil && ctx.project.EntryStartDate != nil {
@@ -1041,7 +1109,7 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 			}
 		case "submit_completion":
 			if ctx.project != nil {
-				appendAction(AdminBusinessFlowAction{Key: key, Label: "查看完工材料", Kind: "navigate", Permission: "project:view", Route: fmt.Sprintf("/projects/detail/%d", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: false})
+				appendAction(navigateAction(key, "查看完工材料", "project:view", fmt.Sprintf("/projects/detail/%d", ctx.project.ID), "projects", "completion", map[string]interface{}{"projectId": ctx.project.ID}))
 			}
 		}
 	}
@@ -1051,14 +1119,7 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 			appendAction(AdminBusinessFlowAction{Key: "confirm_construction", Label: "施工方确认", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/construction/confirm", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
 		}
 		if ctx.quoteTask != nil && ctx.quoteSubmission != nil && strings.TrimSpace(ctx.quoteSubmission.ReviewStatus) == model.QuoteSubmissionReviewStatusPending {
-			appendAction(AdminBusinessFlowAction{
-				Key:        "review_construction_quote",
-				Label:      "报价复核",
-				Kind:       "navigate",
-				Permission: "project:view",
-				Route:      fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID),
-				Payload:    map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID, "submissionId": ctx.quoteSubmission.ID},
-			})
+			appendAction(navigateAction("review_construction_quote", "报价复核", "project:view", fmt.Sprintf("/projects/quotes/compare/%d", ctx.quoteTask.ID), "quote_erp", "quote_review", map[string]interface{}{"quoteTaskId": ctx.quoteTask.ID, "submissionId": ctx.quoteSubmission.ID}))
 		}
 		if ctx.project.BusinessStatus == model.ProjectBusinessStatusConstructionQuoteConfirmed && ctx.project.EntryStartDate != nil {
 			appendAction(AdminBusinessFlowAction{Key: "start_project", Label: "项目开始", Kind: "mutation", Permission: "project:edit", Method: "POST", APIPath: fmt.Sprintf("/admin/projects/%d/start", ctx.project.ID), Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
@@ -1082,14 +1143,7 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 			})
 		}
 		if pendingChange := firstChangeOrderByStatus(ctx.changeOrders, model.ChangeOrderStatusPendingUserConfirm); pendingChange != nil {
-			appendAction(AdminBusinessFlowAction{
-				Key:        "view_change_orders",
-				Label:      "查看变更单",
-				Kind:       "navigate",
-				Permission: "project:view",
-				Route:      buildAdminChangeOrderActionURL(ctx.project.ID),
-				Payload:    map[string]interface{}{"projectId": ctx.project.ID, "changeOrderId": pendingChange.ID},
-			})
+			appendAction(navigateAction("view_change_orders", "查看变更单", "project:view", buildAdminChangeOrderActionURL(ctx.project.ID), "orders", "change-order", map[string]interface{}{"projectId": ctx.project.ID, "changeOrderId": pendingChange.ID}))
 		}
 	}
 
@@ -1099,12 +1153,12 @@ func (s *AdminBusinessFlowService) resolveAvailableAdminActions(ctx *adminBusine
 		appendAction(AdminBusinessFlowAction{Key: "manual_release_funds", Label: "人工放款", Kind: "mutation", Permission: "finance:transaction:approve", Method: "POST", APIPath: "/admin/finance/manual-release", Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: true})
 	}
 	if len(ctx.refundApplications) > 0 {
-		appendAction(AdminBusinessFlowAction{Key: "review_refund", Label: "退款审核入口", Kind: "navigate", Permission: "finance:transaction:view", Route: fmt.Sprintf("/refunds/%d", ctx.refundApplications[0].ID), Payload: map[string]interface{}{"refundApplicationId": ctx.refundApplications[0].ID}, RequiresReason: false})
+		appendAction(navigateAction("review_refund", "退款审核入口", "finance:transaction:view", fmt.Sprintf("/refunds/%d", ctx.refundApplications[0].ID), "finance", "refund", map[string]interface{}{"refundApplicationId": ctx.refundApplications[0].ID}))
 	}
 	if len(ctx.projectAudits) > 0 {
-		appendAction(AdminBusinessFlowAction{Key: "handle_dispute", Label: "争议处理入口", Kind: "navigate", Permission: "risk:arbitration:list", Route: fmt.Sprintf("/project-audits/%d", ctx.projectAudits[0].ID), Payload: map[string]interface{}{"projectAuditId": ctx.projectAudits[0].ID}, RequiresReason: false})
+		appendAction(navigateAction("handle_dispute", "争议处理入口", "risk:arbitration:list", fmt.Sprintf("/project-audits/%d", ctx.projectAudits[0].ID), "risk", "dispute", map[string]interface{}{"projectAuditId": ctx.projectAudits[0].ID}))
 	} else if ctx.project != nil && (len(ctx.arbitrations) > 0 || len(ctx.riskWarnings) > 0 || isProjectDisputed(ctx.project)) {
-		appendAction(AdminBusinessFlowAction{Key: "handle_dispute", Label: "争议处理入口", Kind: "navigate", Permission: "risk:arbitration:list", Route: "/project-audits", Payload: map[string]interface{}{"projectId": ctx.project.ID}, RequiresReason: false})
+		appendAction(navigateAction("handle_dispute", "争议处理入口", "risk:arbitration:list", "/project-audits", "risk", "dispute", map[string]interface{}{"projectId": ctx.project.ID}))
 	}
 
 	return actions
@@ -1160,6 +1214,7 @@ func (ctx *adminBusinessFlowContext) toDetail() *AdminBusinessFlowDetail {
 		Project:                 ctx.project,
 		Milestones:              ctx.milestones,
 		Orders:                  orderSnapshots,
+		PaymentOrders:           ctx.paymentOrders,
 		ChangeOrders:            ctx.changeOrders,
 		EscrowAccount:           ctx.escrow,
 		Transactions:            ctx.transactions,
@@ -1406,9 +1461,12 @@ func summarizeRiskSnapshot(ctx *adminBusinessFlowContext) *AdminBusinessFlowRisk
 		}
 	}
 	switch {
-	case snapshot.HasDispute || snapshot.HasOpenArbitration || snapshot.HasOpenAudit:
+	case snapshot.HasDispute || snapshot.HasOpenArbitration:
 		snapshot.Status = "disputed"
 		snapshot.Summary = "项目存在争议/仲裁/审计流程，需优先人工介入"
+	case snapshot.HasOpenAudit:
+		snapshot.Status = "audit_open"
+		snapshot.Summary = "项目存在待处理审计流程，需优先人工介入"
 	case snapshot.PaymentPaused:
 		snapshot.Status = "payment_paused"
 		snapshot.Summary = coalesceString(strings.TrimSpace(snapshot.PaymentPausedReason), "存在待支付施工分期，施工推进暂停")
@@ -1416,7 +1474,7 @@ func summarizeRiskSnapshot(ctx *adminBusinessFlowContext) *AdminBusinessFlowRisk
 		snapshot.Status = "refund_pending"
 		snapshot.Summary = "存在待审核退款申请"
 	case snapshot.HasOpenWarning:
-		snapshot.Status = "warning"
+		snapshot.Status = "warning_open"
 		snapshot.Summary = "存在待处理风险预警"
 	}
 	return snapshot

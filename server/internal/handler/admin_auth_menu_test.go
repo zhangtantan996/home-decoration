@@ -8,11 +8,13 @@ import (
 
 func TestAdminMenuTreeDeduplicatesVisiblePaths(t *testing.T) {
 	menus := []model.SysMenu{
-		{ID: 200, ParentID: 170, Title: "变更与结算", Type: 2, Path: "/orders", Sort: 5, Visible: true, Status: 1},
 		{ID: 50, ParentID: 0, Title: "项目管理", Type: 1, Path: "/projects", Sort: 40, Visible: true, Status: 1},
 		{ID: 51, ParentID: 50, Title: "工地列表", Type: 2, Path: "/projects/list", Sort: 1, Visible: true, Status: 1},
 		{ID: 170, ParentID: 0, Title: "报价ERP", Type: 1, Path: "/projects/quotes", Sort: 44, Visible: true, Status: 1},
-		{ID: 56, ParentID: 0, Title: "订单控制台", Type: 2, Path: "/orders", Sort: 45, Visible: true, Status: 1},
+		{ID: 56, ParentID: 180, Title: "订单控制台", Type: 2, Path: "/orders", Sort: 1, Visible: true, Status: 1},
+		{ID: 57, ParentID: 56, Title: "查看订单控制台", Type: 3, Permission: "order:center:view", Sort: 1, Visible: false, Status: 1},
+		{ID: 180, ParentID: 0, Title: "订单管理", Type: 1, Path: "/order-management", Sort: 45, Visible: true, Status: 1},
+		{ID: 200, ParentID: 170, Title: "变更与结算", Type: 2, Path: "/orders", Sort: 5, Visible: true, Status: 1},
 	}
 
 	tree := buildMenuTree(uniqueAdminMenuNodes(menus), 0)
@@ -20,16 +22,22 @@ func TestAdminMenuTreeDeduplicatesVisiblePaths(t *testing.T) {
 	if countMenuPath(tree, "/orders") != 1 {
 		t.Fatalf("expected exactly one /orders menu, got tree=%#v", tree)
 	}
-	if findTopLevelTitle(tree, "订单控制台") {
-		t.Fatalf("expected legacy top-level order center to be removed from sidebar tree")
-	}
 
 	quoteRoot := findMenuByPath(tree, "/projects/quotes")
 	if quoteRoot == nil {
 		t.Fatalf("expected quote ERP root in sidebar tree")
 	}
-	if findMenuByPath(quoteRoot.Children, "/orders") == nil {
-		t.Fatalf("expected /orders to live under quote ERP root")
+	if findMenuByPath(quoteRoot.Children, "/orders") != nil {
+		t.Fatalf("expected /orders to be removed from quote ERP root")
+	}
+
+	orderRoot := findMenuByPath(tree, "/order-management")
+	if orderRoot == nil || orderRoot.Title != "订单管理" {
+		t.Fatalf("expected order management root in sidebar tree, got tree=%#v", tree)
+	}
+	orderCenter := findMenuByPath(orderRoot.Children, "/orders")
+	if orderCenter == nil || orderCenter.Title != "订单控制台" {
+		t.Fatalf("expected /orders to live under order management root, got root=%#v", orderRoot)
 	}
 }
 

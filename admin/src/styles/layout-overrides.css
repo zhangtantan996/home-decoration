@@ -372,6 +372,26 @@ body {
   min-width: 0;
 }
 
+.hz-order-center-shortcuts {
+  margin-bottom: 16px;
+}
+
+.hz-order-center-filter-sm {
+  width: 120px;
+}
+
+.hz-order-center-filter-md {
+  width: 130px;
+}
+
+.hz-order-center-detail-table {
+  margin-top: 16px;
+}
+
+.hz-identity-switcher-check {
+  color: var(--hz-success);
+}
+
 .hz-toolbar {
   display: flex;
   flex-wrap: wrap;

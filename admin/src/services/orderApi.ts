@@ -17,6 +17,9 @@ export interface AdminBusinessFlowAction {
   method?: string;
   apiPath?: string;
   route?: string;
+  targetRoute?: string;
+  targetModule?: string;
+  focus?: string;
   payload?: Record<string, unknown>;
   danger?: boolean;
   requiresReason: boolean;
@@ -36,6 +39,28 @@ export interface AdminBusinessFlowOrderSnapshot {
   expireAt?: string;
   paidAt?: string;
   paymentPlans?: AdminBusinessFlowPaymentPlan[];
+}
+
+export interface AdminBusinessFlowPaymentOrderSnapshot {
+  id: number;
+  bizType?: string;
+  bizId?: number;
+  channel?: string;
+  scene?: string;
+  fundScene?: string;
+  terminalType?: string;
+  subject?: string;
+  amount?: number;
+  amountCent?: number;
+  refundedAmount?: number;
+  refundedAmountCent?: number;
+  refundStatus?: string;
+  outTradeNo?: string;
+  providerTradeNo?: string;
+  status?: string;
+  expiredAt?: string;
+  paidAt?: string;
+  createdAt?: string;
 }
 
 export interface AdminBusinessFlowPaymentPlan {
@@ -375,6 +400,7 @@ export interface AdminBusinessFlowDetail {
   project?: AdminBusinessFlowProjectSnapshot;
   milestones?: AdminBusinessFlowMilestoneSnapshot[];
   orders?: AdminBusinessFlowOrderSnapshot[];
+  paymentOrders?: AdminBusinessFlowPaymentOrderSnapshot[];
   changeOrders?: AdminBusinessFlowChangeOrder[];
   escrowAccount?: AdminBusinessFlowEscrowSnapshot;
   transactions?: AdminBusinessFlowTransactionSnapshot[];

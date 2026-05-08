@@ -109,7 +109,7 @@ const IdentitySwitcher: React.FC = () => {
                         <span style={{ marginRight: 8 }}>{identityIcons[key] || identityIcons.owner}</span>
                         {getIdentityLabel(identity)}
                     </span>
-                    {isCurrent && <CheckCircleOutlined style={{ color: token.colorSuccess }} />}
+                    {isCurrent && <CheckCircleOutlined className="hz-identity-switcher-check" />}
                 </div>
             ),
             onClick: () => {
