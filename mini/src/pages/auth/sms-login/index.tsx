@@ -259,7 +259,7 @@ export default function SmsLoginPage() {
       <View className={`mini-sms-login__agreement ${agreementTouched && !agreed ? 'mini-sms-login__agreement--error' : ''}`}>
         <View className="mini-sms-login__agreement-row">
           <View
-            className={`mini-sms-login__checkbox ${agreed ? 'mini-sms-login__checkbox--checked' : ''}`}
+            className="mini-sms-login__checkbox-slot"
             onClick={() => {
               setAgreed((prev) => {
                 const next = !prev;
@@ -269,7 +269,9 @@ export default function SmsLoginPage() {
               setAgreementTouched(false);
             }}
           >
-            <View className="mini-sms-login__checkbox-inner" />
+            <View className={`mini-sms-login__checkbox ${agreed ? 'mini-sms-login__checkbox--checked' : ''}`}>
+              <View className="mini-sms-login__checkbox-inner" />
+            </View>
           </View>
           <View className="mini-sms-login__agreement-copy">
             <AgreementCopy onOpenAgreement={handleOpenAgreement} />
