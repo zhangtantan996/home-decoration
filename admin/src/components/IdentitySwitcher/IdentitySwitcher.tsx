@@ -1,11 +1,12 @@
 import React, { useEffect } from 'react';
-import { Dropdown, Badge, Button, message, Spin } from 'antd';
+import { Dropdown, Badge, Button, message, Spin, theme } from 'antd';
 import { UserOutlined, SwapOutlined, CheckCircleOutlined } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { useIdentityStore, type Identity } from '../../stores/identityStore';
 import { useAuthStore } from '../../stores/authStore';
 
 const IdentitySwitcher: React.FC = () => {
+    const { token } = theme.useToken();
     const { identities, currentIdentity, loading, error, fetchIdentities, switchIdentity, clearError } = useIdentityStore();
     const { admin } = useAuthStore();
 
@@ -45,6 +46,8 @@ const IdentitySwitcher: React.FC = () => {
                 return '工长';
             case 'provider':
                 return '服务商';
+            case 'supervisor':
+                return '监理';
             case 'admin':
                 return '管理员';
             default:
@@ -73,16 +76,26 @@ const IdentitySwitcher: React.FC = () => {
         designer: '🎨',
         company: '🏬',
         foreman: '👷',
+        supervisor: '🔍',
         admin: '👨‍💼',
     };
 
-    const identityColors: Record<string, string> = {
-        owner: '#1890ff',
-        provider: '#52c41a',
-        designer: '#722ed1',
-        company: '#13c2c2',
-        foreman: '#fa8c16',
-        admin: '#f5222d',
+    const getIdentityColor = (key: string) => {
+        switch (key) {
+            case 'provider':
+            case 'company':
+            case 'supervisor':
+                return token.colorInfo;
+            case 'designer':
+                return token.colorPrimary;
+            case 'foreman':
+                return token.colorWarning;
+            case 'admin':
+                return token.colorError;
+            case 'owner':
+            default:
+                return token.colorSuccess;
+        }
     };
 
     const menuItems: MenuProps['items'] = identities.map((identity) => {
@@ -96,7 +109,7 @@ const IdentitySwitcher: React.FC = () => {
                         <span style={{ marginRight: 8 }}>{identityIcons[key] || identityIcons.owner}</span>
                         {getIdentityLabel(identity)}
                     </span>
-                    {isCurrent && <CheckCircleOutlined style={{ color: '#52c41a' }} />}
+                    {isCurrent && <CheckCircleOutlined style={{ color: token.colorSuccess }} />}
                 </div>
             ),
             onClick: () => {
@@ -140,7 +153,7 @@ const IdentitySwitcher: React.FC = () => {
                     <Spin size="small" />
                 ) : (
                     <>
-                        <Badge color={identityColors[currentIdentityKey] || '#1890ff'} />
+                        <Badge color={getIdentityColor(currentIdentityKey)} />
                         <span>{currentDisplayName}</span>
                     </>
                 )}

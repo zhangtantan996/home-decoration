@@ -106,7 +106,7 @@ func (s *TokenService) RefreshTokens(refreshToken string) (*RefreshTokensRespons
 		roleCtx = resolvedCtx
 	}
 
-	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, sid)
+	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx, sid)
 	if err != nil {
 		return nil, err
 	}

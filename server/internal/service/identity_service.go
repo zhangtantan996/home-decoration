@@ -29,6 +29,14 @@ type IdentityDTO struct {
 	CreatedAt       time.Time  `json:"createdAt"`
 }
 
+func identityWithAssociations(db *gorm.DB) *gorm.DB {
+	return db.
+		Preload("Provider").
+		Preload("Worker").
+		Preload("SupervisorProfile").
+		Preload("AdminProfile")
+}
+
 // SwitchIdentityRequest 切换身份请求
 type SwitchIdentityRequest struct {
 	IdentityID  uint64 `json:"identityId"`  // 目标身份ID（移动端）
@@ -186,6 +194,8 @@ func (s *IdentityService) ListIdentities(userID uint64) ([]IdentityDTO, error) {
 			}
 		case "admin":
 			dto.DisplayName = "管理员"
+		case "supervisor":
+			dto.DisplayName = "监理"
 		default:
 			dto.DisplayName = identity.IdentityType
 		}
@@ -288,7 +298,7 @@ func (s *IdentityService) SwitchIdentity(userID uint64, req *SwitchIdentityReque
 		return nil, fmt.Errorf("解析目标身份失败: %w", err)
 	}
 
-	tokenPair, err := issueTokenPairV2(userID, "", ctx.ActiveRole, ctx.ProviderID, ctx.ProviderSubType, "")
+	tokenPair, err := issueTokenPairV2(userID, "", ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("生成 token 失败: %w", err)
 	}
@@ -310,8 +320,12 @@ func (s *IdentityService) SwitchIdentity(userID uint64, req *SwitchIdentityReque
 // ApplyIdentity 申请新身份
 func (s *IdentityService) ApplyIdentity(userID uint64, req *ApplyIdentityRequest) error {
 	normalizedRole := normalizeRoleInput(req.IdentityType)
-	if normalizedRole != "provider" {
-		return errors.New("当前仅支持申请服务商身份")
+	if normalizedRole != "provider" && normalizedRole != "supervisor" {
+		return errors.New("当前仅支持申请服务商或监理身份")
+	}
+
+	if normalizedRole == "supervisor" {
+		return errors.New("监理身份为平台邀请制，请联系管理员开通")
 	}
 
 	rawProviderSubType := strings.ToLower(strings.TrimSpace(req.ProviderSubType))
@@ -403,6 +417,8 @@ func (s *IdentityService) GetIdentityByType(userID uint64, identityType string) 
 	err := repository.DB.Where("user_id = ? AND status = ?", userID, 1).
 		Preload("Provider").
 		Preload("Worker").
+		Preload("SupervisorProfile").
+		Preload("AdminProfile").
 		Order("id ASC").
 		Find(&identities).Error
 
@@ -422,6 +438,38 @@ func (s *IdentityService) GetIdentityByType(userID uint64, identityType string) 
 	}
 
 	return nil, gorm.ErrRecordNotFound
+}
+
+func (s *IdentityService) GetIdentityByID(userID uint64, identityID uint64) (*model.UserIdentity, error) {
+	if userID == 0 || identityID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	var identity model.UserIdentity
+	if err := identityWithAssociations(repository.DB).
+		Where("id = ? AND user_id = ? AND status = ?", identityID, userID, 1).
+		First(&identity).Error; err != nil {
+		return nil, err
+	}
+	return &identity, nil
+}
+
+func (s *IdentityService) GetIdentityByTypeAndRef(userID uint64, identityType string, identityRefID uint64) (*model.UserIdentity, error) {
+	if userID == 0 || identityRefID == 0 {
+		return nil, gorm.ErrRecordNotFound
+	}
+	normalizedRole, _ := normalizeRoleValue(identityType)
+	if normalizedRole == "" {
+		return nil, gorm.ErrRecordNotFound
+	}
+
+	var identity model.UserIdentity
+	if err := identityWithAssociations(repository.DB).
+		Where("user_id = ? AND identity_type = ? AND identity_ref_id = ? AND status = ?", userID, normalizedRole, identityRefID, 1).
+		First(&identity).Error; err != nil {
+		return nil, err
+	}
+	return &identity, nil
 }
 
 func normalizeAuditRole(raw string) string {
@@ -548,42 +596,48 @@ func (s *IdentityService) ApproveIdentityApplication(applicationID, adminID uint
 		}
 
 		var provider model.Provider
-		err := tx.Where("user_id = ?", app.UserID).First(&provider).Error
-		if err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
+		providerErr := tx.Where("source_application_id = ? AND user_id = ?", app.ID, app.UserID).First(&provider).Error
+		if providerErr != nil {
+			if !errors.Is(providerErr, gorm.ErrRecordNotFound) {
+				return providerErr
 			}
 
 			provider = model.Provider{
-				UserID:       app.UserID,
-				ProviderType: providerType,
-				DisplayName:  ResolveProviderStoredDisplayName(providerType, "", user.Nickname),
-				SubType:      providerSubType,
-				Status:       1,
-				Verified:     true,
+				UserID:              app.UserID,
+				SourceApplicationID: app.ID,
+				ProviderType:        providerType,
+				DisplayName:         ResolveProviderStoredDisplayName(providerType, "", user.Nickname),
+				SubType:             providerSubType,
+				Status:              1,
+				Verified:            true,
 			}
 			if err := tx.Create(&provider).Error; err != nil {
 				return err
 			}
 		} else {
 			if err := tx.Model(&provider).Updates(map[string]interface{}{
-				"provider_type": providerType,
-				"display_name":  ResolveProviderStoredDisplayName(providerType, provider.CompanyName, user.Nickname),
-				"sub_type":      providerSubType,
-				"status":        1,
-				"verified":      true,
+				"user_id":               app.UserID,
+				"source_application_id": app.ID,
+				"provider_type":         providerType,
+				"display_name":          ResolveProviderStoredDisplayName(providerType, provider.CompanyName, user.Nickname),
+				"sub_type":              providerSubType,
+				"status":                1,
+				"verified":              true,
 			}).Error; err != nil {
 				return err
 			}
 		}
 
+		providerID := provider.ID
 		var identity model.UserIdentity
-		if err := tx.Where("user_id = ? AND identity_type = ?", app.UserID, "provider").First(&identity).Error; err != nil {
-			if !errors.Is(err, gorm.ErrRecordNotFound) {
-				return err
+		identityErr := tx.Where("user_id = ? AND identity_type = ? AND identity_ref_id = ?", app.UserID, "provider", providerID).First(&identity).Error
+		if errors.Is(identityErr, gorm.ErrRecordNotFound) {
+			identityErr = tx.Where("user_id = ? AND identity_type = ? AND identity_ref_id IS NULL", app.UserID, "provider").Order("id ASC").First(&identity).Error
+		}
+		if identityErr != nil {
+			if !errors.Is(identityErr, gorm.ErrRecordNotFound) {
+				return identityErr
 			}
-
-			providerID := provider.ID
 			newIdentity := model.UserIdentity{
 				UserID:        app.UserID,
 				IdentityType:  "provider",
@@ -597,7 +651,6 @@ func (s *IdentityService) ApproveIdentityApplication(applicationID, adminID uint
 				return err
 			}
 		} else {
-			providerID := provider.ID
 			if err := tx.Model(&identity).Updates(map[string]interface{}{
 				"identity_ref_id": providerID,
 				"status":          1,
@@ -693,6 +746,8 @@ func normalizeRoleInput(raw string) string {
 		return "owner"
 	case "provider", "designer", "company", "foreman", "worker":
 		return "provider"
+	case "supervisor":
+		return "supervisor"
 	case "admin":
 		return "admin"
 	default:

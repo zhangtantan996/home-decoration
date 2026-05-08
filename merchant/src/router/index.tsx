@@ -15,6 +15,7 @@ import MerchantBookingSiteSurvey from '../pages/merchant/MerchantBookingSiteSurv
 import MerchantProposals from '../pages/merchant/MerchantProposals';
 import MerchantQuoteLists from '../pages/merchant/MerchantQuoteLists';
 import MerchantQuoteDetail from '../pages/merchant/MerchantQuoteDetail';
+import MerchantQuoteTasks from '../pages/merchant/MerchantQuoteTasks';
 import MerchantProjectExecution from '../pages/merchant/MerchantProjectExecution';
 import MerchantProjectDispute from '../pages/merchant/MerchantProjectDispute';
 import MerchantProjects from '../pages/merchant/MerchantProjects';
@@ -79,6 +80,7 @@ const router = createBrowserRouter([
               { path: '/designer-tasks', element: <MerchantDesignerTasks /> },
               // Legacy compatibility surface for old quote-pk / crew-task deep links.
               { path: '/crew-tasks', element: <MerchantCrewTasks /> },
+              { path: '/quote-pk/tasks', element: <MerchantQuoteTasks /> },
               { path: '/leads', element: <Navigate to="/bookings" replace /> },
               { path: '/bookings', element: <MerchantBookings /> },
               { path: '/bookings/:id/site-survey', element: <MerchantBookingSiteSurvey /> },

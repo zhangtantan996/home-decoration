@@ -33,9 +33,9 @@ const sourceTypeLabel = (value?: string): string => {
         case 'proposal_internal_draft':
             return '方案内部草稿';
         case 'admin_imported':
-            return 'Admin 导入';
+            return '平台导入';
         case 'legacy_quote_pk_rebuild':
-            return 'legacy quote-pk 重建';
+            return '报价补录';
         default:
             return value || '未标记';
     }
@@ -247,7 +247,7 @@ const MerchantQuoteLists: React.FC = () => {
         <MerchantPageShell>
             <MerchantPageHeader
                 title="报价清单"
-                description="施工报价、缺价补齐、改价复核、后续变更与结算统一在这里进入。旧 quote-pk 仅保留兼容深链，不再作为现行业务入口。"
+                description="施工报价、缺价补齐、改价复核、后续变更与结算统一在这里处理。已归档报价仅支持查看。"
                 extra={(
                     <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
                         刷新
@@ -261,7 +261,7 @@ const MerchantQuoteLists: React.FC = () => {
                         <Alert
                             type="info"
                             showIcon
-                            message="只保留统一施工报价主链"
+                            message="施工报价统一处理"
                             description="用户确认后的报价版本会锁定为成交快照，后续金额变化统一走项目变更单。"
                         />
                         <Space wrap>
@@ -293,7 +293,7 @@ const MerchantQuoteLists: React.FC = () => {
                                     { value: 'missing', label: '存在缺价项' },
                                     { value: 'deviation', label: '存在偏差项' },
                                     { value: 'blocked', label: '暂不可提交' },
-                                    { value: 'legacy', label: 'legacy 重建单' },
+                                    { value: 'legacy', label: '报价补录单' },
                                 ]}
                             />
                         </Space>

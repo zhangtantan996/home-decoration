@@ -85,13 +85,15 @@ const Login: React.FC = () => {
       return;
     }
 
-    if (!payload.accessToken || !payload.admin) {
+    const accessToken = payload.accessToken || payload.token;
+
+    if (!accessToken || !payload.admin) {
       message.error('登录响应缺少会话信息');
       return;
     }
 
     setSession({
-      accessToken: payload.accessToken,
+      accessToken,
       refreshToken: payload.refreshToken,
       admin: payload.admin,
       permissions: payload.permissions || [],

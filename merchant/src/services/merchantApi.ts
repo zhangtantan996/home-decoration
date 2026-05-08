@@ -89,6 +89,11 @@ export interface MerchantProviderSession {
     completionRequired?: boolean;
     onboardingStatus?: MerchantOnboardingStatus;
     completionApplicationId?: number;
+    // 统一身份中心字段
+    activeRole?: string;
+    userId?: number;
+    identityId?: number;
+    identityRefId?: number;
 }
 
 export interface MerchantLoginData {
@@ -102,6 +107,10 @@ export interface MerchantLoginData {
     onboardingStatus?: MerchantOnboardingStatus;
     completionApplicationId?: number;
     redirectToCompletion?: boolean;
+    // 统一身份中心字段
+    activeRole?: string;
+    identityId?: number;
+    identityRefId?: number;
 }
 
 export interface MerchantProviderInfo {

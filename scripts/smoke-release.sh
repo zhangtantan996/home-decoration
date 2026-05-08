@@ -8,5 +8,6 @@ node ./scripts/testing/run_command_suite.mjs \
   --suite smoke-release \
   --step "api-health::./scripts/health-smoke.sh" \
   --step "user-web-fixture::npm run fixture:user-web" \
+  --step "reset-rate-limit::npm run reset:user-web:rate-limit" \
   --step "identity-api-acceptance::npm run test:identity:acceptance:api" \
   --step "user-web-api-smoke::npm run smoke:user-web:api"

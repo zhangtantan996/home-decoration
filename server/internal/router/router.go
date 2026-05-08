@@ -781,7 +781,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/finance/freeze", financeEscrowFreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminFreezeFunds)
 			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUnfreezeFunds)
 			admin.POST("/finance/manual-release", financeTransactionApprovePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminManualReleaseFunds)
-			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, handler.AdminWithdraw)
+			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminWithdraw)
 
 			// 对账报表管理
 			admin.GET("/reconciliation/list", financeTransactionListPerm, handler.AdminReconciliationList)
@@ -1042,7 +1042,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.POST("/quote-tasks/:id/recommend-foremen", handler.MerchantRecommendForemen)
 			merchant.POST("/quote-tasks/:id/select-foremen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
 
-			// Legacy quote-pk 历史兼容区：商家写入口固定 retired，仅保留深链兼容。
+			// Legacy quote-pk 历史兼容区：保留商家历史深链和补交流程，不再作为现行主链扩展入口。
 			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                         // 商家获取报价任务列表
 			merchant.POST("/quote-pk/tasks/:id/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
 			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)

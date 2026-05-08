@@ -42,7 +42,7 @@ func TestGetFullImageURL_NormalizesStoragePublicBaseURLToHTTPSInProduction(t *te
 	}
 }
 
-func TestGetFullImageURL_LeavesExternalHTTPURLUntouched(t *testing.T) {
+func TestGetFullImageURL_LeavesUntrustedExternalURLUntouched(t *testing.T) {
 	t.Setenv("APP_ENV", config.AppEnvProduction)
 
 	cfg := config.GetConfig()
@@ -54,6 +54,35 @@ func TestGetFullImageURL_LeavesExternalHTTPURLUntouched(t *testing.T) {
 	})
 
 	input := "http://third-party.example.com/assets/demo.jpg"
+	if got := GetFullImageURL(input); got != input {
+		t.Fatalf("GetFullImageURL() = %q, want %q", got, input)
+	}
+}
+
+func TestGetFullImageURL_BlocksJavascriptScheme(t *testing.T) {
+	if got := GetFullImageURL("javascript:alert(1)"); got != "" {
+		t.Fatalf("GetFullImageURL() = %q, want empty (blocked javascript:)", got)
+	}
+}
+
+func TestGetFullImageURL_BlocksDataScheme(t *testing.T) {
+	if got := GetFullImageURL("data:text/html,<script>alert(1)</script>"); got != "" {
+		t.Fatalf("GetFullImageURL() = %q, want empty (blocked data:)", got)
+	}
+}
+
+func TestGetFullImageURL_AllowsConfiguredPublicAssetHost(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	cfg := config.GetConfig()
+	previous := *cfg
+	cfg.Server.PublicURL = "https://api.hezeyunchuang.com"
+	cfg.Storage.PublicBaseURL = ""
+	t.Cleanup(func() {
+		*cfg = previous
+	})
+
+	input := "https://api.hezeyunchuang.com/uploads/cases/demo.jpg"
 	if got := GetFullImageURL(input); got != input {
 		t.Fatalf("GetFullImageURL() = %q, want %q", got, input)
 	}

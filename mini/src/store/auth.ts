@@ -11,6 +11,10 @@ export interface AuthUser {
   userType: number;
   activeRole?: string;
   providerSubType?: 'designer' | 'company' | 'foreman';
+  identityId?: number;
+  identityRefId?: number;
+  supervisorId?: number;
+  adminProfileId?: number;
 }
 
 interface AuthState {

@@ -227,14 +227,20 @@ func findLegacyProviderLoginCandidate(tx *gorm.DB, user model.User) (*model.Prov
 		return nil, err
 	}
 
-	var identity model.UserIdentity
-	if err := tx.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeProvider).
+	var identities []model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ? AND status = ?", user.ID, merchantIdentityTypeProvider, merchantIdentityStatusActive).
 		Order("verified DESC, updated_at DESC, id DESC").
-		First(&identity).Error; err == nil && identity.IdentityRefID != nil && *identity.IdentityRefID > 0 {
+		Find(&identities).Error; err != nil {
+		return nil, err
+	}
+	for _, identity := range identities {
+		if identity.IdentityRefID == nil || *identity.IdentityRefID == 0 {
+			continue
+		}
 		var provider model.Provider
 		if err := tx.First(&provider, *identity.IdentityRefID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
+				continue
 			}
 			return nil, err
 		}
@@ -244,12 +250,13 @@ func findLegacyProviderLoginCandidate(tx *gorm.DB, user model.User) (*model.Prov
 			}
 			provider.UserID = user.ID
 		}
+		if provider.UserID != user.ID {
+			continue
+		}
 		if err := normalizeLegacyClaimedProviderState(tx, &provider); err != nil {
 			return nil, err
 		}
 		return &provider, nil
-	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
 	}
 
 	return nil, nil
@@ -299,14 +306,20 @@ func findLegacyMaterialShopLoginCandidate(tx *gorm.DB, user model.User) (*model.
 		return nil, err
 	}
 
-	var identity model.UserIdentity
-	if err := tx.Where("user_id = ? AND identity_type = ?", user.ID, merchantIdentityTypeMaterial).
+	var identities []model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ? AND status = ?", user.ID, merchantIdentityTypeMaterial, merchantIdentityStatusActive).
 		Order("verified DESC, updated_at DESC, id DESC").
-		First(&identity).Error; err == nil && identity.IdentityRefID != nil && *identity.IdentityRefID > 0 {
+		Find(&identities).Error; err != nil {
+		return nil, err
+	}
+	for _, identity := range identities {
+		if identity.IdentityRefID == nil || *identity.IdentityRefID == 0 {
+			continue
+		}
 		var shop model.MaterialShop
 		if err := tx.First(&shop, *identity.IdentityRefID).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return nil, nil
+				continue
 			}
 			return nil, err
 		}
@@ -316,12 +329,13 @@ func findLegacyMaterialShopLoginCandidate(tx *gorm.DB, user model.User) (*model.
 			}
 			shop.UserID = user.ID
 		}
+		if shop.UserID != user.ID {
+			continue
+		}
 		if err := normalizeLegacyClaimedMaterialShopState(tx, &shop); err != nil {
 			return nil, err
 		}
 		return &shop, nil
-	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, err
 	}
 
 	return nil, nil

@@ -2,6 +2,7 @@ package service
 
 import (
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 
@@ -150,6 +151,45 @@ func TestNotificationServiceCreatePublishesNewAndUnreadCount(t *testing.T) {
 	unreadData := decodeUnreadCountData(t, unreadEvent.Data)
 	if unreadData.Count != 1 {
 		t.Fatalf("expected unread count 1, got %d", unreadData.Count)
+	}
+}
+
+func TestNotificationServiceCreateTxRollbackDoesNotPublishRealtime(t *testing.T) {
+	db := setupNotificationServiceRealtimeTestDB(t)
+	_, client := setupNotificationRealtimePublisherTest(t, "user", 66)
+
+	svc := &NotificationService{}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		if createErr := svc.CreateTx(tx, &CreateNotificationInput{
+			UserID:      66,
+			UserType:    "user",
+			Title:       "事务通知",
+			Content:     "应回滚",
+			Type:        model.NotificationTypeProposalSubmitted,
+			RelatedID:   456,
+			RelatedType: "proposal",
+			ActionURL:   "/proposals/456",
+		}); createErr != nil {
+			return createErr
+		}
+		return errors.New("force rollback")
+	})
+	if err == nil {
+		t.Fatal("expected rollback error")
+	}
+
+	var count int64
+	if countErr := db.Model(&model.Notification{}).Count(&count).Error; countErr != nil {
+		t.Fatalf("count notifications: %v", countErr)
+	}
+	if count != 0 {
+		t.Fatalf("expected rollback to keep notification table empty, got %d", count)
+	}
+
+	select {
+	case payload := <-client.Send:
+		t.Fatalf("unexpected realtime payload on rollback: %s", string(payload))
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

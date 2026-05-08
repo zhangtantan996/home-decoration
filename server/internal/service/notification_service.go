@@ -47,13 +47,20 @@ func readBookingProviderRoleText(providerType string) string {
 
 // Create 创建通知
 func (s *NotificationService) Create(input *CreateNotificationInput) error {
+	return s.CreateTx(repository.DB, input)
+}
+
+func (s *NotificationService) CreateTx(tx *gorm.DB, input *CreateNotificationInput) error {
+	if tx == nil {
+		tx = repository.DB
+	}
 	if input.UserID == 0 {
 		return errors.New("用户ID不能为空")
 	}
 	if input.Title == "" || input.Content == "" {
 		return errors.New("标题和内容不能为空")
 	}
-	shouldCreate, err := shouldCreateNotificationTx(repository.DB, input)
+	shouldCreate, err := shouldCreateNotificationTx(tx, input)
 	if err != nil {
 		return err
 	}
@@ -63,11 +70,15 @@ func (s *NotificationService) Create(input *CreateNotificationInput) error {
 
 	notification := buildNotificationRecord(input)
 
-	if err := repository.DB.Create(notification).Error; err != nil {
+	if err := tx.Create(notification).Error; err != nil {
 		return err
 	}
 
-	s.publishNewNotification(notification)
+	// Tx path may still roll back; avoid emitting realtime before commit.
+	// Non-transactional create keeps immediate realtime behavior.
+	if tx == repository.DB {
+		s.publishNewNotification(notification)
+	}
 	return nil
 }
 

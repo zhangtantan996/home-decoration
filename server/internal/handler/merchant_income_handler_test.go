@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -10,6 +12,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/utils"
 )
 
 func TestMerchantIncomeListFiltersByProjectID(t *testing.T) {
@@ -189,5 +192,160 @@ func TestGenerateWithdrawOrderNoFormat(t *testing.T) {
 	}
 	if orderNo[0] != 'W' {
 		t.Fatalf("expected W prefix, got %s", orderNo)
+	}
+}
+
+func TestMerchantBankAccountListMasksEncryptedAccountNo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	if err := utils.InitCrypto(); err != nil {
+		t.Fatalf("init crypto: %v", err)
+	}
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.MerchantBankAccount{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	const providerID = uint64(288)
+	const plainAccountNo = "6222021234567890123"
+	account := model.MerchantBankAccount{
+		ProviderID:  providerID,
+		AccountName: "测试商家",
+		AccountNo:   plainAccountNo,
+		BankName:    "建设银行",
+		BranchName:  "杭州西湖支行",
+		IsDefault:   true,
+		Status:      1,
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create bank account: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/merchant/bank-accounts", nil)
+	c.Set("providerId", providerID)
+
+	MerchantBankAccountList(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d, message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		List []struct {
+			AccountNo string `json:"accountNo"`
+		} `json:"list"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+
+	if len(data.List) != 1 {
+		t.Fatalf("expected one bank account, got %d", len(data.List))
+	}
+	if got, want := data.List[0].AccountNo, utils.MaskBankAccount(plainAccountNo); got != want {
+		t.Fatalf("expected masked account no %q, got %q", want, got)
+	}
+}
+
+func TestMerchantWithdrawCreateStoresMaskedBankAccount(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	t.Setenv("SMS_FIXED_CODE_MODE", "true")
+	t.Setenv("SMS_FIXED_CODE", "654321")
+	if err := utils.InitCrypto(); err != nil {
+		t.Fatalf("init crypto: %v", err)
+	}
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MerchantIncome{}, &model.MerchantWithdraw{}, &model.MerchantBankAccount{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() {
+		repository.DB = previousDB
+	})
+
+	user := model.User{
+		Base:  model.Base{ID: 301},
+		Phone: "13800138000",
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	const providerID = uint64(302)
+	provider := model.Provider{
+		Base:       model.Base{ID: providerID},
+		UserID:     user.ID,
+		Status:     1,
+		SubType:    "personal",
+		EntityType: "personal",
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	const plainAccountNo = "6222021234567890123"
+	account := model.MerchantBankAccount{
+		Base:        model.Base{ID: 303},
+		ProviderID:  providerID,
+		AccountName: "测试商家",
+		AccountNo:   plainAccountNo,
+		BankName:    "中国银行",
+		BranchName:  "上海浦东支行",
+		IsDefault:   true,
+		Status:      1,
+	}
+	if err := db.Create(&account).Error; err != nil {
+		t.Fatalf("create bank account: %v", err)
+	}
+
+	income := model.MerchantIncome{
+		Base:       model.Base{ID: 304},
+		ProviderID: providerID,
+		Type:       "construction",
+		Amount:     500,
+		NetAmount:  500,
+		Status:     1,
+	}
+	if err := db.Create(&income).Error; err != nil {
+		t.Fatalf("create income: %v", err)
+	}
+
+	body := bytes.NewBufferString(`{"amount":120,"bankAccountId":303,"verificationCode":"654321"}`)
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/merchant/withdraws", body)
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("providerId", providerID)
+
+	MerchantWithdrawCreate(c)
+
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: %d, message=%s", resp.Code, resp.Message)
+	}
+
+	var withdraw model.MerchantWithdraw
+	if err := db.Where("provider_id = ?", providerID).First(&withdraw).Error; err != nil {
+		t.Fatalf("query withdraw: %v", err)
+	}
+	if got, want := withdraw.BankAccount, utils.MaskBankAccount(plainAccountNo); got != want {
+		t.Fatalf("expected stored masked bank account %q, got %q", want, got)
+	}
+	if withdraw.BankAccount == plainAccountNo {
+		t.Fatalf("expected withdraw bank account to avoid plain storage")
 	}
 }
