@@ -166,6 +166,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.9.16_add_provider_display_name.sql"
     "server/migrations/v1.9.18_add_user_real_name_verification_fields.sql"
     "server/migrations/v1.9.19_add_enterprise_license_verification_fields.sql"
+    "server/migrations/v1.9.20_add_region_service_enabled_and_backfill.sql"
     "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
     "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
     "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
