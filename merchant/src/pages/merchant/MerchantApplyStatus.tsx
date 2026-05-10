@@ -3,6 +3,7 @@ import { Alert, Form, Input, Button, message, Layout, Typography, Result, Spin, 
 import { PhoneOutlined, ArrowLeftOutlined, ClockCircleOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
+    MerchantApiError,
     materialShopApplyApi,
     merchantApplyApi,
     type MaterialShopApplyStatusData,
@@ -14,6 +15,13 @@ import { readSafeErrorMessage } from '../../utils/userFacingText';
 const { Content } = Layout;
 const { Title, Text, Paragraph } = Typography;
 const { useBreakpoint } = Grid;
+
+const isNotFoundError = (error: unknown) => {
+    if (error instanceof MerchantApiError) {
+        return error.code === 404 || error.status === 404;
+    }
+    return false;
+};
 
 const MerchantApplyStatus: React.FC = () => {
     const [searchParams] = useSearchParams();
@@ -40,6 +48,8 @@ const MerchantApplyStatus: React.FC = () => {
                 setApplicationStatus(providerResult.value);
             } else if (materialResult.status === 'fulfilled') {
                 setApplicationStatus(materialResult.value);
+            } else if (isNotFoundError(providerResult.reason) && isNotFoundError(materialResult.reason)) {
+                setApplicationStatus(null);
             } else {
                 throw new Error('查询失败，请稍后重试');
             }
@@ -114,17 +124,17 @@ const MerchantApplyStatus: React.FC = () => {
 
         return (
             <div style={{
-                marginTop: 32,
-                padding: '32px 24px',
+                marginTop: screens.xs ? 24 : 28,
+                padding: screens.xs ? '24px 16px' : '28px 24px',
                 background: '#f8fafc',
                 borderRadius: 16,
                 border: '1px solid #f1f5f9'
             }}>
-                <div style={{ textAlign: 'center', marginBottom: 32 }}>
-                    <div style={{ marginBottom: 16 }}>
+                <div style={{ textAlign: 'center', marginBottom: screens.xs ? 24 : 28 }}>
+                    <div style={{ marginBottom: 12 }}>
                         {getStatusIcon(status)}
                     </div>
-                    <Title level={3} style={{ marginTop: 0, marginBottom: 16, color: '#1a1a1a' }}>
+                    <Title level={3} style={{ marginTop: 0, marginBottom: 12, color: '#1a1a1a' }}>
                         {statusText}
                     </Title>
                     {getStatusTag(status)}
@@ -141,7 +151,7 @@ const MerchantApplyStatus: React.FC = () => {
                             description: auditedAt ? formatServerDateTime(auditedAt, '') : '',
                         },
                     ]}
-                    style={{ marginBottom: 40 }}
+                    style={{ marginBottom: screens.xs ? 28 : 32 }}
                     direction={screens.xs ? 'vertical' : 'horizontal'}
                     size={screens.xs ? 'small' : 'default'}
                     aria-label="审核流程步骤"
@@ -152,7 +162,7 @@ const MerchantApplyStatus: React.FC = () => {
                         status="info"
                         title="申请正在加急审核中"
                         subTitle="预计1-3个工作日内完成审核，请耐心等待。审核结果也将通过短信通知您。"
-                        style={{ padding: 0 }}
+                        style={{ padding: screens.xs ? 0 : '4px 0 0' }}
                     />
                 )}
 
@@ -256,7 +266,7 @@ const MerchantApplyStatus: React.FC = () => {
     };
 
     return (
-        <Layout style={{ minHeight: '100vh', background: '#7361a6' }}>
+        <Layout style={{ height: '100vh', background: '#7361a6', overflowY: 'auto', overflowX: 'hidden' }}>
             <div style={{
                 position: 'fixed',
                 top: 0,
@@ -271,7 +281,8 @@ const MerchantApplyStatus: React.FC = () => {
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'flex-start',
-                padding: screens.xs ? '24px 16px' : '64px 24px',
+                minHeight: '100vh',
+                padding: screens.xs ? '20px 16px 32px' : '40px 24px 48px',
                 position: 'relative',
                 zIndex: 1
             }}>
@@ -280,12 +291,12 @@ const MerchantApplyStatus: React.FC = () => {
                         width: '100%',
                         maxWidth: 680,
                         background: '#ffffff',
-                        borderRadius: 24,
+                        borderRadius: screens.xs ? 20 : 24,
                         boxShadow: '0 20px 40px rgba(0,0,0,0.15)',
-                        padding: screens.xs ? '32px 20px' : '48px 56px'
+                        padding: screens.xs ? '28px 20px' : '40px 56px'
                     }}
                 >
-                    <div style={{ marginBottom: 32, position: 'relative' }}>
+                    <div style={{ marginBottom: screens.xs ? 24 : 28, position: 'relative' }}>
                         <Button
                             type="text"
                             icon={<ArrowLeftOutlined aria-hidden="true" />}
@@ -378,6 +389,7 @@ const MerchantApplyStatus: React.FC = () => {
                                 status="404"
                                 title="未找到您的申请记录"
                                 subTitle="系统未能找到与该手机号匹配的入驻记录。请确认手机号码是否正确，或者您可能尚未完成提交。"
+                                style={{ padding: screens.xs ? '24px 0' : '32px 0 8px' }}
                                 extra={(
                                     <Button
                                         type="primary"
