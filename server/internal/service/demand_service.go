@@ -564,7 +564,7 @@ func (s *DemandService) ListDemandCandidates(demandID uint64, page, pageSize int
 	if err != nil {
 		return nil, 0, errors.New("需求不存在")
 	}
-	targetCityCodes := resolveDemandTargetCityCodes(demand)
+	targetAreaCodes := resolveDemandTargetAreaCodes(demand)
 	var providers []model.Provider
 	if err := repository.DB.Where("status = ?", 1).Order("verified DESC, rating DESC, completed_cnt DESC").Find(&providers).Error; err != nil {
 		return nil, 0, err
@@ -573,7 +573,7 @@ func (s *DemandService) ListDemandCandidates(demandID uint64, page, pageSize int
 	for _, provider := range providers {
 		var user model.User
 		_ = repository.DB.First(&user, provider.UserID).Error
-		score, reasons := scoreDemandCandidate(demand, targetCityCodes, &provider)
+		score, reasons := scoreDemandCandidate(demand, targetAreaCodes, &provider)
 		items = append(items, DemandCandidateView{
 			Provider:    buildProviderSummary(provider, user),
 			MatchScore:  score,
@@ -600,7 +600,7 @@ func (s *DemandService) ListDemandCandidates(demandID uint64, page, pageSize int
 	return items[start:end], total, nil
 }
 
-func scoreDemandCandidate(demand *model.Demand, targetCityCodes []string, provider *model.Provider) (int, []string) {
+func scoreDemandCandidate(demand *model.Demand, targetAreaCodes []string, provider *model.Provider) (int, []string) {
 	score := 0
 	reasons := make([]string, 0, 4)
 	if provider.Verified {
@@ -608,7 +608,7 @@ func scoreDemandCandidate(demand *model.Demand, targetCityCodes []string, provid
 		reasons = append(reasons, "已认证服务商")
 	}
 	serviceAreas := parseServiceAreas(provider.ServiceArea)
-	if isDemandServiceAreaMatched(serviceAreas, demand, targetCityCodes) {
+	if isDemandServiceAreaMatched(serviceAreas, demand, targetAreaCodes) {
 		score += 30
 		reasons = append(reasons, "服务城市匹配")
 	}
@@ -638,7 +638,7 @@ func scoreDemandCandidate(demand *model.Demand, targetCityCodes []string, provid
 	return score, reasons
 }
 
-func resolveDemandTargetCityCodes(demand *model.Demand) []string {
+func resolveDemandTargetAreaCodes(demand *model.Demand) []string {
 	names := make([]string, 0, 2)
 	if city := strings.TrimSpace(demand.City); city != "" {
 		names = append(names, city)
@@ -657,22 +657,34 @@ func resolveDemandTargetCityCodes(demand *model.Demand) []string {
 
 	targets := make([]string, 0, len(regions))
 	for _, region := range regions {
-		switch region.Level {
-		case 2:
+		if region.Level == 2 || region.Level == 3 {
 			targets = append(targets, region.Code)
-		case 3:
-			if strings.TrimSpace(region.ParentCode) != "" {
-				targets = append(targets, region.ParentCode)
-			}
 		}
 	}
 	return dedupeStringList(targets)
 }
 
-func isDemandServiceAreaMatched(serviceAreas []string, demand *model.Demand, targetCityCodes []string) bool {
-	targetSet := make(map[string]struct{}, len(targetCityCodes))
-	for _, code := range targetCityCodes {
+func isDemandServiceAreaMatched(serviceAreas []string, demand *model.Demand, targetAreaCodes []string) bool {
+	targetSet := make(map[string]struct{}, len(targetAreaCodes))
+	for _, code := range targetAreaCodes {
 		targetSet[code] = struct{}{}
+	}
+
+	targetCityCodes, targetDistrictCodes := splitDemandTargetRegionCodes(targetAreaCodes)
+	serviceCityCodes, serviceDistrictCodes := splitDemandTargetRegionCodes(serviceAreas)
+
+	for districtCode := range serviceDistrictCodes {
+		if _, ok := targetDistrictCodes[districtCode]; ok {
+			return true
+		}
+	}
+	if len(serviceDistrictCodes) > 0 && len(targetDistrictCodes) > 0 {
+		return false
+	}
+	for cityCode := range serviceCityCodes {
+		if _, ok := targetCityCodes[cityCode]; ok {
+			return true
+		}
 	}
 
 	for _, area := range serviceAreas {
@@ -688,6 +700,45 @@ func isDemandServiceAreaMatched(serviceAreas []string, demand *model.Demand, tar
 		}
 	}
 	return false
+}
+
+func splitDemandTargetRegionCodes(values []string) (map[string]struct{}, map[string]struct{}) {
+	cityCodes := make(map[string]struct{})
+	districtCodes := make(map[string]struct{})
+	normalizedInputs := normalizeRegionInputs(values)
+	if len(normalizedInputs) == 0 {
+		return cityCodes, districtCodes
+	}
+
+	var regions []model.Region
+	if err := repository.DB.Where("code IN ? OR name IN ?", normalizedInputs, normalizedInputs).Find(&regions).Error; err != nil {
+		return cityCodes, districtCodes
+	}
+	codeToRegion := make(map[string]model.Region, len(regions))
+	nameToRegion := make(map[string]model.Region, len(regions))
+	for _, region := range regions {
+		codeToRegion[region.Code] = region
+		if _, exists := nameToRegion[region.Name]; !exists {
+			nameToRegion[region.Name] = region
+		}
+	}
+
+	for _, input := range normalizedInputs {
+		region, ok := codeToRegion[input]
+		if !ok {
+			region, ok = nameToRegion[input]
+		}
+		if !ok {
+			continue
+		}
+		switch region.Level {
+		case 2:
+			cityCodes[region.Code] = struct{}{}
+		case 3:
+			districtCodes[region.Code] = struct{}{}
+		}
+	}
+	return cityCodes, districtCodes
 }
 
 func dedupeStringList(items []string) []string {

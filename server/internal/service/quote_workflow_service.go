@@ -1126,8 +1126,8 @@ func resolveRegionMatchTokens(values []string) []string {
 	normalizedInputs := normalizeRegionInputs(values)
 	result = append(result, normalizedInputs...)
 	regionService := &RegionService{}
-	if _, cityNames, err := regionService.ResolveServiceAreaInputsToCityDisplay(normalizedInputs); err == nil {
-		result = append(result, cityNames...)
+	if _, names, err := regionService.ResolveServiceAreaInputsToDisplay(normalizedInputs); err == nil {
+		result = append(result, names...)
 	}
 	for _, value := range normalizedInputs {
 		result = append(result, extractProjectRegionHints(value)...)

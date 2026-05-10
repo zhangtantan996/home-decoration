@@ -1,10 +1,13 @@
 package router
 
 import (
+	"bufio"
 	"database/sql"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -53,6 +56,179 @@ func setupRouterSQLiteDB(t *testing.T) *gorm.DB {
 		_ = sqlDB.Close()
 	})
 	return db
+}
+
+func TestSupervisorAccountMutationsRequireReasonAndReauth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	if err := repository.DB.AutoMigrate(
+		&model.User{},
+		&model.SupervisorPhoneWhitelist{},
+		&model.SupervisorApplication{},
+		&model.SupervisorAccount{},
+		&model.SupervisorProfile{},
+	); err != nil {
+		t.Fatalf("auto migrate supervisor mutation models: %v", err)
+	}
+
+	if err := repository.DB.Create(&model.SysMenu{ID: 2001, Title: "监理编辑", Type: 3, Permission: "supervision:supervisor:edit", Status: 1}).Error; err != nil {
+		t.Fatalf("seed supervisor edit permission: %v", err)
+	}
+	role := model.SysRole{ID: 2002, Name: "监理管理员", Key: "supervisor_admin", Status: 1}
+	if err := repository.DB.Create(&role).Error; err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	if err := repository.DB.Create(&model.SysRoleMenu{RoleID: role.ID, MenuID: 2001}).Error; err != nil {
+		t.Fatalf("seed role menu: %v", err)
+	}
+	if err := repository.DB.Create(&model.SysAdminRole{AdminID: 1, RoleID: role.ID}).Error; err != nil {
+		t.Fatalf("seed admin role: %v", err)
+	}
+
+	whitelist := model.SupervisorPhoneWhitelist{Base: model.Base{ID: 3001}, Phone: "13800139111", Status: 1, CreatedByAdminID: 1}
+	if err := repository.DB.Create(&whitelist).Error; err != nil {
+		t.Fatalf("seed whitelist: %v", err)
+	}
+	for _, application := range []model.SupervisorApplication{
+		{Base: model.Base{ID: 3002}, Phone: whitelist.Phone, WhitelistID: whitelist.ID, Status: 0, FormJSON: `{"realName":"张监理","cityCode":"610100","serviceArea":["610100"],"certifications":["/uploads/cases/cert.jpg"],"idNo":"110101199001011234","orgName":"监理机构","agreementConfirmed":true}`, SubmittedAt: time.Now()},
+		{Base: model.Base{ID: 3004}, Phone: "13800139112", WhitelistID: whitelist.ID, Status: 0, FormJSON: `{"realName":"李监理","cityCode":"610100","serviceArea":["610100"],"certifications":["/uploads/cases/cert.jpg"],"idNo":"110101199001011235","orgName":"监理机构","agreementConfirmed":true}`, SubmittedAt: time.Now()},
+	} {
+		if err := repository.DB.Create(&application).Error; err != nil {
+			t.Fatalf("seed supervisor application: %v", err)
+		}
+	}
+	account := model.SupervisorAccount{Base: model.Base{ID: 3003}, Phone: "13800139222", Status: 1}
+	if err := repository.DB.Create(&account).Error; err != nil {
+		t.Fatalf("seed supervisor account: %v", err)
+	}
+	profile := model.SupervisorProfile{Base: model.Base{ID: 3005}, UserID: 9001, RealName: "王监理", Phone: "13800139333", Status: 1}
+	if err := repository.DB.Create(&profile).Error; err != nil {
+		t.Fatalf("seed supervisor profile: %v", err)
+	}
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    false,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "active",
+		"sid":         "admin-test-session",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	testCases := []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "approve application", path: "/api/v1/admin/supervisor-applications/3002/approve", body: `{"reason":"审核通过"}`},
+		{name: "reject application", path: "/api/v1/admin/supervisor-applications/3004/reject", body: `{"rejectReason":"资料不全","reason":"审核拒绝"}`},
+		{name: "update account status", path: "/api/v1/admin/supervisor-accounts/3003/status", body: `{"status":0,"reason":"禁用账号"}`},
+		{name: "update supervisor profile", path: "/api/v1/admin/supervisors/3005", body: `{"realName":"王监理新","reason":"更新资料"}`},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			req := newSupervisorMutationRequest(tc.path, tc.body)
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+
+			r.ServeHTTP(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("expected middleware business error over http 200, got %d body=%s", rec.Code, rec.Body.String())
+			}
+			if !strings.Contains(rec.Body.String(), `"code":403`) || !strings.Contains(rec.Body.String(), "缺少有效的再认证凭证") {
+				t.Fatalf("expected reauth guard for %s, got %s", tc.name, rec.Body.String())
+			}
+		})
+	}
+
+	reasonReq := newSupervisorMutationRequest("/api/v1/admin/supervisors/3005", `{"realName":"无原因更新"}`)
+	reasonReq.Header.Set("Authorization", "Bearer "+token)
+	reasonReq.Header.Set("Content-Type", "application/json")
+	reasonRec := httptest.NewRecorder()
+	r.ServeHTTP(reasonRec, reasonReq)
+	if reasonRec.Code != http.StatusBadRequest {
+		t.Fatalf("expected reason guard http 400, got %d body=%s", reasonRec.Code, reasonRec.Body.String())
+	}
+	if !strings.Contains(reasonRec.Body.String(), `"code":400`) || !strings.Contains(reasonRec.Body.String(), "请填写操作原因") {
+		t.Fatalf("expected reason guard before mutation, got %s", reasonRec.Body.String())
+	}
+}
+
+func newSupervisorMutationRequest(path string, body string) *http.Request {
+	method := http.MethodPost
+	if strings.Contains(path, "/status") {
+		method = http.MethodPatch
+	} else if strings.Contains(path, "/supervisors/") && !strings.Contains(path, "/supervisor-") {
+		method = http.MethodPut
+	}
+	return httptest.NewRequest(method, path, strings.NewReader(body))
+}
+
+func TestReleaseKnownMigrationsIncludesV151RuntimeMigrations(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	file, err := os.Open(filepath.Join(repoRoot, "deploy", "scripts", "lib", "release_common.sh"))
+	if err != nil {
+		t.Fatalf("open release_common.sh: %v", err)
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	content := ""
+	for scanner.Scan() {
+		content += scanner.Text() + "\n"
+	}
+	if err := scanner.Err(); err != nil {
+		t.Fatalf("read release_common.sh: %v", err)
+	}
+
+	for _, migration := range []string{
+		"server/migrations/v1.15.1_add_admin_phone_view_permission.sql",
+		"server/migrations/v1.15.1_add_supervisor_runtime_schema.sql",
+	} {
+		if !strings.Contains(content, migration) {
+			t.Fatalf("release_apply_known_migrations must include %s", migration)
+		}
+	}
+}
+
+func TestSupervisorRuntimeMigrationSeedsAdminMenus(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, "server", "migrations", "v1.15.1_add_supervisor_runtime_schema.sql"))
+	if err != nil {
+		t.Fatalf("read supervisor runtime migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	for _, expected := range []string{
+		"监理管理",
+		"/supervisors/list",
+		"/supervisors/whitelist",
+		"/supervisors/applications",
+		"/supervisors/assignments",
+		"pages/supervisors/SupervisorList",
+		"pages/supervisors/WhitelistManager",
+		"pages/supervisors/ApplicationReview",
+		"pages/supervisors/SupervisorAssignment",
+		"supervision:supervisor:list",
+		"supervision:supervisor:edit",
+		"supervision:assignment:manage",
+	} {
+		if !strings.Contains(content, expected) {
+			t.Fatalf("supervisor runtime migration must seed admin menu/permission %s", expected)
+		}
+	}
 }
 
 func signAdminToken(t *testing.T, secret string, claims jwt.MapClaims) string {

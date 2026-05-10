@@ -172,6 +172,60 @@ func TestEnsureCriticalSchemaNonReleaseAllowsDegradedSchema(t *testing.T) {
 	}
 }
 
+func TestEnsureCriticalSchemaReleaseFailsOnMissingSupervisorRuntime(t *testing.T) {
+	setupSchemaHealthDB(t,
+		&model.User{},
+		&model.SMSAuditLog{},
+		&model.MerchantApplication{},
+		&model.Provider{},
+		&model.Project{},
+		&model.SiteSurvey{},
+		&model.BudgetConfirmation{},
+		&model.ProjectAudit{},
+		&model.RefundApplication{},
+		&model.AuditLog{},
+		&model.MaterialShop{},
+		&model.MaterialShopApplication{},
+		&model.MaterialShopApplicationProduct{},
+		&model.MaterialShopProduct{},
+		&model.MerchantIdentityChangeApplication{},
+		&model.Booking{},
+		&model.Proposal{},
+		&model.Milestone{},
+		&model.PaymentOrder{},
+		&model.RefundOrder{},
+		&model.PaymentPlan{},
+		&model.MerchantServiceSetting{},
+		&model.DesignWorkingDoc{},
+		&model.DesignFeeQuote{},
+		&model.DesignDeliverable{},
+		&model.QuantityBase{},
+		&model.QuantityBaseItem{},
+		&model.QuoteCategory{},
+		&model.QuoteLibraryItem{},
+		&model.QuotePriceBook{},
+		&model.QuotePriceBookItem{},
+		&model.QuotePriceTier{},
+		&model.QuoteCategoryRule{},
+		&model.QuoteTemplate{},
+		&model.QuoteTemplateItem{},
+		&model.QuoteList{},
+		&model.QuoteListItem{},
+		&model.QuoteInvitation{},
+		&model.QuoteSubmission{},
+		&model.QuoteSubmissionItem{},
+		&model.QuoteSubmissionRevision{},
+		&model.SettlementOrder{},
+		&model.PayoutOrder{},
+		&model.MerchantIncome{},
+		&model.MerchantWithdraw{},
+		&model.OutboxEvent{},
+	)
+	if err := EnsureCriticalSchema("release"); err == nil || !strings.Contains(err.Error(), "supervisor_phone_whitelists") {
+		t.Fatalf("expected release preflight to fail on missing supervisor runtime schema, got %v", err)
+	}
+}
+
 func TestIsSchemaMismatchError(t *testing.T) {
 	for _, errText := range []string{
 		`ERROR: column "public_id" of relation "users" does not exist`,

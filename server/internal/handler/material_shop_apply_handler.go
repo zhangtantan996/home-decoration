@@ -1270,13 +1270,13 @@ func AdminListMaterialShopApplications(c *gin.Context) {
 
 		item := gin.H{
 			"id":               app.ID,
-			"phone":            app.Phone,
+			"phone":            maskPhoneValue(app.Phone),
 			"entityType":       app.EntityType,
 			"applicationScene": normalizeMerchantApplicationScene(app.ApplicationScene),
 			"shopName":         app.ShopName,
 			"companyName":      app.CompanyName,
 			"contactName":      app.ContactName,
-			"contactPhone":     app.ContactPhone,
+			"contactPhone":     maskPhoneValue(app.ContactPhone),
 			"status":           app.Status,
 			"rejectReason":     app.RejectReason,
 			"createdAt":        formatServerDateTime(app.CreatedAt),
@@ -1338,7 +1338,7 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 	detail := gin.H{
 		"id":                     app.ID,
 		"merchantKind":           "material_shop",
-		"phone":                  app.Phone,
+		"phone":                  visiblePhoneForAdmin(c, app.Phone),
 		"sourceApplicationId":    app.ID,
 		"applicationScene":       normalizeMerchantApplicationScene(app.ApplicationScene),
 		"entityType":             app.EntityType,
@@ -1354,7 +1354,7 @@ func AdminGetMaterialShopApplication(c *gin.Context) {
 		"legalPersonIdCardBack":  imgutil.GetFullImageURL(app.LegalPersonIDCardBack),
 		"businessHours":          app.BusinessHours,
 		"businessHoursRanges":    parseBusinessHoursRanges(app.BusinessHoursJSON),
-		"contactPhone":           app.ContactPhone,
+		"contactPhone":           visiblePhoneForAdmin(c, app.ContactPhone),
 		"contactName":            app.ContactName,
 		"address":                app.Address,
 		"status":                 app.Status,

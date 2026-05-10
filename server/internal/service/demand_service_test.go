@@ -182,7 +182,7 @@ func TestScoreDemandCandidateMatchesCityCodeFromDistrictDemand(t *testing.T) {
 		t.Fatalf("create district: %v", err)
 	}
 
-	score, reasons := scoreDemandCandidate(demand, resolveDemandTargetCityCodes(demand), provider)
+	score, reasons := scoreDemandCandidate(demand, resolveDemandTargetAreaCodes(demand), provider)
 	if score < 55 {
 		t.Fatalf("expected city code match to increase score, got %d", score)
 	}
@@ -195,6 +195,40 @@ func TestScoreDemandCandidateMatchesCityCodeFromDistrictDemand(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("expected service area match reason, got %v", reasons)
+	}
+}
+
+func TestScoreDemandCandidateRequiresSelectedDistrictWhenProviderScopesDistricts(t *testing.T) {
+	db := setupDemandServiceDB(t)
+	if err := db.Create(&model.Region{Code: "610000", Name: "陕西省", Level: 1, Enabled: true}).Error; err != nil {
+		t.Fatalf("create province: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610100", Name: "西安", Level: 2, ParentCode: "610000", Enabled: true}).Error; err != nil {
+		t.Fatalf("create city: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true}).Error; err != nil {
+		t.Fatalf("create district: %v", err)
+	}
+	if err := db.Create(&model.Region{Code: "610116", Name: "长安区", Level: 3, ParentCode: "610100", Enabled: true}).Error; err != nil {
+		t.Fatalf("create other district: %v", err)
+	}
+
+	demand := &model.Demand{City: "西安", District: "长安区"}
+	provider := &model.Provider{
+		Verified:     true,
+		ProviderType: 2,
+		Status:       1,
+		ServiceArea:  `["610100","610113"]`,
+	}
+
+	score, reasons := scoreDemandCandidate(demand, resolveDemandTargetAreaCodes(demand), provider)
+	if score >= 85 {
+		t.Fatalf("expected district scoped provider not to match other district, got score=%d reasons=%v", score, reasons)
+	}
+	for _, reason := range reasons {
+		if reason == "服务城市匹配" {
+			t.Fatalf("did not expect service area match reason for other district, got %v", reasons)
+		}
 	}
 }
 

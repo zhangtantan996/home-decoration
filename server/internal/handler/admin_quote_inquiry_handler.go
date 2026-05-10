@@ -66,6 +66,7 @@ func AdminGetQuoteInquiry(c *gin.Context) {
 		respondScopedAccessError(c, err, "获取报价详情失败")
 		return
 	}
+	detail.Phone = visiblePhoneForAdmin(c, detail.Phone)
 
 	response.Success(c, detail)
 }

@@ -429,6 +429,8 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 		db = db.Order("price_min ASC")
 	case "price_high":
 		db = db.Order("price_min DESC")
+	case "experience":
+		db = db.Order("years_experience DESC, rating DESC, review_count DESC, completed_cnt DESC")
 	default:
 		db = applyProviderRecommendOrder(db)
 	}

@@ -750,7 +750,7 @@ func MerchantGetInfo(c *gin.Context) {
 	}
 
 	// 历史脏数据可能仍存区县代码，统一回卷到城市级再返回给前端展示/编辑。
-	serviceAreaCodes, serviceAreaNames, _ := merchantRegionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, _ := merchantRegionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 
 	// 解析 Specialty (逗号或点分隔)
 	var specialty []string
@@ -815,22 +815,22 @@ func MerchantUpdateInfo(c *gin.Context) {
 	providerID := c.GetUint64("providerId")
 
 	var input struct {
-		Name                   string             `json:"name"` // 显示名称
-		CompanyName            string             `json:"companyName"`
+		Name                   *string            `json:"name"` // 显示名称
+		CompanyName            *string            `json:"companyName"`
 		CoverImage             *string            `json:"coverImage"`
 		CompanyAlbum           []string           `json:"companyAlbum"`
 		MerchantDisplayEnabled *bool              `json:"merchantDisplayEnabled"`
-		YearsExperience        int                `json:"yearsExperience"`
+		YearsExperience        *int               `json:"yearsExperience"`
 		Specialty              []string           `json:"specialty"`
 		HighlightTags          []string           `json:"highlightTags"`
 		Pricing                map[string]float64 `json:"pricing"`
-		GraduateSchool         string             `json:"graduateSchool"`
-		DesignPhilosophy       string             `json:"designPhilosophy"`
-		ServiceArea            []string           `json:"serviceArea"` // 区域代码数组
-		Introduction           string             `json:"introduction"`
-		TeamSize               int                `json:"teamSize"`
-		OfficeAddress          string             `json:"officeAddress"`
-		SurveyDepositPrice     float64            `json:"surveyDepositPrice"`
+		GraduateSchool         *string            `json:"graduateSchool"`
+		DesignPhilosophy       *string            `json:"designPhilosophy"`
+		ServiceArea            *[]string          `json:"serviceArea"` // 区域代码数组
+		Introduction           *string            `json:"introduction"`
+		TeamSize               *int               `json:"teamSize"`
+		OfficeAddress          *string            `json:"officeAddress"`
+		SurveyDepositPrice     *float64           `json:"surveyDepositPrice"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -838,12 +838,17 @@ func MerchantUpdateInfo(c *gin.Context) {
 		return
 	}
 
-	// 验证服务城市代码（如果提供）
+	// 验证服务区域代码（如果提供）。未传表示不更新；传空数组表示清空，需拒绝。
 	var serviceAreaCodes []string
-	if len(input.ServiceArea) > 0 {
-		codes, err := merchantRegionService.NormalizeServiceCityCodes(input.ServiceArea)
+	serviceAreaProvided := input.ServiceArea != nil
+	if serviceAreaProvided {
+		if len(*input.ServiceArea) == 0 {
+			response.Error(c, 400, "请至少选择服务城市，区县可选")
+			return
+		}
+		codes, err := merchantRegionService.NormalizeServiceAreaCodes(*input.ServiceArea)
 		if err != nil {
-			response.Error(c, 400, "服务城市验证失败: "+err.Error())
+			response.Error(c, 400, "服务区域验证失败: "+err.Error())
 			return
 		}
 		serviceAreaCodes = codes
@@ -860,11 +865,14 @@ func MerchantUpdateInfo(c *gin.Context) {
 	}
 
 	updates := map[string]interface{}{}
-	if name := strings.TrimSpace(input.Name); name != "" {
+	if input.Name != nil {
+		name := strings.TrimSpace(*input.Name)
+		if name != "" {
 		updates["display_name"] = name
+		}
 	}
-	if input.CompanyName != "" {
-		updates["company_name"] = input.CompanyName
+	if input.CompanyName != nil {
+		updates["company_name"] = strings.TrimSpace(*input.CompanyName)
 	}
 	if input.CoverImage != nil {
 		coverImage := normalizeStoredAsset(strings.TrimSpace(*input.CoverImage))
@@ -877,6 +885,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 	}
 	if input.MerchantDisplayEnabled != nil {
 		if !service.SupportsProviderMerchantDisplayEnabled() {
+			tx.Rollback()
 			response.Error(c, 503, repository.SchemaServiceUnavailableMessage("商家展示开关"))
 			return
 		}
@@ -887,7 +896,9 @@ func MerchantUpdateInfo(c *gin.Context) {
 		}
 		updates["merchant_display_enabled"] = *input.MerchantDisplayEnabled
 	}
-	updates["years_experience"] = input.YearsExperience
+	if input.YearsExperience != nil {
+		updates["years_experience"] = *input.YearsExperience
+	}
 
 	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
 	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)
@@ -896,10 +907,12 @@ func MerchantUpdateInfo(c *gin.Context) {
 		updates["work_types"] = ""
 		updates["specialty"] = "全工种施工"
 	} else {
-		if len(input.Specialty) > 0 {
+		if input.Specialty != nil {
+			if len(input.Specialty) > 0 {
 			updates["specialty"] = strings.Join(normalizeStringSlice(input.Specialty), " · ")
-		} else {
-			updates["specialty"] = ""
+			} else {
+				updates["specialty"] = ""
+			}
 		}
 		updates["work_types"] = ""
 	}
@@ -917,11 +930,11 @@ func MerchantUpdateInfo(c *gin.Context) {
 		updates["price_max"] = priceMax
 		updates["price_unit"] = model.ProviderPriceUnitPerSquareMeter
 	}
-	if input.GraduateSchool != "" {
-		updates["graduate_school"] = strings.TrimSpace(input.GraduateSchool)
+	if input.GraduateSchool != nil {
+		updates["graduate_school"] = strings.TrimSpace(*input.GraduateSchool)
 	}
-	if input.DesignPhilosophy != "" {
-		updates["design_philosophy"] = strings.TrimSpace(input.DesignPhilosophy)
+	if input.DesignPhilosophy != nil {
+		updates["design_philosophy"] = strings.TrimSpace(*input.DesignPhilosophy)
 	}
 	if input.CompanyAlbum != nil {
 		normalizedCompanyAlbum := normalizeStringSlice(input.CompanyAlbum)
@@ -934,35 +947,48 @@ func MerchantUpdateInfo(c *gin.Context) {
 		updates["company_album_json"] = string(albumJSON)
 	}
 
-	if len(serviceAreaCodes) > 0 {
+	if serviceAreaProvided {
 		jsonBytes, _ := json.Marshal(serviceAreaCodes)
 		updates["service_area"] = string(jsonBytes)
-	} else {
-		updates["service_area"] = "[]"
 	}
 
-	if len([]rune(input.Introduction)) > 5000 {
+	introduction := ""
+	if input.Introduction != nil {
+		introduction = *input.Introduction
+	}
+	if len([]rune(introduction)) > 5000 {
 		tx.Rollback()
 		response.Error(c, 400, "简介不能超过5000个字符")
 		return
 	}
-	if len([]rune(input.DesignPhilosophy)) > 5000 {
+	designPhilosophy := ""
+	if input.DesignPhilosophy != nil {
+		designPhilosophy = *input.DesignPhilosophy
+	}
+	if len([]rune(designPhilosophy)) > 5000 {
 		tx.Rollback()
 		response.Error(c, 400, "设计理念不能超过5000个字符")
 		return
 	}
 
-	updates["service_intro"] = input.Introduction
-	updates["team_size"] = input.TeamSize
-	if input.SurveyDepositPrice >= 0 {
-		updates["survey_deposit_price"] = input.SurveyDepositPrice
+	if input.Introduction != nil {
+		updates["service_intro"] = introduction
 	}
-	if strings.TrimSpace(input.OfficeAddress) == "" {
-		tx.Rollback()
-		response.Error(c, 400, "办公地址不能为空")
-		return
+	if input.TeamSize != nil {
+		updates["team_size"] = *input.TeamSize
 	}
-	updates["office_address"] = input.OfficeAddress
+	if input.SurveyDepositPrice != nil && *input.SurveyDepositPrice >= 0 {
+		updates["survey_deposit_price"] = *input.SurveyDepositPrice
+	}
+	if input.OfficeAddress != nil {
+		officeAddress := strings.TrimSpace(*input.OfficeAddress)
+		if officeAddress == "" {
+			tx.Rollback()
+			response.Error(c, 400, "办公地址不能为空")
+			return
+		}
+		updates["office_address"] = officeAddress
+	}
 
 	if err := tx.Model(&provider).Updates(updates).Error; err != nil {
 		tx.Rollback()
@@ -970,7 +996,10 @@ func MerchantUpdateInfo(c *gin.Context) {
 		return
 	}
 
-	tx.Commit()
+	if err := tx.Commit().Error; err != nil {
+		response.Error(c, 500, "更新失败")
+		return
+	}
 	response.Success(c, gin.H{"status": "ok"})
 }
 

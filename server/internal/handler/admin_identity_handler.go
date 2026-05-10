@@ -49,6 +49,9 @@ func AdminGetIdentityApplication(c *gin.Context) {
 		response.NotFound(c, "申请不存在")
 		return
 	}
+	if item.MerchantDetails != nil {
+		item.MerchantDetails.Phone = visiblePhoneForAdmin(c, item.MerchantDetails.Phone)
+	}
 
 	var provider *model.Provider
 	var providerRecord model.Provider

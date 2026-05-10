@@ -91,7 +91,7 @@ func Cors(allowedOrigins []string) gin.HandlerFunc {
 		}
 
 		c.Header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS, PATCH")
-		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-CSRF-Token, X-Admin-Reauth")
+		c.Header("Access-Control-Allow-Headers", "Origin, Content-Type, Authorization, X-CSRF-Token, X-Admin-Reauth, X-Device-ID")
 		c.Header("Access-Control-Max-Age", "86400")
 
 		if c.Request.Method == "OPTIONS" {
@@ -422,6 +422,28 @@ func RequireAnyPermission(permissions ...string) gin.HandlerFunc {
 
 		c.Next()
 	}
+}
+
+func CurrentAdminHasAnyPermission(c *gin.Context, permissions ...string) bool {
+	if c == nil || len(permissions) == 0 {
+		return false
+	}
+
+	isSuperAdmin, _ := c.Get("is_super")
+	if isSuperAdmin == true {
+		return true
+	}
+
+	adminID, exists := c.Get("admin_id")
+	if !exists {
+		return false
+	}
+
+	hasPermission, err := adminHasAnyPermission(adminID, permissions)
+	if err != nil {
+		return false
+	}
+	return hasPermission
 }
 
 func adminHasAnyPermission(rawAdminID interface{}, permissions []string) (bool, error) {

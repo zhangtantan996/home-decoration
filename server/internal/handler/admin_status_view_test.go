@@ -182,6 +182,114 @@ func TestAdminListProviders_DerivedStatusesAndFilters(t *testing.T) {
 	}
 }
 
+func TestAdminListUsers_IncludesAccountStatusAndPrimaryEntity(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	users := []model.User{
+		{Base: model.Base{ID: 9001}, Phone: "13800009001", Nickname: "业主账号", Status: 1, UserType: 1},
+		{Base: model.Base{ID: 9002}, Phone: "13800009002", Nickname: "公司账号", Status: 1, UserType: 2},
+		{Base: model.Base{ID: 9003}, Phone: "13800009003", Nickname: "主材账号", Status: 1, UserType: 2},
+	}
+	for _, user := range users {
+		if err := db.Create(&user).Error; err != nil {
+			t.Fatalf("seed user %d: %v", user.ID, err)
+		}
+	}
+	if err := db.Model(&model.User{}).Where("id = ?", 9003).Update("status", 0).Error; err != nil {
+		t.Fatalf("disable material shop user: %v", err)
+	}
+
+	provider := model.Provider{
+		Base:         model.Base{ID: 9101},
+		UserID:       9002,
+		CompanyName:  "收口测试装修公司",
+		ProviderType: 2,
+		Status:       1,
+		IsSettled:    true,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	active := int8(1)
+	shop := model.MaterialShop{
+		Base:        model.Base{ID: 9201},
+		UserID:      9003,
+		Name:        "收口测试主材门店",
+		CompanyName: "收口测试主材公司",
+		Status:      &active,
+		IsSettled:   true,
+	}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatalf("seed material shop: %v", err)
+	}
+
+	resp := requestAdminUserList(t, "/api/v1/admin/users?page=1&pageSize=10")
+	if resp.Code != 0 {
+		t.Fatalf("unexpected code: got=%d message=%s", resp.Code, resp.Message)
+	}
+
+	var data struct {
+		List []struct {
+			ID                uint64 `json:"id"`
+			RoleType          string `json:"roleType"`
+			AccountStatus     string `json:"accountStatus"`
+			PrimaryEntityType string `json:"primaryEntityType"`
+			PrimaryEntityID   uint64 `json:"primaryEntityId"`
+			PrimaryEntityName string `json:"primaryEntityName"`
+		} `json:"list"`
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(resp.Data, &data); err != nil {
+		t.Fatalf("decode data: %v", err)
+	}
+	if data.Total != 3 {
+		t.Fatalf("unexpected total: got=%d want=3", data.Total)
+	}
+
+	rows := make(map[uint64]struct {
+		RoleType          string
+		AccountStatus     string
+		PrimaryEntityType string
+		PrimaryEntityID   uint64
+		PrimaryEntityName string
+	}, len(data.List))
+	for _, item := range data.List {
+		rows[item.ID] = struct {
+			RoleType          string
+			AccountStatus     string
+			PrimaryEntityType string
+			PrimaryEntityID   uint64
+			PrimaryEntityName string
+		}{
+			RoleType:          item.RoleType,
+			AccountStatus:     item.AccountStatus,
+			PrimaryEntityType: item.PrimaryEntityType,
+			PrimaryEntityID:   item.PrimaryEntityID,
+			PrimaryEntityName: item.PrimaryEntityName,
+		}
+	}
+
+	if got := rows[9001]; got.RoleType != "owner" || got.AccountStatus != adminAccountStatusActive || got.PrimaryEntityType != "" || got.PrimaryEntityID != 0 {
+		t.Fatalf("unexpected owner row: %+v", got)
+	}
+	if got := rows[9002]; got.RoleType != "company" || got.AccountStatus != adminAccountStatusActive || got.PrimaryEntityType != "provider" || got.PrimaryEntityID != 9101 || got.PrimaryEntityName != "收口测试装修公司" {
+		t.Fatalf("unexpected provider user row: %+v", got)
+	}
+	if got := rows[9003]; got.RoleType != "material_shop" || got.AccountStatus != adminAccountStatusDisabled || got.PrimaryEntityType != "material_shop" || got.PrimaryEntityID != 9201 || got.PrimaryEntityName != "收口测试主材门店" {
+		t.Fatalf("unexpected material shop user row: %+v", got)
+	}
+}
+
 func TestAdminListMaterialShops_DerivedStatusesAndFilters(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -364,6 +472,72 @@ func requestAdminProviderList(t *testing.T, path string) responseEnvelope {
 	c, _ := gin.CreateTestContext(w)
 	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
 	AdminListProviders(c)
+	return decodeResponse(t, w)
+}
+
+func TestAdminCreateProviderPreservesDistrictServiceArea(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Region{}); err != nil {
+		t.Fatalf("auto migrate regions: %v", err)
+	}
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	regions := []model.Region{
+		{Code: "610000", Name: "陕西省", Level: 1, Enabled: true},
+		{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, ServiceEnabled: true},
+		{Code: "610113", Name: "雁塔区", Level: 3, ParentCode: "610100", Enabled: true},
+	}
+	for _, region := range regions {
+		if err := db.Create(&region).Error; err != nil {
+			t.Fatalf("seed region %s: %v", region.Code, err)
+		}
+	}
+
+	body := map[string]any{
+		"providerType": 2,
+		"companyName":  "测试装修公司",
+		"status":       1,
+		"serviceArea":  []string{"610100", "610113"},
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/providers", bytes.NewReader(encoded))
+	c.Request.Header.Set("Content-Type", "application/json")
+	AdminCreateProvider(c)
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected response: code=%d message=%s", resp.Code, resp.Message)
+	}
+
+	var provider model.Provider
+	if err := db.Where("company_name = ?", "测试装修公司").First(&provider).Error; err != nil {
+		t.Fatalf("query provider: %v", err)
+	}
+	var savedServiceArea []string
+	if err := json.Unmarshal([]byte(provider.ServiceArea), &savedServiceArea); err != nil {
+		t.Fatalf("decode saved service area: %v", err)
+	}
+	if len(savedServiceArea) != 2 || savedServiceArea[0] != "610100" || savedServiceArea[1] != "610113" {
+		t.Fatalf("expected city and district service area to be saved, got=%v", savedServiceArea)
+	}
+}
+
+func requestAdminUserList(t *testing.T, path string) responseEnvelope {
+	t.Helper()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, path, nil)
+	AdminListUsers(c)
 	return decodeResponse(t, w)
 }
 

@@ -141,6 +141,18 @@ func TestValidateMaterialShopApply_ValidInputSummarizesBusinessHours(t *testing.
 	}
 }
 
+func TestValidateMaterialShopApply_PreservesExplicitContactName(t *testing.T) {
+	input := newValidMaterialShopApplyInput()
+	input.ContactName = "门店联系人"
+
+	if err := validateMaterialShopApply(&input); err != nil {
+		t.Fatalf("expected valid input, got error: %v", err)
+	}
+	if input.ContactName != "门店联系人" {
+		t.Fatalf("expected explicit contact name preserved, got=%q", input.ContactName)
+	}
+}
+
 func TestResolveMaterialProductUnit_FallsBackToLegacyParams(t *testing.T) {
 	unit := resolveMaterialProductUnit("", `{"单位":"套","颜色":"白色"}`)
 	if unit != "套" {

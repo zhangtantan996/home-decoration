@@ -60,6 +60,7 @@ func main() {
 		{ID: 10, ParentID: 0, Title: "用户管理", Type: 1, Path: "/users", Icon: "UserOutlined", Sort: 10},
 		{ID: 11, ParentID: 10, Title: "用户列表", Type: 2, Path: "/users/list", Component: "pages/users/UserList", Sort: 1, Permission: "system:user:list"},
 		{ID: 12, ParentID: 10, Title: "管理员管理", Type: 2, Path: "/users/admins", Component: "pages/admins/AdminList", Sort: 2, Permission: "system:admin:list"},
+		{ID: 13, ParentID: 10, Title: "查看完整手机号", Type: 3, Sort: 3, Permission: "system:user:phone:view", Visible: false},
 
 		// 服务商管理
 		{ID: 20, ParentID: 0, Title: "服务商管理", Type: 1, Path: "/providers", Icon: "TeamOutlined", Sort: 20},
@@ -80,6 +81,18 @@ func main() {
 
 		// 预约管理
 		{ID: 50, ParentID: 0, Title: "预约管理", Type: 2, Path: "/bookings", Component: "pages/bookings/BookingList", Icon: "CalendarOutlined", Sort: 50, Permission: "booking:list"},
+
+		// 监理工作台 / 监理管理
+		{ID: 58, ParentID: 0, Title: "监理工作台", Type: 1, Path: "/supervision", Icon: "ProjectOutlined", Sort: 58},
+		{ID: 581, ParentID: 58, Title: "项目巡检", Type: 2, Path: "/supervision/projects", Component: "pages/supervision/WorkbenchList", Sort: 1, Permission: "supervision:workspace:view"},
+		{ID: 582, ParentID: 58, Title: "编辑监理工作台", Type: 3, Sort: 2, Permission: "supervision:workspace:edit", Visible: false},
+		{ID: 583, ParentID: 58, Title: "上报监理风险", Type: 3, Sort: 3, Permission: "supervision:risk:create", Visible: false},
+		{ID: 59, ParentID: 0, Title: "监理管理", Type: 1, Path: "/supervisors", Icon: "TeamOutlined", Sort: 59},
+		{ID: 591, ParentID: 59, Title: "监理账号", Type: 2, Path: "/supervisors/list", Component: "pages/supervisors/SupervisorList", Sort: 1, Permission: "supervision:supervisor:list"},
+		{ID: 592, ParentID: 59, Title: "白名单邀请", Type: 2, Path: "/supervisors/whitelist", Component: "pages/supervisors/WhitelistManager", Sort: 2, Permission: "supervision:supervisor:list"},
+		{ID: 593, ParentID: 59, Title: "申请审核", Type: 2, Path: "/supervisors/applications", Component: "pages/supervisors/ApplicationReview", Sort: 3, Permission: "supervision:supervisor:list"},
+		{ID: 594, ParentID: 59, Title: "项目分配", Type: 2, Path: "/supervisors/assignments", Component: "pages/supervisors/SupervisorAssignment", Sort: 4, Permission: "supervision:assignment:manage"},
+		{ID: 595, ParentID: 59, Title: "监理账号治理", Type: 3, Sort: 5, Permission: "supervision:supervisor:edit", Visible: false},
 
 		// 资金中心
 		{ID: 60, ParentID: 0, Title: "资金中心", Type: 1, Path: "/finance", Icon: "BankOutlined", Sort: 60},

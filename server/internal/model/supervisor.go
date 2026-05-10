@@ -7,20 +7,69 @@ import (
 // SupervisorProfile 监理资料表 — 监理角色专业资料
 type SupervisorProfile struct {
 	Base
-	UserID         uint64     `json:"userId" gorm:"index;not null"`
-	RealName       string     `json:"realName" gorm:"size:50;default:''"`
-	Phone          string     `json:"phone" gorm:"size:20;default:''"`
-	CityCode       string     `json:"cityCode" gorm:"size:10;default:''"`
-	ServiceArea    string     `json:"serviceArea" gorm:"type:text"`      // JSON 数组：服务城市代码
-	Certifications string     `json:"certifications" gorm:"type:text"`   // JSON 数组：资质证书
-	Status         int8       `json:"status" gorm:"default:1"`           // 1=正常 0=禁用
-	Verified       bool       `json:"verified" gorm:"default:false"`
-	VerifiedAt     *time.Time `json:"verifiedAt"`
+	UserID              uint64     `json:"userId" gorm:"index;not null"`
+	SupervisorAccountID *uint64    `json:"supervisorAccountId" gorm:"uniqueIndex"` // 新链路关联 supervisor_accounts；旧数据 NULL
+	RealName            string     `json:"realName" gorm:"size:50;default:''"`
+	Phone               string     `json:"phone" gorm:"size:20;default:''"`
+	CityCode            string     `json:"cityCode" gorm:"size:10;default:''"`
+	ServiceArea         string     `json:"serviceArea" gorm:"type:text"`    // JSON 数组：服务城市代码
+	Certifications      string     `json:"certifications" gorm:"type:text"` // JSON 数组：资质证书
+	Status              int8       `json:"status" gorm:"default:1"`         // 1=正常 0=禁用
+	Verified            bool       `json:"verified" gorm:"default:false"`
+	VerifiedAt          *time.Time `json:"verifiedAt"`
 }
 
 // TableName 指定表名
 func (SupervisorProfile) TableName() string {
 	return "supervisor_profiles"
+}
+
+// SupervisorPhoneWhitelist 监理白名单手机号 — 仅白名单手机号可发起入驻申请
+type SupervisorPhoneWhitelist struct {
+	Base
+	Phone            string     `json:"phone" gorm:"uniqueIndex;size:20;not null"`
+	Status           int8       `json:"status" gorm:"default:1"` // 1=active 0=disabled
+	ExpiresAt        *time.Time `json:"expiresAt"`
+	Note             string     `json:"note" gorm:"type:text"`
+	CreatedByAdminID uint64     `json:"createdByAdminId" gorm:"not null"`
+}
+
+func (SupervisorPhoneWhitelist) TableName() string {
+	return "supervisor_phone_whitelists"
+}
+
+// SupervisorApplication 监理入驻申请 — 白名单手机号提交的入驻申请
+type SupervisorApplication struct {
+	Base
+	Phone               string     `json:"phone" gorm:"size:20;not null;index:idx_sa_phone_status"`
+	WhitelistID         uint64     `json:"whitelistId" gorm:"not null"`
+	Status              int8       `json:"status" gorm:"default:0;index:idx_sa_status_submitted"` // 0=pending 1=approved 2=rejected
+	FormJSON            string     `json:"formJson" gorm:"type:jsonb;not null"`
+	RejectReason        string     `json:"rejectReason" gorm:"type:text"`
+	ReviewedByAdminID   *uint64    `json:"reviewedByAdminId"`
+	ReviewedAt          *time.Time `json:"reviewedAt"`
+	SubmittedAt         time.Time  `json:"submittedAt" gorm:"not null;index:idx_sa_status_submitted"`
+	SupervisorAccountID *uint64    `json:"supervisorAccountId"` // 审核通过后回填关联 supervisor_accounts
+}
+
+func (SupervisorApplication) TableName() string {
+	return "supervisor_applications"
+}
+
+// SupervisorAccount 监理登录账号 — 独立于 users 表，仅用于监理身份登录
+type SupervisorAccount struct {
+	Base
+	Phone            string     `json:"phone" gorm:"uniqueIndex;size:20;not null"`
+	Status           int8       `json:"status" gorm:"default:1"` // 1=active 0=disabled
+	LastLoginAt      *time.Time `json:"lastLoginAt"`
+	LastLoginIP      string     `json:"lastLoginIp" gorm:"size:50"`
+	LoginFailedCount int        `json:"loginFailedCount" gorm:"default:0"`
+	LockedUntil      *time.Time `json:"lockedUntil"`
+	PasswordHash     string     `json:"-" gorm:"type:text"` // 一期仅短信登录
+}
+
+func (SupervisorAccount) TableName() string {
+	return "supervisor_accounts"
 }
 
 // AdminProfile 后台人员资料桥接表 — 桥接 users ↔ sys_admins

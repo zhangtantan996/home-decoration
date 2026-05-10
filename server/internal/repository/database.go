@@ -97,6 +97,9 @@ func autoMigrate() error {
 		&model.UserWechatBinding{},
 		&model.Provider{},
 		&model.SupervisorProfile{},
+		&model.SupervisorPhoneWhitelist{},
+		&model.SupervisorApplication{},
+		&model.SupervisorAccount{},
 		&model.AdminProfile{},
 		&model.ProjectSupervisorAssignment{},
 		&model.SupervisionLog{},
@@ -282,6 +285,13 @@ func ensureRuntimeSchemaColumns() error {
 			if err := DB.Exec(`ALTER TABLE material_shops ALTER COLUMN open_time TYPE TEXT`).Error; err != nil {
 				return fmt.Errorf("expand material_shops.open_time: %w", err)
 			}
+		}
+	}
+
+	// 监理资料表新增 supervisor_account_id 列
+	if DB.Migrator().HasTable(&model.SupervisorProfile{}) && !DB.Migrator().HasColumn(&model.SupervisorProfile{}, "SupervisorAccountID") {
+		if err := DB.Migrator().AddColumn(&model.SupervisorProfile{}, "SupervisorAccountID"); err != nil {
+			return fmt.Errorf("add supervisor_profiles.supervisor_account_id: %w", err)
 		}
 	}
 

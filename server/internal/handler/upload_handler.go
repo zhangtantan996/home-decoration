@@ -36,6 +36,9 @@ var (
 	avatarUploadAllowedExts = map[string]struct{}{
 		".jpg": {}, ".jpeg": {}, ".png": {}, ".gif": {},
 	}
+	onboardingImageUploadAllowedExts = map[string]struct{}{
+		".jpg": {}, ".jpeg": {}, ".png": {}, ".webp": {},
+	}
 	merchantUploadAllowedExts = map[string]struct{}{
 		".jpg": {}, ".jpeg": {}, ".png": {}, ".webp": {},
 		".pdf": {}, ".doc": {}, ".docx": {}, ".xls": {}, ".xlsx": {},
@@ -277,6 +280,10 @@ func isDangerousUploadContent(contentType string, sample []byte) bool {
 }
 
 func saveCaseUpload(c *gin.Context, ownerID uint64, filenamePrefix string) {
+	saveUploadWithAllowedExts(c, ownerID, filenamePrefix, caseUploadAllowedExts)
+}
+
+func saveUploadWithAllowedExts(c *gin.Context, ownerID uint64, filenamePrefix string, allowedExts map[string]struct{}) {
 	file, err := c.FormFile("file")
 	if err != nil {
 		response.Error(c, 400, "请选择要上传的文件")
@@ -288,7 +295,7 @@ func saveCaseUpload(c *gin.Context, ownerID uint64, filenamePrefix string) {
 		return
 	}
 
-	ext, err := validateUploadFileHeader(file, caseUploadAllowedExts)
+	ext, err := validateUploadFileHeader(file, allowedExts)
 	if err != nil {
 		response.Error(c, 400, err.Error())
 		return
@@ -399,4 +406,14 @@ func saveUserAvatarUpload(c *gin.Context, userID uint64, file *multipart.FileHea
 func AdminUploadImage(c *gin.Context) {
 	adminID := c.GetUint64("admin_id")
 	saveCaseUpload(c, adminID, "admin_case")
+}
+
+func SupervisorUploadImage(c *gin.Context) {
+	supervisorID := c.GetUint64("supervisorId")
+	saveCaseUpload(c, supervisorID, "supervisor_log")
+}
+
+// SupervisorOnboardingUploadImage 监理入驻申请上传图片
+func SupervisorOnboardingUploadImage(c *gin.Context) {
+	saveUploadWithAllowedExts(c, 0, "supervisor_onboarding", onboardingImageUploadAllowedExts)
 }

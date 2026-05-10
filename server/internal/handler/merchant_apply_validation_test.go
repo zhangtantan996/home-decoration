@@ -140,7 +140,7 @@ func TestValidateMerchantApplyBusinessFields_ForemanRequiresAllFixedCategories(t
 	}
 }
 
-func TestValidateMerchantApplyBusinessFields_ForemanRequiresDescriptionAndTwoToEightImages(t *testing.T) {
+func TestValidateMerchantApplyBusinessFields_ForemanRequiresDescriptionAndTwoToSixImages(t *testing.T) {
 	input := newValidForemanApplyInput()
 	input.PortfolioCases[0].Description = ""
 
@@ -152,8 +152,15 @@ func TestValidateMerchantApplyBusinessFields_ForemanRequiresDescriptionAndTwoToE
 	input = newValidForemanApplyInput()
 	input.PortfolioCases[0].Images = []string{"/water-1.jpg"}
 	err = validateMerchantApplyBusinessFields(&input)
-	if err == nil || !strings.Contains(err.Error(), "2-8张图片") {
+	if err == nil || !strings.Contains(err.Error(), "2-6张图片") {
 		t.Fatalf("expected image count error, got=%v", err)
+	}
+
+	input = newValidForemanApplyInput()
+	input.PortfolioCases[0].Images = []string{"/water-1.jpg", "/water-2.jpg", "/water-3.jpg", "/water-4.jpg", "/water-5.jpg", "/water-6.jpg", "/water-7.jpg"}
+	err = validateMerchantApplyBusinessFields(&input)
+	if err == nil || !strings.Contains(err.Error(), "2-6张图片") {
+		t.Fatalf("expected max image count error, got=%v", err)
 	}
 }
 
@@ -168,5 +175,20 @@ func TestValidateMerchantApplyBusinessFields_ForemanAllowsEmptyOtherAndRequiresO
 	err := validateMerchantApplyBusinessFields(&input)
 	if err == nil || !strings.Contains(err.Error(), "办公地址") {
 		t.Fatalf("expected office address error, got=%v", err)
+	}
+}
+
+func TestValidateMerchantApplyBusinessFields_ForemanOtherIsOptionalButCompleteWhenProvided(t *testing.T) {
+	input := newValidForemanApplyInput()
+	input.PortfolioCases = append(input.PortfolioCases, PortfolioCaseInput{Category: "other"})
+	if err := validateMerchantApplyBusinessFields(&input); err != nil {
+		t.Fatalf("expected empty optional other showcase to pass, got=%v", err)
+	}
+
+	input = newValidForemanApplyInput()
+	input.PortfolioCases = append(input.PortfolioCases, PortfolioCaseInput{Category: "other", Description: "其他工艺"})
+	err := validateMerchantApplyBusinessFields(&input)
+	if err == nil || !strings.Contains(err.Error(), "其他施工展示需上传2-6张图片") {
+		t.Fatalf("expected optional other image count error, got=%v", err)
 	}
 }

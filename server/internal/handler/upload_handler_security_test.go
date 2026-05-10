@@ -3,9 +3,14 @@ package handler
 import (
 	"bytes"
 	"mime/multipart"
+	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestValidateUploadFileHeaderRejectsImageMismatch(t *testing.T) {
@@ -92,7 +97,51 @@ func TestValidateUploadFileHeaderNormalizesImageExtFromContent(t *testing.T) {
 	}
 }
 
+func TestSupervisorOnboardingUploadRejectsNonImageDocuments(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() {
+		matches, _ := filepath.Glob(filepath.Join("uploads", "cases", "supervisor_onboarding_0_*"))
+		for _, match := range matches {
+			_ = os.Remove(match)
+		}
+	})
+
+	body, contentType := buildMultipartBody(t, "file", "监理资质.pdf", []byte("%PDF-1.4\nfake"))
+	rec := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(rec)
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/supervisor/onboarding/upload", body)
+	ctx.Request.Header.Set("Content-Type", contentType)
+
+	SupervisorOnboardingUploadImage(ctx)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected HTTP 200 envelope response, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	envelope := decodeSupervisorEnvelope(t, rec)
+	if envelope.Code == 0 {
+		t.Fatalf("expected non-image onboarding upload to be rejected, body=%s", rec.Body.String())
+	}
+}
+
 func buildMultipartFileHeader(t *testing.T, fieldName string, filename string, content []byte) *multipart.FileHeader {
+	t.Helper()
+
+	body, contentType := buildMultipartBody(t, fieldName, filename, content)
+	req := httptest.NewRequest("POST", "/upload", body)
+	req.Header.Set("Content-Type", contentType)
+	if err := req.ParseMultipartForm(int64(body.Len()) + 1024); err != nil {
+		t.Fatalf("parse multipart form: %v", err)
+	}
+
+	file, header, err := req.FormFile(fieldName)
+	if err != nil {
+		t.Fatalf("form file: %v", err)
+	}
+	_ = file.Close()
+	return header
+}
+
+func buildMultipartBody(t *testing.T, fieldName string, filename string, content []byte) (*bytes.Buffer, string) {
 	t.Helper()
 
 	body := &bytes.Buffer{}
@@ -109,16 +158,5 @@ func buildMultipartFileHeader(t *testing.T, fieldName string, filename string, c
 		t.Fatalf("close multipart writer: %v", err)
 	}
 
-	req := httptest.NewRequest("POST", "/upload", body)
-	req.Header.Set("Content-Type", writer.FormDataContentType())
-	if err := req.ParseMultipartForm(int64(body.Len()) + 1024); err != nil {
-		t.Fatalf("parse multipart form: %v", err)
-	}
-
-	file, header, err := req.FormFile(fieldName)
-	if err != nil {
-		t.Fatalf("form file: %v", err)
-	}
-	_ = file.Close()
-	return header
+	return body, writer.FormDataContentType()
 }

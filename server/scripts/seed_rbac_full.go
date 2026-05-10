@@ -218,7 +218,8 @@ func menuSpecs() []menuSpec {
 		menuButton("user_view", "users_root", "查看用户", "system:user:view", 1),
 		menuButton("user_edit", "users_root", "编辑用户", "system:user:edit", 2),
 		menuButton("user_delete", "users_root", "删除用户", "system:user:delete", 3),
-		menuButton("user_export", "users_root", "导出用户", "system:user:export", 4),
+		menuButton("user_phone_view", "users_root", "查看完整手机号", "system:user:phone:view", 4),
+		menuButton("user_export", "users_root", "导出用户", "system:user:export", 5),
 		menuPage("admins_list", "users_root", "管理员管理", "/users/admins", "pages/admins/AdminList", "", 2, "system:admin:list"),
 		menuButton("admin_create", "users_root", "创建管理员", "system:admin:create", 5),
 		menuButton("admin_edit", "users_root", "编辑管理员", "system:admin:edit", 6),
@@ -301,6 +302,14 @@ func menuSpecs() []menuSpec {
 		menuPage("supervision_projects", "supervision_root", "项目巡检", "/supervision/projects", "pages/supervision/WorkbenchList", "", 1, "supervision:workspace:view"),
 		menuButton("supervision_workspace_edit", "supervision_root", "编辑监理工作台", "supervision:workspace:edit", 1),
 		menuButton("supervision_risk_create", "supervision_root", "上报监理风险", "supervision:risk:create", 2),
+
+		menuDir("supervisors_root", "", "监理管理", "/supervisors", "TeamOutlined", 59, ""),
+		menuPage("supervisors_list", "supervisors_root", "监理账号", "/supervisors/list", "pages/supervisors/SupervisorList", "", 1, "supervision:supervisor:list"),
+		menuPage("supervisors_whitelist", "supervisors_root", "白名单邀请", "/supervisors/whitelist", "pages/supervisors/WhitelistManager", "", 2, "supervision:supervisor:list"),
+		menuPage("supervisors_applications", "supervisors_root", "申请审核", "/supervisors/applications", "pages/supervisors/ApplicationReview", "", 3, "supervision:supervisor:list"),
+		menuPage("supervisors_assignments", "supervisors_root", "项目分配", "/supervisors/assignments", "pages/supervisors/SupervisorAssignment", "", 4, "supervision:assignment:manage"),
+		menuButton("supervisors_edit", "supervisors_root", "监理账号治理", "supervision:supervisor:edit", 1),
+		menuButton("supervisors_assignment_manage", "supervisors_root", "监理项目分配", "supervision:assignment:manage", 2),
 
 		menuDir("finance_root", "", "资金中心", "/finance", "BankOutlined", 60, ""),
 		menuPage("finance_overview", "finance_root", "资金概览", "/finance/overview", "pages/finance/FinanceOverview", "AccountBookOutlined", 0, "finance:escrow:list"),
@@ -401,6 +410,8 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit", "provider_foreman_delete",
 		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit", "material_shop_delete",
 		"projects_root", "projects_list", "project_view", "project_edit", "projects_map",
+		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications", "supervisors_assignments",
+		"supervisors_edit", "supervisors_assignment_manage",
 		"quote_erp_root", "project_quote_library", "project_quote_templates", "project_quote_lists", "project_quote_price_books", "project_quote_compare",
 		"orders_root", "order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_assign",
@@ -417,6 +428,8 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_review", "demand_assign",
 		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail", "booking_dispute_resolve",
+		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications", "supervisors_assignments",
+		"supervisors_edit", "supervisors_assignment_manage",
 		"reviews_root", "reviews_list", "review_view", "review_delete", "review_hide",
 	}, "运营管理", menus)
 
@@ -450,6 +463,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_review",
 		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail",
+		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications",
 		"reviews_root", "reviews_list", "review_view",
 	}, "客服", menus)
 
@@ -463,6 +477,7 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"order_center", "order_center_view",
 		"demands_root", "demands_list",
 		"bookings_root", "bookings_list", "booking_view",
+		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications",
 		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view",
 		"finance_payouts", "finance_settlements",
 		"reviews_root", "reviews_list", "review_view",

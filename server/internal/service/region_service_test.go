@@ -1,7 +1,6 @@
 package service
 
 import (
-	"strings"
 	"testing"
 
 	"home-decoration-server/internal/model"
@@ -67,17 +66,41 @@ func TestRegionServiceListOpenServiceCities(t *testing.T) {
 	}
 }
 
-func TestRegionServiceNormalizeServiceCityCodesRejectDistrict(t *testing.T) {
+func TestRegionServiceNormalizeServiceCityCodesRollsDistrictUpToOpenCity(t *testing.T) {
 	db := setupRegionServiceTestDB(t)
 	seedServiceRegionOpenData(t, db)
 
 	svc := RegionService{}
-	_, err := svc.NormalizeServiceCityCodes([]string{"雁塔区"})
-	if err == nil {
-		t.Fatal("expected district input to be rejected")
+	codes, err := svc.NormalizeServiceCityCodes([]string{"雁塔区", "610113", "610100"})
+	if err != nil {
+		t.Fatalf("expected district input to roll up to city, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "不是地级市") {
-		t.Fatalf("unexpected error: %v", err)
+	if len(codes) != 1 || codes[0] != "610100" {
+		t.Fatalf("expected rolled city code only, got %v", codes)
+	}
+}
+
+func TestRegionServiceNormalizeServiceAreaCodesKeepsOpenCityAndDistrict(t *testing.T) {
+	db := setupRegionServiceTestDB(t)
+	seedServiceRegionOpenData(t, db)
+
+	svc := RegionService{}
+	codes, err := svc.NormalizeServiceAreaCodes([]string{"雁塔区", "610113", "610100"})
+	if err != nil {
+		t.Fatalf("expected service area input to preserve district under open city, got %v", err)
+	}
+	if len(codes) != 2 || codes[0] != "610113" || codes[1] != "610100" {
+		t.Fatalf("expected district and city codes, got %v", codes)
+	}
+}
+
+func TestRegionServiceNormalizeServiceAreaCodesRequiresExplicitCity(t *testing.T) {
+	db := setupRegionServiceTestDB(t)
+	seedServiceRegionOpenData(t, db)
+
+	svc := RegionService{}
+	if _, err := svc.NormalizeServiceAreaCodes([]string{"610113"}); err == nil {
+		t.Fatal("expected district-only service area to be rejected")
 	}
 }
 
@@ -111,6 +134,23 @@ func TestRegionServiceResolveServiceAreaInputsToCityDisplayRollsUpDistrict(t *te
 	}
 	if len(names) != 1 || names[0] != "西安市" {
 		t.Fatalf("expected rolled city name only, got %v", names)
+	}
+}
+
+func TestRegionServiceResolveServiceAreaInputsToDisplayKeepsDistrictCodes(t *testing.T) {
+	db := setupRegionServiceTestDB(t)
+	seedServiceRegionOpenData(t, db)
+
+	svc := RegionService{}
+	codes, names, err := svc.ResolveServiceAreaInputsToDisplay([]string{"610100", "610113"})
+	if err != nil {
+		t.Fatalf("resolve service area display: %v", err)
+	}
+	if len(codes) != 2 || codes[0] != "610100" || codes[1] != "610113" {
+		t.Fatalf("expected city and district codes, got %v", codes)
+	}
+	if len(names) != 2 || names[0] != "西安市" || names[1] != "雁塔区" {
+		t.Fatalf("expected city and district names, got %v", names)
 	}
 }
 

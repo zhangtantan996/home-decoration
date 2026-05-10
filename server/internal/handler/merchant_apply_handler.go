@@ -577,8 +577,8 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 				return fmt.Errorf("%s工艺说明不能超过5000个字符", foremanCategoryDisplayNames[category])
 			}
 			images := normalizeStoredAssetSlice(normalizeStringSlice(item.Images))
-			if len(images) < 2 || len(images) > 8 {
-				return fmt.Errorf("%s需上传2-8张图片", foremanCategoryDisplayNames[category])
+			if len(images) < 2 || len(images) > 6 {
+				return fmt.Errorf("%s需上传2-6张图片", foremanCategoryDisplayNames[category])
 			}
 		}
 		if item, ok := provided["other"]; ok {
@@ -590,8 +590,8 @@ func validatePortfolioCases(role string, cases []PortfolioCaseInput) error {
 			if desc == "" {
 				return fmt.Errorf("其他施工展示工艺说明不能为空")
 			}
-			if len(images) < 2 || len(images) > 8 {
-				return fmt.Errorf("其他施工展示需上传2-8张图片")
+			if len(images) < 2 || len(images) > 6 {
+				return fmt.Errorf("其他施工展示需上传2-6张图片")
 			}
 		}
 		return nil
@@ -850,10 +850,10 @@ func MerchantApply(c *gin.Context) {
 		return
 	}
 
-	// 4. 验证服务城市代码是否有效（支持名称/代码输入，最终统一收口为城市代码）
-	serviceAreaCodes, err := regionService.NormalizeServiceCityCodes(input.ServiceArea)
+	// 4. 验证服务区域代码是否有效（城市必填，区县可选并保留）
+	serviceAreaCodes, err := regionService.NormalizeServiceAreaCodes(input.ServiceArea)
 	if err != nil {
-		response.Error(c, 400, "服务城市验证失败: "+err.Error())
+		response.Error(c, 400, "服务区域验证失败: "+err.Error())
 		return
 	}
 
@@ -1201,7 +1201,7 @@ func MerchantVerifyOnboardingPhone(c *gin.Context) {
 			if app.Role == "foreman" {
 				portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 			}
-			serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+			serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 
 			result["merchantKind"] = "provider"
 			result["rejectReason"] = app.RejectReason
@@ -1339,7 +1339,7 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 	if app.Role == "foreman" {
 		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 	}
-	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 
 	response.Success(c, gin.H{
 		"applicationId": app.ID,
@@ -1425,9 +1425,9 @@ func MerchantResubmit(c *gin.Context) {
 		return
 	}
 
-	serviceAreaCodes, err := regionService.NormalizeServiceCityCodes(input.ServiceArea)
+	serviceAreaCodes, err := regionService.NormalizeServiceAreaCodes(input.ServiceArea)
 	if err != nil {
-		response.Error(c, 400, "服务城市验证失败: "+err.Error())
+		response.Error(c, 400, "服务区域验证失败: "+err.Error())
 		return
 	}
 
@@ -1576,7 +1576,7 @@ func AdminListApplications(c *gin.Context) {
 
 		item := gin.H{
 			"id":               app.ID,
-			"phone":            app.Phone,
+			"phone":            maskPhoneValue(app.Phone),
 			"role":             app.Role,
 			"entityType":       app.EntityType,
 			"applicationScene": normalizeMerchantApplicationScene(app.ApplicationScene),
@@ -1624,7 +1624,7 @@ func AdminGetApplication(c *gin.Context) {
 		portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 	}
 
-	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 
 	var provider *model.Provider
 	if app.ProviderID > 0 {
@@ -1638,7 +1638,7 @@ func AdminGetApplication(c *gin.Context) {
 	detail := gin.H{
 		"id":                     app.ID,
 		"merchantKind":           "provider",
-		"phone":                  app.Phone,
+		"phone":                  visiblePhoneForAdmin(c, app.Phone),
 		"applicantType":          app.ApplicantType,
 		"role":                   app.Role,
 		"entityType":             app.EntityType,

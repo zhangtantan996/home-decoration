@@ -148,6 +148,9 @@ func AdminListProjectAudits(c *gin.Context) {
 		response.ServerError(c, "获取审计列表失败")
 		return
 	}
+	for i := range list {
+		sanitizeProjectAuditPhonesForAdmin(c, &list[i])
+	}
 	response.Success(c, gin.H{"list": list, "total": total, "page": page, "pageSize": pageSize})
 }
 
@@ -162,6 +165,7 @@ func AdminGetProjectAudit(c *gin.Context) {
 		respondScopedAccessError(c, err, "获取审计单失败")
 		return
 	}
+	sanitizeProjectAuditPhonesForAdmin(c, result)
 	response.Success(c, gin.H{"audit": result})
 }
 
@@ -182,6 +186,7 @@ func AdminArbitrateProjectAudit(c *gin.Context) {
 		respondDomainMutationError(c, err, "执行仲裁失败")
 		return
 	}
+	sanitizeProjectAuditPhonesForAdmin(c, result)
 	response.Success(c, gin.H{"audit": result})
 }
 
@@ -271,6 +276,9 @@ func AdminListRefundApplications(c *gin.Context) {
 		response.ServerError(c, "获取退款申请失败")
 		return
 	}
+	for i := range list {
+		sanitizeRefundApplicationPhonesForAdmin(c, &list[i])
+	}
 	response.Success(c, gin.H{"list": list, "total": total, "page": page, "pageSize": pageSize})
 }
 
@@ -285,6 +293,7 @@ func AdminGetRefundApplication(c *gin.Context) {
 		respondScopedAccessError(c, err, "获取退款申请失败")
 		return
 	}
+	sanitizeRefundApplicationPhonesForAdmin(c, result)
 	response.Success(c, gin.H{"refundApplication": result})
 }
 

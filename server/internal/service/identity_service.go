@@ -799,7 +799,7 @@ func (s *IdentityService) getMerchantApplicationDetails(userID uint64, appliedAt
 	var serviceAreaNames []string
 	if len(serviceAreaCodes) > 0 {
 		regionSvc := &RegionService{}
-		serviceAreaCodes, serviceAreaNames, _ = regionSvc.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+		serviceAreaCodes, serviceAreaNames, _ = regionSvc.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 	}
 
 	// 脱敏身份证号（仅显示前6位和后4位）

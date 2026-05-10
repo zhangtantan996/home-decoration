@@ -320,3 +320,27 @@ func TestPersistSMSAudit_LogsDegradedContextWhenTableMissing(t *testing.T) {
 		}
 	}
 }
+
+func TestResolveSMSTemplateContext_SupervisorPurposes(t *testing.T) {
+	withSMSConfigForTest(t, func(cfg *config.Config) {
+		cfg.SMS.TemplateCode = "SMS_DEFAULT"
+		cfg.SMS.TemplateCodeLow = "SMS_LOW"
+		cfg.SMS.TemplateCodeMedium = "SMS_MEDIUM"
+	})
+
+	applyTemplate, err := ResolveSMSTemplateContext(SMSPurposeSupervisorApply, &config.GetConfig().SMS)
+	if err != nil {
+		t.Fatalf("resolve supervisor apply template: %v", err)
+	}
+	if applyTemplate.RiskTier != SMSRiskTierMedium || applyTemplate.TemplateKey != "risk.medium" {
+		t.Fatalf("unexpected supervisor apply template context: %+v", applyTemplate)
+	}
+
+	loginTemplate, err := ResolveSMSTemplateContext(SMSPurposeSupervisorLogin, &config.GetConfig().SMS)
+	if err != nil {
+		t.Fatalf("resolve supervisor login template: %v", err)
+	}
+	if loginTemplate.RiskTier != SMSRiskTierLow || loginTemplate.TemplateKey != "risk.low" {
+		t.Fatalf("unexpected supervisor login template context: %+v", loginTemplate)
+	}
+}

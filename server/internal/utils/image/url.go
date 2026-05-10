@@ -85,6 +85,10 @@ func isLocalAssetPath(path string) bool {
 	return false
 }
 
+func IsLocalAssetPath(path string) bool {
+	return isLocalAssetPath(strings.TrimSpace(path))
+}
+
 var unsafeSchemes = []string{"javascript:", "data:", "vbscript:", "file:", "about:"}
 
 func isUnsafeOutboundScheme(raw string) bool {

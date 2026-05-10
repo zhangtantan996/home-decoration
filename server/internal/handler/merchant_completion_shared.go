@@ -186,7 +186,7 @@ func buildMerchantCompletionFormSnapshot(state *merchantProviderOnboardingState)
 		if app.Role == "foreman" {
 			portfolioCases = normalizeForemanPortfolioCases(portfolioCases)
 		}
-		serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+		serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 
 		return gin.H{
 			"phone":                  firstNonEmpty(app.Phone, state.User.Phone),
@@ -230,7 +230,7 @@ func buildMerchantCompletionFormSnapshot(state *merchantProviderOnboardingState)
 	highlightTags = normalizeStringSlice(parseJSONOrDelimitedSlice(provider.HighlightTags))
 	companyAlbum = parseJSONStringSlice(provider.CompanyAlbumJSON)
 	pricing = parsePricingObject(provider.PricingJSON)
-	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToCityDisplay(serviceAreaCodes)
+	serviceAreaCodes, serviceAreaNames, _ := regionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes)
 
 	applicantType := normalizeMerchantApplicantType(provider.SubType, provider.ProviderType)
 	providerSubType := normalizeMerchantProviderSubType(applicantType, provider.ProviderType)

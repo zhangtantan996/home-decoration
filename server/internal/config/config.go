@@ -39,7 +39,7 @@ type DatabaseConfig struct {
 	Password    string `mapstructure:"password"`
 	DBName      string `mapstructure:"dbname"`
 	SSLMode     string `mapstructure:"sslmode"`
-	AutoMigrate bool   `mapstructure:"auto_migrate"` // 是否启用自动迁移（默认 false）
+	AutoMigrate bool   `mapstructure:"auto_migrate"` // 是否启用自动迁移（仅本地/临时验证，生产必须用 DDL 迁移脚本；默认 false）
 
 	MaxOpenConns           int `mapstructure:"max_open_conns"`
 	MaxIdleConns           int `mapstructure:"max_idle_conns"`

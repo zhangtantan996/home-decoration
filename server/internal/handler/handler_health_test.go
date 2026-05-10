@@ -94,11 +94,22 @@ type healthCheckDetailedResponse struct {
 				RequiredMigration string   `json:"requiredMigration"`
 				Missing           []string `json:"missing"`
 			} `json:"outboxRuntimeSchema"`
+			SupervisorRuntimeSchema struct {
+				Status            string   `json:"status"`
+				Component         string   `json:"component"`
+				MigrationRequired bool     `json:"migrationRequired"`
+				RequiredMigration string   `json:"requiredMigration"`
+				Missing           []string `json:"missing"`
+			} `json:"supervisorRuntimeSchema"`
 		} `json:"checks"`
 	} `json:"data"`
 }
 
 func newHealthTestDB(t *testing.T, withSMSAudit bool) *gorm.DB {
+	return newHealthTestDBWithOptions(t, withSMSAudit, true)
+}
+
+func newHealthTestDBWithOptions(t *testing.T, withSMSAudit bool, withSupervisor bool) *gorm.DB {
 	t.Helper()
 	dsn := "file:" + strings.ReplaceAll(t.Name(), "/", "_") + "?mode=memory&cache=shared"
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
@@ -151,6 +162,14 @@ func newHealthTestDB(t *testing.T, withSMSAudit bool) *gorm.DB {
 		&model.MerchantIncome{},
 		&model.MerchantWithdraw{},
 		&model.OutboxEvent{},
+	}
+	if withSupervisor {
+		models = append(models,
+			&model.SupervisorPhoneWhitelist{},
+			&model.SupervisorApplication{},
+			&model.SupervisorAccount{},
+			&model.SupervisorProfile{},
+		)
 	}
 	if withSMSAudit {
 		models = append(models, &model.SMSAuditLog{})
@@ -253,6 +272,9 @@ func TestHealthCheckDetailedReportsOKWhenSMSAuditTableExists(t *testing.T) {
 	if payload.Data.Checks.OutboxRuntimeSchema.Status != "ok" {
 		t.Fatalf("expected outbox runtime schema ok, got %s", payload.Data.Checks.OutboxRuntimeSchema.Status)
 	}
+	if payload.Data.Checks.SupervisorRuntimeSchema.Status != "ok" {
+		t.Fatalf("expected supervisor runtime schema ok, got %s", payload.Data.Checks.SupervisorRuntimeSchema.Status)
+	}
 	if payload.Data.AlertCount != 0 {
 		t.Fatalf("expected alertCount=0, got %d", payload.Data.AlertCount)
 	}
@@ -290,5 +312,35 @@ func TestHealthCheckDetailedReportsDegradedWhenSMSAuditTableMissing(t *testing.T
 	}
 	if payload.Data.Alerts[0].Metadata["requiredMigration"] != repository.CanonicalSchemaReconcileMigrationPath {
 		t.Fatalf("unexpected migration metadata: %s", payload.Data.Alerts[0].Metadata["requiredMigration"])
+	}
+}
+
+func TestHealthCheckDetailedReportsDegradedWhenSupervisorSchemaMissing(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	withHealthRepositoryDB(t, newHealthTestDBWithOptions(t, true, false))
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	HealthCheckDetailed(c)
+
+	if w.Code != 200 {
+		t.Fatalf("expected status code 200, got %d", w.Code)
+	}
+
+	payload := decodeHealthDetailedResponse(t, w.Body.Bytes())
+	if payload.Data.Status != "degraded" {
+		t.Fatalf("expected overall health status degraded when supervisor schema is missing, got %s", payload.Data.Status)
+	}
+	if payload.Data.Checks.SupervisorRuntimeSchema.Status != "degraded" {
+		t.Fatalf("expected supervisor runtime schema check to remain degraded, got %s", payload.Data.Checks.SupervisorRuntimeSchema.Status)
+	}
+	if payload.Data.AlertCount != 1 {
+		t.Fatalf("expected alertCount=1 when supervisor schema is missing, got %d", payload.Data.AlertCount)
+	}
+	if payload.Data.Alerts[0].Code != "supervisor_runtime_schema_missing" {
+		t.Fatalf("unexpected supervisor alert code: %s", payload.Data.Alerts[0].Code)
+	}
+	if payload.Data.Alerts[0].Metadata["requiredMigration"] != repository.SupervisorRuntimeMigrationPath {
+		t.Fatalf("unexpected supervisor migration metadata: %s", payload.Data.Alerts[0].Metadata["requiredMigration"])
 	}
 }

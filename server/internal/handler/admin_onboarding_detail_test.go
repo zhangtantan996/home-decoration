@@ -53,12 +53,15 @@ func decodeAdminAuditDetailEnvelope(t *testing.T, recorder *httptest.ResponseRec
 	return envelope
 }
 
-func performAdminAuditDetailRequest(t *testing.T, method, path string, params gin.Params, handlerFunc gin.HandlerFunc) adminAuditDetailEnvelope {
+func performAdminAuditDetailRequest(t *testing.T, method, path string, params gin.Params, handlerFunc gin.HandlerFunc, ctxValues map[string]any) adminAuditDetailEnvelope {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	ctx, _ := gin.CreateTestContext(recorder)
 	ctx.Request = httptest.NewRequest(method, path, nil)
 	ctx.Params = params
+	for key, value := range ctxValues {
+		ctx.Set(key, value)
+	}
 	handlerFunc(ctx)
 
 	if recorder.Code != http.StatusOK {
@@ -107,6 +110,7 @@ func TestAdminGetApplicationIncludesAuditDocuments(t *testing.T) {
 		fmt.Sprintf("/api/v1/admin/merchant-applications/%d", app.ID),
 		gin.Params{{Key: "id", Value: fmt.Sprintf("%d", app.ID)}},
 		AdminGetApplication,
+		nil,
 	)
 
 	if envelope.Code != 0 {
@@ -190,6 +194,7 @@ func TestAdminGetMaterialShopApplicationIncludesReadableIdentityAndProducts(t *t
 		fmt.Sprintf("/api/v1/admin/material-shop-applications/%d", app.ID),
 		gin.Params{{Key: "id", Value: fmt.Sprintf("%d", app.ID)}},
 		AdminGetMaterialShopApplication,
+		nil,
 	)
 
 	if envelope.Code != 0 {
@@ -221,5 +226,73 @@ func TestAdminGetMaterialShopApplicationIncludesReadableIdentityAndProducts(t *t
 	}
 	if got := fmt.Sprint(firstProduct["description"]); got != "防滑耐磨，适合客餐厅" {
 		t.Fatalf("expected product description to be returned, got %q", got)
+	}
+}
+
+func TestAdminAuditDetailPhoneVisibilityRespectsPrivilege(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminOnboardingDetailDB(t)
+
+	merchantApp := model.MerchantApplication{
+		Phone:       "13800138000",
+		Role:        "company",
+		EntityType:  "company",
+		RealName:    "申请人甲",
+		CompanyName: "测试装修公司",
+		Status:      0,
+	}
+	if err := db.Create(&merchantApp).Error; err != nil {
+		t.Fatalf("create merchant application: %v", err)
+	}
+
+	maskedEnvelope := performAdminAuditDetailRequest(
+		t,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/admin/merchant-applications/%d", merchantApp.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprintf("%d", merchantApp.ID)}},
+		AdminGetApplication,
+		nil,
+	)
+	if got := fmt.Sprint(maskedEnvelope.Data["phone"]); got != "138****8000" {
+		t.Fatalf("expected masked merchant phone, got %q", got)
+	}
+
+	fullEnvelope := performAdminAuditDetailRequest(
+		t,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/admin/merchant-applications/%d", merchantApp.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprintf("%d", merchantApp.ID)}},
+		AdminGetApplication,
+		map[string]any{"is_super": true},
+	)
+	if got := fmt.Sprint(fullEnvelope.Data["phone"]); got != merchantApp.Phone {
+		t.Fatalf("expected full merchant phone, got %q", got)
+	}
+
+	shopApp := model.MaterialShopApplication{
+		Phone:        "13900139000",
+		ContactPhone: "029-88886666",
+		EntityType:   "company",
+		ShopName:     "测试门店",
+		ContactName:  "门店负责人",
+		Status:       0,
+	}
+	if err := db.Create(&shopApp).Error; err != nil {
+		t.Fatalf("create material shop application: %v", err)
+	}
+
+	maskedShopEnvelope := performAdminAuditDetailRequest(
+		t,
+		http.MethodGet,
+		fmt.Sprintf("/api/v1/admin/material-shop-applications/%d", shopApp.ID),
+		gin.Params{{Key: "id", Value: fmt.Sprintf("%d", shopApp.ID)}},
+		AdminGetMaterialShopApplication,
+		nil,
+	)
+	if got := fmt.Sprint(maskedShopEnvelope.Data["phone"]); got != "139****9000" {
+		t.Fatalf("expected masked material phone, got %q", got)
+	}
+	if got := fmt.Sprint(maskedShopEnvelope.Data["contactPhone"]); got != "029****6666" {
+		t.Fatalf("expected masked contact phone, got %q", got)
 	}
 }

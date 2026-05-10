@@ -41,6 +41,8 @@ var smsPurposePolicies = map[SMSPurpose]smsPurposePolicy{
 	SMSPurposeMerchantWithdraw: {RiskTier: SMSRiskTierHigh},
 	SMSPurposeMerchantBankBind: {RiskTier: SMSRiskTierHigh},
 	SMSPurposeDeleteAccount:    {RiskTier: SMSRiskTierHigh},
+	SMSPurposeSupervisorApply:  {RiskTier: SMSRiskTierMedium},
+	SMSPurposeSupervisorLogin:  {RiskTier: SMSRiskTierLow},
 }
 
 var smsRiskThresholds = map[SMSRiskTier]smsRiskThresholdConfig{

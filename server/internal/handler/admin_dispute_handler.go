@@ -50,7 +50,7 @@ func AdminListDisputedBookings(c *gin.Context) {
 		var user model.User
 		if err := repository.DB.Select("nickname, phone").First(&user, b.UserID).Error; err == nil {
 			item.UserName = user.Nickname
-			item.UserPhone = user.Phone
+			item.UserPhone = maskPhoneValue(user.Phone)
 		}
 
 		// 获取商家信息
@@ -98,6 +98,7 @@ func AdminGetDisputedBooking(c *gin.Context) {
 	// 获取用户信息
 	var user model.User
 	repository.DB.Select("id, nickname, phone, avatar").First(&user, booking.UserID)
+	user.Phone = visiblePhoneForAdmin(c, user.Phone)
 
 	// 获取商家信息
 	var provider model.Provider

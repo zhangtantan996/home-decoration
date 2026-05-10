@@ -326,7 +326,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	if req.Type != "password" && !codeVerified {
 		if err := VerifySMSCode(req.Phone, SMSPurposeLogin, req.Code); err != nil {
 			if errors.Is(err, errSMSCodeInvalid) {
-				return nil, nil, s.handleLoginFailure(&user, "code")
+				return nil, nil, s.HandleLoginFailure(&user, "code")
 			}
 			return nil, nil, err
 		}
@@ -340,7 +340,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		}
 		if !CheckPassword(req.Password, user.Password) {
 			// 密码错误，记录失败次数
-			return nil, nil, s.handleLoginFailure(&user, "password")
+			return nil, nil, s.HandleLoginFailure(&user, "password")
 		}
 	}
 
@@ -591,8 +591,8 @@ func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *t
 	return nil
 }
 
-// handleLoginFailure 处理登录失败逻辑
-func (s *UserService) handleLoginFailure(user *model.User, loginType string) error {
+// HandleLoginFailure 处理登录失败逻辑（验证码/密码登录通用）
+func (s *UserService) HandleLoginFailure(user *model.User, loginType string) error {
 	now := time.Now()
 	user.LoginFailedCount++
 	user.LastFailedLoginAt = &now

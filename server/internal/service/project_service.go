@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -804,6 +805,28 @@ func (s *ProjectService) CreateAdminWorkLog(projectID, adminID uint64, req *Crea
 	return s.createWorkLog(projectID, 0, adminID, req)
 }
 
+func (s *ProjectService) CreateSupervisorWorkLog(projectID, supervisorID uint64, req *CreateWorkLogRequest) (*model.WorkLog, error) {
+	if req == nil {
+		req = &CreateWorkLogRequest{}
+	}
+	normalizedPhotos := normalizeStoredAssetJSONArray(strings.TrimSpace(req.Photos))
+	var photoList []string
+	if err := json.Unmarshal([]byte(normalizedPhotos), &photoList); err == nil {
+		if len(photoList) < 2 {
+			return nil, errors.New("请上传至少两张现场照片")
+		}
+		for _, photo := range photoList {
+			if !imgutil.IsLocalAssetPath(photo) {
+				return nil, errors.New("仅支持平台上传图片，请重新上传现场照片")
+			}
+		}
+		req.Photos = normalizedPhotos
+	} else {
+		return nil, errors.New("无效的照片格式")
+	}
+	return s.createWorkLog(projectID, supervisorID, 0, req)
+}
+
 func (s *ProjectService) createWorkLog(projectID, workerID, adminID uint64, req *CreateWorkLogRequest) (*model.WorkLog, error) {
 	if req == nil {
 		req = &CreateWorkLogRequest{}
@@ -834,15 +857,34 @@ func (s *ProjectService) createWorkLog(projectID, workerID, adminID uint64, req 
 		}
 		logDate = parsed
 	}
+
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		return nil, errors.New("请输入简明标题")
+	}
+	if len([]rune(title)) > 100 {
+		return nil, errors.New("标题不能超过100字")
+	}
+
+	description := strings.TrimSpace(req.Description)
+	if description == "" {
+		return nil, errors.New("请输入详细描述")
+	}
+	if len([]rune(description)) > 2000 {
+		return nil, errors.New("现场情况描述不能超过2000字")
+	}
+
+	normalizedPhotos := normalizeStoredAssetJSONArray(strings.TrimSpace(req.Photos))
+
 	log := &model.WorkLog{
 		ProjectID:   projectID,
 		PhaseID:     phaseID,
 		WorkerID:    workerID,
 		CreatedBy:   adminID,
-		Title:       strings.TrimSpace(req.Title),
+		Title:       title,
 		LogDate:     logDate,
-		Description: strings.TrimSpace(req.Description),
-		Photos:      normalizeStoredAssetJSONArray(strings.TrimSpace(req.Photos)),
+		Description: description,
+		Photos:      normalizedPhotos,
 		Issues:      "[]",
 	}
 	if log.Photos == "" {
@@ -2513,9 +2555,15 @@ func (s *ProjectService) UpdatePhase(phaseID uint64, req *UpdatePhaseRequest) er
 	updates := map[string]interface{}{}
 
 	if req.Status != "" {
+		if req.Status != "pending" && req.Status != "in_progress" && req.Status != "completed" && req.Status != "paused" {
+			return errors.New("无效的阶段状态")
+		}
 		updates["status"] = req.Status
 	}
 	if req.ResponsiblePerson != "" {
+		if len([]rune(req.ResponsiblePerson)) > 50 {
+			return errors.New("负责人名字不能超过50字")
+		}
 		updates["responsible_person"] = req.ResponsiblePerson
 	}
 	if req.StartDate != "" {
