@@ -131,6 +131,7 @@ const UserList: React.FC = () => {
   const [keyword, setKeyword] = useState("");
   const [roleType, setRoleType] = useState<string>("owner");
   const [modalVisible, setModalVisible] = useState(false);
+  const [modalLoading, setModalLoading] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [batchDeleteVisible, setBatchDeleteVisible] = useState(false);
@@ -229,10 +230,21 @@ const UserList: React.FC = () => {
     return <StatusTag status="approved" text="正常" />;
   };
 
-  const openModal = (user: User) => {
-    setEditingUser(user);
-    form.setFieldsValue(user);
+  const openModal = async (user: User) => {
     setModalVisible(true);
+    setModalLoading(true);
+    try {
+      const res = (await adminUserApi.detail(user.id)) as any;
+      const detail = res?.data || user;
+      setEditingUser(detail);
+      form.setFieldsValue(detail);
+    } catch (error) {
+      setEditingUser(user);
+      form.setFieldsValue(user);
+      message.error(getErrorMessage(error, "加载账号详情失败"));
+    } finally {
+      setModalLoading(false);
+    }
   };
 
   const handleSubmit = async () => {
@@ -347,11 +359,14 @@ const UserList: React.FC = () => {
       width: 150,
       fixed: "left" as const,
       className: "hz-table-cell-nowrap",
-      render: (value: string) => (
-        <Tooltip title={value || "-"}>
-          <span className="hz-table-ellipsis-text">{value || "-"}</span>
+      render: (value: string, record: User) => {
+        const displayValue = record.phoneMasked || value || "-";
+        return (
+        <Tooltip title={displayValue}>
+          <span className="hz-table-ellipsis-text">{displayValue}</span>
         </Tooltip>
-      ),
+        );
+      },
     },
     {
       title: "昵称",
@@ -465,7 +480,7 @@ const UserList: React.FC = () => {
       className: "hz-table-action-cell",
       render: (_: any, record: User) => (
         <Space size={6} className="hz-table-action-group">
-          <Button type="link" size="small" onClick={() => openModal(record)}>
+          <Button type="link" size="small" onClick={() => void openModal(record)}>
             编辑
           </Button>
           {admin?.isSuperAdmin && (
@@ -611,8 +626,12 @@ const UserList: React.FC = () => {
       <Modal
         title="编辑账号"
         open={modalVisible}
-        onCancel={() => setModalVisible(false)}
+        onCancel={() => {
+          if (modalLoading) return;
+          setModalVisible(false);
+        }}
         onOk={handleSubmit}
+        confirmLoading={modalLoading}
         width={500}
       >
         <Form form={form} layout="vertical">

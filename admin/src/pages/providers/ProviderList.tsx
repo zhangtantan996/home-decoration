@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   Table,
@@ -18,6 +18,8 @@ import {
   Typography,
   Dropdown,
   Checkbox,
+  Row,
+  Col,
 } from "antd";
 import {
   ReloadOutlined,
@@ -29,6 +31,7 @@ import {
 } from "@ant-design/icons";
 import {
   adminProviderApi,
+  type AdminAccountStatus,
   type AdminOnboardingStatus,
   type AdminOperatingStatus,
   type AdminProviderListItem,
@@ -41,7 +44,11 @@ import ToolbarCard from "../../components/ToolbarCard";
 import AuditStatusSummary from "../audits/components/AuditStatusSummary";
 import VisibilityStatusPanel from "../audits/components/VisibilityStatusPanel";
 import { useAdaptiveTableScroll } from "../../hooks/useAdaptiveTableScroll";
+import { resolveAccountStatusTag, resolveLoginStatusTag } from "../../components/AccountStatusTags";
 import {
+  ACCOUNT_BOUND_STATUS_META,
+  ACCOUNT_STATUS_META,
+  ACCOUNT_STATUS_OPTIONS,
   ADMIN_PROVIDER_STATUS_META,
   ADMIN_PROVIDER_STATUS_OPTIONS,
   ADMIN_PROVIDER_TYPE_META,
@@ -61,9 +68,23 @@ import {
 
 interface Provider extends AdminProviderListItem {}
 
-interface ServiceCityGroupOption {
+interface ServiceAreaPickerCity {
   label: string;
-  options: Array<{ label: string; value: string }>;
+  value: string;
+  provinceCode: string;
+  provinceName: string;
+}
+
+interface ServiceAreaPickerProvince {
+  label: string;
+  value: string;
+  cities: ServiceAreaPickerCity[];
+}
+
+interface ServiceDistrictOption {
+  label: string;
+  value: string;
+  cityCode: string;
 }
 
 const { Text } = Typography;
@@ -250,41 +271,49 @@ const isProviderAvailable = (provider: Provider) =>
   provider.status === 1 && (provider.platformDisplayEnabled ?? true);
 
 const renderProviderStatusOverview = (provider: Provider) => {
-  const onboardingStatus = provider.onboardingStatus || "none";
-  const showOnboardingTag =
-    onboardingStatus !== "none" && onboardingStatus !== "approved";
-  const showOperatingTag =
-    (provider.operatingStatus || "unopened") === "frozen";
+  const accountStatus = provider.accountStatus || "unbound";
+  if (accountStatus === "unbound") {
+    return renderStatusTag(
+      "身份摘要",
+      ACCOUNT_STATUS_META.unbound.text,
+      ACCOUNT_STATUS_META.unbound.color,
+    );
+  }
+  if (accountStatus === "disabled") {
+    return renderStatusTag(
+      "身份摘要",
+      ACCOUNT_STATUS_META.disabled.text,
+      ACCOUNT_STATUS_META.disabled.color,
+    );
+  }
 
-  return (
-    <Space size={4} className="hz-status-tag-line">
-      {renderStatusTag(
-        "入驻",
-        provider.isSettled
-          ? SETTLED_STATUS_META.true.text
-          : SETTLED_STATUS_META.false.text,
-        provider.isSettled
-          ? SETTLED_STATUS_META.true.color
-          : SETTLED_STATUS_META.false.color,
-      )}
-      {showOnboardingTag &&
-        renderStatusTag(
-          "资料",
-          (MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
-            MERCHANT_ONBOARDING_STATUS_META.unknown).text,
-          (MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
-            MERCHANT_ONBOARDING_STATUS_META.unknown).color,
-        )}
-      {showOperatingTag &&
-        renderStatusTag(
-          "主体",
-          (OPERATING_STATUS_META[provider.operatingStatus || "unopened"] ||
-            OPERATING_STATUS_META.unopened).text,
-          (OPERATING_STATUS_META[provider.operatingStatus || "unopened"] ||
-            OPERATING_STATUS_META.unopened).color,
-        )}
-    </Space>
-  );
+  const operatingStatus = provider.operatingStatus || "unopened";
+  if (operatingStatus === "frozen") {
+    return renderStatusTag(
+      "身份摘要",
+      OPERATING_STATUS_META.frozen.text,
+      OPERATING_STATUS_META.frozen.color,
+    );
+  }
+  if (operatingStatus === "unopened") {
+    return renderStatusTag(
+      "身份摘要",
+      OPERATING_STATUS_META.unopened.text,
+      OPERATING_STATUS_META.unopened.color,
+    );
+  }
+
+  const onboardingStatus = provider.onboardingStatus || "none";
+  if (onboardingStatus !== "none" && onboardingStatus !== "approved") {
+    const meta =
+      MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
+      MERCHANT_ONBOARDING_STATUS_META.unknown;
+    return renderStatusTag("身份摘要", meta.text, meta.color);
+  }
+
+  const finalMeta =
+    OPERATING_STATUS_META[operatingStatus] || OPERATING_STATUS_META.active;
+  return renderStatusTag("身份摘要", finalMeta.text, finalMeta.color);
 };
 
 const renderBlockerSummary = (provider: Provider) => {
@@ -359,46 +388,126 @@ const parseJsonStringArraySafely = (value?: string | string[]) => {
   return [];
 };
 
-const buildServiceCityGroups = (
-  cities: ServiceCityRegion[],
-): ServiceCityGroupOption[] => {
-  const grouped = new Map<string, Array<{ label: string; value: string }>>();
-  cities.forEach((city) => {
-    const provinceName = city.parentName?.trim() || "未分组";
-    const bucket = grouped.get(provinceName) || [];
-    bucket.push({ label: city.name, value: city.code });
-    grouped.set(provinceName, bucket);
-  });
-  return [...grouped.entries()].map(([label, options]) => ({ label, options }));
+const formatServiceAreaDisplay = (value?: string | string[]) => {
+  const items = parseJsonStringArraySafely(value);
+  return items.length > 0 ? items.join("、") : "-";
 };
 
-const normalizeJSONArrayText = (
-  value: unknown,
-  fieldLabel: string,
-): string[] => {
-  if (Array.isArray(value)) {
-    return value.map((item) => String(item).trim()).filter(Boolean);
-  }
-  if (typeof value !== "string") {
-    return [];
-  }
-  const raw = value.trim();
-  if (!raw) {
-    return [];
-  }
+const formatStringListDisplay = (value?: string | string[]) => {
+  const items = parseJsonStringArraySafely(value);
+  return items.length > 0 ? items.join("、") : "-";
+};
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`${fieldLabel}必须是 JSON 数组格式`);
-  }
+const buildServiceAreaPickerOptions = (
+  cities: ServiceCityRegion[],
+): ServiceAreaPickerProvince[] => {
+  const grouped = new Map<string, ServiceAreaPickerProvince>();
+  const seenCities = new Set<string>();
+  cities.forEach((city) => {
+    const code = String(city.code || "").trim();
+    const name = String(city.name || "").trim();
+    if (!code || !name || seenCities.has(code)) return;
+    seenCities.add(code);
 
-  if (!Array.isArray(parsed)) {
-    throw new Error(`${fieldLabel}必须是 JSON 数组格式`);
-  }
+    const provinceCode = String(
+      city.parentCode || city.parentName || "unknown",
+    ).trim();
+    const provinceName = city.parentName?.trim() || "未分组";
+    const province = grouped.get(provinceCode) || {
+      label: provinceName,
+      value: provinceCode,
+      cities: [],
+    };
+    province.cities.push({
+      label: name,
+      value: code,
+      provinceCode,
+      provinceName,
+    });
+    grouped.set(provinceCode, province);
+  });
+  return [...grouped.values()];
+};
 
-  return parsed.map((item) => String(item).trim()).filter(Boolean);
+const mergeUniqueStrings = (...groups: string[][]) =>
+  Array.from(
+    new Set(
+      groups
+        .flat()
+        .map((item) => String(item || "").trim())
+        .filter(Boolean),
+    ),
+  );
+
+const splitServiceAreaValues = (
+  values: unknown,
+  provinces: ServiceAreaPickerProvince[],
+  districtCityMap: Map<string, string>,
+) => {
+  const rawValues = toStringList(values);
+  const provinceMap = new Map(
+    provinces.map((province) => [province.value, province]),
+  );
+  const provinceNameMap = new Map(
+    provinces.map((province) => [province.label, province.value]),
+  );
+  const cityMap = new Map<string, ServiceAreaPickerCity>();
+  const cityNameMap = new Map<string, ServiceAreaPickerCity>();
+  provinces.forEach((province) => {
+    province.cities.forEach((city) => {
+      cityMap.set(city.value, city);
+      cityNameMap.set(city.label, city);
+    });
+  });
+
+  const provinceCodes = new Set<string>();
+  const cityCodes = new Set<string>();
+  const districtCodes = new Set<string>();
+
+  rawValues.forEach((value) => {
+    if (provinceMap.has(value)) {
+      provinceCodes.add(value);
+      return;
+    }
+    const provinceByName = provinceNameMap.get(value);
+    if (provinceByName) {
+      provinceCodes.add(provinceByName);
+      return;
+    }
+    const city = cityMap.get(value) || cityNameMap.get(value);
+    if (city) {
+      provinceCodes.add(city.provinceCode);
+      cityCodes.add(city.value);
+      return;
+    }
+    if (/^\d{6}$/.test(value) && value.endsWith("0000")) {
+      provinceCodes.add(value);
+      return;
+    }
+    if (/^\d{6}$/.test(value) && value.endsWith("00")) {
+      cityCodes.add(value);
+      provinceCodes.add(`${value.slice(0, 2)}0000`);
+      return;
+    }
+    districtCodes.add(value);
+    const cityCode =
+      districtCityMap.get(value) ||
+      (/^\d{6}$/.test(value) ? `${value.slice(0, 4)}00` : "");
+    const parentCity = cityCode ? cityMap.get(cityCode) : undefined;
+    if (parentCity) {
+      provinceCodes.add(parentCity.provinceCode);
+      cityCodes.add(parentCity.value);
+    } else if (cityCode) {
+      cityCodes.add(cityCode);
+      provinceCodes.add(`${cityCode.slice(0, 2)}0000`);
+    }
+  });
+
+  return {
+    provinceCodes: [...provinceCodes],
+    cityCodes: [...cityCodes],
+    districtCodes: [...districtCodes],
+  };
 };
 
 const normalizeOptionalJSONArrayText = (
@@ -439,6 +548,9 @@ const ProviderList: React.FC = () => {
   const [providerType, setProviderType] = useState<number | undefined>();
   const [verifiedFilter, setVerifiedFilter] = useState<string | undefined>();
   const [settledFilter, setSettledFilter] = useState<string | undefined>();
+  const [accountStatusFilter, setAccountStatusFilter] = useState<
+    AdminAccountStatus | undefined
+  >();
   const [onboardingStatusFilter, setOnboardingStatusFilter] = useState<
     AdminOnboardingStatus | undefined
   >();
@@ -474,9 +586,84 @@ const ProviderList: React.FC = () => {
     name: string;
   } | null>(null);
   const [claimForm] = Form.useForm();
-  const [serviceCityOptions, setServiceCityOptions] = useState<
-    ServiceCityGroupOption[]
+  const [serviceAreaOptions, setServiceAreaOptions] = useState<
+    ServiceAreaPickerProvince[]
   >([]);
+  const [serviceAreaLoadFailed, setServiceAreaLoadFailed] = useState(false);
+  const [districtOptionsByCity, setDistrictOptionsByCity] = useState<
+    Record<string, ServiceDistrictOption[]>
+  >({});
+  const [districtLoadingByCity, setDistrictLoadingByCity] = useState<
+    Record<string, boolean>
+  >({});
+  const watchedServiceProvinceCodes =
+    Form.useWatch("serviceProvinceCodes", form) || [];
+  const watchedServiceCityCodes =
+    Form.useWatch("serviceCityCodes", form) || [];
+  const watchedServiceDistrictCodes =
+    Form.useWatch("serviceDistrictCodes", form) || [];
+  const selectedServiceProvinceCodes = toStringList(watchedServiceProvinceCodes);
+  const selectedServiceCityCodes = toStringList(watchedServiceCityCodes);
+  const selectedServiceDistrictCodes = toStringList(watchedServiceDistrictCodes);
+  const serviceAreaCityMap = useMemo(() => {
+    const map = new Map<string, ServiceAreaPickerCity>();
+    serviceAreaOptions.forEach((province) => {
+      province.cities.forEach((city) => map.set(city.value, city));
+    });
+    return map;
+  }, [serviceAreaOptions]);
+  const serviceDistrictCityMap = useMemo(() => {
+    const map = new Map<string, string>();
+    Object.entries(districtOptionsByCity).forEach(([cityCode, districts]) => {
+      districts.forEach((district) => map.set(district.value, cityCode));
+    });
+    return map;
+  }, [districtOptionsByCity]);
+  const serviceProvinceSelectOptions = useMemo(
+    () => serviceAreaOptions.map((province) => ({
+      label: province.label,
+      value: province.value,
+    })),
+    [serviceAreaOptions],
+  );
+  const serviceCitySelectOptions = useMemo(() => {
+    const allowedProvinces = new Set(selectedServiceProvinceCodes);
+    return serviceAreaOptions
+      .filter(
+        (province) =>
+          allowedProvinces.size === 0 || allowedProvinces.has(province.value),
+      )
+      .flatMap((province) =>
+        province.cities.map((city) => ({
+          label: `${city.label}（${province.label}）`,
+          value: city.value,
+        })),
+      );
+  }, [selectedServiceProvinceCodes, serviceAreaOptions]);
+  const serviceDistrictSelectOptions = useMemo(
+    () => {
+      const options = selectedServiceCityCodes.flatMap(
+        (cityCode) => districtOptionsByCity[cityCode] || [],
+      );
+      const existing = new Set(options.map((option) => option.value));
+      selectedServiceDistrictCodes.forEach((districtCode) => {
+        if (!existing.has(districtCode)) {
+          options.push({
+            label: "已选区县（加载中）",
+            value: districtCode,
+            cityCode: /^\d{6}$/.test(districtCode)
+              ? `${districtCode.slice(0, 4)}00`
+              : "",
+          });
+        }
+      });
+      return options;
+    },
+    [districtOptionsByCity, selectedServiceCityCodes, selectedServiceDistrictCodes],
+  );
+  const serviceDistrictSelectLoading = selectedServiceCityCodes.some(
+    (cityCode) => Boolean(districtLoadingByCity[cityCode]),
+  );
 
   // 根据URL路径设置服务商类型
   useEffect(() => {
@@ -504,6 +691,7 @@ const ProviderList: React.FC = () => {
     providerType,
     verifiedFilter,
     settledFilter,
+    accountStatusFilter,
     onboardingStatusFilter,
     operatingStatusFilter,
   ]);
@@ -512,20 +700,58 @@ const ProviderList: React.FC = () => {
     const loadServiceCities = async () => {
       try {
         const cities = await regionApi.getServiceCities();
-        setServiceCityOptions(buildServiceCityGroups(cities));
+        setServiceAreaOptions(buildServiceAreaPickerOptions(cities));
+        setServiceAreaLoadFailed(false);
       } catch (error) {
         console.error(error);
-        setServiceCityOptions([
-          {
-            label: "陕西省",
-            options: [{ label: "西安市", value: "610100" }],
-          },
-        ]);
+        setServiceAreaOptions([]);
+        setServiceAreaLoadFailed(true);
+        message.error("服务区域加载失败，请稍后重试");
       }
     };
 
     void loadServiceCities();
   }, []);
+
+  useEffect(() => {
+    selectedServiceCityCodes.forEach((cityCode) => {
+      if (!cityCode || districtOptionsByCity[cityCode] || districtLoadingByCity[cityCode]) {
+        return;
+      }
+      setDistrictLoadingByCity((prev) => ({ ...prev, [cityCode]: true }));
+      void regionApi.getChildren(cityCode)
+        .then((districts) => {
+          setDistrictOptionsByCity((prev) => ({
+            ...prev,
+            [cityCode]: districts.map((district) => ({
+              label: district.name,
+              value: district.code,
+              cityCode,
+            })),
+          }));
+        })
+        .catch(() => {
+          message.warning("区县数据加载失败，请稍后重试");
+        })
+        .finally(() => {
+          setDistrictLoadingByCity((prev) => ({ ...prev, [cityCode]: false }));
+        });
+    });
+  }, [districtLoadingByCity, districtOptionsByCity, selectedServiceCityCodes]);
+
+  useEffect(() => {
+    if (!modalVisible || serviceAreaOptions.length === 0) {
+      return;
+    }
+    if (editingProvider) {
+      const serviceAreaValues = editingProvider.serviceAreaCodes?.length
+        ? editingProvider.serviceAreaCodes
+        : parseJsonStringArraySafely(editingProvider.serviceArea);
+      syncServiceAreaFormFields(serviceAreaValues);
+      return;
+    }
+    syncServiceAreaFormFields(form.getFieldValue("serviceArea"));
+  }, [editingProvider, form, modalVisible, serviceAreaOptions]);
 
   const loadData = async () => {
     setLoading(true);
@@ -546,6 +772,7 @@ const ProviderList: React.FC = () => {
             : settledFilter === "false"
               ? false
               : undefined,
+        accountStatus: accountStatusFilter,
         onboardingStatus: onboardingStatusFilter,
         operatingStatus: operatingStatusFilter,
       })) as any;
@@ -599,6 +826,100 @@ const ProviderList: React.FC = () => {
     loadData();
   };
 
+  const syncServiceAreaFormFields = (values: unknown) => {
+    const split = splitServiceAreaValues(
+      values,
+      serviceAreaOptions,
+      serviceDistrictCityMap,
+    );
+    const currentProvinceCodes = toStringList(form.getFieldValue("serviceProvinceCodes"));
+    const currentCityCodes = toStringList(form.getFieldValue("serviceCityCodes"));
+    const currentDistrictCodes = toStringList(form.getFieldValue("serviceDistrictCodes"));
+    const nextProvinceCodes = split.provinceCodes;
+    const nextCityCodes = split.cityCodes;
+    const nextDistrictCodes = split.districtCodes;
+
+    if (
+      nextProvinceCodes.length === 0 &&
+      nextCityCodes.length === 0 &&
+      nextDistrictCodes.length === 0 &&
+      currentProvinceCodes.length === 0 &&
+      currentCityCodes.length === 0 &&
+      currentDistrictCodes.length === 0
+    ) {
+      return;
+    }
+
+    form.setFieldsValue({
+      serviceProvinceCodes: nextProvinceCodes,
+      serviceCityCodes: nextCityCodes,
+      serviceDistrictCodes: nextDistrictCodes,
+      serviceArea: mergeUniqueStrings(nextCityCodes, nextDistrictCodes),
+    });
+  };
+
+  const handleServiceProvinceChange = (values: unknown) => {
+    const provinceCodes = toStringList(values);
+    const allowedCityCodes = new Set(
+      serviceAreaOptions
+        .filter((province) => provinceCodes.includes(province.value))
+        .flatMap((province) => province.cities.map((city) => city.value)),
+    );
+    const cityCodes = selectedServiceCityCodes.filter((cityCode) =>
+      allowedCityCodes.has(cityCode),
+    );
+    const districtCodes = selectedServiceDistrictCodes.filter((districtCode) => {
+      const cityCode =
+        serviceDistrictCityMap.get(districtCode) ||
+        (/^\d{6}$/.test(districtCode)
+          ? `${districtCode.slice(0, 4)}00`
+          : "");
+      return cityCode ? cityCodes.includes(cityCode) : true;
+    });
+    form.setFieldsValue({
+      serviceProvinceCodes: provinceCodes,
+      serviceCityCodes: cityCodes,
+      serviceDistrictCodes: districtCodes,
+      serviceArea: mergeUniqueStrings(cityCodes, districtCodes),
+    });
+  };
+
+  const handleServiceCityChange = (values: unknown) => {
+    const cityCodes = toStringList(values);
+    const provinceCodes = mergeUniqueStrings(
+      selectedServiceProvinceCodes,
+      cityCodes
+        .map(
+          (cityCode) =>
+            serviceAreaCityMap.get(cityCode)?.provinceCode ||
+            (/^\d{6}$/.test(cityCode) ? `${cityCode.slice(0, 2)}0000` : ""),
+        )
+        .filter(Boolean),
+    );
+    const districtCodes = selectedServiceDistrictCodes.filter((districtCode) => {
+      const cityCode =
+        serviceDistrictCityMap.get(districtCode) ||
+        (/^\d{6}$/.test(districtCode)
+          ? `${districtCode.slice(0, 4)}00`
+          : "");
+      return cityCode ? cityCodes.includes(cityCode) : true;
+    });
+    form.setFieldsValue({
+      serviceProvinceCodes: provinceCodes,
+      serviceCityCodes: cityCodes,
+      serviceDistrictCodes: districtCodes,
+      serviceArea: mergeUniqueStrings(cityCodes, districtCodes),
+    });
+  };
+
+  const handleServiceDistrictChange = (values: unknown) => {
+    const districtCodes = toStringList(values);
+    form.setFieldsValue({
+      serviceDistrictCodes: districtCodes,
+      serviceArea: mergeUniqueStrings(selectedServiceCityCodes, districtCodes),
+    });
+  };
+
   const showDetail = (record: Provider) => {
     setCurrentProvider(record);
     setDetailVisible(true);
@@ -607,11 +928,22 @@ const ProviderList: React.FC = () => {
   const openModal = (provider?: Provider) => {
     setEditingProvider(provider || null);
     if (provider) {
+      const serviceAreaValues = provider.serviceAreaCodes?.length
+        ? provider.serviceAreaCodes
+        : parseJsonStringArraySafely(provider.serviceArea);
+      const splitServiceArea = splitServiceAreaValues(
+        serviceAreaValues,
+        serviceAreaOptions,
+        serviceDistrictCityMap,
+      );
       form.setFieldsValue({
         ...provider,
         companyName: getProviderSubjectName(provider),
         specialty: parseSpecialtyTags(provider.specialty),
-        serviceArea: parseJsonStringArraySafely(provider.serviceArea),
+        serviceProvinceCodes: splitServiceArea.provinceCodes,
+        serviceCityCodes: splitServiceArea.cityCodes,
+        serviceDistrictCodes: splitServiceArea.districtCodes,
+        serviceArea: mergeUniqueStrings(splitServiceArea.cityCodes, splitServiceArea.districtCodes),
       });
       setCurrentFormType(provider.providerType);
     } else {
@@ -622,6 +954,7 @@ const ProviderList: React.FC = () => {
         subType: "personal",
         status: 1,
       });
+      syncServiceAreaFormFields([]);
       setCurrentFormType(newType);
     }
     setModalVisible(true);
@@ -641,10 +974,13 @@ const ProviderList: React.FC = () => {
       cleanedValues.specialty = parseSpecialtyTags(values.specialty).join(
         " · ",
       );
-      cleanedValues.serviceArea = normalizeJSONArrayText(
-        values.serviceArea,
-        "服务城市",
+      cleanedValues.serviceArea = mergeUniqueStrings(
+        toStringList(values.serviceCityCodes),
+        toStringList(values.serviceDistrictCodes),
       );
+      delete cleanedValues.serviceProvinceCodes;
+      delete cleanedValues.serviceCityCodes;
+      delete cleanedValues.serviceDistrictCodes;
       cleanedValues.certifications = normalizeOptionalJSONArrayText(
         values.certifications,
         "资质认证",
@@ -803,9 +1139,9 @@ const ProviderList: React.FC = () => {
       ),
     },
     {
-      title: "经营概览",
+      title: "身份摘要",
       key: "statusOverview",
-      width: 170,
+      width: 132,
       render: (_: unknown, record: Provider) =>
         renderProviderStatusOverview(record),
     },
@@ -926,17 +1262,14 @@ const ProviderList: React.FC = () => {
       ),
     },
     {
-      title: "经营状态",
+      title: "经营控制",
       key: "availability",
-      width: 150,
+      width: 110,
       className: "hz-table-cell-nowrap",
       render: (_: any, record: Provider) => {
         const available = isProviderAvailable(record);
         return (
           <Space size={8} className="provider-list-availability">
-            <Tag color={available ? "success" : "default"}>
-              {available ? "经营中" : "已下线"}
-            </Tag>
             <PermissionWrapper
               permission={[
                 "provider:designer:status",
@@ -947,6 +1280,8 @@ const ProviderList: React.FC = () => {
               <Switch
                 size="small"
                 checked={available}
+                checkedChildren="经营中"
+                unCheckedChildren="已下线"
                 onChange={(checked) =>
                   handleAvailabilityChange(record.id, checked)
                 }
@@ -1033,7 +1368,7 @@ const ProviderList: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="服务商管理"
-        description="列表默认只展示关键状态与可操作开关；完整状态链路统一在详情里查看。"
+        description="列表只展示一条主状态摘要与经营控制；完整状态链路统一在详情中查看。"
       />
 
       <ToolbarCard>
@@ -1066,6 +1401,17 @@ const ProviderList: React.FC = () => {
               setPage(1);
             }}
             options={SETTLED_FILTER_OPTIONS}
+          />
+          <Select
+            allowClear
+            placeholder="账号绑定"
+            style={{ width: 120 }}
+            value={accountStatusFilter}
+            onChange={(val) => {
+              setAccountStatusFilter(val);
+              setPage(1);
+            }}
+            options={ACCOUNT_STATUS_OPTIONS}
           />
           <Select
             allowClear
@@ -1222,7 +1568,7 @@ const ProviderList: React.FC = () => {
                     {currentProvider.serviceIntro || "-"}
                   </div>
                 </Descriptions.Item>
-                <Descriptions.Item label="服务城市" span={2}>
+                <Descriptions.Item label="服务区域" span={2}>
                   <div
                     style={{
                       whiteSpace: "pre-wrap",
@@ -1230,7 +1576,7 @@ const ProviderList: React.FC = () => {
                       wordBreak: "break-word",
                     }}
                   >
-                    {currentProvider.serviceArea || "-"}
+                    {formatServiceAreaDisplay(currentProvider.serviceArea)}
                   </div>
                 </Descriptions.Item>
                 <Descriptions.Item label="团队规模">
@@ -1247,7 +1593,7 @@ const ProviderList: React.FC = () => {
                       wordBreak: "break-word",
                     }}
                   >
-                    {currentProvider.certifications || "-"}
+                    {formatStringListDisplay(currentProvider.certifications)}
                   </div>
                 </Descriptions.Item>
                 <Descriptions.Item label="封面图" span={2}>
@@ -1264,17 +1610,29 @@ const ProviderList: React.FC = () => {
               </Descriptions>
             </Card>
 
-            <Card size="small" title="绑定信息">
+            <Card size="small" title="账号信息">
               <Descriptions column={2} bordered size="small">
                 <Descriptions.Item label="账号绑定">
                   <Tag
-                    color={currentProvider.accountBound ? "green" : "default"}
+                    color={
+                      ACCOUNT_BOUND_STATUS_META[
+                        String(Boolean(currentProvider.accountBound))
+                      ]?.color || "default"
+                    }
                   >
-                    {currentProvider.accountBound ? "已绑定" : "未绑定"}
+                    {ACCOUNT_BOUND_STATUS_META[
+                      String(Boolean(currentProvider.accountBound))
+                    ]?.text || "-"}
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="关联账号ID">
                   {currentProvider.userId || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="账号状态">
+                  {resolveAccountStatusTag(currentProvider.accountStatus)}
+                </Descriptions.Item>
+                <Descriptions.Item label="登录结果">
+                  {resolveLoginStatusTag(currentProvider.loginStatus)}
                 </Descriptions.Item>
               </Descriptions>
             </Card>
@@ -1529,15 +1887,84 @@ const ProviderList: React.FC = () => {
           </Form.Item>
           <Form.Item
             name="serviceArea"
-            label="服务城市"
-            rules={[{ required: true, message: "请选择服务城市" }]}
+            label="服务区域"
+            hidden
           >
-            <Select
-              mode="multiple"
-              placeholder="选择服务城市"
-              options={serviceCityOptions}
-              optionFilterProp="label"
-            />
+            <Input />
+          </Form.Item>
+          <Form.Item
+            label="服务区域"
+            required
+          >
+            <Row gutter={[8, 8]}>
+              <Col xs={24} md={8}>
+                <Form.Item name="serviceProvinceCodes" noStyle>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="省份"
+                    options={serviceProvinceSelectOptions}
+                    disabled={serviceAreaLoadFailed || serviceAreaOptions.length === 0}
+                    maxTagCount="responsive"
+                    onChange={handleServiceProvinceChange}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item
+                  name="serviceCityCodes"
+                  noStyle
+                  rules={[
+                    {
+                      validator: (_, value) =>
+                        toStringList(value).length > 0
+                          ? Promise.resolve()
+                          : Promise.reject(new Error("请至少选择服务城市，区县可选")),
+                    },
+                  ]}
+                >
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="城市（必选）"
+                    options={serviceCitySelectOptions}
+                    disabled={serviceAreaLoadFailed || serviceAreaOptions.length === 0}
+                    optionFilterProp="label"
+                    maxTagCount="responsive"
+                    onChange={handleServiceCityChange}
+                  />
+                </Form.Item>
+              </Col>
+              <Col xs={24} md={8}>
+                <Form.Item name="serviceDistrictCodes" noStyle>
+                  <Select
+                    mode="multiple"
+                    allowClear
+                    placeholder="区县（可选）"
+                    options={serviceDistrictSelectOptions}
+                    disabled={serviceAreaLoadFailed || serviceAreaOptions.length === 0 || selectedServiceCityCodes.length === 0}
+                    optionFilterProp="label"
+                    loading={serviceDistrictSelectLoading}
+                    maxTagCount="responsive"
+                    onChange={handleServiceDistrictChange}
+                    notFoundContent={
+                      serviceAreaLoadFailed
+                        ? "服务区域加载失败，请刷新重试"
+                        : serviceDistrictSelectLoading
+                        ? "区县加载中"
+                        : selectedServiceCityCodes.length > 0
+                        ? "暂无可选区县"
+                        : "请先选择城市"
+                    }
+                  />
+                </Form.Item>
+              </Col>
+            </Row>
+            <Text type={serviceAreaLoadFailed ? "danger" : "secondary"}>
+              {serviceAreaLoadFailed
+                ? "当前无法加载已开通服务地区，请稍后刷新页面重试。"
+                : "仅已开通服务地区可选；区县不选时默认覆盖所选城市。"}
+            </Text>
           </Form.Item>
 
           <Form.Item
@@ -1623,8 +2050,8 @@ const ProviderList: React.FC = () => {
         }
         description={
           pendingAvailability?.enabled
-            ? `将「${pendingAvailability?.name || "-"}」恢复为经营中，允许公开展示和承接新业务。`
-            : `将「${pendingAvailability?.name || "-"}」设为已下线，不再公开展示、不再承接新业务；历史项目、结算和审计仍可查看。`
+            ? `将「${pendingAvailability?.name || "-"}」恢复经营。该操作会恢复主体经营与公开结果，但不修改账号登录状态。`
+            : `将「${pendingAvailability?.name || "-"}」停止经营。该操作会影响主体经营与公开结果，但不修改账号登录状态。`
         }
         confirmText={pendingAvailability?.enabled ? "确认恢复" : "确认停止"}
         onCancel={() => {

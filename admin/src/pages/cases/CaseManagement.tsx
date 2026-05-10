@@ -829,7 +829,12 @@ const CaseManagement: React.FC = () => {
                             legacyInfo={currentDetail.legacyInfo}
                         />
 
-                        <AuditDetailSection title="可见性解释" extra={currentDetail.legacyInfo?.isLegacyPath ? <Tag color="gold">legacy / 非主链路</Tag> : undefined}>
+                        <AuditDetailSection
+                            title="可见性解释"
+                            collapsible
+                            defaultCollapsed
+                            extra={currentDetail.legacyInfo?.isLegacyPath ? <Tag color="gold">legacy / 非主链路</Tag> : undefined}
+                        >
                             <VisibilityStatusPanel visibility={currentDetail.visibility} legacyInfo={currentDetail.legacyInfo} />
                         </AuditDetailSection>
 

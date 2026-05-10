@@ -213,6 +213,11 @@ body {
   color: var(--hz-muted);
 }
 
+.hz-modal-loading {
+  text-align: center;
+  padding: 48px 0;
+}
+
 .ant-drawer .ant-drawer-header {
   padding: 20px 24px;
   border-bottom: 1px solid var(--hz-border);
@@ -1404,7 +1409,7 @@ body {
   gap: 10px;
   padding-bottom: 12px;
   margin-bottom: 16px;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  border-bottom: 1px solid var(--hz-border);
 }
 
 .user-type-filter .ant-segmented {
@@ -1412,14 +1417,14 @@ body {
 }
 
 .user-type-filter-help {
-  color: rgba(0, 0, 0, 0.35);
+  color: var(--hz-muted);
   cursor: pointer;
   font-size: 14px;
   transition: color 0.2s;
 }
 
 .user-type-filter-help:hover {
-  color: rgba(0, 0, 0, 0.65);
+  color: var(--hz-brand);
 }
 
 .provider-list-column-settings {

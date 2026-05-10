@@ -169,7 +169,7 @@ const Login: React.FC = () => {
       </section>
 
       <section className="hz-login__form">
-        <Card className="hz-login__form-card" bordered={false}>
+        <Card className="hz-login__form-card" variant="borderless">
           <div className="hz-login__form-header">
             <div className="hz-login__swatches" aria-hidden="true">
               <span className="hz-login__swatch" style={{ background: '#2563eb' }} />
