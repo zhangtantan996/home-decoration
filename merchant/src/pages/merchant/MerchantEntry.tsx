@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Button, Layout, Typography, Row, Col, Modal, Radio, Grid } from 'antd';
+import { Button, Layout, Typography, Row, Col, Modal, Radio, Grid, Alert } from 'antd';
 import { ArrowRightOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { MERCHANT_THEME } from '../../constants/merchantTheme';
 
 const { Content } = Layout;
@@ -10,6 +10,11 @@ const { useBreakpoint } = Grid;
 
 type MerchantApplyRole = 'designer' | 'foreman' | 'company' | 'material_shop';
 type MerchantEntityType = 'personal' | 'company';
+
+const withQueryString = (path: string, params: URLSearchParams) => {
+    const query = params.toString();
+    return query ? `${path}?${query}` : path;
+};
 
 interface MerchantTypeCardProps {
     icon: React.ReactNode;
@@ -79,10 +84,13 @@ const MaterialIcon = () => (
 
 const MerchantEntry: React.FC = () => {
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
     const screens = useBreakpoint();
     const [applyModalOpen, setApplyModalOpen] = useState(false);
     const [selectedRole, setSelectedRole] = useState<MerchantApplyRole | ''>('');
     const [entityType, setEntityType] = useState<MerchantEntityType>('personal');
+    const phoneFromLogin = String(searchParams.get('phone') || '').trim();
+    const fromLoginUnregistered = searchParams.get('from') === 'login_unregistered';
     useEffect(() => {
         const style = document.createElement('style');
         style.innerHTML = `
@@ -315,17 +323,30 @@ const MerchantEntry: React.FC = () => {
             return;
         }
 
+        const params = new URLSearchParams();
+        if (fromLoginUnregistered) {
+            params.set('from', 'login_unregistered');
+        }
+        if (phoneFromLogin) {
+            params.set('phone', phoneFromLogin);
+        }
+
         if (selectedRole === 'material_shop') {
-            navigate('/material-shop/register?entityType=company');
+            params.set('entityType', 'company');
+            navigate(withQueryString('/material-shop/register', params));
             return;
         }
 
         if (selectedRole === 'company') {
-            navigate('/register?role=company&entityType=company');
+            params.set('role', 'company');
+            params.set('entityType', 'company');
+            navigate(withQueryString('/register', params));
             return;
         }
 
-        navigate(`/register?role=${selectedRole}&entityType=${entityType}`);
+        params.set('role', selectedRole);
+        params.set('entityType', entityType);
+        navigate(withQueryString('/register', params));
     };
 
     return (
@@ -354,6 +375,16 @@ const MerchantEntry: React.FC = () => {
                             加入禾泽云商家生态
                         </Title>
                     </div>
+
+                    {fromLoginUnregistered && (
+                        <Alert
+                            type="info"
+                            showIcon
+                            message="您还没有完成商家入驻"
+                            description="请先选择入驻类型并提交申请，审核通过后再登录商家中心。"
+                            style={{ marginBottom: 24, borderRadius: 12 }}
+                        />
+                    )}
 
                     <div className="premium-action-bar animate-fade-in" style={{ marginBottom: 24, animationDelay: '100ms' }}>
                         <Row align="middle" justify="space-between" gutter={[24, 24]}>

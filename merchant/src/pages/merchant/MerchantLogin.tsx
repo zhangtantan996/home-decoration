@@ -19,6 +19,15 @@ const normalizeRedirectPath = (value: string | null) => {
     return value;
 };
 
+const buildMerchantEntryPath = (phone: string, from: string) => {
+    const params = new URLSearchParams({ from });
+    const normalizedPhone = String(phone || '').trim();
+    if (normalizedPhone) {
+        params.set('phone', normalizedPhone);
+    }
+    return `/?${params.toString()}`;
+};
+
 const MerchantLogin: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
@@ -180,20 +189,8 @@ const MerchantLogin: React.FC = () => {
             return;
         }
 
-        message.warning('该手机号尚未入驻，正在为你跳转入驻页', 1.2);
-        if (guide?.kind === 'material_shop') {
-            const entityType = guide?.entityType || 'company';
-            navigate(`/material-shop/register?from=login_unregistered&phone=${encodeURIComponent(phone)}&entityType=${entityType}`);
-            return;
-        }
-
-        const role = guide?.role || 'designer';
-        const entityType = guide?.entityType || (
-            guide?.applicantType === 'studio' || guide?.applicantType === 'company'
-                ? 'company'
-                : 'personal'
-        );
-        navigate(`/register?from=login_unregistered&phone=${encodeURIComponent(phone)}&role=${role}&entityType=${entityType}`);
+        message.warning('您还没有完成商家入驻，请先入驻后再进行登录操作', 3);
+        navigate(buildMerchantEntryPath(phone, 'login_unregistered'));
     };
 
     const onFinish = async (values: { phone: string; code: string }) => {
