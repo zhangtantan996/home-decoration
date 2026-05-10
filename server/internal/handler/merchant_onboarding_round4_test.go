@@ -1104,6 +1104,146 @@ func TestMerchantApply_PersistsSubmittedSMSAudit(t *testing.T) {
 	}
 }
 
+func TestMerchantApply_VerifiesApplicantIDCardBeforeSubmit(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	t.Setenv("USER_REAL_NAME_VERIFY_PROVIDER", "fake")
+
+	input := newValidDesignerApplyInput()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MerchantApply(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+
+	var user model.User
+	if err := repository.DB.First(&user, "phone = ?", input.Phone).Error; err != nil {
+		t.Fatalf("load applicant user: %v", err)
+	}
+	var verification model.UserVerification
+	if err := repository.DB.First(&verification, "user_id = ?", user.ID).Error; err != nil {
+		t.Fatalf("expected user verification record: %v", err)
+	}
+	if verification.Status != 1 || verification.Provider != "fake" || verification.IDCardLast4 != "002X" {
+		t.Fatalf("unexpected verification record: %+v", verification)
+	}
+}
+
+func TestMerchantApply_ReusesExistingRealNameVerification(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	t.Setenv("USER_REAL_NAME_VERIFY_PROVIDER", "fake")
+
+	input := newValidDesignerApplyInput()
+	user := model.User{Phone: input.Phone, Nickname: input.RealName, Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	now := time.Now()
+	if err := repository.DB.Create(&model.UserVerification{
+		UserID:         user.ID,
+		RealNameMasked: "张*",
+		IDCardLast4:    "002X",
+		Status:         1,
+		VerifyMethod:   "id_card_two_factor",
+		Provider:       "aliyun",
+		VerifiedAt:     &now,
+	}).Error; err != nil {
+		t.Fatalf("create existing verification: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MerchantApply(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var verifications []model.UserVerification
+	if err := repository.DB.Where("user_id = ?", user.ID).Find(&verifications).Error; err != nil {
+		t.Fatalf("load verification records: %v", err)
+	}
+	if len(verifications) != 1 {
+		t.Fatalf("expected existing verification reused without extra record, got %d", len(verifications))
+	}
+	if verifications[0].Provider != "aliyun" {
+		t.Fatalf("expected existing provider to remain unchanged, got %+v", verifications[0])
+	}
+}
+
+func TestMaterialShopApply_VerifiesLegalPersonIDCardBeforeSubmit(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	t.Setenv("USER_REAL_NAME_VERIFY_PROVIDER", "fake")
+
+	input := newValidMaterialShopApplyInput()
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MaterialShopApply(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+
+	var user model.User
+	if err := repository.DB.First(&user, "phone = ?", input.Phone).Error; err != nil {
+		t.Fatalf("load material applicant user: %v", err)
+	}
+	var verification model.UserVerification
+	if err := repository.DB.First(&verification, "user_id = ?", user.ID).Error; err != nil {
+		t.Fatalf("expected legal person verification record: %v", err)
+	}
+	if verification.Status != 1 || verification.Provider != "fake" || verification.IDCardLast4 != "002X" {
+		t.Fatalf("unexpected verification record: %+v", verification)
+	}
+}
+
+func TestMaterialShopApply_ReusesExistingLegalPersonRealNameVerification(t *testing.T) {
+	setupMerchantRound4TestDB(t)
+	t.Setenv("USER_REAL_NAME_VERIFY_PROVIDER", "fake")
+
+	input := newValidMaterialShopApplyInput()
+	user := model.User{Phone: input.Phone, Nickname: input.LegalPersonName, Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create material applicant user: %v", err)
+	}
+	now := time.Now()
+	if err := repository.DB.Create(&model.UserVerification{
+		UserID:         user.ID,
+		RealNameMasked: "王*",
+		IDCardLast4:    "002X",
+		Status:         1,
+		VerifyMethod:   "id_card_two_factor",
+		Provider:       "aliyun",
+		VerifiedAt:     &now,
+	}).Error; err != nil {
+		t.Fatalf("create existing material verification: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = newJSONRequest(t, http.MethodPost, input)
+	MaterialShopApply(c)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var verifications []model.UserVerification
+	if err := repository.DB.Where("user_id = ?", user.ID).Find(&verifications).Error; err != nil {
+		t.Fatalf("load material verification records: %v", err)
+	}
+	if len(verifications) != 1 {
+		t.Fatalf("expected existing legal person verification reused without extra record, got %d", len(verifications))
+	}
+	if verifications[0].Provider != "aliyun" {
+		t.Fatalf("expected existing provider to remain unchanged, got %+v", verifications[0])
+	}
+}
+
 func TestAdminApproveApplication_PersistsApprovedSMSAudit(t *testing.T) {
 	setupMerchantRound4TestDB(t)
 

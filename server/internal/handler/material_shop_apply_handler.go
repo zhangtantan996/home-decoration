@@ -387,41 +387,6 @@ func MaterialShopApply(c *gin.Context) {
 		return
 	}
 
-	tx := repository.DB.Begin()
-	user, err := createOrLoadUserForMaterialApply(tx, input.Phone, input.LegalPersonName)
-	if err != nil {
-		tx.Rollback()
-		if respondMerchantSchemaMismatch(c, err) {
-			return
-		}
-		response.Error(c, 500, buildUserCreateFailMessage(err))
-		return
-	}
-
-	if ok, nextAction, checkErr := canSubmitMaterialShopApplication(tx, user.ID); checkErr != nil {
-		tx.Rollback()
-		if respondMerchantSchemaMismatch(c, checkErr) {
-			return
-		}
-		response.Error(c, 500, "提交失败: 校验商家身份异常")
-		return
-	} else if !ok {
-		if nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeMaterial, 0, input.Phone, input.VerificationToken) {
-			goto createMaterialShopApplication
-		}
-		tx.Rollback()
-		c.JSON(200, response.Response{
-			Code:    409,
-			Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
-			Data: gin.H{
-				"nextAction": nextAction,
-				"userId":     user.ID,
-			},
-		})
-		return
-	}
-
-createMaterialShopApplication:
 	licenseVerification, err := service.VerifyLicenseForApplyWithContextResult(service.EnterpriseVerificationContext{
 		ApplicationType: "material_shop",
 		ActorKey:        input.Phone,
@@ -430,10 +395,71 @@ createMaterialShopApplication:
 		ClientIP:        c.ClientIP(),
 	})
 	if err != nil {
-		tx.Rollback()
 		response.Error(c, 400, err.Error())
 		return
 	}
+
+	user, err := createOrLoadUserForMaterialApply(repository.DB, input.Phone, input.LegalPersonName)
+	if err != nil {
+		if respondMerchantSchemaMismatch(c, err) {
+			return
+		}
+		response.Error(c, 500, buildUserCreateFailMessage(err))
+		return
+	}
+
+	if ok, nextAction, checkErr := canSubmitMaterialShopApplication(repository.DB, user.ID); checkErr != nil {
+		if respondMerchantSchemaMismatch(c, checkErr) {
+			return
+		}
+		response.Error(c, 500, "提交失败: 校验商家身份异常")
+		return
+	} else if !ok {
+		if nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeMaterial, 0, input.Phone, input.VerificationToken) {
+		} else {
+			c.JSON(200, response.Response{
+				Code:    409,
+				Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
+				Data: gin.H{
+					"nextAction": nextAction,
+					"userId":     user.ID,
+				},
+			})
+			return
+		}
+	}
+
+	if err := service.VerifyOnboardingRealName(user.ID, input.LegalPersonName, input.LegalPersonIDCardNo, c.ClientIP()); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	tx := repository.DB.Begin()
+	if ok, nextAction, checkErr := canSubmitMaterialShopApplication(tx, user.ID); checkErr != nil {
+		tx.Rollback()
+		if respondMerchantSchemaMismatch(c, checkErr) {
+			return
+		}
+		response.Error(c, 500, "提交失败: 校验商家身份异常")
+		return
+	} else if !ok {
+		tx.Rollback()
+		if nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeMaterial, 0, input.Phone, input.VerificationToken) {
+			// allowed to continue with the already verified application data
+		} else {
+			c.JSON(200, response.Response{
+				Code:    409,
+				Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
+				Data: gin.H{
+					"nextAction": nextAction,
+					"userId":     user.ID,
+				},
+			})
+			return
+		}
+		tx = repository.DB.Begin()
+	}
+
 	acceptedAt := time.Now()
 	application := model.MaterialShopApplication{
 		UserID:                 user.ID,
@@ -664,6 +690,11 @@ func MaterialShopApplyResubmit(c *gin.Context) {
 			response.Error(c, 400, verifyErr.Error())
 			return
 		}
+	}
+
+	if err := service.VerifyOnboardingRealName(app.UserID, input.LegalPersonName, input.LegalPersonIDCardNo, c.ClientIP()); err != nil {
+		response.Error(c, 400, err.Error())
+		return
 	}
 
 	tx := repository.DB.Begin()

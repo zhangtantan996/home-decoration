@@ -872,7 +872,43 @@ func MerchantApply(c *gin.Context) {
 		}
 	}
 
-	// 5. 序列化 JSON 字段
+	// 5. 入驻内隐式建号（或复用已有用户）。外部实名核验不能放在业务事务内。
+	user, err := createOrLoadMerchantUserWithCompatibility(repository.DB, input.Phone, input.RealName)
+	if err != nil {
+		if respondMerchantSchemaMismatch(c, err) {
+			return
+		}
+		log.Printf("[MerchantApply] create/load user failed, phone=%s, err=%v", input.Phone, err)
+		response.Error(c, 500, buildUserCreateFailMessage(err))
+		return
+	}
+
+	if ok, nextAction, checkErr := canSubmitProviderApplication(repository.DB, user.ID); checkErr != nil {
+		if respondMerchantSchemaMismatch(c, checkErr) {
+			return
+		}
+		response.Error(c, 500, "提交失败: 校验商家身份异常")
+		return
+	} else if !ok {
+		if !(nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeProvider, 0, input.Phone, input.VerificationToken)) {
+			c.JSON(200, response.Response{
+				Code:    409,
+				Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
+				Data: gin.H{
+					"nextAction": nextAction,
+					"userId":     user.ID,
+				},
+			})
+			return
+		}
+	}
+
+	if err := service.VerifyOnboardingRealName(user.ID, input.RealName, input.IDCardNo, c.ClientIP()); err != nil {
+		response.Error(c, 400, err.Error())
+		return
+	}
+
+	// 6. 序列化 JSON 字段
 	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 	stylesJSON, _ := json.Marshal(input.Styles)
 	highlightTagsJSON, _ := json.Marshal(input.HighlightTags)
@@ -886,41 +922,7 @@ func MerchantApply(c *gin.Context) {
 
 	tx := repository.DB.Begin()
 
-	// 6. 入驻内隐式建号（或复用已有用户）
-	var user model.User
-	if err := tx.Where("phone = ?", input.Phone).First(&user).Error; err != nil {
-		if !errors.Is(err, gorm.ErrRecordNotFound) {
-			tx.Rollback()
-			response.Error(c, 500, "提交失败: 查询用户异常")
-			return
-		}
-
-		createdUser, err := createMerchantUserWithCompatibility(tx, input.Phone, input.RealName)
-		if err != nil {
-			if isUserPhoneDuplicateError(err) {
-				if findErr := tx.Where("phone = ?", input.Phone).First(&user).Error; findErr != nil {
-					tx.Rollback()
-					if respondMerchantSchemaMismatch(c, findErr) {
-						return
-					}
-					log.Printf("[MerchantApply] duplicate user phone but query existing failed, phone=%s, err=%v", input.Phone, findErr)
-					response.Error(c, 500, buildUserCreateFailMessage(findErr))
-					return
-				}
-			} else {
-				tx.Rollback()
-				if respondMerchantSchemaMismatch(c, err) {
-					return
-				}
-				log.Printf("[MerchantApply] create user failed, phone=%s, err=%v", input.Phone, err)
-				response.Error(c, 500, buildUserCreateFailMessage(err))
-				return
-			}
-		} else {
-			user = createdUser
-		}
-	}
-	// 7. 商家互斥：同一时刻仅允许一个已生效商家身份；用户账号可与商家共存
+	// 7. 商家互斥二次校验：防止实名核验期间身份状态被并发改变。
 	if ok, nextAction, checkErr := canSubmitProviderApplication(tx, user.ID); checkErr != nil {
 		tx.Rollback()
 		if respondMerchantSchemaMismatch(c, checkErr) {
@@ -930,22 +932,22 @@ func MerchantApply(c *gin.Context) {
 		return
 	} else if !ok {
 		if nextAction == merchantNextActionReapply && verificationTokenAllowsReapply(merchantVerificationModeApply, merchantIdentityTypeProvider, 0, input.Phone, input.VerificationToken) {
-			goto createProviderApplication
+			// allowed to continue with the already verified application data
+		} else {
+			tx.Rollback()
+			c.JSON(200, response.Response{
+				Code:    409,
+				Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
+				Data: gin.H{
+					"nextAction": nextAction,
+					"userId":     user.ID,
+				},
+			})
+			return
 		}
-		tx.Rollback()
-		c.JSON(200, response.Response{
-			Code:    409,
-			Message: "您已有生效中的商家身份，请登录商家中心或重新发起新类型申请",
-			Data: gin.H{
-				"nextAction": nextAction,
-				"userId":     user.ID,
-			},
-		})
-		return
 	}
 
 	// 8. 创建申请记录
-createProviderApplication:
 	acceptedAt := time.Now()
 	application := model.MerchantApplication{
 		UserID:                 user.ID,
@@ -1478,6 +1480,10 @@ func MerchantResubmit(c *gin.Context) {
 		app.LicenseVerifyReason = licenseVerificationReason(licenseVerification)
 		app.LicenseHash = licenseVerificationHash(licenseVerification)
 		app.LicenseVerifiedAt = licenseVerificationVerifiedAt(licenseVerification)
+	}
+	if err := service.VerifyOnboardingRealName(app.UserID, input.RealName, input.IDCardNo, c.ClientIP()); err != nil {
+		response.Error(c, 400, err.Error())
+		return
 	}
 	app.TeamSize = input.TeamSize
 	app.OfficeAddress = input.OfficeAddress

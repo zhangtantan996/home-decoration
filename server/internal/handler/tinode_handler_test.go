@@ -48,6 +48,7 @@ func migrateHandlerRuntimeTestSchema(t *testing.T, db *gorm.DB, extraModels ...i
 		&model.MaterialShopApplicationProduct{},
 		&model.MaterialShopProduct{},
 		&model.UserIdentity{},
+		&model.UserVerification{},
 		&model.SystemConfig{},
 		&model.Notification{},
 		&model.UserSettings{},

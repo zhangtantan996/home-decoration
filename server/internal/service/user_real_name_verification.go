@@ -332,6 +332,19 @@ func (s *UserSettingsService) SubmitRealNameVerification(userID uint64, realName
 	return s.SubmitRealNameVerificationForClient(userID, realName, idCard, "")
 }
 
+// VerifyOnboardingRealName performs the same paid two-factor real-name check used by
+// user settings, but is called from merchant onboarding after the local format checks.
+func VerifyOnboardingRealName(userID uint64, realName, idCard, clientIP string) error {
+	if userID == 0 {
+		return errors.New("实名核验用户不存在")
+	}
+	_, err := (&UserSettingsService{}).SubmitRealNameVerificationForClient(userID, realName, idCard, clientIP)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (s *UserSettingsService) SubmitRealNameVerificationForClient(userID uint64, realName, idCard, clientIP string) (*UserVerificationView, error) {
 	normalizedName := strings.TrimSpace(realName)
 	normalizedIDCard := normalizeIDCard(idCard)
