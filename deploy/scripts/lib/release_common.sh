@@ -193,6 +193,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.14.5_add_reconciliation_runtime_tables.sql"
     "server/migrations/v1.14.6_add_booking_survey_deposit_status.sql"
     "server/migrations/v1.14.7_reconcile_admin_finance_role_permissions.sql"
+    "server/migrations/v1.14.8_rehome_order_center_menu.sql"
     "server/migrations/v1.15.0_unified_identity_center.sql"
     "server/migrations/v1.15.0_backfill_identity_data.sql"
     "server/migrations/v1.15.1_add_admin_phone_view_permission.sql"
