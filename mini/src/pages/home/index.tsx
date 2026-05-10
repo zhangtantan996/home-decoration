@@ -1,5 +1,5 @@
 import Taro, { useDidShow } from "@tarojs/taro";
-import { Image, Text, View } from "@tarojs/components";
+import { Image, ScrollView, Text, View } from "@tarojs/components";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/Button";
@@ -421,28 +421,30 @@ const loadAllProviders = async ({
   type,
   keyword,
   sortBy,
+  page,
 }: {
   type: ProviderType;
   keyword: string;
-  sortBy?: "rating" | "distance" | "price";
+  sortBy?: string;
+  page?: number;
 }) => {
   const data = await listProviders({
-    page: 1,
+    page: page || 1,
     pageSize: HOME_FETCH_PAGE_SIZE,
     type,
     keyword,
     sortBy,
   });
-  return data.list || [];
+  return { list: data.list || [], total: data.total || 0 };
 };
 
-const loadAllMaterialShops = async (sortBy: "recommend" | "distance") => {
+const loadAllMaterialShops = async (sortBy: "recommend" | "distance", page?: number) => {
   const data = await listMaterialShops({
-    page: 1,
+    page: page || 1,
     pageSize: HOME_FETCH_PAGE_SIZE,
     sortBy,
   });
-  return data.list || [];
+  return { list: data.list || [], total: data.total || 0 };
 };
 
 export default function Home() {
@@ -456,6 +458,12 @@ export default function Home() {
     useState<ProviderOrgFilter>("all");
   const [providerItems, setProviderItems] = useState<ProviderListItem[]>([]);
   const [materialItems, setMaterialItems] = useState<MaterialShopItem[]>([]);
+  const [providerPage, setProviderPage] = useState(1);
+  const [providerTotal, setProviderTotal] = useState(0);
+  const [providerLoadingMore, setProviderLoadingMore] = useState(false);
+  const [materialPage, setMaterialPage] = useState(1);
+  const [materialTotal, setMaterialTotal] = useState(0);
+  const [materialLoadingMore, setMaterialLoadingMore] = useState(false);
   const [loading, setLoading] = useState(true);
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const [showQuotePopup, setShowQuotePopup] = useState(false);
@@ -585,59 +593,70 @@ export default function Home() {
     );
   }, [currentSortOptions, currentSortValue]);
 
+  const getBackendSortBy = (sortValue: string): string | undefined => {
+    if (sortValue === "recommend") return undefined;
+    if (sortValue === "rating") return "rating";
+    if (sortValue === "experience") return "experience";
+    return undefined;
+  };
+
+  // hasMore：当客户端 orgFilter 生效时 server total 不可信，禁止加载更多
+  const providerHasMore =
+    providerOrgFilter !== "all" && activeCategory !== "company"
+      ? false
+      : providerItems.length < providerTotal;
+  const materialHasMore = materialItems.length < materialTotal;
+
   const loadPageData = useCallback(
     async (fromPullDown = false) => {
       if (!fromPullDown) {
         setLoading(true);
       }
 
+      setProviderPage(1);
+      setProviderTotal(0);
+      setMaterialPage(1);
+      setMaterialTotal(0);
+
       try {
-        if (activeCategory === "designer") {
-          const list = await loadAllProviders({
-            type: "designer",
-            sortBy: designerSortBy === "rating" ? "rating" : undefined,
-            keyword: "",
-          });
-
-          const filtered = list.filter((provider) =>
-            providerOrgFilter === "all"
-              ? true
-              : getProviderOrgType(provider) === providerOrgFilter,
+        if (activeCategory === "material") {
+          const { list, total } = await loadAllMaterialShops(
+            materialSortBy === "distance" ? "distance" : "recommend",
+            1,
           );
-          setProviderItems(sortProviders(filtered, designerSortBy));
-          setMaterialItems([]);
+          setMaterialItems(list);
+          setMaterialTotal(total);
+          setMaterialPage(1);
+          setProviderItems([]);
           return;
         }
 
-        if (activeCategory === "foreman" || activeCategory === "company") {
-          const requestType =
-            activeCategory === "foreman" ? "foreman" : "company";
-          const sortBy =
-            activeCategory === "foreman" ? foremanSortBy : companySortBy;
-          const list = await loadAllProviders({
-            type: requestType,
-            sortBy: sortBy === "rating" ? "rating" : undefined,
-            keyword: "",
-          });
+        const requestType = (
+          activeCategory === "designer" ? "designer" :
+          activeCategory === "foreman" ? "foreman" :
+          "company"
+        ) as ProviderType;
 
-          const filtered = list.filter((provider) =>
-            activeCategory === "company"
-              ? true
-              : providerOrgFilter === "all"
-                ? true
-                : getProviderOrgType(provider) === providerOrgFilter,
-          );
-          setProviderItems(sortProviders(filtered, sortBy));
-          setMaterialItems([]);
-          return;
-        }
+        const currentSort =
+          activeCategory === "designer" ? designerSortBy :
+          activeCategory === "foreman" ? foremanSortBy :
+          companySortBy;
 
-        const list = await loadAllMaterialShops(
-          materialSortBy === "distance" ? "distance" : "recommend",
-        );
+        const { list, total } = await loadAllProviders({
+          type: requestType,
+          sortBy: getBackendSortBy(currentSort),
+          keyword: "",
+          page: 1,
+        });
 
-        setMaterialItems(list);
-        setProviderItems([]);
+        const filtered =
+          activeCategory === "company" || providerOrgFilter === "all"
+            ? list
+            : list.filter((p) => getProviderOrgType(p) === providerOrgFilter);
+        setProviderItems(filtered);
+        setProviderTotal(total);
+        setProviderPage(1);
+        setMaterialItems([]);
       } catch (error) {
         showErrorToast(error, "加载失败");
       } finally {
@@ -656,6 +675,74 @@ export default function Home() {
       providerOrgFilter,
     ],
   );
+
+  const handleLoadMoreProvider = useCallback(async () => {
+    if (providerLoadingMore) return;
+    if (!providerHasMore) return;
+
+    const nextPage = providerPage + 1;
+    setProviderLoadingMore(true);
+    try {
+      const requestType = (
+        activeCategory === "designer" ? "designer" :
+        activeCategory === "foreman" ? "foreman" :
+        "company"
+      ) as ProviderType;
+
+      const currentSort =
+        activeCategory === "designer" ? designerSortBy :
+        activeCategory === "foreman" ? foremanSortBy :
+        companySortBy;
+
+      const { list } = await loadAllProviders({
+        type: requestType,
+        sortBy: getBackendSortBy(currentSort),
+        keyword: "",
+        page: nextPage,
+      });
+
+      setProviderItems((prev) => [...prev, ...list]);
+      setProviderPage(nextPage);
+    } catch (error) {
+      showErrorToast(error, "加载失败");
+    } finally {
+      setProviderLoadingMore(false);
+    }
+  }, [
+    activeCategory,
+    designerSortBy,
+    foremanSortBy,
+    companySortBy,
+    providerPage,
+    providerHasMore,
+    providerLoadingMore,
+  ]);
+
+  const handleLoadMoreMaterial = useCallback(async () => {
+    if (materialLoadingMore) return;
+    if (!materialHasMore) return;
+
+    const nextPage = materialPage + 1;
+    setMaterialLoadingMore(true);
+    try {
+      const { list } = await loadAllMaterialShops(
+        materialSortBy === "distance" ? "distance" : "recommend",
+        nextPage,
+      );
+
+      setMaterialItems((prev) => [...prev, ...list]);
+      setMaterialPage(nextPage);
+    } catch (error) {
+      showErrorToast(error, "加载失败");
+    } finally {
+      setMaterialLoadingMore(false);
+    }
+  }, [
+    materialSortBy,
+    materialPage,
+    materialHasMore,
+    materialLoadingMore,
+  ]);
   const {
     refreshStatus,
     drawerHeight,
@@ -1224,9 +1311,39 @@ export default function Home() {
         {renderFilterRow()}
       </View>
 
-      {activeCategory === "material"
-        ? renderMaterialList()
-        : renderProviderList()}
+      {activeCategory === "material" ? (
+        <View className="home-page__scroll-wrapper">
+          <ScrollView
+            className="home-page__scroll"
+            scrollY
+            onScrollToLower={handleLoadMoreMaterial}
+            lowerThreshold={200}
+          >
+            {renderMaterialList()}
+            {materialLoadingMore ? (
+              <View className="home-page__loading-more">
+                <Text className="home-page__loading-more-text">加载中...</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      ) : (
+        <View className="home-page__scroll-wrapper">
+          <ScrollView
+            className="home-page__scroll"
+            scrollY
+            onScrollToLower={handleLoadMoreProvider}
+            lowerThreshold={200}
+          >
+            {renderProviderList()}
+            {providerLoadingMore ? (
+              <View className="home-page__loading-more">
+                <Text className="home-page__loading-more-text">加载中...</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+        </View>
+      )}
 
       {showQuotePopup ? (
         <View
