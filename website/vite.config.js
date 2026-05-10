@@ -14,6 +14,8 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 5175,
       open: false,
+      // Needed for local-gateway reverse proxy (Host header will be container name like "website").
+      allowedHosts: ['website', 'localhost', '127.0.0.1'],
       watch: enablePolling ? {
         usePolling: true,
         interval: 250,

@@ -9,8 +9,9 @@
     "dev:admin": "bash ./scripts/env/with-env.sh local bash -lc 'cd admin && npm run dev'",
     "dev:merchant": "bash ./scripts/env/with-env.sh local bash -lc 'cd merchant && npm run dev -- --host'",
     "dev:web": "cd web && VITE_API_URL=http://127.0.0.1:8080/api/v1 VITE_ROUTER_BASENAME=/ npm run dev -- --host 127.0.0.1 --port 5176",
-    "dev:user-web:docker": "docker compose -f docker-compose.local.yml up -d db redis api website user-web merchant admin local-gateway",
+    "dev:user-web:docker": "docker compose -f docker-compose.local.yml up -d db redis api website user-web merchant admin supervisor local-gateway",
     "dev:mobile": "cd mobile && npm run web",
+    "dev:supervisor": "docker compose -f docker-compose.local.yml up -d supervisor",
     "dev:website": "cd website && npx vite --port 5175",
     "dev:user-web": "npm run infra && npx concurrently -n \"API,WEB\" -c \"magenta,green\" \"npm run dev:server\" \"npm run dev:web\"",
     "dev": "npm run infra && concurrently -n \"API,ADMIN,MERCHANT\" -c \"magenta,blue,green\" \"npm run dev:server\" \"npm run dev:admin\" \"npm run dev:merchant\"",
@@ -84,7 +85,8 @@
     "build:mini:h5:staging": "bash ./scripts/env/with-env.sh staging bash -lc 'cd mini && npm run build:h5'",
     "build:mini:h5:production": "bash ./scripts/env/with-env.sh production bash -lc 'cd mini && npm run build:h5'",
     "build:mini:weapp:staging": "bash ./scripts/env/with-env.sh staging bash -lc 'cd mini && npm run build:weapp'",
-    "build:mini:weapp:production": "bash ./scripts/env/with-env.sh production bash -lc 'cd mini && npm run build:weapp'"
+    "build:mini:weapp:production": "bash ./scripts/env/with-env.sh production bash -lc 'cd mini && npm run build:weapp'",
+    "verify:supervisor": "./scripts/verify-supervisor.sh"
   },
   "dependencies": {
     "@react-native-community/geolocation": "^3.4.0"
