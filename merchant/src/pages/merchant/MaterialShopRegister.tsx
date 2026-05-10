@@ -13,6 +13,7 @@ import {
     InputNumber,
     Modal,
     Row,
+    Space,
     Typography,
     Upload,
     message,
@@ -51,6 +52,8 @@ import BusinessHoursEditor, { summarizeBusinessHoursRanges } from './components/
 const { Title, Text } = Typography;
 
 const DRAFT_KEY = 'material_shop_register_draft';
+const DRAFT_RESTORE_ACK_KEY = 'material_shop_register_draft_restore_ack';
+const DRAFT_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const VERIFICATION_STORAGE_KEY = 'material_shop_register_phone_verification';
 const VERIFICATION_EXPIRE_MS = 30 * 60 * 1000;
 const PRODUCT_PRICE_MAX = 999999;
@@ -58,6 +61,10 @@ const UNIT_MAX_LENGTH = 20;
 const COMMON_UNIT_OPTIONS = ['个', '件', '套', '米', '平方米', '箱'].map((unit) => ({
     value: unit,
 }));
+
+const buildDraftRestoreAckKey = (draftStorageKey: string, timestamp: number) => (
+    `${DRAFT_RESTORE_ACK_KEY}:${draftStorageKey}:${timestamp}`
+);
 
 interface PhoneVerificationState {
     phoneVerified: boolean;
@@ -78,6 +85,13 @@ interface MaterialProductForm {
     images: string[];
 }
 
+interface MaterialShopRegisterDraftState {
+    timestamp: number;
+    currentStep: number;
+    formValues: Record<string, unknown>;
+    products: MaterialProductForm[];
+}
+
 interface MaterialShopRegisterProps {
     mode?: 'apply' | 'completion';
     completionData?: MaterialShopCompletionStatusResponse | null;
@@ -92,6 +106,26 @@ const createEmptyProduct = (): MaterialProductForm => ({
     price: undefined,
     images: [],
 });
+
+const ensureDraftTimestamp = (
+    draftStorageKey: string,
+    draft: {
+        timestamp?: number;
+        currentStep: number;
+        formValues: Record<string, unknown>;
+        products: MaterialProductForm[];
+    },
+) => {
+    if (typeof draft.timestamp === 'number') {
+        return draft.timestamp;
+    }
+    const timestamp = Date.now();
+    sessionStorage.setItem(draftStorageKey, JSON.stringify({
+        ...draft,
+        timestamp,
+    }));
+    return timestamp;
+};
 
 const hasAtMostTwoDecimals = (value: number) => Math.round(value * 100) === value * 100;
 
@@ -174,6 +208,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     const [products, setProducts] = useState<MaterialProductForm[]>([createEmptyProduct()]);
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
+    const [draftToRestore, setDraftToRestore] = useState<MaterialShopRegisterDraftState | null>(null);
     const [resubmitLoading, setResubmitLoading] = useState(false);
     const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
     const [phoneVerified, setPhoneVerified] = useState(false);
@@ -187,6 +222,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     });
     const watchedAvatar = Form.useWatch('avatar', form);
     const timerRef = useRef<number | null>(null);
+    const draftRestoreHandledRef = useRef(false);
 
     const phoneFromUrl = searchParams.get('phone') || '';
     const resubmitId = isCompletionMode ? null : searchParams.get('resubmit');
@@ -262,7 +298,6 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
             entityType,
         });
     }, [completionForm?.phone, entityType, form, phoneFromUrl]);
-
 
     useEffect(() => {
         const style = document.createElement('style');
@@ -361,33 +396,74 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                 border-bottom: 1px solid #f1f5f9;
                 border-radius: 16px 16px 0 0;
             }
+            .merchant-inline-alert {
+                margin-bottom: 16px;
+                border-radius: 8px;
+            }
         `;
         document.head.appendChild(style);
         return () => { document.head.removeChild(style); };
     }, []);
 
 
-    useEffect(() => {
-        const savedDraft = sessionStorage.getItem(draftStorageKey);
-        if (savedDraft) {
-            try {
-                const parsed = JSON.parse(savedDraft);
-                if (parsed.formValues) {
-                    form.setFieldsValue(parsed.formValues);
-                }
-                if (!resubmitId && typeof parsed.currentStep === 'number' && parsed.currentStep >= 0 && parsed.currentStep < steps.length) {
-                    setCurrentStep(parsed.currentStep);
-                } else if (resubmitId) {
-                    setCurrentStep(0);
-                }
-                if (Array.isArray(parsed.products) && parsed.products.length > 0) {
-                    setProducts(parsed.products);
-                }
-            } catch {
-                // Ignore invalid draft
-            }
+    const restoreDraft = useCallback(() => {
+        if (draftRestoreHandledRef.current || isCompletionMode) {
+            return;
         }
-    }, [draftStorageKey, form, resubmitId, steps.length]);
+        draftRestoreHandledRef.current = true;
+
+        const stored = sessionStorage.getItem(draftStorageKey);
+        if (!stored) {
+            return;
+        }
+
+        try {
+            const draft = JSON.parse(stored) as {
+                timestamp?: number;
+                currentStep: number;
+                formValues: Record<string, unknown>;
+                products: MaterialProductForm[];
+            };
+            const draftTimestamp = ensureDraftTimestamp(draftStorageKey, draft);
+            if (Date.now() - draftTimestamp > DRAFT_EXPIRY_MS) {
+                sessionStorage.removeItem(draftStorageKey);
+                return;
+            }
+            if (sessionStorage.getItem(buildDraftRestoreAckKey(draftStorageKey, draftTimestamp))) {
+                return;
+            }
+            setDraftToRestore({
+                timestamp: draftTimestamp,
+                currentStep: draft.currentStep,
+                formValues: draft.formValues || {},
+                products: Array.isArray(draft.products) ? draft.products : [],
+            });
+        } catch {
+            sessionStorage.removeItem(draftStorageKey);
+        }
+    }, [draftStorageKey, isCompletionMode]);
+
+    const handleRestoreDraft = useCallback(() => {
+        if (!draftToRestore) {
+            return;
+        }
+        form.setFieldsValue(draftToRestore.formValues);
+        setCurrentStep(resubmitId ? 0 : draftToRestore.currentStep);
+        if (draftToRestore.products.length > 0) {
+            setProducts(draftToRestore.products);
+        }
+        sessionStorage.setItem(buildDraftRestoreAckKey(draftStorageKey, draftToRestore.timestamp), '1');
+        setDraftToRestore(null);
+    }, [draftStorageKey, draftToRestore, form, resubmitId]);
+
+    const handleClearDraftRestore = useCallback(() => {
+        sessionStorage.removeItem(draftStorageKey);
+        setDraftToRestore(null);
+    }, [draftStorageKey]);
+
+    useEffect(() => {
+        void restoreDraft();
+    }, [restoreDraft]);
 
     useEffect(() => {
         return () => {
@@ -521,13 +597,9 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
         if (!isCompletionMode || !completionForm) {
             return;
         }
-
-        if (sessionStorage.getItem(draftStorageKey)) {
-            return;
-        }
         hydrateMaterialShopForm(completionForm, false);
         setCurrentStep(0);
-    }, [completionForm, draftStorageKey, hydrateMaterialShopForm, isCompletionMode]);
+    }, [completionForm, hydrateMaterialShopForm, isCompletionMode]);
 
     const validateImageBeforeUpload = (file: File, spec: typeof IMAGE_UPLOAD_SPECS.product) =>
         validateImageUploadBeforeSend(file, spec);
@@ -536,6 +608,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             form.setFieldsValue({ [fieldName]: normalizeStoredAssetValue(uploaded) });
+            void form.validateFields([fieldName]).catch(() => undefined);
             options.onSuccess?.(uploaded);
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -696,17 +769,23 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     };
 
     const persistDraftSnapshot = useCallback((draft: {
+        timestamp?: number;
         currentStep: number;
         formValues: Record<string, unknown>;
         products: MaterialProductForm[];
     }) => {
-        sessionStorage.setItem(draftStorageKey, JSON.stringify(draft));
+        sessionStorage.setItem(draftStorageKey, JSON.stringify({
+            timestamp: draft.timestamp ?? Date.now(),
+            currentStep: draft.currentStep,
+            formValues: draft.formValues,
+            products: draft.products,
+        }));
     }, [draftStorageKey]);
 
     const saveDraft = (step = currentStep) => {
         persistDraftSnapshot({
             currentStep: step,
-            formValues: form.getFieldsValue(),
+            formValues: form.getFieldsValue(true),
             products,
         });
         message.success('草稿已保存');
@@ -847,6 +926,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
             okButtonProps: { danger: true },
             onOk: () => {
                 sessionStorage.removeItem(draftStorageKey);
+                setDraftToRestore(null);
                 if (isCompletionMode && completionForm) {
                     hydrateMaterialShopForm(completionForm, false);
                 } else {
@@ -989,7 +1069,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                         businessHours: summarizeBusinessHoursRanges(normalizeBusinessHoursRangesForForm(values.businessHoursRanges)),
                         businessHoursRanges,
                         contactPhone: String(values.contactPhone || '').trim(),
-                        contactName: String(values.legalPersonName || '').trim(),
+                        contactName: String(values.contactName || values.legalPersonName || '').trim(),
                         address: String(values.address || '').trim(),
                         products: validProducts,
                         legalAcceptance: {
@@ -1101,7 +1181,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                     <Alert
                         type="info"
                         showIcon
-                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        className="merchant-inline-alert"
                         message="正在校验手机号并回填原申请资料，请稍候。"
                         data-testid="material-register-resubmit-loading"
                     />
@@ -1110,16 +1190,36 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                     <Alert
                         type="warning"
                         showIcon
-                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        className="merchant-inline-alert"
                         message="原申请资料回填失败，请确认手机号与验证码正确后重试；手机号与主材商类型仍保持原申请约束。"
                         data-testid="material-register-resubmit-failed"
+                    />
+                )}
+                {!isCompletionMode && draftToRestore && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        className="merchant-inline-alert"
+                        message="检测到未完成的申请草稿"
+                        description="可恢复上次填写内容，或清除草稿后重新开始。"
+                        action={(
+                            <Space size={8} wrap>
+                                <Button size="small" type="primary" onClick={handleRestoreDraft}>
+                                    恢复内容
+                                </Button>
+                                <Button size="small" onClick={handleClearDraftRestore}>
+                                    清除草稿
+                                </Button>
+                            </Space>
+                        )}
+                        data-testid="material-register-draft-restore"
                     />
                 )}
                 {!isCompletionMode && phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
                     <Alert
                         type="success"
                         showIcon
-                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        className="merchant-inline-alert"
                         message="手机号已验证，可继续填写入驻资料。"
                         data-testid="material-register-phone-verified"
                     />
@@ -1341,6 +1441,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                         onPreview={handleUploadPreview}
                                         onRemove={() => {
                                             form.setFieldsValue({ businessLicense: undefined });
+                                            void form.validateFields(['businessLicense']).catch(() => undefined);
                                             return true;
                                         }}
                                     >
@@ -1438,6 +1539,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                                 onPreview={handleUploadPreview}
                                                 onRemove={() => {
                                                     form.setFieldsValue({ legalPersonIdCardFront: undefined });
+                                                    void form.validateFields(['legalPersonIdCardFront']).catch(() => undefined);
                                                     return true;
                                                 }}
                                             >
@@ -1465,6 +1567,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                                 onPreview={handleUploadPreview}
                                                 onRemove={() => {
                                                     form.setFieldsValue({ legalPersonIdCardBack: undefined });
+                                                    void form.validateFields(['legalPersonIdCardBack']).catch(() => undefined);
                                                     return true;
                                                 }}
                                             >

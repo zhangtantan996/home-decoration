@@ -366,6 +366,14 @@
   line-height: 1.5;
 }
 
+.serviceAreaHelpIcon {
+  margin-left: 6px;
+}
+
+.errorHint {
+  color: var(--ant-color-error);
+}
+
 @media (max-width: 1200px) {
   .overviewBody,
   .contentGrid {
