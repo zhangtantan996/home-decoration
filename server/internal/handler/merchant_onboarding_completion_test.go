@@ -290,6 +290,7 @@ func TestMerchantSubmitOnboardingCompletion_ReusesRejectedApplication(t *testing
 
 	input := newValidDesignerApplyInput()
 	input.Phone = user.Phone
+	input.ServiceArea = []string{"610100", "610113"}
 
 	payload := MerchantCompletionSubmitInput{
 		Role:             input.Role,
@@ -356,6 +357,13 @@ func TestMerchantSubmitOnboardingCompletion_ReusesRejectedApplication(t *testing
 	}
 	if updatedApp.Status != 0 || updatedApp.ProviderID != provider.ID || updatedApp.RejectReason != "" {
 		t.Fatalf("unexpected updated application: %+v", updatedApp)
+	}
+	var savedServiceArea []string
+	if err := json.Unmarshal([]byte(updatedApp.ServiceArea), &savedServiceArea); err != nil {
+		t.Fatalf("decode saved service area failed: %v", err)
+	}
+	if len(savedServiceArea) != 2 || savedServiceArea[0] != "610100" || savedServiceArea[1] != "610113" {
+		t.Fatalf("expected completion submit to preserve city and district service area, got=%v", savedServiceArea)
 	}
 
 	var providerCount int64

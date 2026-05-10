@@ -39,6 +39,9 @@ func TestAdminBusinessFlowServiceResolveAvailableAdminActionsForQuoteAndChangeOr
 	if reviewAction.Route != "/projects/quotes/compare/902" {
 		t.Fatalf("unexpected quote review route: %s", reviewAction.Route)
 	}
+	if reviewAction.TargetRoute != "/projects/quotes/compare/902" || reviewAction.TargetModule != "quote_erp" || reviewAction.Focus != "quote_review" {
+		t.Fatalf("expected quote review navigation metadata, got %+v", reviewAction)
+	}
 
 	settleAction, ok := actionMap["settle_change_order"]
 	if !ok {
@@ -54,6 +57,9 @@ func TestAdminBusinessFlowServiceResolveAvailableAdminActionsForQuoteAndChangeOr
 	}
 	if viewChangeAction.Route != "/orders?projectId=901&focus=change-order" {
 		t.Fatalf("unexpected change order route: %s", viewChangeAction.Route)
+	}
+	if viewChangeAction.TargetRoute != "/orders?projectId=901&focus=change-order" || viewChangeAction.TargetModule != "orders" || viewChangeAction.Focus != "change-order" {
+		t.Fatalf("expected change-order navigation metadata, got %+v", viewChangeAction)
 	}
 }
 
@@ -86,6 +92,15 @@ func TestAdminBusinessFlowContextToDetailKeepsChangeOrdersAndActions(t *testing.
 				Name:    "首付款",
 				Type:    "first_payment",
 				Status:  model.PaymentPlanStatusPending,
+			},
+		},
+		paymentOrders: []model.PaymentOrder{
+			{
+				Base:       model.Base{ID: 1007},
+				BizType:    "order",
+				BizID:      1002,
+				OutTradeNo: "PAY-ADMIN-1007",
+				Status:     "paid",
 			},
 		},
 		changeOrders: []ChangeOrderView{
@@ -128,6 +143,9 @@ func TestAdminBusinessFlowContextToDetailKeepsChangeOrdersAndActions(t *testing.
 	if len(detail.Orders[0].PaymentPlan) != 1 || detail.Orders[0].PaymentPlan[0].ID != 1003 {
 		t.Fatalf("expected payment plan snapshot to stay attached, got %+v", detail.Orders[0].PaymentPlan)
 	}
+	if len(detail.PaymentOrders) != 1 || detail.PaymentOrders[0].OutTradeNo != "PAY-ADMIN-1007" {
+		t.Fatalf("expected payment orders to be exposed, got %+v", detail.PaymentOrders)
+	}
 	if detail.ChangeOrderSummary == nil || detail.ChangeOrderSummary.PendingSettlementCount != 1 {
 		t.Fatalf("expected change-order summary to be exposed, got %+v", detail.ChangeOrderSummary)
 	}
@@ -160,5 +178,31 @@ func TestAdminBusinessFlowFilterMatchesSettlementAndPayoutStatus(t *testing.T) {
 	}
 	if matchesBusinessFlowFilter(ctx, item, AdminBusinessFlowFilter{PayoutStatus: model.PayoutStatusFailed}) {
 		t.Fatalf("expected mismatched payout status to be filtered out")
+	}
+}
+
+func TestAdminBusinessFlowRiskSnapshotUsesFilterableStatuses(t *testing.T) {
+	warningSnapshot := summarizeRiskSnapshot(&adminBusinessFlowContext{
+		riskWarnings: []model.RiskWarning{{Status: 0, Type: "payment"}},
+	})
+	if warningSnapshot.Status != "warning_open" {
+		t.Fatalf("expected warning_open risk status, got %+v", warningSnapshot)
+	}
+
+	auditSnapshot := summarizeRiskSnapshot(&adminBusinessFlowContext{
+		projectAudits: []ProjectAuditView{{Status: model.ProjectAuditStatusPending}},
+	})
+	if auditSnapshot.Status != "audit_open" {
+		t.Fatalf("expected audit_open risk status, got %+v", auditSnapshot)
+	}
+
+	disputeSnapshot := summarizeRiskSnapshot(&adminBusinessFlowContext{
+		arbitrations: []model.Arbitration{{Status: 0}},
+		projectAudits: []ProjectAuditView{
+			{Status: model.ProjectAuditStatusPending},
+		},
+	})
+	if disputeSnapshot.Status != "disputed" {
+		t.Fatalf("expected arbitration to take disputed priority, got %+v", disputeSnapshot)
 	}
 }

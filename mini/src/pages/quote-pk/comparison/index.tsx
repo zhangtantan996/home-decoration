@@ -2,14 +2,13 @@
 // 当前页面不在运行时入口，仅保留历史代码供兼容排查。
 import React, { useEffect, useState } from 'react';
 import { Image, Text, View } from '@tarojs/components';
-import Taro, { useLoad } from '@tarojs/taro';
+import { useLoad } from '@tarojs/taro';
 
-import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
-import { getQuoteComparison, selectQuote, type QuoteComparisonItem } from '@/services/quote-pk';
+import { getQuoteComparison, type QuoteComparisonItem } from '@/services/quote-pk';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 
@@ -18,7 +17,6 @@ const QuoteComparisonPage: React.FC = () => {
   const [taskId, setTaskId] = useState(0);
   const [items, setItems] = useState<QuoteComparisonItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selecting, setSelecting] = useState(false);
 
   useLoad((options) => {
     if (options.id) {
@@ -47,31 +45,6 @@ const QuoteComparisonPage: React.FC = () => {
     void fetchComparison();
   }, [auth.token, taskId]);
 
-  const handleSelect = async (submissionId: number) => {
-    if (selecting) return;
-
-    Taro.showModal({
-      title: '确认选择',
-      content: '选择后将无法更改，确定选择此报价吗？',
-      success: async (res) => {
-        if (!res.confirm) return;
-
-        setSelecting(true);
-        try {
-          await selectQuote(taskId, submissionId);
-          Taro.showToast({ title: '选择成功', icon: 'success' });
-          setTimeout(() => {
-            Taro.navigateBack();
-          }, 800);
-        } catch (error) {
-          showErrorToast(error, '选择失败');
-        } finally {
-          setSelecting(false);
-        }
-      },
-    });
-  };
-
   if (loading) {
     return (
       <View className="min-h-screen bg-gray-50 p-4">
@@ -92,7 +65,7 @@ const QuoteComparisonPage: React.FC = () => {
     <View className="min-h-screen bg-gray-50 p-4">
       <Text className="text-lg font-semibold mb-4">报价对比</Text>
       <Text className="text-sm text-gray-600 mb-4">
-        已收到 {items.length} 个报价，请选择最合适的方案
+        已收到 {items.length} 个报价记录，仅支持查看。请从项目进度继续处理。
       </Text>
 
       {items.map((item) => (
@@ -147,15 +120,9 @@ const QuoteComparisonPage: React.FC = () => {
           </View>
 
           {item.status === 'pending' && (
-            <Button
-              type="primary"
-              size="small"
-              onClick={() => handleSelect(item.submissionId)}
-              disabled={selecting}
-              className="mt-4 w-full"
-            >
-              选择此报价
-            </Button>
+            <Tag variant="warning" className="mt-4">
+              待处理
+            </Tag>
           )}
           {item.status === 'selected' && (
             <Tag variant="success" className="mt-4">

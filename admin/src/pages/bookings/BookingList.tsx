@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Table, Card, Select, Button, Space, message, Descriptions, Modal } from 'antd';
+import { Table, Card, Select, Button, Space, message, Descriptions, Modal, Spin } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { adminBookingApi } from '../../services/api';
 import PageHeader from '../../components/PageHeader';
@@ -31,6 +31,7 @@ const BookingList: React.FC = () => {
     const [pageSize] = useState(10);
     const [statusFilter, setStatusFilter] = useState<number | undefined>();
     const [detailVisible, setDetailVisible] = useState(false);
+    const [detailLoading, setDetailLoading] = useState(false);
     const [currentBooking, setCurrentBooking] = useState<Booking | null>(null);
 
     useEffect(() => {
@@ -63,9 +64,24 @@ const BookingList: React.FC = () => {
         }
     };
 
-    const showDetail = (record: Booking) => {
-        setCurrentBooking(record);
+    const showDetail = async (record: Booking) => {
         setDetailVisible(true);
+        setDetailLoading(true);
+        try {
+            const res = await adminBookingApi.detail(record.id) as any;
+            if (res.code !== 0) {
+                message.error(res.message || '加载详情失败');
+                setCurrentBooking(null);
+                return;
+            }
+            setCurrentBooking(res.data || null);
+        } catch (error) {
+            console.error(error);
+            message.error('加载详情失败');
+            setCurrentBooking(null);
+        } finally {
+            setDetailLoading(false);
+        }
     };
 
     const columns = [
@@ -168,11 +184,18 @@ const BookingList: React.FC = () => {
             <Modal
                 title="预约详情"
                 open={detailVisible}
-                onCancel={() => setDetailVisible(false)}
+                onCancel={() => {
+                    setDetailVisible(false);
+                    setCurrentBooking(null);
+                }}
                 footer={null}
                 width={600}
             >
-                {currentBooking && (
+                {detailLoading ? (
+                    <div className="hz-modal-loading">
+                        <Spin />
+                    </div>
+                ) : currentBooking && (
                     <Descriptions column={2} bordered size="small">
                         <Descriptions.Item label="ID">{currentBooking.id}</Descriptions.Item>
                         <Descriptions.Item label="用户ID">{currentBooking.userId}</Descriptions.Item>

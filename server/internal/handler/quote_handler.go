@@ -139,12 +139,12 @@ func AdminCreateQuoteList(c *gin.Context) {
 func AdminRebuildQuoteListFromLegacy(c *gin.Context) {
 	var input service.LegacyQuotePKRebuildInput
 	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, "legacy 重建参数错误")
+		response.BadRequest(c, "历史报价重建参数错误")
 		return
 	}
 	result, err := quoteService.RebuildQuoteListFromLegacy(&input)
 	if err != nil {
-		respondDomainMutationError(c, err, "重建 legacy quote-pk 报价单失败")
+		respondDomainMutationError(c, err, "重建历史报价单失败")
 		return
 	}
 	response.Success(c, result)

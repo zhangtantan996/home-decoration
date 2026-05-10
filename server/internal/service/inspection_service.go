@@ -16,9 +16,21 @@ import (
 type InspectionService struct{}
 
 // CreateInspectionChecklist 创建验收清单
-func (s *InspectionService) CreateInspectionChecklist(projectID, milestoneID, userID uint64, category string, items []model.InspectionItem) (*model.InspectionChecklist, error) {
+func (s *InspectionService) CreateInspectionChecklist(projectID, milestoneID, userID, providerID uint64, category string, items []model.InspectionItem) (*model.InspectionChecklist, error) {
 	if projectID == 0 || milestoneID == 0 {
 		return nil, errors.New("项目和节点不能为空")
+	}
+
+	var project model.Project
+	if err := repository.DB.First(&project, projectID).Error; err != nil {
+		return nil, errors.New("项目不存在")
+	}
+	if project.OwnerID != userID && (providerID == 0 || project.ProviderID != providerID) {
+		return nil, errors.New("无权操作此项目验收清单")
+	}
+	submittedBy := userID
+	if providerID != 0 && project.ProviderID == providerID {
+		submittedBy = providerID
 	}
 
 	// 验证项目和节点
@@ -39,7 +51,7 @@ func (s *InspectionService) CreateInspectionChecklist(projectID, milestoneID, us
 		Category:    category,
 		Items:       string(itemsJSON),
 		Status:      "pending",
-		SubmittedBy: userID,
+		SubmittedBy: submittedBy,
 	}
 
 	if err := repository.DB.Create(checklist).Error; err != nil {
@@ -50,7 +62,15 @@ func (s *InspectionService) CreateInspectionChecklist(projectID, milestoneID, us
 }
 
 // GetInspectionChecklist 获取验收清单
-func (s *InspectionService) GetInspectionChecklist(projectID, milestoneID uint64) (*model.InspectionChecklist, error) {
+func (s *InspectionService) GetInspectionChecklist(projectID, milestoneID, userID, providerID uint64) (*model.InspectionChecklist, error) {
+	var project model.Project
+	if err := repository.DB.First(&project, projectID).Error; err != nil {
+		return nil, errors.New("项目不存在")
+	}
+	if project.OwnerID != userID && (providerID == 0 || project.ProviderID != providerID) {
+		return nil, errors.New("无权查看此项目验收清单")
+	}
+
 	var checklist model.InspectionChecklist
 	if err := repository.DB.Where("project_id = ? AND milestone_id = ?", projectID, milestoneID).First(&checklist).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -62,10 +82,20 @@ func (s *InspectionService) GetInspectionChecklist(projectID, milestoneID uint64
 }
 
 // UpdateInspectionChecklist 更新验收清单
-func (s *InspectionService) UpdateInspectionChecklist(checklistID, userID uint64, items []model.InspectionItem, notes string) (*model.InspectionChecklist, error) {
+func (s *InspectionService) UpdateInspectionChecklist(checklistID, userID, providerID uint64, items []model.InspectionItem, notes string) (*model.InspectionChecklist, error) {
 	var checklist model.InspectionChecklist
 	if err := repository.DB.First(&checklist, checklistID).Error; err != nil {
 		return nil, errors.New("验收清单不存在")
+	}
+
+	var project model.Project
+	if err := repository.DB.First(&project, checklist.ProjectID).Error; err != nil {
+		return nil, errors.New("项目不存在")
+	}
+	isOwner := project.OwnerID == userID
+	isProvider := providerID != 0 && project.ProviderID == providerID
+	if !isOwner && !isProvider {
+		return nil, errors.New("无权操作此项目验收清单")
 	}
 
 	// 序列化检查项
@@ -74,28 +104,27 @@ func (s *InspectionService) UpdateInspectionChecklist(checklistID, userID uint64
 		return nil, errors.New("检查项序列化失败")
 	}
 
-	// 检查是否全部通过
-	allPassed := true
-	for _, item := range items {
-		if item.Required && !item.Passed {
-			allPassed = false
-			break
-		}
-	}
-
-	status := "pending"
-	if allPassed {
-		status = "passed"
-	} else {
-		status = "failed"
-	}
-
 	now := time.Now()
 	checklist.Items = string(itemsJSON)
-	checklist.Status = status
 	checklist.Notes = notes
-	checklist.ReviewedBy = userID
-	checklist.ReviewedAt = &now
+	if isOwner {
+		allPassed := true
+		for _, item := range items {
+			if item.Required && !item.Passed {
+				allPassed = false
+				break
+			}
+		}
+		if allPassed {
+			checklist.Status = "passed"
+		} else {
+			checklist.Status = "failed"
+		}
+		checklist.ReviewedBy = userID
+		checklist.ReviewedAt = &now
+	} else if checklist.Status == "" {
+		checklist.Status = "pending"
+	}
 
 	if err := repository.DB.Save(&checklist).Error; err != nil {
 		return nil, err
@@ -165,7 +194,7 @@ func (s *InspectionService) SubmitInspection(milestoneID, providerID uint64) err
 		}
 
 		// 6. 发送通知给用户
-		dispatcher := NewNotificationDispatcher()
+		dispatcher := NewNotificationDispatcherTx(tx)
 		dispatcher.NotifyMilestoneSubmitted(project.OwnerID, milestone.ProjectID, milestoneID, milestone.Name)
 
 		return nil
@@ -234,7 +263,7 @@ func (s *InspectionService) InspectMilestone(milestoneID, userID uint64, passed 
 			}
 
 			// 发送通知给商家
-			dispatcher := NewNotificationDispatcher()
+			dispatcher := NewNotificationDispatcherTx(tx)
 			dispatcher.NotifyMilestoneAccepted(project.ProviderID, milestone.ProjectID, milestoneID)
 		} else {
 			// 验收不通过
@@ -255,7 +284,7 @@ func (s *InspectionService) InspectMilestone(milestoneID, userID uint64, passed 
 			}
 
 			// 发送通知给商家
-			dispatcher := NewNotificationDispatcher()
+			dispatcher := NewNotificationDispatcherTx(tx)
 			dispatcher.NotifyMilestoneRejected(project.ProviderID, milestone.ProjectID, milestoneID, notes)
 		}
 
@@ -326,7 +355,7 @@ func (s *InspectionService) RequestRectification(milestoneID, userID uint64, not
 		}
 
 		// 6. 发送通知给商家
-		dispatcher := NewNotificationDispatcher()
+		dispatcher := NewNotificationDispatcherTx(tx)
 		dispatcher.NotifyMilestoneRejected(project.ProviderID, milestone.ProjectID, milestoneID, notes)
 
 		// 7. 记录审计日志
@@ -399,7 +428,7 @@ func (s *InspectionService) ResubmitInspection(milestoneID, providerID uint64, n
 		}
 
 		// 7. 发送通知给用户
-		dispatcher := NewNotificationDispatcher()
+		dispatcher := NewNotificationDispatcherTx(tx)
 		dispatcher.NotifyMilestoneResubmitted(project.OwnerID, milestone.ProjectID, milestoneID)
 
 		// 8. 记录审计日志

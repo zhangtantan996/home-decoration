@@ -198,7 +198,7 @@ func findLatestActiveMerchantIdentity(tx *gorm.DB, userID uint64, excludeKind st
 func ensureMerchantIdentity(tx *gorm.DB, userID uint64, identityType string, refID uint64, adminID uint64, status int8) error {
 	var identity model.UserIdentity
 	now := time.Now()
-	err := tx.Where("user_id = ? AND identity_type = ?", userID, identityType).Order("id DESC").First(&identity).Error
+	err := tx.Where("user_id = ? AND identity_type = ? AND identity_ref_id = ?", userID, identityType, refID).First(&identity).Error
 	if err != nil {
 		if !errors.Is(err, gorm.ErrRecordNotFound) {
 			return fmt.Errorf("load identity failed: %w", err)
@@ -253,7 +253,9 @@ func freezeMerchantIdentity(tx *gorm.DB, userID uint64, identity *merchantActive
 		return nil
 	}
 
-	if err := tx.Model(&model.UserIdentity{}).Where("user_id = ? AND identity_type = ?", userID, identity.kind).Updates(map[string]interface{}{"status": merchantIdentityStatusFrozen, "verified": false}).Error; err != nil {
+	if err := tx.Model(&model.UserIdentity{}).
+		Where("user_id = ? AND identity_type = ? AND identity_ref_id = ?", userID, identity.kind, identity.id).
+		Updates(map[string]interface{}{"status": merchantIdentityStatusFrozen, "verified": false}).Error; err != nil {
 		return fmt.Errorf("freeze user identity failed: %w", err)
 	}
 	return nil

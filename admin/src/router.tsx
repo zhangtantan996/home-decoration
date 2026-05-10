@@ -30,6 +30,10 @@ import QuoteInquiryList from './pages/quote-inquiries/QuoteInquiryList';
 import QuoteInquiryDetail from './pages/quote-inquiries/QuoteInquiryDetail';
 import WorkbenchDetail from './pages/supervision/WorkbenchDetail';
 import WorkbenchList from './pages/supervision/WorkbenchList';
+import SupervisorList from './pages/supervisors/SupervisorList';
+import SupervisorAssignment from './pages/supervisors/SupervisorAssignment';
+import ApplicationReview from './pages/supervisors/ApplicationReview';
+import WhitelistManager from './pages/supervisors/WhitelistManager';
 import FinanceOverview from './pages/finance/FinanceOverview';
 import EscrowAccountList from './pages/finance/EscrowAccountList';
 import FinanceReconciliationList from './pages/finance/FinanceReconciliationList';
@@ -127,6 +131,13 @@ const router = createBrowserRouter([
             { path: 'supervision', element: <Navigate to="/supervision/projects" replace /> },
             { path: 'supervision/projects', element: <ProtectedRoute permission="supervision:workspace:view"><WorkbenchList /></ProtectedRoute> },
             { path: 'supervision/projects/:id', element: <ProtectedRoute permission="supervision:workspace:view"><WorkbenchDetail /></ProtectedRoute> },
+
+            // Supervisor Management
+            { path: 'supervisors', element: <Navigate to="/supervisors/list" replace /> },
+            { path: 'supervisors/list', element: <ProtectedRoute permission="supervision:supervisor:list"><SupervisorList /></ProtectedRoute> },
+            { path: 'supervisors/whitelist', element: <ProtectedRoute permission="supervision:supervisor:list"><WhitelistManager /></ProtectedRoute> },
+            { path: 'supervisors/applications', element: <ProtectedRoute permission="supervision:supervisor:list"><ApplicationReview /></ProtectedRoute> },
+            { path: 'supervisors/assignments', element: <ProtectedRoute permission="supervision:assignment:manage"><SupervisorAssignment /></ProtectedRoute> },
 
             // Demands
             { path: 'demands', element: <Navigate to="/demands/list" replace /> },

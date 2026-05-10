@@ -136,6 +136,10 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		tx.Rollback()
 		return nil, nil, err
 	}
+	if err := ensureOwnerIdentityRecord(tx, user.ID); err != nil {
+		tx.Rollback()
+		return nil, nil, err
+	}
 
 	if err := tx.Commit().Error; err != nil {
 		return nil, nil, err
@@ -155,7 +159,7 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 		return nil, nil, err
 	}
 
-	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -269,6 +273,13 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 			}
 			return nil, nil, errors.New("账号创建失败，请稍后重试")
 		}
+		if err := ensureOwnerIdentityRecord(tx, user.ID); err != nil {
+			tx.Rollback()
+			if repository.IsSchemaMismatchError(err) {
+				return nil, nil, err
+			}
+			return nil, nil, errors.New("账号创建失败，请稍后重试")
+		}
 
 		if err := tx.Commit().Error; err != nil {
 			if repository.IsSchemaMismatchError(err) {
@@ -315,7 +326,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 	if req.Type != "password" && !codeVerified {
 		if err := VerifySMSCode(req.Phone, SMSPurposeLogin, req.Code); err != nil {
 			if errors.Is(err, errSMSCodeInvalid) {
-				return nil, nil, s.handleLoginFailure(&user, "code")
+				return nil, nil, s.HandleLoginFailure(&user, "code")
 			}
 			return nil, nil, err
 		}
@@ -329,7 +340,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		}
 		if !CheckPassword(req.Password, user.Password) {
 			// 密码错误，记录失败次数
-			return nil, nil, s.handleLoginFailure(&user, "password")
+			return nil, nil, s.HandleLoginFailure(&user, "password")
 		}
 	}
 
@@ -351,6 +362,9 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		user.LastLoginAt = &loginAt
 	}
 	user.LastLoginIP = strings.TrimSpace(req.ClientIP)
+	if err := ensureOwnerIdentityRecord(repository.DB, user.ID); err != nil {
+		return nil, nil, err
+	}
 
 	// 生成Token
 	roleCtx, err := getUserRoleContext(&user)
@@ -358,7 +372,7 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		return nil, nil, err
 	}
 
-	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, "")
+	tokenPair, err := issueTokenPairV2(user.ID, user.PublicID, roleCtx, "")
 	if err != nil {
 		return nil, nil, err
 	}
@@ -481,7 +495,7 @@ func (s *UserService) RefreshToken(refreshToken string, cfg *config.JWTConfig) (
 	}
 
 	sessionID, _ := claims["sid"].(string)
-	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx.ActiveRole, roleCtx.ProviderID, roleCtx.ProviderSubType, sessionID)
+	tokenPair, err := issueTokenPairV2(uint64(userID), user.PublicID, roleCtx, sessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -577,8 +591,8 @@ func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *t
 	return nil
 }
 
-// handleLoginFailure 处理登录失败逻辑
-func (s *UserService) handleLoginFailure(user *model.User, loginType string) error {
+// HandleLoginFailure 处理登录失败逻辑（验证码/密码登录通用）
+func (s *UserService) HandleLoginFailure(user *model.User, loginType string) error {
 	now := time.Now()
 	user.LoginFailedCount++
 	user.LastFailedLoginAt = &now
@@ -660,22 +674,22 @@ type tokenPair struct {
 }
 
 // generateAccessTokenV2 生成访问令牌 (2小时有效)
-func generateAccessTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*issuedToken, error) {
-	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseAccess, accessTokenTTL, sessionID)
+func generateAccessTokenV2(userID uint64, userPublicID string, roleCtx *RoleContext, sessionID string) (*issuedToken, error) {
+	return generateTokenV2(userID, userPublicID, roleCtx, tokenUseAccess, accessTokenTTL, sessionID)
 }
 
 // generateRefreshTokenV2 生成刷新令牌 (7天有效)
-func generateRefreshTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*issuedToken, error) {
-	return generateTokenV2(userID, userPublicID, activeRole, refID, providerSubType, tokenUseRefresh, refreshTokenTTL, sessionID)
+func generateRefreshTokenV2(userID uint64, userPublicID string, roleCtx *RoleContext, sessionID string) (*issuedToken, error) {
+	return generateTokenV2(userID, userPublicID, roleCtx, tokenUseRefresh, refreshTokenTTL, sessionID)
 }
 
-func issueTokenPairV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType, sessionID string) (*tokenPair, error) {
-	accessIssued, err := generateAccessTokenV2(userID, userPublicID, activeRole, refID, providerSubType, sessionID)
+func issueTokenPairV2(userID uint64, userPublicID string, roleCtx *RoleContext, sessionID string) (*tokenPair, error) {
+	accessIssued, err := generateAccessTokenV2(userID, userPublicID, roleCtx, sessionID)
 	if err != nil {
 		return nil, err
 	}
 
-	refreshIssued, err := generateRefreshTokenV2(userID, userPublicID, activeRole, refID, providerSubType, accessIssued.SessionID)
+	refreshIssued, err := generateRefreshTokenV2(userID, userPublicID, roleCtx, accessIssued.SessionID)
 	if err != nil {
 		return nil, err
 	}
@@ -695,6 +709,15 @@ func issueTokenPairV2(userID uint64, userPublicID string, activeRole string, ref
 	}
 
 	return pair, nil
+}
+
+// issueTokenPairV2Compat 兼容旧签名（用于迁移过渡，不推荐新代码使用）
+func issueTokenPairV2Compat(userID uint64, userPublicID, activeRole string, refID *uint64, providerSubType, sessionID string) (*tokenPair, error) {
+	return issueTokenPairV2(userID, userPublicID, &RoleContext{
+		ActiveRole:      activeRole,
+		ProviderID:      refID,
+		ProviderSubType: providerSubType,
+	}, sessionID)
 }
 
 func registerSessionTokenPair(pair *tokenPair) error {
@@ -743,15 +766,47 @@ func sessionTokenKey(sessionID, jti string) string {
 }
 
 // generateTokenV2 生成JWT Token v2 (支持多身份)
-func generateTokenV2(userID uint64, userPublicID string, activeRole string, refID *uint64, providerSubType string, tokenUse string, ttl time.Duration, sessionID string) (*issuedToken, error) {
+// generateTokenV2 生成JWT Token v2 (统一身份中心claims)
+// roleCtx 包含 activeRole 及所有身份关联ID
+func generateTokenV2(userID uint64, userPublicID string, roleCtx *RoleContext, tokenUse string, ttl time.Duration, sessionID string) (*issuedToken, error) {
 	resolvedPublicID, err := resolveUserPublicID(userID, userPublicID)
 	if err != nil {
 		return nil, err
 	}
 
+	activeRole := "owner"
+	providerSubType := ""
+	var providerID *uint64
+	var supervisorID *uint64
+	var adminProfileID *uint64
+	var identityID *uint64
+	var identityRefID *uint64
+
+	if roleCtx != nil {
+		activeRole = roleCtx.ActiveRole
+		if activeRole == "" {
+			activeRole = "owner"
+		}
+		providerSubType = roleCtx.ProviderSubType
+		providerID = roleCtx.ProviderID
+		supervisorID = roleCtx.SupervisorID
+		adminProfileID = roleCtx.AdminProfileID
+		identityID = roleCtx.IdentityID
+		identityRefID = roleCtx.IdentityRefID
+	}
+
+	// 非 provider 角色清空 provider 相关字段
 	if activeRole != "provider" {
 		providerSubType = ""
-		refID = nil
+		providerID = nil
+	}
+	// 非 supervisor 角色清空 supervisor 相关字段
+	if activeRole != "supervisor" {
+		supervisorID = nil
+	}
+	// 非 admin 角色清空 admin 相关字段
+	if activeRole != "admin" {
+		adminProfileID = nil
 	}
 
 	if strings.TrimSpace(sessionID) == "" {
@@ -765,8 +820,12 @@ func generateTokenV2(userID uint64, userPublicID string, activeRole string, refI
 		"userPublicId":    resolvedPublicID,
 		"userId":          userID,
 		"activeRole":      activeRole,
-		"providerId":      refID,
+		"providerId":      providerID,
 		"providerSubType": providerSubType,
+		"supervisorId":    supervisorID,
+		"adminProfileId":  adminProfileID,
+		"identityId":      identityID,
+		"identityRefId":   identityRefID,
 		"token_type":      "user",
 		"token_use":       tokenUse,
 		"jti":             jti,

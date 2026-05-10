@@ -26,6 +26,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 const (
@@ -297,6 +298,33 @@ func (s *AdminSecurityService) generateAdminToken(admin *model.SysAdmin, loginSt
 	}
 	jti := uuid.New().String()
 	expiresAt := time.Now().Add(ttl)
+
+	// 统一身份中心：查找已有的 admin_profiles 映射信息
+	var userID uint64
+	var userPublicID string
+	var adminProfileID uint64
+	var identityID uint64
+	var identityRefID uint64
+
+	var adminProfile model.AdminProfile
+	if err := repository.DB.Where("sys_admin_id = ? AND status = 1", admin.ID).First(&adminProfile).Error; err == nil {
+		adminProfileID = adminProfile.ID
+		userID = adminProfile.UserID
+		identityRefID = adminProfileID
+
+		var identity model.UserIdentity
+		if err := repository.DB.
+			Where("user_id = ? AND identity_type = ? AND identity_ref_id = ? AND status = ?", userID, "admin", adminProfileID, 1).
+			First(&identity).Error; err == nil {
+			identityID = identity.ID
+		}
+
+		var user model.User
+		if err := repository.DB.Select("public_id").First(&user, userID).Error; err == nil {
+			userPublicID = user.PublicID
+		}
+	}
+
 	claims := jwt.MapClaims{
 		"admin_id":    admin.ID,
 		"username":    admin.Username,
@@ -308,6 +336,13 @@ func (s *AdminSecurityService) generateAdminToken(admin *model.SysAdmin, loginSt
 		"sid":         sessionID,
 		"exp":         expiresAt.Unix(),
 		"iat":         time.Now().Unix(),
+		// 统一身份中心 claims（兼容过渡）
+		"userId":         userID,
+		"userPublicId":   userPublicID,
+		"activeRole":     "admin",
+		"adminProfileId": adminProfileID,
+		"identityId":     identityID,
+		"identityRefId":  identityRefID,
 	}
 	if admin.Phone != "" {
 		claims["phone"] = admin.Phone
@@ -324,6 +359,12 @@ func (s *AdminSecurityService) generateAdminToken(admin *model.SysAdmin, loginSt
 }
 
 func (s *AdminSecurityService) IssueTokenPair(admin *model.SysAdmin, loginStage, sessionID, clientIP, userAgent string) (*AdminTokenPair, error) {
+	if loginStage == AdminLoginStageActive {
+		if err := s.EnsureAdminUnifiedIdentity(admin); err != nil {
+			return nil, fmt.Errorf("确保管理员统一身份失败: %w", err)
+		}
+	}
+
 	accessIssued, err := s.generateAdminToken(admin, loginStage, tokenUseAccess, sessionID, s.AccessTokenTTL())
 	if err != nil {
 		return nil, err
@@ -853,6 +894,304 @@ func (s *AdminSecurityService) IsIPAllowed(clientIP string) (bool, error) {
 		}
 	}
 	return false, nil
+}
+
+// EnsureAdminUnifiedIdentity 确保管理员拥有统一的 users + admin_profiles + user_identities(admin)
+// 幂等操作：在登录成功后调用，保证统一身份中心有对应记录
+func (s *AdminSecurityService) EnsureAdminUnifiedIdentity(admin *model.SysAdmin) error {
+	if admin == nil {
+		return errors.New("管理员不存在")
+	}
+
+	adminType := "regular"
+	if admin.IsSuperAdmin {
+		adminType = "super_admin"
+	}
+
+	// 1. 检查是否已有 admin_profiles 桥接记录
+	var existingProfile model.AdminProfile
+	profileErr := repository.DB.Where("sys_admin_id = ?", admin.ID).First(&existingProfile).Error
+
+	// 2. 若已有桥接且 user 仍存在，补齐身份记录后即可返回
+	if profileErr == nil {
+		var linkedUser model.User
+		if err := repository.DB.First(&linkedUser, existingProfile.UserID).Error; err == nil {
+			if existingProfile.Status != 1 || existingProfile.AdminType != adminType {
+				if err := repository.DB.Model(&model.AdminProfile{}).
+					Where("id = ?", existingProfile.ID).
+					Updates(map[string]interface{}{
+						"status":     1,
+						"admin_type": adminType,
+					}).Error; err != nil {
+					return fmt.Errorf("更新 admin_profiles 状态失败: %w", err)
+				}
+			}
+			return ensureAdminIdentityLink(linkedUser.ID, existingProfile.ID, admin.ID)
+		} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return fmt.Errorf("查询 admin_profiles 关联用户失败: %w", err)
+		}
+	}
+
+	if profileErr != nil && !errors.Is(profileErr, gorm.ErrRecordNotFound) {
+		return fmt.Errorf("查询 admin_profiles 失败: %w", profileErr)
+	}
+
+	// 3. 查找或创建 users 记录
+	var user model.User
+	excludeProfileID := uint64(0)
+	if profileErr == nil {
+		excludeProfileID = existingProfile.ID
+	}
+	phone := strings.TrimSpace(admin.Phone)
+	if phone == "" {
+		phone = fmt.Sprintf("admin_%d", admin.ID)
+	}
+
+	userErr := repository.DB.Where("phone = ? AND status = ?", phone, 1).First(&user).Error
+	if userErr == nil {
+		reservedByOtherAdmin, err := adminUserReservedByOtherProfile(user.ID, admin.ID, excludeProfileID)
+		if err != nil {
+			return fmt.Errorf("校验管理员账号占用失败: %w", err)
+		}
+		if reservedByOtherAdmin {
+			userErr = gorm.ErrRecordNotFound
+		}
+	}
+
+	if errors.Is(userErr, gorm.ErrRecordNotFound) {
+		nickname := strings.TrimSpace(admin.Nickname)
+		if nickname == "" {
+			nickname = admin.Username
+		}
+		dedicatedUser, err := getOrCreateDedicatedAdminUser(admin.ID, nickname)
+		if err != nil {
+			return err
+		}
+		if dedicatedUser == nil {
+			return errors.New("创建管理员专属账号失败")
+		}
+		user = *dedicatedUser
+	} else if userErr != nil {
+		return fmt.Errorf("查找管理员关联用户失败: %w", userErr)
+	}
+
+	// 4. 创建或修复 admin_profiles 桥接记录
+	adminProfile := model.AdminProfile{
+		UserID:     user.ID,
+		SysAdminID: admin.ID,
+		AdminType:  adminType,
+		Status:     1,
+	}
+	if profileErr == nil {
+		if err := repository.DB.Model(&model.AdminProfile{}).
+			Where("id = ?", existingProfile.ID).
+			Updates(map[string]interface{}{
+				"user_id":    user.ID,
+				"admin_type": adminType,
+				"status":     1,
+			}).Error; err != nil {
+			return fmt.Errorf("修复 admin_profiles 失败: %w", err)
+		}
+		adminProfile.ID = existingProfile.ID
+	} else {
+		if err := repository.DB.Create(&adminProfile).Error; err != nil {
+			return fmt.Errorf("创建 admin_profiles 失败: %w", err)
+		}
+	}
+
+	return ensureAdminIdentityLink(user.ID, adminProfile.ID, admin.ID)
+}
+
+func adminUserReservedByOtherProfile(userID, sysAdminID, excludeProfileID uint64) (bool, error) {
+	if userID == 0 {
+		return false, nil
+	}
+
+	query := repository.DB.Model(&model.AdminProfile{}).Where("user_id = ? AND sys_admin_id <> ?", userID, sysAdminID)
+	if excludeProfileID > 0 {
+		query = query.Where("id <> ?", excludeProfileID)
+	}
+
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func getOrCreateDedicatedAdminUser(adminID uint64, nickname string) (*model.User, error) {
+	phone := fmt.Sprintf("admin_%d", adminID)
+	var user model.User
+
+	if err := repository.DB.Where("phone = ? AND status = ?", phone, 1).First(&user).Error; err == nil {
+		reservedByOtherAdmin, checkErr := adminUserReservedByOtherProfile(user.ID, adminID, 0)
+		if checkErr != nil {
+			return nil, fmt.Errorf("校验管理员专属账号占用失败: %w", checkErr)
+		}
+		if reservedByOtherAdmin {
+			return nil, fmt.Errorf("管理员专属账号已被其他管理员占用: admin_id=%d", adminID)
+		}
+		return &user, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("查找管理员专属账号失败: %w", err)
+	}
+
+	// 命中同手机号但非启用账号：修复并激活，避免创建时撞唯一键。
+	var inactiveUser model.User
+	if err := repository.DB.Where("phone = ?", phone).First(&inactiveUser).Error; err == nil {
+		reservedByOtherAdmin, checkErr := adminUserReservedByOtherProfile(inactiveUser.ID, adminID, 0)
+		if checkErr != nil {
+			return nil, fmt.Errorf("校验管理员专属账号占用失败: %w", checkErr)
+		}
+		if reservedByOtherAdmin {
+			return nil, fmt.Errorf("管理员专属账号已被其他管理员占用: admin_id=%d", adminID)
+		}
+
+		updates := map[string]interface{}{}
+		if inactiveUser.Status != 1 {
+			updates["status"] = 1
+		}
+		if inactiveUser.UserType != 4 {
+			updates["user_type"] = 4
+		}
+		if strings.TrimSpace(inactiveUser.DefaultIdentityType) != "admin" {
+			updates["default_identity_type"] = "admin"
+		}
+		if strings.TrimSpace(inactiveUser.Nickname) == "" && strings.TrimSpace(nickname) != "" {
+			updates["nickname"] = strings.TrimSpace(nickname)
+		}
+		if len(updates) > 0 {
+			if err := repository.DB.Model(&model.User{}).Where("id = ?", inactiveUser.ID).Updates(updates).Error; err != nil {
+				return nil, fmt.Errorf("修复管理员专属账号失败: %w", err)
+			}
+			if status, ok := updates["status"].(int); ok {
+				inactiveUser.Status = int8(status)
+			}
+			if userType, ok := updates["user_type"].(int); ok {
+				inactiveUser.UserType = int8(userType)
+			}
+			if defaultIdentityType, ok := updates["default_identity_type"].(string); ok {
+				inactiveUser.DefaultIdentityType = defaultIdentityType
+			}
+			if updatedNickname, ok := updates["nickname"].(string); ok {
+				inactiveUser.Nickname = updatedNickname
+			}
+		}
+		return &inactiveUser, nil
+	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, fmt.Errorf("查找管理员专属账号失败: %w", err)
+	}
+
+	if strings.TrimSpace(nickname) == "" {
+		nickname = fmt.Sprintf("管理员%d", adminID)
+	}
+	user = model.User{
+		Phone:               phone,
+		Nickname:            nickname,
+		UserType:            4,
+		Status:              1,
+		DefaultIdentityType: "admin",
+	}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		return nil, fmt.Errorf("创建管理员专属账号失败: %w", err)
+	}
+	return &user, nil
+}
+
+func ensureAdminIdentityLink(userID, adminProfileID, sysAdminID uint64) error {
+	if userID == 0 || adminProfileID == 0 {
+		return errors.New("管理员身份关联参数无效")
+	}
+
+	var identity model.UserIdentity
+	err := repository.DB.
+		Where("user_id = ? AND identity_type = ? AND identity_ref_id = ?", userID, "admin", adminProfileID).
+		First(&identity).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		err = repository.DB.
+			Where("user_id = ? AND identity_type = ? AND identity_ref_id IS NULL", userID, "admin").
+			First(&identity).Error
+	}
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		// 历史兼容：同用户可能已有旧 admin identity（ref 指向旧 profile），优先复用该记录并修正 ref，
+		// 避免继续新增 active identity 造成多条 admin 身份并存。
+		err = repository.DB.
+			Where("user_id = ? AND identity_type = ?", userID, "admin").
+			Order("id ASC").
+			First(&identity).Error
+	}
+	now := time.Now()
+	shouldAudit := false
+	var targetIdentityID uint64
+
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		adminRefID := adminProfileID
+		identity = model.UserIdentity{
+			UserID:        userID,
+			IdentityType:  "admin",
+			IdentityRefID: &adminRefID,
+			Status:        1,
+			Verified:      true,
+			VerifiedAt:    &now,
+		}
+		if createErr := repository.DB.Create(&identity).Error; createErr != nil {
+			return fmt.Errorf("创建 admin 身份失败: %w", createErr)
+		}
+		targetIdentityID = identity.ID
+		shouldAudit = true
+	} else if err != nil {
+		return fmt.Errorf("查询 admin 身份失败: %w", err)
+	} else {
+		updates := map[string]interface{}{}
+		if identity.IdentityRefID == nil || *identity.IdentityRefID != adminProfileID {
+			updates["identity_ref_id"] = adminProfileID
+		}
+		if identity.Status != 1 {
+			updates["status"] = 1
+		}
+		if !identity.Verified {
+			updates["verified"] = true
+		}
+		if identity.VerifiedAt == nil {
+			updates["verified_at"] = &now
+		}
+		if len(updates) > 0 {
+			if updateErr := repository.DB.Model(&model.UserIdentity{}).Where("id = ?", identity.ID).Updates(updates).Error; updateErr != nil {
+				return fmt.Errorf("修复 admin 身份失败: %w", updateErr)
+			}
+			shouldAudit = true
+		}
+		targetIdentityID = identity.ID
+	}
+
+	// 同一用户只保留一条 active admin identity，避免历史残留导致身份歧义。
+	if targetIdentityID > 0 {
+		suspendResult := repository.DB.Model(&model.UserIdentity{}).
+			Where("user_id = ? AND identity_type = ? AND id <> ? AND status = ?", userID, "admin", targetIdentityID, 1).
+			Updates(map[string]interface{}{
+				"status":   3, // suspended
+				"verified": false,
+			})
+		if suspendResult.Error != nil {
+			return fmt.Errorf("收敛重复 admin 身份失败: %w", suspendResult.Error)
+		}
+		if suspendResult.RowsAffected > 0 {
+			shouldAudit = true
+		}
+	}
+
+	if shouldAudit {
+		_ = repository.DB.Create(&model.IdentityAuditLog{
+			UserID:       userID,
+			Action:       "approve",
+			FromIdentity: "",
+			ToIdentity:   "admin",
+			Metadata:     fmt.Sprintf(`{"sys_admin_id":%d}`, sysAdminID),
+			CreatedAt:    time.Now(),
+		}).Error
+	}
+
+	return nil
 }
 
 func (s *AdminSecurityService) readSessionMeta(ctx context.Context, redisClient *redis.Client, sessionID string) (*AdminSessionMeta, error) {

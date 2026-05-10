@@ -1,9 +1,10 @@
 // Legacy compatibility only: quote-pk 主链已退役。
 // 当前页面只用于旧深链兼容，不应再出现在主导航与现行报价作业路径中。
 import React, { useEffect, useState } from 'react';
-import { Button, Card, Empty, Form, Input, InputNumber, message, Modal, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Button, Empty, message, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { ReloadOutlined } from '@ant-design/icons';
+import { useSearchParams } from 'react-router-dom';
 import { merchantQuotePKApi, type QuoteTask } from '../../services/quotePKApi';
 import MerchantPageShell from '../../components/MerchantPageShell';
 import MerchantPageHeader from '../../components/MerchantPageHeader';
@@ -11,7 +12,6 @@ import MerchantSectionCard from '../../components/MerchantSectionCard';
 import MerchantContentPanel from '../../components/MerchantContentPanel';
 
 const { Text } = Typography;
-const { TextArea } = Input;
 
 const statusLabel = (status: string): { text: string; color: string } => {
   switch (status) {
@@ -29,12 +29,10 @@ const statusLabel = (status: string): { text: string; color: string } => {
 };
 
 const MerchantQuoteTasks: React.FC = () => {
+  const [searchParams] = useSearchParams();
   const [loading, setLoading] = useState(false);
   const [tasks, setTasks] = useState<QuoteTask[]>([]);
-  const [submitModalVisible, setSubmitModalVisible] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<QuoteTask | null>(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [form] = Form.useForm();
+  const focusTaskId = Number(searchParams.get('quoteTaskId') || 0);
 
   const loadTasks = async () => {
     try {
@@ -52,28 +50,9 @@ const MerchantQuoteTasks: React.FC = () => {
     loadTasks();
   }, []);
 
-  const handleSubmitQuote = (task: QuoteTask) => {
-    setSelectedTask(task);
-    setSubmitModalVisible(true);
-    form.resetFields();
-  };
-
-  const handleSubmit = async () => {
-    if (!selectedTask) return;
-
-    try {
-      const values = await form.validateFields();
-      setSubmitting(true);
-      await merchantQuotePKApi.submitQuote(selectedTask.id, values);
-      message.success('报价提交成功');
-      setSubmitModalVisible(false);
-      loadTasks();
-    } catch (err: any) {
-      message.error(err?.message || '提交失败');
-    } finally {
-      setSubmitting(false);
-    }
-  };
+  const visibleTasks = focusTaskId > 0
+    ? tasks.filter((task) => task.id === focusTaskId)
+    : tasks;
 
   const columns: ColumnsType<QuoteTask> = [
     {
@@ -122,16 +101,7 @@ const MerchantQuoteTasks: React.FC = () => {
       title: '操作',
       key: 'action',
       width: 120,
-      render: (_, record) => {
-        if (record.status === 'in_progress') {
-          return (
-            <Button type="primary" size="small" onClick={() => handleSubmitQuote(record)}>
-              提交报价
-            </Button>
-          );
-        }
-        return '-';
-      },
+      render: () => <Text type="secondary">仅可查看</Text>,
     },
   ];
 
@@ -147,11 +117,21 @@ const MerchantQuoteTasks: React.FC = () => {
       />
       <MerchantContentPanel>
         <MerchantSectionCard title="报价任务列表">
+          {focusTaskId > 0 ? (
+            <Alert
+              type="info"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message={`当前展示通知关联的报价记录 #${focusTaskId}`}
+              description="报价记录仅支持查看；如需继续处理，请前往施工报价相关页面。"
+            />
+          ) : null}
           <Table
             columns={columns}
-            dataSource={tasks}
+            dataSource={visibleTasks}
             rowKey="id"
             loading={loading}
+            rowClassName={(record) => (record.id === focusTaskId ? 'merchant-legacy-quote-task-row--focused' : '')}
             locale={{
               emptyText: <Empty description="暂无报价任务" />,
             }}
@@ -159,58 +139,6 @@ const MerchantQuoteTasks: React.FC = () => {
         </MerchantSectionCard>
       </MerchantContentPanel>
 
-      <Modal
-        title="提交报价"
-        open={submitModalVisible}
-        onOk={handleSubmit}
-        onCancel={() => setSubmitModalVisible(false)}
-        confirmLoading={submitting}
-        width={600}
-      >
-        {selectedTask && (
-          <Card size="small" style={{ marginBottom: 16 }}>
-            <Space direction="vertical" size={4}>
-              <Text>面积：{selectedTask.area}㎡</Text>
-              <Text>风格：{selectedTask.style}</Text>
-              <Text>区域：{selectedTask.region}</Text>
-              <Text>预算：¥{selectedTask.budget.toLocaleString()}</Text>
-              {selectedTask.description && <Text>需求：{selectedTask.description}</Text>}
-            </Space>
-          </Card>
-        )}
-
-        <Form form={form} layout="vertical">
-          <Form.Item
-            name="totalPrice"
-            label="总价（元）"
-            rules={[
-              { required: true, message: '请输入总价' },
-              { type: 'number', min: 0, message: '总价必须大于0' },
-            ]}
-          >
-            <InputNumber style={{ width: '100%' }} placeholder="请输入总价" />
-          </Form.Item>
-
-          <Form.Item
-            name="duration"
-            label="工期（天）"
-            rules={[
-              { required: true, message: '请输入工期' },
-              { type: 'number', min: 1, message: '工期必须大于0' },
-            ]}
-          >
-            <InputNumber style={{ width: '100%' }} placeholder="请输入工期" />
-          </Form.Item>
-
-          <Form.Item name="materials" label="材料清单">
-            <TextArea rows={4} placeholder="请输入材料清单" maxLength={500} />
-          </Form.Item>
-
-          <Form.Item name="description" label="报价说明">
-            <TextArea rows={4} placeholder="请输入报价说明" maxLength={500} />
-          </Form.Item>
-        </Form>
-      </Modal>
     </MerchantPageShell>
   );
 };

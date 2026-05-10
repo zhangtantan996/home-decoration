@@ -332,7 +332,7 @@ const ProviderAudit: React.FC = () => {
                             </Descriptions>
                         </AuditDetailSection>
 
-                        <AuditDetailSection title="可见性解释">
+                        <AuditDetailSection title="可见性解释" collapsible defaultCollapsed>
                             <VisibilityStatusPanel visibility={currentItem.visibility} legacyInfo={currentItem.legacyInfo} />
                         </AuditDetailSection>
 

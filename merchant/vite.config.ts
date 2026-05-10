@@ -28,6 +28,8 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       host: true,
+      // Needed for local-gateway reverse proxy (Host header will be container name like "merchant").
+      allowedHosts: ['merchant', 'localhost', '127.0.0.1'],
       port: 5174,
       watch: enablePolling ? {
         usePolling: true,

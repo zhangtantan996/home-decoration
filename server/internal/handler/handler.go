@@ -204,6 +204,7 @@ func healthStatusSnapshot() string {
 	auditLogHealth := repository.RefreshAuditLogSchemaHealth()
 	commerceRuntimeHealth := repository.RefreshCommerceRuntimeSchemaHealth()
 	outboxRuntimeHealth := repository.RefreshOutboxRuntimeSchemaHealth()
+	supervisorRuntimeHealth := repository.RefreshSupervisorRuntimeSchemaHealth()
 	alerts := repository.CurrentOperationalAlerts()
 	overallStatus := "ok"
 	if len(alerts) > 0 ||
@@ -214,7 +215,8 @@ func healthStatusSnapshot() string {
 		projectRiskHealth.Status != "ok" ||
 		auditLogHealth.Status != "ok" ||
 		commerceRuntimeHealth.Status != "ok" ||
-		outboxRuntimeHealth.Status != "ok" {
+		outboxRuntimeHealth.Status != "ok" ||
+		supervisorRuntimeHealth.Status != "ok" {
 		overallStatus = "degraded"
 	}
 
@@ -230,6 +232,7 @@ func healthDetailSnapshot() gin.H {
 	auditLogHealth := repository.RefreshAuditLogSchemaHealth()
 	commerceRuntimeHealth := repository.RefreshCommerceRuntimeSchemaHealth()
 	outboxRuntimeHealth := repository.RefreshOutboxRuntimeSchemaHealth()
+	supervisorRuntimeHealth := repository.RefreshSupervisorRuntimeSchemaHealth()
 	alerts := repository.CurrentOperationalAlerts()
 
 	return gin.H{
@@ -247,6 +250,7 @@ func healthDetailSnapshot() gin.H {
 			"auditLogSchema":           auditLogHealth,
 			"commerceRuntimeSchema":    commerceRuntimeHealth,
 			"outboxRuntimeSchema":      outboxRuntimeHealth,
+			"supervisorRuntimeSchema":  supervisorRuntimeHealth,
 		},
 	}
 }

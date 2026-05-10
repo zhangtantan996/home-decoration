@@ -1,9 +1,12 @@
 @import "../../theme/tokens";
 
 .home-page {
-  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
   padding: 0 24rpx 40rpx;
   background: #ffffff;
+  overflow: hidden;
 
   &__header {
     position: fixed;
@@ -263,6 +266,10 @@
     gap: 24rpx;
     padding-bottom: calc(160rpx + constant(safe-area-inset-bottom));
     padding-bottom: calc(160rpx + env(safe-area-inset-bottom));
+  }
+
+  &__scroll {
+    height: 100%;
   }
 
   &__provider-card,
@@ -893,6 +900,28 @@
     font-size: 24rpx;
     font-weight: 500;
     transition: color 0.2s;
+  }
+
+  &__scroll-wrapper {
+    flex: 1;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  &__scroll {
+    height: 100%;
+  }
+
+  &__loading-more {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24rpx 0 48rpx;
+  }
+
+  &__loading-more-text {
+    color: #9ca3af;
+    font-size: 24rpx;
   }
 }
 

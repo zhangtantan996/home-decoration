@@ -29,6 +29,29 @@ func getAdminUserCleanupService() *service.AdminUserCleanupService {
 	return service.NewAdminUserCleanupService(repository.DB)
 }
 
+func normalizeRequiredJSONArrayText(value string, fieldLabel string) (string, error) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return "", nil
+	}
+
+	var parsed []string
+	if err := json.Unmarshal([]byte(raw), &parsed); err != nil {
+		return "", fmt.Errorf("%s必须是 JSON 数组格式", fieldLabel)
+	}
+
+	normalized := make([]string, 0, len(parsed))
+	for _, item := range parsed {
+		trimmed := strings.TrimSpace(item)
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+
+	encoded, _ := json.Marshal(normalized)
+	return string(encoded), nil
+}
+
 const (
 	adminAccountStatusUnbound  = "unbound"
 	adminAccountStatusActive   = "active"
@@ -669,6 +692,8 @@ func AdminListUsers(c *gin.Context) {
 		model.User
 		RoleType          string     `json:"roleType"`
 		RoleLabel         string     `json:"roleLabel"`
+		PhoneMasked       string     `json:"phoneMasked,omitempty"`
+		AccountStatus     string     `json:"accountStatus"`
 		PrimaryEntityType string     `json:"primaryEntityType,omitempty"`
 		PrimaryEntityID   uint64     `json:"primaryEntityId,omitempty"`
 		PrimaryEntityName string     `json:"primaryEntityName,omitempty"`
@@ -756,9 +781,15 @@ func AdminListUsers(c *gin.Context) {
 			}
 		}
 		rows = append(rows, adminUserListRow{
-			User:              user,
+			User: func() model.User {
+				sanitized := user
+				sanitized.Phone = maskPhoneValue(user.Phone)
+				return sanitized
+			}(),
 			RoleType:          derivedRoleType,
 			RoleLabel:         derivedRoleLabel,
+			PhoneMasked:       maskPhoneValue(user.Phone),
+			AccountStatus:     resolveAdminAccountStatus(true, user.Status),
 			PrimaryEntityType: primaryEntityType,
 			PrimaryEntityID:   primaryEntityID,
 			PrimaryEntityName: primaryEntityName,
@@ -812,6 +843,8 @@ func resolveAdminUserRole(user model.User, provider model.Provider, materialShop
 
 	for _, identity := range identities {
 		switch strings.TrimSpace(identity.IdentityType) {
+		case "supervisor":
+			return "supervisor", "监理"
 		case "company":
 			return "company", "装修公司"
 		case "foreman", "worker":
@@ -863,6 +896,7 @@ func AdminGetUser(c *gin.Context) {
 		response.NotFound(c, "用户不存在")
 		return
 	}
+	user.Phone = visiblePhoneForAdmin(c, user.Phone)
 	response.Success(c, user)
 }
 
@@ -1029,6 +1063,7 @@ func parseUserIDsFromPayload(value any) []uint64 {
 
 type adminProviderListRow struct {
 	model.Provider
+	ServiceAreaCodes   []string                                `json:"serviceAreaCodes,omitempty"`
 	RealName           string                                  `json:"realName"`
 	SourceLabel        string                                  `json:"sourceLabel"`
 	AccountBound       bool                                    `json:"accountBound"`
@@ -1067,6 +1102,100 @@ type adminMaterialShopListRow struct {
 	Visibility         service.VisibilityData        `json:"visibility"`
 	Actions            service.VisibilityActions     `json:"actions"`
 	LegacyInfo         *service.VisibilityLegacyInfo `json:"legacyInfo,omitempty"`
+}
+
+func buildAdminMaterialShopRow(
+	shop model.MaterialShop,
+	userInfo adminLinkedUserBrief,
+	hasUser bool,
+	completionApp *model.MaterialShopApplication,
+	visibilityResult service.VisibilityResult,
+	userPhone string,
+	contactPhone string,
+) adminMaterialShopListRow {
+	accountBound := shop.UserID > 0 && hasUser
+	sourceLabel := resolveMaterialShopSourceLabel(shop)
+	onboardingStatus := resolveAdminMaterialShopOnboardingStatus(shop, accountBound, completionApp)
+	accountStatus := resolveAdminAccountStatus(accountBound, userInfo.Status)
+	loginStatus := resolveAdminMaterialShopLoginStatus(shop, accountBound, userInfo.Status)
+	completionRequired := accountBound && shop.NeedsOnboardingCompletion
+	operatingStatus := resolveAdminMaterialShopOperatingStatus(shop, accountBound, onboardingStatus)
+	completionAppID := uint64(0)
+	if completionApp != nil {
+		completionAppID = completionApp.ID
+	}
+
+	return adminMaterialShopListRow{
+		MaterialShop: func() model.MaterialShop {
+			sanitized := shop
+			sanitized.ContactPhone = contactPhone
+			return sanitized
+		}(),
+		UserPhone:          userPhone,
+		UserNickname:       userInfo.Nickname,
+		AccountBound:       accountBound,
+		AccountStatus:      accountStatus,
+		LoginStatus:        loginStatus,
+		LoginEnabled:       loginStatus == adminLoginStatusEnabled,
+		CompletionRequired: completionRequired,
+		OnboardingStatus:   onboardingStatus,
+		OperatingStatus:    operatingStatus,
+		OperatingEnabled:   operatingStatus == adminOperatingStatusActive,
+		CompletionAppID:    completionAppID,
+		SourceLabel:        sourceLabel,
+		Visibility:         visibilityResult.Visibility,
+		Actions:            visibilityResult.Actions,
+		LegacyInfo:         visibilityResult.LegacyInfo,
+	}
+}
+
+func loadAdminMaterialShopRow(c *gin.Context, shopID uint64, fullPhone bool) (*adminMaterialShopListRow, error) {
+	var shop model.MaterialShop
+	if err := repository.DB.First(&shop, shopID).Error; err != nil {
+		return nil, err
+	}
+
+	shop.PlatformDisplayEnabled = service.MaterialShopPlatformDisplayEnabled(&shop)
+	shop.MerchantDisplayEnabled = service.MaterialShopMerchantDisplayEnabled(&shop)
+
+	var userInfo adminLinkedUserBrief
+	hasUser := false
+	if shop.UserID > 0 {
+		if err := repository.DB.Model(&model.User{}).Select("id", "phone", "nickname", "status").First(&userInfo, shop.UserID).Error; err == nil {
+			hasUser = true
+		}
+	}
+
+	completionApp, err := findLatestClaimedMaterialShopCompletionApplication(repository.DB, shop.ID, shop.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	var productCount int64
+	if err := repository.DB.Model(&model.MaterialShopProduct{}).Where("shop_id = ? AND status = ?", shop.ID, 1).Count(&productCount).Error; err != nil {
+		return nil, err
+	}
+
+	visibilityDecision := service.EvaluateMaterialShopPublicVisibility(&shop, productCount)
+	visibilityDecision.CurrentLabel = "缺少入驻申请"
+	visibilityDecision.EntitySnapshot = service.VisibilityEntitySnapshot{
+		ShopID:       &shop.ID,
+		ShopVerified: &shop.IsVerified,
+	}
+	visibilityResult := service.VisibilityResult{
+		Visibility: visibilityDecision,
+		Actions:    service.VisibilityActions{RejectResubmittable: false},
+	}
+	if app, ok := findMaterialShopVisibilitySource(shop); ok {
+		visibilityResult = adminVisibilityResolver.ResolveMaterialShopApplication(*app, &shop, productCount)
+	}
+
+	userPhone := maskPhoneValue(userInfo.Phone)
+	if fullPhone {
+		userPhone = visiblePhoneForAdmin(c, userInfo.Phone)
+	}
+	row := buildAdminMaterialShopRow(shop, userInfo, hasUser, completionApp, visibilityResult, userPhone, visiblePhoneForAdmin(c, shop.ContactPhone))
+	return &row, nil
 }
 
 func findProviderVisibilitySource(provider model.Provider) (*model.MerchantApplication, bool) {
@@ -1260,6 +1389,14 @@ func AdminListProviders(c *gin.Context) {
 	for _, provider := range providers {
 		provider.PlatformDisplayEnabled = service.ProviderPlatformDisplayEnabled(&provider)
 		provider.MerchantDisplayEnabled = service.ProviderMerchantDisplayEnabled(&provider)
+		var serviceAreaCodes []string
+		_ = json.Unmarshal([]byte(provider.ServiceArea), &serviceAreaCodes)
+		if normalizedCodes, serviceAreaNames, err := adminRegionService.ResolveServiceAreaInputsToDisplay(serviceAreaCodes); err == nil {
+			serviceAreaCodes = normalizedCodes
+			if serviceAreaJSON, marshalErr := json.Marshal(serviceAreaNames); marshalErr == nil {
+				provider.ServiceArea = string(serviceAreaJSON)
+			}
+		}
 		completionApp := completionAppMap[provider.ID]
 		userInfo, hasBoundUser := userMap[provider.UserID]
 		accountBound := provider.UserID > 0 && hasBoundUser
@@ -1306,6 +1443,7 @@ func AdminListProviders(c *gin.Context) {
 
 		list = append(list, adminProviderListRow{
 			Provider:           provider,
+			ServiceAreaCodes:   serviceAreaCodes,
 			RealName:           userInfo.Nickname,
 			SourceLabel:        resolveProviderSourceLabel(provider),
 			AccountBound:       accountBound,
@@ -1355,21 +1493,37 @@ func AdminVerifyProvider(c *gin.Context) {
 // AdminCreateProvider 创建服务商
 func AdminCreateProvider(c *gin.Context) {
 	var req struct {
-		UserId          uint64 `json:"userId"`
-		ProviderType    int8   `json:"providerType" binding:"required"`
-		CompanyName     string `json:"companyName" binding:"required"`
-		RealName        string `json:"realName"`
-		SubType         string `json:"subType"`
-		Specialty       string `json:"specialty"`
-		YearsExperience int    `json:"yearsExperience"`
-		Status          int8   `json:"status"`
-		IsSettled       *bool  `json:"isSettled"`       // nil 默认 true
-		CollectedSource string `json:"collectedSource"` // 收录来源
+		UserId          uint64   `json:"userId"`
+		ProviderType    int8     `json:"providerType" binding:"required"`
+		CompanyName     string   `json:"companyName" binding:"required"`
+		RealName        string   `json:"realName"`
+		SubType         string   `json:"subType"`
+		Specialty       string   `json:"specialty"`
+		YearsExperience int      `json:"yearsExperience"`
+		Status          int8     `json:"status"`
+		PriceMin        float64  `json:"priceMin"`
+		PriceMax        float64  `json:"priceMax"`
+		PriceUnit       string   `json:"priceUnit"`
+		CoverImage      string   `json:"coverImage"`
+		ServiceIntro    string   `json:"serviceIntro"`
+		TeamSize        int      `json:"teamSize"`
+		EstablishedYear int      `json:"establishedYear"`
+		Certifications  string   `json:"certifications"`
+		IsSettled       *bool    `json:"isSettled"`       // nil 默认 true
+		CollectedSource string   `json:"collectedSource"` // 收录来源
+		ServiceArea     []string `json:"serviceArea"`     // 服务区域（区域代码数组）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
+
+	serviceAreaCodes, err := adminRegionService.NormalizeServiceAreaCodes(req.ServiceArea)
+	if err != nil {
+		response.BadRequest(c, "服务区域验证失败: "+err.Error())
+		return
+	}
+	serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 
 	isSettled := true
 	if req.IsSettled != nil {
@@ -1384,15 +1538,27 @@ func AdminCreateProvider(c *gin.Context) {
 		SubType:         req.SubType,
 		Specialty:       req.Specialty,
 		YearsExperience: req.YearsExperience,
+		PriceMin:        req.PriceMin,
+		PriceMax:        req.PriceMax,
+		PriceUnit:       strings.TrimSpace(req.PriceUnit),
+		CoverImage:      normalizeStoredAsset(req.CoverImage),
+		ServiceIntro:    req.ServiceIntro,
+		TeamSize:        req.TeamSize,
+		EstablishedYear: req.EstablishedYear,
+		Certifications:  req.Certifications,
 		Status:          req.Status,
 		IsSettled:       isSettled,
 		CollectedSource: req.CollectedSource,
+		ServiceArea:     string(serviceAreaJSON),
 	}
 	if provider.Status == 0 {
 		provider.Status = 1 // 默认启用
 	}
 	if provider.SubType == "" {
 		provider.SubType = "personal"
+	}
+	if provider.PriceUnit == "" {
+		provider.PriceUnit = model.ProviderPriceUnitPerSquareMeter
 	}
 	if err := repository.DB.Create(&provider).Error; err != nil {
 		response.ServerError(c, "创建失败")
@@ -1410,104 +1576,120 @@ func AdminUpdateProvider(c *gin.Context) {
 		return
 	}
 	var req struct {
-		CompanyName     string   `json:"companyName"`
-		RealName        string   `json:"realName"`
-		SubType         string   `json:"subType"`
-		Specialty       string   `json:"specialty"`
-		YearsExperience int      `json:"yearsExperience"`
-		Status          int8     `json:"status"`
-		RestoreRate     float32  `json:"restoreRate"`     // 还原度
-		BudgetControl   float32  `json:"budgetControl"`   // 预算控制力
-		WorkTypes       string   `json:"workTypes"`       // 工种类型（逗号分隔）
-		PriceMin        float64  `json:"priceMin"`        // 最低价格
-		PriceMax        float64  `json:"priceMax"`        // 最高价格
-		PriceUnit       string   `json:"priceUnit"`       // 价格单位
-		CoverImage      string   `json:"coverImage"`      // 封面背景图
-		ServiceIntro    string   `json:"serviceIntro"`    // 服务介绍
-		TeamSize        int      `json:"teamSize"`        // 团队规模
-		EstablishedYear int      `json:"establishedYear"` // 成立年份
-		Certifications  string   `json:"certifications"`  // 资质认证（JSON数组）
-		ServiceArea     []string `json:"serviceArea"`     // 服务区域（区域代码数组）
-		IsSettled       *bool    `json:"isSettled"`       // 入驻状态
-		CollectedSource string   `json:"collectedSource"` // 收录来源
+		CompanyName     *string   `json:"companyName"`
+		RealName        *string   `json:"realName"`
+		SubType         *string   `json:"subType"`
+		Specialty       *string   `json:"specialty"`
+		YearsExperience *int      `json:"yearsExperience"`
+		Status          *int8     `json:"status"`
+		RestoreRate     *float32  `json:"restoreRate"`     // 还原度
+		BudgetControl   *float32  `json:"budgetControl"`   // 预算控制力
+		WorkTypes       *string   `json:"workTypes"`       // 工种类型（逗号分隔）
+		PriceMin        *float64  `json:"priceMin"`        // 最低价格
+		PriceMax        *float64  `json:"priceMax"`        // 最高价格
+		PriceUnit       *string   `json:"priceUnit"`       // 价格单位
+		CoverImage      *string   `json:"coverImage"`      // 封面背景图
+		ServiceIntro    *string   `json:"serviceIntro"`    // 服务介绍
+		TeamSize        *int      `json:"teamSize"`        // 团队规模
+		EstablishedYear *int      `json:"establishedYear"` // 成立年份
+		Certifications  *string   `json:"certifications"`  // 资质认证（JSON数组）
+		ServiceArea     *[]string `json:"serviceArea"`      // 服务区域（区域代码数组）
+		IsSettled       *bool     `json:"isSettled"`        // 入驻状态
+		CollectedSource *string   `json:"collectedSource"`  // 收录来源
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	// 验证服务城市代码（如果提供）支持名称/代码输入
+	// 验证服务区域（如果提供）支持名称/代码输入；未传表示不更新，传空数组直接拒绝。
 	var serviceAreaCodes []string
-	if len(req.ServiceArea) > 0 {
-		codes, err := adminRegionService.NormalizeServiceCityCodes(req.ServiceArea)
+	serviceAreaProvided := req.ServiceArea != nil
+	if serviceAreaProvided {
+		if len(*req.ServiceArea) == 0 {
+			response.BadRequest(c, "请至少选择服务城市，区县可选")
+			return
+		}
+		codes, err := adminRegionService.NormalizeServiceAreaCodes(*req.ServiceArea)
 		if err != nil {
-			response.BadRequest(c, "服务城市验证失败: "+err.Error())
+			response.BadRequest(c, "服务区域验证失败: "+err.Error())
 			return
 		}
 		serviceAreaCodes = codes
 	}
 
 	updates := map[string]interface{}{}
-	if req.CompanyName != "" {
-		updates["company_name"] = req.CompanyName
-	}
-	if req.RealName != "" || strings.TrimSpace(req.CompanyName) != "" {
-		effectiveCompanyName := provider.CompanyName
-		if strings.TrimSpace(req.CompanyName) != "" {
-			effectiveCompanyName = req.CompanyName
+	if req.CompanyName != nil {
+		trimmed := strings.TrimSpace(*req.CompanyName)
+		if trimmed != "" {
+			updates["company_name"] = trimmed
 		}
-		updates["display_name"] = service.ResolveProviderStoredDisplayName(provider.ProviderType, effectiveCompanyName, req.RealName)
 	}
-	if req.SubType != "" {
-		updates["sub_type"] = req.SubType
+	if req.RealName != nil || req.CompanyName != nil {
+		effectiveCompanyName := provider.CompanyName
+		if req.CompanyName != nil && strings.TrimSpace(*req.CompanyName) != "" {
+			effectiveCompanyName = strings.TrimSpace(*req.CompanyName)
+		}
+		realName := ""
+		if req.RealName != nil {
+			realName = strings.TrimSpace(*req.RealName)
+		}
+		updates["display_name"] = service.ResolveProviderStoredDisplayName(provider.ProviderType, effectiveCompanyName, realName)
 	}
-	if req.Specialty != "" {
-		updates["specialty"] = req.Specialty
+	if req.SubType != nil && strings.TrimSpace(*req.SubType) != "" {
+		updates["sub_type"] = strings.TrimSpace(*req.SubType)
 	}
-	if req.YearsExperience > 0 {
-		updates["years_experience"] = req.YearsExperience
+	if req.Specialty != nil {
+		updates["specialty"] = strings.TrimSpace(*req.Specialty)
 	}
-	if req.RestoreRate >= 0 {
-		updates["restore_rate"] = req.RestoreRate
+	if req.YearsExperience != nil && *req.YearsExperience > 0 {
+		updates["years_experience"] = *req.YearsExperience
 	}
-	if req.BudgetControl >= 0 {
-		updates["budget_control"] = req.BudgetControl
+	if req.RestoreRate != nil && *req.RestoreRate >= 0 {
+		updates["restore_rate"] = *req.RestoreRate
 	}
-	if req.WorkTypes != "" {
-		updates["work_types"] = req.WorkTypes
+	if req.BudgetControl != nil && *req.BudgetControl >= 0 {
+		updates["budget_control"] = *req.BudgetControl
 	}
-	if req.PriceMin >= 0 {
-		updates["price_min"] = req.PriceMin
+	if req.WorkTypes != nil {
+		updates["work_types"] = strings.TrimSpace(*req.WorkTypes)
 	}
-	if req.PriceMax >= 0 {
-		updates["price_max"] = req.PriceMax
+	if req.PriceMin != nil && *req.PriceMin >= 0 {
+		updates["price_min"] = *req.PriceMin
 	}
-	updates["price_unit"] = model.ProviderPriceUnitPerSquareMeter
-	if req.CoverImage != "" {
-		updates["cover_image"] = normalizeStoredAsset(req.CoverImage)
+	if req.PriceMax != nil && *req.PriceMax >= 0 {
+		updates["price_max"] = *req.PriceMax
 	}
-	if req.ServiceIntro != "" {
-		updates["service_intro"] = req.ServiceIntro
+	if req.PriceUnit != nil && strings.TrimSpace(*req.PriceUnit) != "" {
+		updates["price_unit"] = strings.TrimSpace(*req.PriceUnit)
 	}
-	if req.TeamSize > 0 {
-		updates["team_size"] = req.TeamSize
+	if req.CoverImage != nil {
+		updates["cover_image"] = normalizeStoredAsset(strings.TrimSpace(*req.CoverImage))
 	}
-	if req.EstablishedYear > 0 {
-		updates["established_year"] = req.EstablishedYear
+	if req.ServiceIntro != nil {
+		updates["service_intro"] = strings.TrimSpace(*req.ServiceIntro)
 	}
-	if req.Certifications != "" {
-		updates["certifications"] = req.Certifications
+	if req.TeamSize != nil && *req.TeamSize > 0 {
+		updates["team_size"] = *req.TeamSize
 	}
-	if len(serviceAreaCodes) > 0 {
+	if req.EstablishedYear != nil && *req.EstablishedYear > 0 {
+		updates["established_year"] = *req.EstablishedYear
+	}
+	if req.Certifications != nil {
+		updates["certifications"] = strings.TrimSpace(*req.Certifications)
+	}
+	if serviceAreaProvided {
 		serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 		updates["service_area"] = string(serviceAreaJSON)
 	}
-	updates["status"] = req.Status
+	if req.Status != nil {
+		updates["status"] = *req.Status
+	}
 	if req.IsSettled != nil {
 		updates["is_settled"] = *req.IsSettled
 	}
-	if req.CollectedSource != "" {
-		updates["collected_source"] = req.CollectedSource
+	if req.CollectedSource != nil {
+		updates["collected_source"] = strings.TrimSpace(*req.CollectedSource)
 	}
 
 	if err := repository.DB.Model(&provider).Updates(updates).Error; err != nil {
@@ -1904,11 +2086,30 @@ func AdminListBookings(c *gin.Context) {
 
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&bookings)
+	for i := range bookings {
+		bookings[i].Phone = maskPhoneValue(bookings[i].Phone)
+	}
 
 	response.Success(c, gin.H{
 		"list":  bookings,
 		"total": total,
 	})
+}
+
+func AdminGetBooking(c *gin.Context) {
+	bookingID := parseUint64(c.Param("id"))
+	if bookingID == 0 {
+		response.BadRequest(c, "无效预约ID")
+		return
+	}
+
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		response.NotFound(c, "预约不存在")
+		return
+	}
+	booking.Phone = visiblePhoneForAdmin(c, booking.Phone)
+	response.Success(c, booking)
 }
 
 // AdminUpdateBookingStatus 更新预约状态
@@ -2132,38 +2333,16 @@ func AdminListMaterialShops(c *gin.Context) {
 		}
 
 		userInfo, hasUser := userMap[shop.UserID]
-		accountBound := shop.UserID > 0 && hasUser
-		sourceLabel := resolveMaterialShopSourceLabel(shop)
 		completionApp := completionAppMap[shop.ID]
-		onboardingStatus := resolveAdminMaterialShopOnboardingStatus(shop, accountBound, completionApp)
-		accountStatus := resolveAdminAccountStatus(accountBound, userInfo.Status)
-		loginStatus := resolveAdminMaterialShopLoginStatus(shop, accountBound, userInfo.Status)
-		completionRequired := accountBound && shop.NeedsOnboardingCompletion
-		operatingStatus := resolveAdminMaterialShopOperatingStatus(shop, accountBound, onboardingStatus)
-		operatingEnabled := operatingStatus == adminOperatingStatusActive
-		completionAppID := uint64(0)
-		if completionApp != nil {
-			completionAppID = completionApp.ID
-		}
-
-		list = append(list, adminMaterialShopListRow{
-			MaterialShop:       shop,
-			UserPhone:          userInfo.Phone,
-			UserNickname:       userInfo.Nickname,
-			AccountBound:       accountBound,
-			AccountStatus:      accountStatus,
-			LoginStatus:        loginStatus,
-			LoginEnabled:       loginStatus == adminLoginStatusEnabled,
-			CompletionRequired: completionRequired,
-			OnboardingStatus:   onboardingStatus,
-			OperatingStatus:    operatingStatus,
-			OperatingEnabled:   operatingEnabled,
-			CompletionAppID:    completionAppID,
-			SourceLabel:        sourceLabel,
-			Visibility:         visibilityResult.Visibility,
-			Actions:            visibilityResult.Actions,
-			LegacyInfo:         visibilityResult.LegacyInfo,
-		})
+		list = append(list, buildAdminMaterialShopRow(
+			shop,
+			userInfo,
+			hasUser,
+			completionApp,
+			visibilityResult,
+			maskPhoneValue(userInfo.Phone),
+			maskPhoneValue(shop.ContactPhone),
+		))
 	}
 
 	response.Success(c, gin.H{
@@ -2172,18 +2351,43 @@ func AdminListMaterialShops(c *gin.Context) {
 	})
 }
 
+func AdminGetMaterialShop(c *gin.Context) {
+	shopID := parseUint64(c.Param("id"))
+	if shopID == 0 {
+		response.BadRequest(c, "无效门店ID")
+		return
+	}
+	row, err := loadAdminMaterialShopRow(c, shopID, true)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "门店不存在")
+			return
+		}
+		response.ServerError(c, "加载失败")
+		return
+	}
+	response.Success(c, row)
+}
+
 // AdminCreateMaterialShop 创建主材门店
 func AdminCreateMaterialShop(c *gin.Context) {
 	var req struct {
-		Name            string `json:"name" binding:"required"`
-		Type            string `json:"type"` // showroom | brand
-		CompanyName     string `json:"companyName"`
-		Address         string `json:"address"`
-		ContactPhone    string `json:"contactPhone"`
-		ContactName     string `json:"contactName"`
-		MainProducts    string `json:"mainProducts"`
-		IsSettled       *bool  `json:"isSettled"`       // nil 默认 true
-		CollectedSource string `json:"collectedSource"` // 收录来源
+		Name              string   `json:"name" binding:"required"`
+		Type              string   `json:"type"` // showroom | brand
+		CompanyName       string   `json:"companyName"`
+		Address           string   `json:"address"`
+		ContactPhone      string   `json:"contactPhone"`
+		ContactName       string   `json:"contactName"`
+		MainProducts      string   `json:"mainProducts"`
+		ProductCategories string   `json:"productCategories"`
+		Cover             string   `json:"cover"`
+		BrandLogo         string   `json:"brandLogo"`
+		Latitude          *float64 `json:"latitude"`
+		Longitude         *float64 `json:"longitude"`
+		OpenTime          string   `json:"openTime"`
+		Tags              string   `json:"tags"`
+		IsSettled         *bool    `json:"isSettled"`       // nil 默认 true
+		CollectedSource   string   `json:"collectedSource"` // 收录来源
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -2201,16 +2405,38 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		return
 	}
 
+	mainProducts, err := normalizeRequiredJSONArrayText(req.MainProducts, "主营产品")
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	tags, err := normalizeRequiredJSONArrayText(req.Tags, "门店标签")
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+
 	shop := model.MaterialShop{
-		Name:            req.Name,
-		Type:            req.Type,
-		CompanyName:     req.CompanyName,
-		Address:         req.Address,
-		ContactPhone:    req.ContactPhone,
-		ContactName:     req.ContactName,
-		MainProducts:    req.MainProducts,
-		IsSettled:       false,
-		CollectedSource: req.CollectedSource,
+		Name:              strings.TrimSpace(req.Name),
+		Type:              strings.TrimSpace(req.Type),
+		CompanyName:       strings.TrimSpace(req.CompanyName),
+		Address:           strings.TrimSpace(req.Address),
+		ContactPhone:      strings.TrimSpace(req.ContactPhone),
+		ContactName:       strings.TrimSpace(req.ContactName),
+		MainProducts:      mainProducts,
+		ProductCategories: strings.TrimSpace(req.ProductCategories),
+		Cover:             strings.TrimSpace(req.Cover),
+		BrandLogo:         strings.TrimSpace(req.BrandLogo),
+		OpenTime:          strings.TrimSpace(req.OpenTime),
+		Tags:              tags,
+		IsSettled:         false,
+		CollectedSource:   strings.TrimSpace(req.CollectedSource),
+	}
+	if req.Latitude != nil {
+		shop.Latitude = *req.Latitude
+	}
+	if req.Longitude != nil {
+		shop.Longitude = *req.Longitude
 	}
 	if shop.Type == "" {
 		shop.Type = "showroom"
@@ -2409,11 +2635,106 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		response.NotFound(c, "门店不存在")
 		return
 	}
-	if err := c.ShouldBindJSON(&shop); err != nil {
+	var req struct {
+		Name              *string  `json:"name"`
+		Type              *string  `json:"type"`
+		CompanyName       *string  `json:"companyName"`
+		Address           *string  `json:"address"`
+		ContactPhone      *string  `json:"contactPhone"`
+		ContactName       *string  `json:"contactName"`
+		MainProducts      *string  `json:"mainProducts"`
+		ProductCategories *string  `json:"productCategories"`
+		Cover             *string  `json:"cover"`
+		BrandLogo         *string  `json:"brandLogo"`
+		Latitude          *float64 `json:"latitude"`
+		Longitude         *float64 `json:"longitude"`
+		OpenTime          *string  `json:"openTime"`
+		Tags              *string  `json:"tags"`
+		IsSettled         *bool    `json:"isSettled"`
+		CollectedSource   *string  `json:"collectedSource"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-	if err := repository.DB.Save(&shop).Error; err != nil {
+	if req.MainProducts != nil {
+		normalized, err := normalizeRequiredJSONArrayText(*req.MainProducts, "主营产品")
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		req.MainProducts = &normalized
+	}
+	if req.Tags != nil {
+		normalized, err := normalizeRequiredJSONArrayText(*req.Tags, "门店标签")
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		req.Tags = &normalized
+	}
+	updates := map[string]interface{}{}
+	if req.Name != nil {
+		updates["name"] = strings.TrimSpace(*req.Name)
+	}
+	if req.Type != nil {
+		shopType := strings.TrimSpace(*req.Type)
+		if shopType == "" {
+			shopType = "showroom"
+		}
+		updates["type"] = shopType
+	}
+	if req.CompanyName != nil {
+		updates["company_name"] = strings.TrimSpace(*req.CompanyName)
+	}
+	if req.Address != nil {
+		updates["address"] = strings.TrimSpace(*req.Address)
+	}
+	if req.ContactPhone != nil {
+		updates["contact_phone"] = strings.TrimSpace(*req.ContactPhone)
+	}
+	if req.ContactName != nil {
+		updates["contact_name"] = strings.TrimSpace(*req.ContactName)
+	}
+	if req.MainProducts != nil {
+		updates["main_products"] = strings.TrimSpace(*req.MainProducts)
+	}
+	if req.ProductCategories != nil {
+		updates["product_categories"] = strings.TrimSpace(*req.ProductCategories)
+	}
+	if req.Cover != nil {
+		updates["cover"] = strings.TrimSpace(*req.Cover)
+	}
+	if req.BrandLogo != nil {
+		updates["brand_logo"] = strings.TrimSpace(*req.BrandLogo)
+	}
+	if req.Latitude != nil {
+		updates["latitude"] = *req.Latitude
+	}
+	if req.Longitude != nil {
+		updates["longitude"] = *req.Longitude
+	}
+	if req.OpenTime != nil {
+		updates["open_time"] = strings.TrimSpace(*req.OpenTime)
+	}
+	if req.Tags != nil {
+		updates["tags"] = strings.TrimSpace(*req.Tags)
+	}
+	if req.IsSettled != nil {
+		updates["is_settled"] = *req.IsSettled
+	}
+	if req.CollectedSource != nil {
+		updates["collected_source"] = strings.TrimSpace(*req.CollectedSource)
+	}
+	if len(updates) == 0 {
+		response.Success(c, shop)
+		return
+	}
+	if err := repository.DB.Model(&shop).Updates(updates).Error; err != nil {
+		response.ServerError(c, "更新失败")
+		return
+	}
+	if err := repository.DB.First(&shop, "id = ?", id).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}

@@ -73,6 +73,7 @@ llmdoc/
 playwright-report/
 test-results/
 .workbuddy/
+.worktrees/
 
 # Project specific
 output/

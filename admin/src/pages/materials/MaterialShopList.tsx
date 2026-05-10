@@ -25,6 +25,7 @@ import {
 } from "@ant-design/icons";
 import {
   adminMaterialShopApi,
+  type AdminAccountStatus,
   type AdminMaterialShopListItem,
   type AdminOnboardingStatus,
   type AdminOperatingStatus,
@@ -36,7 +37,11 @@ import ToolbarCard from "../../components/ToolbarCard";
 import AuditStatusSummary from "../audits/components/AuditStatusSummary";
 import VisibilityStatusPanel from "../audits/components/VisibilityStatusPanel";
 import { useAdaptiveTableScroll } from "../../hooks/useAdaptiveTableScroll";
+import { resolveAccountStatusTag, resolveLoginStatusTag } from "../../components/AccountStatusTags";
 import {
+  ACCOUNT_BOUND_STATUS_META,
+  ACCOUNT_STATUS_META,
+  ACCOUNT_STATUS_OPTIONS,
   LEGACY_PATH_BADGE,
   MATERIAL_SHOP_TYPE_META,
   MATERIAL_SHOP_TYPE_OPTIONS,
@@ -52,6 +57,37 @@ import {
 interface MaterialShop extends AdminMaterialShopListItem {}
 
 const { Text } = Typography;
+
+const normalizeJSONArrayTextForForm = (value: unknown) => {
+  if (Array.isArray(value)) {
+    return JSON.stringify(
+      value.map((item) => String(item || "").trim()).filter(Boolean),
+    );
+  }
+  if (typeof value !== "string") {
+    return "";
+  }
+  const raw = value.trim();
+  if (!raw) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return JSON.stringify(
+        parsed.map((item) => String(item || "").trim()).filter(Boolean),
+      );
+    }
+  } catch {
+    return JSON.stringify(
+      raw
+        .split(/[，,]/)
+        .map((item) => item.trim())
+        .filter(Boolean),
+    );
+  }
+  return "";
+};
 
 type MaterialShopColumnKey =
   | "id"
@@ -175,36 +211,49 @@ const isMaterialShopAvailable = (shop: MaterialShop) =>
   (shop.status ?? 1) === 1 && (shop.platformDisplayEnabled ?? true);
 
 const renderMaterialShopStatusOverview = (shop: MaterialShop) => {
-  const onboardingStatus = shop.onboardingStatus || "none";
-  const showOnboardingTag =
-    onboardingStatus !== "none" && onboardingStatus !== "approved";
-  const showOperatingTag =
-    (shop.operatingStatus || "unopened") === "frozen";
+  const accountStatus = shop.accountStatus || "unbound";
+  if (accountStatus === "unbound") {
+    return renderStatusTag(
+      "身份摘要",
+      ACCOUNT_STATUS_META.unbound.text,
+      ACCOUNT_STATUS_META.unbound.color,
+    );
+  }
+  if (accountStatus === "disabled") {
+    return renderStatusTag(
+      "身份摘要",
+      ACCOUNT_STATUS_META.disabled.text,
+      ACCOUNT_STATUS_META.disabled.color,
+    );
+  }
 
-  return (
-    <Space size={4} className="hz-status-tag-line">
-      {shop.isSettled
-        ? renderStatusTag("入驻", "已入驻", "green")
-        : renderStatusTag("来源", "平台整理", "gold")}
-      {!shop.isSettled && renderStatusTag("认领", "待商家认领", "orange")}
-      {showOnboardingTag &&
-        renderStatusTag(
-          "资料",
-          (MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
-            MERCHANT_ONBOARDING_STATUS_META.unknown).text,
-          (MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
-            MERCHANT_ONBOARDING_STATUS_META.unknown).color,
-        )}
-      {showOperatingTag &&
-        renderStatusTag(
-          "主体",
-          (OPERATING_STATUS_META[shop.operatingStatus || "unopened"] ||
-            OPERATING_STATUS_META.unopened).text,
-          (OPERATING_STATUS_META[shop.operatingStatus || "unopened"] ||
-            OPERATING_STATUS_META.unopened).color,
-        )}
-    </Space>
-  );
+  const operatingStatus = shop.operatingStatus || "unopened";
+  if (operatingStatus === "frozen") {
+    return renderStatusTag(
+      "身份摘要",
+      OPERATING_STATUS_META.frozen.text,
+      OPERATING_STATUS_META.frozen.color,
+    );
+  }
+  if (operatingStatus === "unopened") {
+    return renderStatusTag(
+      "身份摘要",
+      OPERATING_STATUS_META.unopened.text,
+      OPERATING_STATUS_META.unopened.color,
+    );
+  }
+
+  const onboardingStatus = shop.onboardingStatus || "none";
+  if (onboardingStatus !== "none" && onboardingStatus !== "approved") {
+    const meta =
+      MERCHANT_ONBOARDING_STATUS_META[onboardingStatus] ||
+      MERCHANT_ONBOARDING_STATUS_META.unknown;
+    return renderStatusTag("身份摘要", meta.text, meta.color);
+  }
+
+  const finalMeta =
+    OPERATING_STATUS_META[operatingStatus] || OPERATING_STATUS_META.active;
+  return renderStatusTag("身份摘要", finalMeta.text, finalMeta.color);
 };
 
 const renderBlockerSummary = (shop: MaterialShop) => {
@@ -245,6 +294,9 @@ const MaterialShopList: React.FC = () => {
   const [pageSize] = useState(10);
   const [typeFilter, setTypeFilter] = useState<string | undefined>();
   const [settledFilter, setSettledFilter] = useState<string | undefined>();
+  const [accountStatusFilter, setAccountStatusFilter] = useState<
+    AdminAccountStatus | undefined
+  >();
   const [onboardingStatusFilter, setOnboardingStatusFilter] = useState<
     AdminOnboardingStatus | undefined
   >();
@@ -257,6 +309,7 @@ const MaterialShopList: React.FC = () => {
   const [modalVisible, setModalVisible] = useState(false);
   const [editingShop, setEditingShop] = useState<MaterialShop | null>(null);
   const [detailVisible, setDetailVisible] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
   const [currentShop, setCurrentShop] = useState<MaterialShop | null>(null);
   const [form] = Form.useForm();
   const [accountModalVisible, setAccountModalVisible] = useState(false);
@@ -282,6 +335,7 @@ const MaterialShopList: React.FC = () => {
     page,
     typeFilter,
     settledFilter,
+    accountStatusFilter,
     onboardingStatusFilter,
     operatingStatusFilter,
   ]);
@@ -299,6 +353,7 @@ const MaterialShopList: React.FC = () => {
             : settledFilter === "false"
               ? false
               : undefined,
+        accountStatus: accountStatusFilter,
         onboardingStatus: onboardingStatusFilter,
         operatingStatus: operatingStatusFilter,
       })) as any;
@@ -389,15 +444,34 @@ const MaterialShopList: React.FC = () => {
     });
   };
 
-  const showDetail = (shop: MaterialShop) => {
-    setCurrentShop(shop);
+  const showDetail = async (shop: MaterialShop) => {
     setDetailVisible(true);
+    setDetailLoading(true);
+    try {
+      const res = (await adminMaterialShopApi.detail(shop.id)) as any;
+      if (res.code !== 0) {
+        message.error(res.message || "加载详情失败");
+        setCurrentShop(null);
+        return;
+      }
+      setCurrentShop(res.data || null);
+    } catch (error) {
+      console.error(error);
+      message.error("加载详情失败");
+      setCurrentShop(null);
+    } finally {
+      setDetailLoading(false);
+    }
   };
 
   const openModal = (shop?: MaterialShop) => {
     setEditingShop(shop || null);
     if (shop) {
-      form.setFieldsValue(shop);
+      form.setFieldsValue({
+        ...shop,
+        mainProducts: normalizeJSONArrayTextForForm(shop.mainProducts),
+        tags: normalizeJSONArrayTextForForm(shop.tags),
+      });
     } else {
       form.resetFields();
     }
@@ -513,9 +587,9 @@ const MaterialShopList: React.FC = () => {
       ),
     },
     {
-      title: "经营概览",
+      title: "身份摘要",
       key: "statusOverview",
-      width: 210,
+      width: 132,
       render: (_: any, record: MaterialShop) =>
         renderMaterialShopStatusOverview(record),
     },
@@ -600,21 +674,20 @@ const MaterialShopList: React.FC = () => {
         ),
     },
     {
-      title: "经营状态",
+      title: "经营控制",
       key: "availability",
-      width: 140,
+      width: 110,
       className: "hz-table-cell-nowrap",
       render: (_: number | null | undefined, record: MaterialShop) => {
         const available = isMaterialShopAvailable(record);
         return (
           <Space size={8} className="provider-list-availability">
-            <Tag color={available ? "success" : "default"}>
-              {available ? "经营中" : "已下线"}
-            </Tag>
             <PermissionWrapper permission="material:shop:edit">
               <Switch
                 size="small"
                 checked={available}
+                checkedChildren="经营中"
+                unCheckedChildren="已下线"
                 onChange={(checked) =>
                   handleAvailabilityChange(record.id, checked)
                 }
@@ -688,7 +761,7 @@ const MaterialShopList: React.FC = () => {
     <div className="hz-page-stack">
       <PageHeader
         title="主材门店管理"
-        description="列表默认只展示关键状态与可操作开关；完整状态链路统一在详情里查看。"
+        description="列表只展示一条主状态摘要与经营控制；完整状态链路统一在详情中查看。"
       />
 
       <ToolbarCard>
@@ -711,6 +784,17 @@ const MaterialShopList: React.FC = () => {
               setPage(1);
             }}
             options={SETTLED_FILTER_OPTIONS}
+          />
+          <Select
+            allowClear
+            placeholder="账号绑定"
+            style={{ width: 120 }}
+            value={accountStatusFilter}
+            onChange={(val) => {
+              setAccountStatusFilter(val);
+              setPage(1);
+            }}
+            options={ACCOUNT_STATUS_OPTIONS}
           />
           <Select
             allowClear
@@ -789,11 +873,16 @@ const MaterialShopList: React.FC = () => {
       <Modal
         title="门店详情"
         open={detailVisible}
-        onCancel={() => setDetailVisible(false)}
+        onCancel={() => {
+          setDetailVisible(false);
+          setCurrentShop(null);
+        }}
         footer={null}
         width={800}
       >
-        {currentShop && (
+        {detailLoading ? (
+          <div className="hz-modal-loading">加载中...</div>
+        ) : currentShop ? (
           <Space direction="vertical" size={12} style={{ width: "100%" }}>
             <AuditStatusSummary
               visibility={currentShop.visibility}
@@ -926,15 +1015,29 @@ const MaterialShopList: React.FC = () => {
               </Descriptions>
             </Card>
 
-            <Card size="small" title="绑定信息">
+            <Card size="small" title="账号信息">
               <Descriptions column={2} bordered size="small">
                 <Descriptions.Item label="账号绑定">
-                  <Tag color={currentShop.accountBound ? "green" : "default"}>
-                    {currentShop.accountBound ? "已绑定" : "未绑定"}
+                  <Tag
+                    color={
+                      ACCOUNT_BOUND_STATUS_META[
+                        String(Boolean(currentShop.accountBound))
+                      ]?.color || "default"
+                    }
+                  >
+                    {ACCOUNT_BOUND_STATUS_META[
+                      String(Boolean(currentShop.accountBound))
+                    ]?.text || "-"}
                   </Tag>
                 </Descriptions.Item>
                 <Descriptions.Item label="关联手机号">
                   {currentShop.userPhone || "-"}
+                </Descriptions.Item>
+                <Descriptions.Item label="账号状态">
+                  {resolveAccountStatusTag(currentShop.accountStatus)}
+                </Descriptions.Item>
+                <Descriptions.Item label="登录结果">
+                  {resolveLoginStatusTag(currentShop.loginStatus)}
                 </Descriptions.Item>
               </Descriptions>
             </Card>
@@ -1025,7 +1128,7 @@ const MaterialShopList: React.FC = () => {
               </div>
             </Card>
           </Space>
-        )}
+        ) : null}
       </Modal>
 
       {/* 编辑弹窗 */}
@@ -1212,8 +1315,8 @@ const MaterialShopList: React.FC = () => {
         }
         description={
           pendingAvailability?.enabled
-            ? `将「${pendingAvailability?.name || "-"}」恢复为经营中，允许公开展示和承接新业务。`
-            : `将「${pendingAvailability?.name || "-"}」设为已下线，不再公开展示、不再承接新业务；历史项目、结算和审计仍可查看。`
+            ? `将「${pendingAvailability?.name || "-"}」恢复经营。该操作会恢复主体经营与公开结果，但不修改账号登录状态。`
+            : `将「${pendingAvailability?.name || "-"}」停止经营。该操作会影响主体经营与公开结果，但不修改账号登录状态。`
         }
         confirmText={pendingAvailability?.enabled ? "确认恢复" : "确认停止"}
         onCancel={() => {

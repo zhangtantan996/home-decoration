@@ -25,7 +25,8 @@ type User struct {
 	Birthday          *time.Time `json:"birthday" gorm:"type:date"`
 	Bio               string     `json:"bio" gorm:"type:text"`
 	Password          string     `json:"-" gorm:"size:255"` // 密码，不返回给前端
-	UserType          int8       `json:"userType"`          // 1业主 2服务商 3工人 4管理员
+	UserType             int8       `json:"userType"`                                  // 1业主 2服务商 3工人 4管理员
+	DefaultIdentityType string     `json:"defaultIdentityType" gorm:"size:32;default:'owner'"` // 默认身份类型(反范式冗余)
 	Status            int8       `json:"status" gorm:"default:1"`
 	LastLoginAt       *time.Time `json:"-"`
 	LastLoginIP       string     `json:"-" gorm:"size:50"`

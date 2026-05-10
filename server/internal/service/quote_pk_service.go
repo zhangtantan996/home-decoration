@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // QuotePKService 多工长报价PK服务
@@ -111,13 +113,12 @@ func (s *QuotePKService) MatchProviders(task *model.QuoteTask) ([]model.Provider
 
 	// 如果有区域信息，优先匹配同区域的工长
 	if task.Region != "" {
-		query = query.Order(fmt.Sprintf("CASE WHEN region = '%s' THEN 0 ELSE 1 END", task.Region)).
-			Order("rating DESC").
-			Order("completed_cnt DESC")
-	} else {
-		// 按评分降序排序
-		query = query.Order("rating DESC").Order("completed_cnt DESC")
+		query = query.Order(clause.Expr{
+			SQL:  "CASE WHEN service_area LIKE ? THEN 0 ELSE 1 END",
+			Vars: []interface{}{"%" + task.Region + "%"},
+		})
 	}
+	query = query.Order("rating DESC").Order("completed_cnt DESC")
 
 	if err := query.Limit(3).Find(&providers).Error; err != nil {
 		return nil, fmt.Errorf("查询工长失败: %w", err)
@@ -132,10 +133,13 @@ func (s *QuotePKService) MatchProviders(task *model.QuoteTask) ([]model.Provider
 
 // NotifyProviders 推送报价任务给工长
 func (s *QuotePKService) NotifyProviders(task *model.QuoteTask, providers []model.Provider) error {
-	// TODO: 实现推送通知逻辑
-	// 1. 创建通知记录
-	// 2. 发送站内消息
-	// 3. 发送推送通知（如果有）
+	dispatcher := NewNotificationDispatcher()
+	for _, provider := range providers {
+		if provider.UserID == 0 {
+			continue
+		}
+		dispatcher.NotifyLegacyQuoteTaskCreated(provider.UserID, task.ID, task.BookingID)
+	}
 	return nil
 }
 
@@ -189,7 +193,8 @@ func (s *QuotePKService) SubmitQuote(providerID uint64, taskID uint64, req Submi
 		return nil, fmt.Errorf("提交报价失败: %w", err)
 	}
 
-	// TODO: 通知用户有新报价
+	providerName := s.resolveQuotePKProviderDisplayName(providerID)
+	NewNotificationDispatcher().NotifyLegacyQuoteSubmittedToUser(task.UserID, task.ID, submission.ID, providerName)
 	return submission, nil
 }
 
@@ -226,8 +231,8 @@ func (s *QuotePKService) GetQuoteComparison(userID uint64, taskID uint64) ([]Quo
 		item := QuoteComparisonItem{
 			SubmissionID:    submission.ID,
 			ProviderID:      provider.ID,
-			ProviderName:    ResolveProviderDisplayName(provider, &user),
-			ProviderAvatar:  ResolveProviderAvatarPathWithUser(provider, &user),
+			ProviderName:    resolveLegacyQuotePKProviderDisplayName(provider, &user),
+			ProviderAvatar:  resolveLegacyQuotePKProviderAvatar(provider, &user),
 			Rating:          provider.Rating,
 			CompletedCnt:    provider.CompletedCnt,
 			YearsExperience: provider.YearsExperience,
@@ -306,7 +311,20 @@ func (s *QuotePKService) SelectQuote(userID uint64, taskID uint64, submissionID 
 		return fmt.Errorf("提交事务失败: %w", err)
 	}
 
-	// TODO: 通知工长报价结果
+	dispatcher := NewNotificationDispatcher()
+	if providerUserID := s.resolveQuotePKProviderUserID(submission.ProviderID); providerUserID > 0 {
+		dispatcher.NotifyLegacyQuoteSelected(providerUserID, task.ID, submission.ID)
+	}
+
+	var rejectedSubmissions []model.QuotePKSubmission
+	if err := repository.DB.Where("quote_task_id = ? AND id != ?", task.ID, submission.ID).Find(&rejectedSubmissions).Error; err == nil {
+		for _, item := range rejectedSubmissions {
+			if providerUserID := s.resolveQuotePKProviderUserID(item.ProviderID); providerUserID > 0 {
+				dispatcher.NotifyLegacyQuoteRejected(providerUserID, task.ID, item.ID)
+			}
+		}
+	}
+
 	return nil
 }
 
@@ -344,9 +362,72 @@ func (s *QuotePKService) GetQuoteTaskByID(userID uint64, taskID uint64) (*model.
 
 // GetMerchantQuoteTasks 商家获取报价任务列表
 func (s *QuotePKService) GetMerchantQuoteTasks(providerID uint64) ([]model.QuoteTask, error) {
-	// TODO: 实现商家获取报价任务列表逻辑
-	// 需要关联查询，找出匹配该工长的报价任务
 	var tasks []model.QuoteTask
-	// 这里需要更复杂的查询逻辑，暂时返回空列表
+	if err := buildMerchantQuoteTaskLookupQuery(repository.DB, providerID, s.resolveQuotePKProviderUserID(providerID)).
+		Order("quote_tasks.updated_at DESC").
+		Find(&tasks).Error; err != nil {
+		return nil, fmt.Errorf("查询商家报价任务失败: %w", err)
+	}
 	return tasks, nil
+}
+
+func buildMerchantQuoteTaskLookupQuery(db *gorm.DB, providerID, providerUserID uint64) *gorm.DB {
+	submittedTaskIDs := db.Model(&model.QuotePKSubmission{}).
+		Select("DISTINCT quote_task_id").
+		Where("provider_id = ?", providerID)
+
+	notifiedTaskIDs := db.Model(&model.Notification{}).
+		Select("DISTINCT related_id").
+		Where("user_id = ? AND user_type = ? AND related_type = ?", providerUserID, "provider", "quote_task")
+
+	return db.Model(&model.QuoteTask{}).
+		Where("quote_tasks.id IN (?)", submittedTaskIDs).
+		Or("quote_tasks.id IN (?)", notifiedTaskIDs)
+}
+
+func (s *QuotePKService) resolveQuotePKProviderUserID(providerID uint64) uint64 {
+	var provider model.Provider
+	if err := repository.DB.Select("id", "user_id").First(&provider, providerID).Error; err != nil {
+		return 0
+	}
+	return provider.UserID
+}
+
+func (s *QuotePKService) resolveQuotePKProviderDisplayName(providerID uint64) string {
+	var provider model.Provider
+	if err := repository.DB.First(&provider, providerID).Error; err != nil {
+		return ""
+	}
+
+	var user model.User
+	if provider.UserID > 0 {
+		_ = repository.DB.First(&user, provider.UserID).Error
+	}
+
+	return resolveLegacyQuotePKProviderDisplayName(provider, &user)
+}
+
+func resolveLegacyQuotePKProviderDisplayName(provider model.Provider, user *model.User) string {
+	if trimmed := strings.TrimSpace(provider.DisplayName); trimmed != "" {
+		return trimmed
+	}
+	if trimmed := strings.TrimSpace(provider.CompanyName); trimmed != "" {
+		return trimmed
+	}
+	if user != nil {
+		if trimmed := strings.TrimSpace(user.Nickname); trimmed != "" {
+			return trimmed
+		}
+	}
+	return fmt.Sprintf("商家%d", provider.ID)
+}
+
+func resolveLegacyQuotePKProviderAvatar(provider model.Provider, user *model.User) string {
+	if trimmed := strings.TrimSpace(provider.Avatar); trimmed != "" {
+		return trimmed
+	}
+	if user != nil {
+		return strings.TrimSpace(user.Avatar)
+	}
+	return ""
 }

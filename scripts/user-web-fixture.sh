@@ -35,7 +35,9 @@ MIGRATIONS=(
   "$ROOT_DIR/server/migrations/v1.14.4_reconcile_contract_runtime_schema.sql"
   "$ROOT_DIR/server/migrations/v1.14.5_add_reconciliation_runtime_tables.sql"
   "$ROOT_DIR/server/migrations/v1.14.6_add_booking_survey_deposit_status.sql"
+  "$ROOT_DIR/server/migrations/v1.15.0_unified_identity_center.sql"
 )
+BACKFILL_MIGRATION="$ROOT_DIR/server/migrations/v1.15.0_backfill_identity_data.sql"
 DB_CONTAINER=${USER_WEB_FIXTURE_DB_CONTAINER:-home_decor_db_local}
 DB_NAME=${USER_WEB_FIXTURE_DB_NAME:-home_decoration}
 DB_USER=${USER_WEB_FIXTURE_DB_USER:-postgres}
@@ -52,6 +54,10 @@ for migration in "${MIGRATIONS[@]}"; do
     exit 1
   fi
 done
+if ! [ -f "$BACKFILL_MIGRATION" ]; then
+  echo "required migration not found: $BACKFILL_MIGRATION" >&2
+  exit 1
+fi
 
 apply_sql_file() {
   local file_path=$1
@@ -168,6 +174,9 @@ for migration in "${MIGRATIONS[@]}"; do
 done
 
 apply_sql_file "$SQL_FILE"
+
+echo "Applying migration: $(basename "$BACKFILL_MIGRATION")"
+apply_sql_file "$BACKFILL_MIGRATION"
 
 echo "User-web fixture applied."
 echo "Owner phone: 19999100001"

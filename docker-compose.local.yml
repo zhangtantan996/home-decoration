@@ -115,6 +115,27 @@ services:
     networks:
       - dev-net
 
+  # 监理端 (Vite Dev)
+  supervisor:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.node.dev
+    container_name: home_decor_supervisor_local
+    working_dir: /app/supervisor
+    volumes:
+      - .:/app
+    ports:
+      - "5178:5178"
+    environment:
+      - APP_ENV=local
+      - VITE_APP_ENV=local
+      - VITE_API_URL=/api/v1
+      - VITE_ROUTER_BASENAME=/supervisor
+      - VITE_DEV_WATCH_POLLING=true
+    command: sh -c "npm install --registry=https://registry.npmmirror.com/ --legacy-peer-deps && npm run dev -- --host 0.0.0.0 --port 5178"
+    networks:
+      - dev-net
+
   # 官网 (Vite Dev)
   website:
     build:
@@ -168,6 +189,7 @@ services:
       - admin
       - api
       - merchant
+      - supervisor
       - website
       - user-web
     volumes:

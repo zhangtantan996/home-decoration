@@ -1,6 +1,10 @@
 package middleware
 
-import "github.com/gin-gonic/gin"
+import (
+	"strings"
+
+	"github.com/gin-gonic/gin"
+)
 
 // SecurityHeaders 添加安全响应头中间件
 // 防御常见的 Web 攻击：XSS、点击劫持、MIME 嗅探等
@@ -32,11 +36,9 @@ func SecurityHeaders() gin.HandlerFunc {
 			"frame-ancestors 'none'"
 		c.Header("Content-Security-Policy", csp)
 
-		// 仅在生产环境启用 HSTS (需要 HTTPS)
-		// 建议在 Nginx/Load Balancer 层配置
-		// if cfg.Server.Mode == "release" {
-		//     c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
-		// }
+		if c.Request != nil && (c.Request.TLS != nil || strings.EqualFold(c.GetHeader("X-Forwarded-Proto"), "https")) {
+			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains; preload")
+		}
 
 		c.Next()
 	}

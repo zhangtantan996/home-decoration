@@ -22,6 +22,7 @@ import { EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import PageHeader from '../../components/PageHeader';
 import ToolbarCard from '../../components/ToolbarCard';
+import { AdminReauthModal } from '../../components/AdminReauthModal';
 import { usePermission } from '../../hooks/usePermission';
 import { readSafeErrorMessage } from '../../utils/userFacingText';
 import {
@@ -200,6 +201,18 @@ const readQueryStatus = (searchParams: URLSearchParams, key: string) => {
 const flattenPaymentPlans = (detail?: AdminBusinessFlowDetail | null): AdminBusinessFlowPaymentPlan[] =>
   (detail?.orders || []).flatMap((order) => order.paymentPlans || []);
 
+type ActionFormValues = Record<string, string | number | undefined>;
+
+const ORDER_CENTER_SHORTCUTS = [
+  { label: '预约链路', route: '/bookings/list', permission: 'booking:list' },
+  { label: '报价单', route: '/projects/quotes/lists', permission: 'project:edit' },
+  { label: '项目列表', route: '/projects/list', permission: 'project:list' },
+  { label: '支付单', route: '/finance/payment-orders', permission: 'finance:transaction:list' },
+  { label: '退款审核', route: '/refunds', permission: 'finance:transaction:list' },
+  { label: '争议处理', route: '/project-audits', permission: 'risk:arbitration:list' },
+  { label: '审计日志', route: '/audit-logs', permission: 'system:log:list' },
+] as const;
+
 const OrderList: React.FC = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -213,6 +226,10 @@ const OrderList: React.FC = () => {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(10);
   const [keyword, setKeyword] = useState('');
+  const [ownerUserId, setOwnerUserId] = useState<number | undefined>();
+  const [providerId, setProviderId] = useState<number | undefined>();
+  const [bookingId, setBookingId] = useState<number | undefined>();
+  const [projectId, setProjectId] = useState<number | undefined>();
   const [currentStage, setCurrentStage] = useState<string | undefined>();
   const [orderStatus, setOrderStatus] = useState<string | undefined>();
   const [paymentPlanStatus, setPaymentPlanStatus] = useState<string | undefined>();
@@ -226,6 +243,8 @@ const OrderList: React.FC = () => {
   const [detail, setDetail] = useState<AdminBusinessFlowDetail | null>(null);
   const [activeAction, setActiveAction] = useState<AdminBusinessFlowAction | null>(null);
   const [actionModalOpen, setActionModalOpen] = useState(false);
+  const [reauthOpen, setReauthOpen] = useState(false);
+  const [pendingReauthValues, setPendingReauthValues] = useState<ActionFormValues | null>(null);
   const [actionForm] = Form.useForm();
   const projectIdFilter = useMemo(() => {
     const raw = searchParams.get('projectId');
@@ -233,13 +252,17 @@ const OrderList: React.FC = () => {
     const parsed = Number(raw);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }, [searchParams]);
+  const effectiveProjectId = projectIdFilter || projectId;
   const focusTarget = searchParams.get('focus') || undefined;
 
   const query = useMemo(
     () => ({
       keyword: keyword.trim() || undefined,
       currentStage,
-      projectId: projectIdFilter,
+      ownerUserId,
+      providerId,
+      bookingId,
+      projectId: effectiveProjectId,
       orderStatus,
       paymentPlanStatus,
       settlementStatus,
@@ -250,7 +273,7 @@ const OrderList: React.FC = () => {
       page,
       pageSize,
     }),
-    [currentStage, keyword, orderStatus, page, pageSize, paymentPaused, paymentPlanStatus, payoutStatus, projectIdFilter, refundStatus, riskStatus, settlementStatus],
+    [bookingId, currentStage, effectiveProjectId, keyword, orderStatus, ownerUserId, page, pageSize, paymentPaused, paymentPlanStatus, payoutStatus, providerId, refundStatus, riskStatus, settlementStatus],
   );
 
   const governanceStats = useMemo(() => {
@@ -276,13 +299,13 @@ const OrderList: React.FC = () => {
       setLoading(true);
       const res = await adminOrderCenterApi.list(query);
       if (res.code !== 0) {
-        message.error(res.message || '加载变更与结算失败');
+        message.error(res.message || '加载订单控制台失败');
         return;
       }
       setRows(res.data.list || []);
       setTotal(res.data.total || 0);
     } catch (error) {
-      message.error(readErrorMessage(error, '加载变更与结算失败'));
+      message.error(readErrorMessage(error, '加载订单控制台失败'));
     } finally {
       setLoading(false);
     }
@@ -295,6 +318,10 @@ const OrderList: React.FC = () => {
   useEffect(() => {
     if (projectIdFilter) {
       setKeyword('');
+      setOwnerUserId(undefined);
+      setProviderId(undefined);
+      setBookingId(undefined);
+      setProjectId(undefined);
       setCurrentStage(undefined);
       setOrderStatus(undefined);
       setPaymentPlanStatus(undefined);
@@ -368,6 +395,7 @@ const OrderList: React.FC = () => {
     next.delete('projectId');
     next.delete('focus');
     autoOpenedFocusRef.current = null;
+    setProjectId(undefined);
     setSearchParams(next, { replace: true });
   }, [searchParams, setSearchParams]);
 
@@ -386,6 +414,9 @@ const OrderList: React.FC = () => {
 
   const getDefaultMilestoneForRelease = (milestones?: AdminBusinessFlowMilestoneSnapshot[]) =>
     (milestones || []).find((item) => item.status === 3 && !item.releasedAt);
+
+  const requiresReauthForAction = (action: AdminBusinessFlowAction) =>
+    ['freeze_funds', 'unfreeze_funds', 'manual_release_funds'].includes(action.key);
 
   const openActionModal = (action: AdminBusinessFlowAction) => {
     if (!detail) return;
@@ -433,6 +464,8 @@ const OrderList: React.FC = () => {
   const closeActionModal = () => {
     setActionModalOpen(false);
     setActiveAction(null);
+    setReauthOpen(false);
+    setPendingReauthValues(null);
     actionForm.resetFields();
   };
 
@@ -443,24 +476,24 @@ const OrderList: React.FC = () => {
     }
   };
 
-  const submitAction = async () => {
+  const executeAction = async (values: ActionFormValues, recentReauthProof?: string) => {
     if (!activeAction || !detail) return;
 
     try {
-      const values = await actionForm.validateFields();
       const projectId = detail.project?.id;
       const proposalId = detail.proposal?.id;
+      const reason = String(values.reason || '').trim();
       const currentMilestone = detail.milestones?.find((item) => item.id === Number(values.milestoneId)) || getDefaultMilestoneForRelease(detail.milestones);
 
       setSubmitting(true);
       switch (activeAction.key) {
         case 'confirm_proposal':
           if (!proposalId) throw new Error('缺少方案ID');
-          await adminOrderCenterApi.confirmProposal(proposalId, values.reason);
+          await adminOrderCenterApi.confirmProposal(proposalId, reason);
           break;
         case 'reject_proposal':
           if (!proposalId) throw new Error('缺少方案ID');
-          await adminOrderCenterApi.rejectProposal(proposalId, values.reason);
+          await adminOrderCenterApi.rejectProposal(proposalId, reason);
           break;
         case 'confirm_construction':
           if (!projectId) throw new Error('缺少项目ID');
@@ -470,63 +503,63 @@ const OrderList: React.FC = () => {
           await adminOrderCenterApi.confirmConstruction(projectId, {
             constructionProviderId: values.constructionProviderId ? Number(values.constructionProviderId) : undefined,
             foremanId: values.foremanId ? Number(values.foremanId) : undefined,
-            reason: values.reason,
+            reason,
           });
           break;
         case 'confirm_construction_quote':
           if (!projectId) throw new Error('缺少项目ID');
           await adminOrderCenterApi.confirmConstructionQuote(projectId, {
             constructionQuote: Number(values.constructionQuote),
-            materialMethod: values.materialMethod,
-            plannedStartDate: values.plannedStartDate,
-            expectedEnd: values.expectedEnd,
-            reason: values.reason,
+            materialMethod: values.materialMethod ? String(values.materialMethod) : undefined,
+            plannedStartDate: values.plannedStartDate ? String(values.plannedStartDate) : undefined,
+            expectedEnd: values.expectedEnd ? String(values.expectedEnd) : undefined,
+            reason,
           });
           break;
         case 'start_project':
           if (!projectId) throw new Error('缺少项目ID');
           await adminOrderCenterApi.startProject(projectId, {
-            startDate: values.startDate,
-            reason: values.reason,
+            startDate: values.startDate ? String(values.startDate) : undefined,
+            reason,
           });
           break;
         case 'pause_project':
           if (!projectId) throw new Error('缺少项目ID');
-          await adminOrderCenterApi.pauseProject(projectId, values.reason);
+          await adminOrderCenterApi.pauseProject(projectId, reason);
           break;
         case 'resume_project':
           if (!projectId) throw new Error('缺少项目ID');
-          await adminOrderCenterApi.resumeProject(projectId, values.reason);
+          await adminOrderCenterApi.resumeProject(projectId, reason);
           break;
         case 'approve_milestone':
           if (!projectId || !currentMilestone?.id) throw new Error('缺少节点信息');
-          await adminOrderCenterApi.approveMilestone(projectId, currentMilestone.id, values.reason);
+          await adminOrderCenterApi.approveMilestone(projectId, currentMilestone.id, reason);
           break;
         case 'reject_milestone':
           if (!projectId || !currentMilestone?.id) throw new Error('缺少节点信息');
-          await adminOrderCenterApi.rejectMilestone(projectId, currentMilestone.id, values.reason);
+          await adminOrderCenterApi.rejectMilestone(projectId, currentMilestone.id, reason);
           break;
         case 'approve_completion':
           if (!projectId) throw new Error('缺少项目ID');
-          await adminOrderCenterApi.approveCompletion(projectId, values.reason);
+          await adminOrderCenterApi.approveCompletion(projectId, reason);
           break;
         case 'reject_completion':
           if (!projectId) throw new Error('缺少项目ID');
-          await adminOrderCenterApi.rejectCompletion(projectId, values.reason);
+          await adminOrderCenterApi.rejectCompletion(projectId, reason);
           break;
         case 'settle_change_order': {
           const changeOrderId = Number(activeAction.payload?.changeOrderId || 0);
           if (!changeOrderId) throw new Error('缺少变更单ID');
-          await adminOrderCenterApi.settleChangeOrder(changeOrderId, values.reason);
+          await adminOrderCenterApi.settleChangeOrder(changeOrderId, reason);
           break;
         }
         case 'freeze_funds':
           if (!projectId) throw new Error('缺少项目ID');
-          await adminOrderCenterApi.freezeFunds({ projectId, amount: Number(values.amount), reason: values.reason });
+          await adminOrderCenterApi.freezeFunds({ projectId, amount: Number(values.amount), reason, recentReauthProof });
           break;
         case 'unfreeze_funds':
           if (!projectId) throw new Error('缺少项目ID');
-          await adminOrderCenterApi.unfreezeFunds({ projectId, amount: Number(values.amount), reason: values.reason });
+          await adminOrderCenterApi.unfreezeFunds({ projectId, amount: Number(values.amount), reason, recentReauthProof });
           break;
         case 'manual_release_funds':
           if (!projectId || !values.milestoneId) throw new Error('请先选择节点');
@@ -534,7 +567,8 @@ const OrderList: React.FC = () => {
             projectId,
             milestoneId: Number(values.milestoneId),
             amount: Number(values.amount),
-            reason: values.reason,
+            reason,
+            recentReauthProof,
           });
           break;
         default:
@@ -548,6 +582,25 @@ const OrderList: React.FC = () => {
       message.error(readErrorMessage(error, activeAction?.label ? `${activeAction.label}失败` : '操作失败'));
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const submitAction = async () => {
+    if (!activeAction || !detail) return;
+
+    try {
+      const values = await actionForm.validateFields();
+      if (requiresReauthForAction(activeAction)) {
+        setPendingReauthValues(values);
+        setReauthOpen(true);
+        return;
+      }
+      await executeAction(values);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'errorFields' in error) {
+        return;
+      }
+      message.error(readErrorMessage(error, activeAction?.label ? `${activeAction.label}失败` : '操作失败'));
     }
   };
 
@@ -585,8 +638,9 @@ const OrderList: React.FC = () => {
                   message.warning('缺少报价任务，无法打开报价对比');
                   return;
                 }
-                if (action.route) {
-                  navigate(action.route);
+                const targetRoute = action.targetRoute || action.route;
+                if (targetRoute) {
+                  navigate(targetRoute);
                 }
               }}
             >
@@ -748,22 +802,27 @@ const OrderList: React.FC = () => {
       ),
     },
     {
-      title: '支付 / 风险',
+      title: '支付 / 分期 / 结算 / 退款',
       key: 'status',
       width: 220,
       render: (_, record) => (
+        <Space wrap>
+          {statusTag(record.orderStatus)}
+          {statusTag(record.paymentPlanStatus)}
+          {record.settlementStatus && record.settlementStatus !== 'none' ? statusTag(record.settlementStatus) : null}
+          {record.payoutStatus && record.payoutStatus !== 'none' ? statusTag(record.payoutStatus) : null}
+          {record.refundStatus ? statusTag(record.refundStatus) : null}
+        </Space>
+      ),
+    },
+    {
+      title: '风险状态',
+      key: 'risk',
+      width: 150,
+      render: (_, record) => (
         <Space direction="vertical" size={4}>
-          <Space wrap>
-            {statusTag(record.orderStatus)}
-            {statusTag(record.paymentPlanStatus)}
-            {record.settlementStatus && record.settlementStatus !== 'none' ? statusTag(record.settlementStatus) : null}
-            {record.payoutStatus && record.payoutStatus !== 'none' ? statusTag(record.payoutStatus) : null}
-            {record.refundStatus ? statusTag(record.refundStatus) : null}
-          </Space>
-          <Space wrap>
-            {statusTag(record.riskStatus)}
-            {record.paymentPaused ? <Tag color="error">支付暂停</Tag> : null}
-          </Space>
+          {statusTag(record.riskStatus)}
+          {record.paymentPaused ? <Tag color="error">支付暂停</Tag> : null}
         </Space>
       ),
     },
@@ -813,8 +872,8 @@ const OrderList: React.FC = () => {
   return (
     <div className="hz-page-stack">
       <PageHeader
-        title="变更与结算"
-        description="按项目聚合成交报价、变更单、结算、出款与售后风险，是报价 ERP 的履约后链治理入口。"
+        title="订单控制台"
+        description="按业务链路聚合预约、方案、报价、项目、订单、支付、退款、争议与审计。"
         extra={(
           <Button icon={<ReloadOutlined />} onClick={() => void loadList()}>
             刷新
@@ -823,6 +882,13 @@ const OrderList: React.FC = () => {
       />
 
       <ToolbarCard>
+        <Space wrap size={[8, 8]} className="hz-order-center-shortcuts">
+          {ORDER_CENTER_SHORTCUTS.filter((item) => hasPermission(item.permission)).map((item) => (
+            <Button key={item.route} onClick={() => navigate(item.route)}>
+              {item.label}
+            </Button>
+          ))}
+        </Space>
         {projectIdFilter ? (
           <Alert
             showIcon
@@ -846,6 +912,51 @@ const OrderList: React.FC = () => {
             }}
             placeholder="搜索业主 / 服务商 / 预约ID / 项目ID / 订单号"
             style={{ width: 280 }}
+          />
+          <InputNumber
+            min={1}
+            precision={0}
+            placeholder="业主ID"
+            className="hz-order-center-filter-sm"
+            value={ownerUserId}
+            onChange={(value) => {
+              setPage(1);
+              setOwnerUserId(typeof value === 'number' ? value : undefined);
+            }}
+          />
+          <InputNumber
+            min={1}
+            precision={0}
+            placeholder="服务商ID"
+            className="hz-order-center-filter-md"
+            value={providerId}
+            onChange={(value) => {
+              setPage(1);
+              setProviderId(typeof value === 'number' ? value : undefined);
+            }}
+          />
+          <InputNumber
+            min={1}
+            precision={0}
+            placeholder="预约ID"
+            className="hz-order-center-filter-sm"
+            value={bookingId}
+            onChange={(value) => {
+              setPage(1);
+              setBookingId(typeof value === 'number' ? value : undefined);
+            }}
+          />
+          <InputNumber
+            min={1}
+            precision={0}
+            placeholder="项目ID"
+            className="hz-order-center-filter-sm"
+            value={effectiveProjectId}
+            disabled={Boolean(projectIdFilter)}
+            onChange={(value) => {
+              setPage(1);
+              setProjectId(typeof value === 'number' ? value : undefined);
+            }}
           />
           <Select allowClear placeholder="阶段" style={{ width: 180 }} value={currentStage} options={STAGE_OPTIONS} onChange={(value) => { setPage(1); setCurrentStage(value); }} />
           <Select allowClear placeholder="支付状态" style={{ width: 160 }} value={orderStatus} options={ORDER_STATUS_OPTIONS} onChange={(value) => { setPage(1); setOrderStatus(value); }} />
@@ -940,7 +1051,23 @@ const OrderList: React.FC = () => {
               </Descriptions>
             </Card>
 
-            <Card size="small" title="报价经营摘要">
+            <Card size="small" title="预约与方案">
+              <Descriptions column={2} size="small" bordered>
+                <Descriptions.Item label="预约ID">#{detail.booking?.id || '-'}</Descriptions.Item>
+                <Descriptions.Item label="预约状态">{detail.booking?.status ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="预约地址" span={2}>{detail.booking?.address || '-'}</Descriptions.Item>
+                <Descriptions.Item label="面积">{detail.booking?.area ? `${detail.booking.area}㎡` : '-'}</Descriptions.Item>
+                <Descriptions.Item label="预算">{detail.booking?.budgetRange || '-'}</Descriptions.Item>
+                <Descriptions.Item label="方案ID">#{detail.proposal?.id || '-'}</Descriptions.Item>
+                <Descriptions.Item label="方案状态">{detail.proposal?.status ?? '-'}</Descriptions.Item>
+                <Descriptions.Item label="设计费">{detail.proposal?.designFee ? formatMoney(detail.proposal.designFee) : '-'}</Descriptions.Item>
+                <Descriptions.Item label="施工预估">{detail.proposal?.constructionFee ? formatMoney(detail.proposal.constructionFee) : '-'}</Descriptions.Item>
+                <Descriptions.Item label="方案摘要" span={2}>{detail.proposal?.summary || '-'}</Descriptions.Item>
+                <Descriptions.Item label="驳回原因" span={2}>{detail.proposal?.rejectionReason || '-'}</Descriptions.Item>
+              </Descriptions>
+            </Card>
+
+            <Card size="small" title="报价与项目">
               <Descriptions column={2} size="small" bordered>
                 <Descriptions.Item label="成交报价单">
                   {detail.quoteTruthSummary?.quoteListId ? `#${detail.quoteTruthSummary.quoteListId}` : '-'}
@@ -954,39 +1081,6 @@ const OrderList: React.FC = () => {
                 <Descriptions.Item label="报价修订次数">
                   {detail.quoteTruthSummary?.revisionCount ?? '-'}
                 </Descriptions.Item>
-                <Descriptions.Item label="变更单汇总">
-                  {detail.changeOrderSummary
-                    ? `${detail.changeOrderSummary.totalCount || 0} 单 / 待结算 ${detail.changeOrderSummary.pendingSettlementCount || 0} / 净影响 ${formatMoney((detail.changeOrderSummary.netAmountCent || 0) / 100)}`
-                    : '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="下一步动作">
-                  {detail.nextPendingAction || '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="结算状态">
-                  {detail.settlementSummary?.status ? statusTag(detail.settlementSummary.status) : statusTag('none')}
-                </Descriptions.Item>
-                <Descriptions.Item label="结算金额">
-                  {detail.settlementSummary
-                    ? `${formatMoney(detail.settlementSummary.netAmount)} / 待结 ${formatMoney(detail.settlementSummary.pendingAmount)}`
-                    : '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="出款状态">
-                  {detail.payoutSummary?.status ? statusTag(detail.payoutSummary.status) : statusTag('none')}
-                </Descriptions.Item>
-                <Descriptions.Item label="出款金额">
-                  {detail.payoutSummary
-                    ? `${formatMoney(detail.payoutSummary.paidAmount)} / 待出 ${formatMoney(detail.payoutSummary.pendingAmount)}`
-                    : '-'}
-                </Descriptions.Item>
-                <Descriptions.Item label="资金闭环" span={2}>
-                  {detail.financialClosureStatus || '-'}
-                  {detail.payoutSummary?.failureReason ? ` · ${detail.payoutSummary.failureReason}` : ''}
-                </Descriptions.Item>
-              </Descriptions>
-            </Card>
-
-            <Card size="small" title="报价与项目">
-              <Descriptions column={2} size="small" bordered>
                 <Descriptions.Item label="报价任务">{detail.quoteTask?.title || (detail.quoteTask?.id ? `#${detail.quoteTask.id}` : '-')}</Descriptions.Item>
                 <Descriptions.Item label="报价状态">{detail.quoteTask?.status || '-'}</Descriptions.Item>
                 <Descriptions.Item label="选中施工报价">{detail.selectedQuoteSubmission?.id ? `#${detail.selectedQuoteSubmission.id}` : '-'}</Descriptions.Item>
@@ -999,7 +1093,7 @@ const OrderList: React.FC = () => {
                 <Descriptions.Item label="施工报价">{detail.project?.constructionQuote ? formatMoney(detail.project.constructionQuote) : '-'}</Descriptions.Item>
               </Descriptions>
               <Table
-                style={{ marginTop: 16 }}
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1022,15 +1116,40 @@ const OrderList: React.FC = () => {
               />
             </Card>
 
-            <Card size="small" title="支付与资金">
+            <Card size="small" title="订单与资金">
               <Descriptions column={2} size="small" bordered>
                 <Descriptions.Item label="托管账户">{detail.escrowAccount?.id ? `#${detail.escrowAccount.id}` : '-'}</Descriptions.Item>
                 <Descriptions.Item label="托管状态">{statusTag(detail.escrowAccount?.status)}</Descriptions.Item>
                 <Descriptions.Item label="可用余额">{formatMoney(detail.escrowAccount?.availableAmount)}</Descriptions.Item>
                 <Descriptions.Item label="冻结余额">{formatMoney(detail.escrowAccount?.frozenAmount)}</Descriptions.Item>
+                <Descriptions.Item label="结算状态">
+                  {detail.settlementSummary?.status ? statusTag(detail.settlementSummary.status) : statusTag('none')}
+                </Descriptions.Item>
+                <Descriptions.Item label="结算金额">
+                  {detail.settlementSummary
+                    ? `${formatMoney(detail.settlementSummary.netAmount)} / 待结 ${formatMoney(detail.settlementSummary.pendingAmount)}`
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="出款状态">
+                  {detail.payoutSummary?.status ? statusTag(detail.payoutSummary.status) : statusTag('none')}
+                </Descriptions.Item>
+                <Descriptions.Item label="出款金额">
+                  {detail.payoutSummary
+                    ? `${formatMoney(detail.payoutSummary.paidAmount)} / 待出 ${formatMoney(detail.payoutSummary.pendingAmount)}`
+                    : '-'}
+                </Descriptions.Item>
+                <Descriptions.Item label="资金闭环" span={2}>
+                  {detail.financialClosureStatus || '-'}
+                  {detail.payoutSummary?.failureReason ? ` · ${detail.payoutSummary.failureReason}` : ''}
+                </Descriptions.Item>
+                <Descriptions.Item label="变更单汇总" span={2}>
+                  {detail.changeOrderSummary
+                    ? `${detail.changeOrderSummary.totalCount || 0} 单 / 待结算 ${detail.changeOrderSummary.pendingSettlementCount || 0} / 净影响 ${formatMoney((detail.changeOrderSummary.netAmountCent || 0) / 100)}`
+                    : '-'}
+                </Descriptions.Item>
               </Descriptions>
               <Table
-                style={{ marginTop: 16 }}
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1060,7 +1179,24 @@ const OrderList: React.FC = () => {
                 ]}
               />
               <Table
-                style={{ marginTop: 16 }}
+                className="hz-order-center-detail-table"
+                rowKey="id"
+                size="small"
+                pagination={false}
+                dataSource={detail.paymentOrders || []}
+                locale={{ emptyText: <Empty description="暂无外部支付单" image={Empty.PRESENTED_IMAGE_SIMPLE} /> }}
+                columns={[
+                  { title: '支付单号', dataIndex: 'outTradeNo', width: 190, render: (value) => value || '-' },
+                  { title: '业务类型', dataIndex: 'bizType', width: 140 },
+                  { title: '渠道', dataIndex: 'channel', width: 90, render: (value) => value || '-' },
+                  { title: '金额', dataIndex: 'amount', width: 120, render: (value) => formatMoney(value) },
+                  { title: '状态', dataIndex: 'status', width: 110, render: (value) => statusTag(value) },
+                  { title: '退款状态', dataIndex: 'refundStatus', width: 120, render: (value) => statusTag(value) },
+                  { title: '支付时间', dataIndex: 'paidAt', width: 180, render: (value) => formatDateTime(value) },
+                ]}
+              />
+              <Table
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1088,7 +1224,7 @@ const OrderList: React.FC = () => {
                 ]}
               />
               <Table
-                style={{ marginTop: 16 }}
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1103,10 +1239,8 @@ const OrderList: React.FC = () => {
                   { title: '时间', dataIndex: 'createdAt', width: 180, render: (value) => formatDateTime(value) },
                 ]}
               />
-            </Card>
-
-            <Card size="small" title="变更治理">
               <Table
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1159,7 +1293,7 @@ const OrderList: React.FC = () => {
                 <Descriptions.Item label="暂停原因">{detail.risk?.paymentPausedReason || '-'}</Descriptions.Item>
               </Descriptions>
               <Table
-                style={{ marginTop: 16 }}
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1174,7 +1308,7 @@ const OrderList: React.FC = () => {
                 ]}
               />
               <Table
-                style={{ marginTop: 16 }}
+                className="hz-order-center-detail-table"
                 rowKey="id"
                 size="small"
                 pagination={false}
@@ -1230,6 +1364,21 @@ const OrderList: React.FC = () => {
           </>
         ) : null}
       </Modal>
+      <AdminReauthModal
+        open={reauthOpen}
+        title="高危操作再认证"
+        description="资金冻结、解冻和人工放款需要完成管理员再认证后才会提交。"
+        confirmText="认证并提交"
+        reasonRequired={false}
+        onCancel={() => {
+          setReauthOpen(false);
+          setPendingReauthValues(null);
+        }}
+        onConfirmed={async ({ recentReauthProof }) => {
+          if (!pendingReauthValues) return;
+          await executeAction(pendingReauthValues, recentReauthProof);
+        }}
+      />
     </div>
   );
 };

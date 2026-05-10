@@ -74,9 +74,7 @@ func InitDB(cfg *config.DatabaseConfig) error {
 	if cfg.AutoMigrate {
 		log.Println("AutoMigrate enabled, running database migrations...")
 		if err := autoMigrate(); err != nil {
-			log.Printf("AutoMigrate failed: %v", err)
-			log.Println("Continuing without AutoMigrate. Please ensure database schema is up to date.")
-			// 不阻塞启动，但记录警告
+			return fmt.Errorf("auto migrate failed: %w", err)
 		} else {
 			log.Println("AutoMigrate completed successfully")
 		}
@@ -85,7 +83,7 @@ func InitDB(cfg *config.DatabaseConfig) error {
 	}
 
 	if err := ensureRuntimeSchemaColumns(); err != nil {
-		log.Printf("Runtime schema alignment failed: %v", err)
+		return fmt.Errorf("runtime schema alignment failed: %w", err)
 	}
 
 	log.Println("Database connected successfully")
@@ -98,6 +96,14 @@ func autoMigrate() error {
 		&model.User{},
 		&model.UserWechatBinding{},
 		&model.Provider{},
+		&model.SupervisorProfile{},
+		&model.SupervisorPhoneWhitelist{},
+		&model.SupervisorApplication{},
+		&model.SupervisorAccount{},
+		&model.AdminProfile{},
+		&model.ProjectSupervisorAssignment{},
+		&model.SupervisionLog{},
+		&model.SupervisionIssue{},
 		&model.ProviderCase{},
 		&model.ProviderReview{},
 		&model.Worker{},
@@ -279,6 +285,13 @@ func ensureRuntimeSchemaColumns() error {
 			if err := DB.Exec(`ALTER TABLE material_shops ALTER COLUMN open_time TYPE TEXT`).Error; err != nil {
 				return fmt.Errorf("expand material_shops.open_time: %w", err)
 			}
+		}
+	}
+
+	// 监理资料表新增 supervisor_account_id 列
+	if DB.Migrator().HasTable(&model.SupervisorProfile{}) && !DB.Migrator().HasColumn(&model.SupervisorProfile{}, "SupervisorAccountID") {
+		if err := DB.Migrator().AddColumn(&model.SupervisorProfile{}, "SupervisorAccountID"); err != nil {
+			return fmt.Errorf("add supervisor_profiles.supervisor_account_id: %w", err)
 		}
 	}
 

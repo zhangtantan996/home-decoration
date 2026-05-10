@@ -241,6 +241,7 @@ const ProjectDetail: React.FC = () => {
     if (!providerOptions.length) {
       await loadProviderOptions();
     }
+    constructionForm.resetFields();
     constructionForm.setFieldsValue({
       constructionPartyMode: project?.constructionProviderId
         ? "company"
@@ -260,8 +261,13 @@ const ProjectDetail: React.FC = () => {
           ? {
               constructionProviderId: values.constructionProviderId,
               foremanId: undefined,
+              reason: values.reason,
             }
-          : { constructionProviderId: undefined, foremanId: values.foremanId };
+          : {
+              constructionProviderId: undefined,
+              foremanId: values.foremanId,
+              reason: values.reason,
+            };
       const res = (await adminProjectApi.confirmConstruction(
         id!,
         payload,
@@ -285,6 +291,7 @@ const ProjectDetail: React.FC = () => {
   };
 
   const handleOpenQuoteModal = () => {
+    quoteForm.resetFields();
     quoteForm.setFieldsValue({
       constructionQuote: project?.constructionQuote || undefined,
       materialMethod: project?.materialMethod || undefined,
@@ -311,6 +318,7 @@ const ProjectDetail: React.FC = () => {
         expectedEnd: values.expectedEnd
           ? values.expectedEnd.format("YYYY-MM-DD")
           : undefined,
+        reason: values.reason,
       })) as any;
       if (res.code === 0) {
         message.success("施工报价已确认");
@@ -591,6 +599,16 @@ const ProjectDetail: React.FC = () => {
               />
             </Form.Item>
           )}
+          <Form.Item
+            name="reason"
+            label="操作原因"
+            rules={[
+              { required: true, message: "请填写操作原因" },
+              { min: 2, message: "原因至少 2 个字符" },
+            ]}
+          >
+            <TextArea rows={3} maxLength={300} showCount placeholder="请说明本次人工确认原因" />
+          </Form.Item>
         </Form>
       </Modal>
 
@@ -628,6 +646,16 @@ const ProjectDetail: React.FC = () => {
           </Form.Item>
           <Form.Item name="expectedEnd" label="预计完工日期">
             <DatePicker style={{ width: "100%" }} />
+          </Form.Item>
+          <Form.Item
+            name="reason"
+            label="操作原因"
+            rules={[
+              { required: true, message: "请填写操作原因" },
+              { min: 2, message: "原因至少 2 个字符" },
+            ]}
+          >
+            <TextArea rows={3} maxLength={300} showCount placeholder="请说明本次人工确认原因" />
           </Form.Item>
         </Form>
       </Modal>

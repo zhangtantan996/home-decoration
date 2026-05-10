@@ -42,6 +42,8 @@ const (
 	SMSPurposeIdentityApply    SMSPurpose = "identity_apply"
 	SMSPurposeChangePhone      SMSPurpose = "change_phone"
 	SMSPurposeDeleteAccount    SMSPurpose = "delete_account"
+	SMSPurposeSupervisorApply  SMSPurpose = "supervisor_apply"
+	SMSPurposeSupervisorLogin  SMSPurpose = "supervisor_login"
 )
 
 var (
@@ -52,7 +54,7 @@ var (
 	errSMSNotReady          = errors.New("验证码服务未就绪")
 	errSMSServiceError      = errors.New("验证码服务异常")
 	errSMSPurposeInvalid    = errors.New("验证码业务场景无效")
-	validSMSPurposes        = map[SMSPurpose]struct{}{SMSPurposeLogin: {}, SMSPurposeRegister: {}, SMSPurposeMerchantWithdraw: {}, SMSPurposeMerchantBankBind: {}, SMSPurposeIdentityApply: {}, SMSPurposeChangePhone: {}, SMSPurposeDeleteAccount: {}}
+	validSMSPurposes        = map[SMSPurpose]struct{}{SMSPurposeLogin: {}, SMSPurposeRegister: {}, SMSPurposeMerchantWithdraw: {}, SMSPurposeMerchantBankBind: {}, SMSPurposeIdentityApply: {}, SMSPurposeChangePhone: {}, SMSPurposeDeleteAccount: {}, SMSPurposeSupervisorApply: {}, SMSPurposeSupervisorLogin: {}}
 	smsCodeVerifyConsumeLua = redis.NewScript(`
 local codeKey = KEYS[1]
 local lockKey = KEYS[2]

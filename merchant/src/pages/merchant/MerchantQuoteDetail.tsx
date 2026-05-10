@@ -113,9 +113,9 @@ const sourceTypeLabel = (value?: string): string => {
         case 'proposal_internal_draft':
             return '方案内部草稿';
         case 'admin_imported':
-            return 'Admin 导入';
+            return '平台导入';
         case 'legacy_quote_pk_rebuild':
-            return 'legacy quote-pk 重建';
+            return '报价补录';
         default:
             return value || '未标记';
     }

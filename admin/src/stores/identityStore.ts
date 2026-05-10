@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { identityApi } from '../services/api';
 import { readSafeErrorMessage } from '../utils/userFacingText';
 
-export type IdentityType = 'owner' | 'provider' | 'admin';
+export type IdentityType = 'owner' | 'provider' | 'supervisor' | 'admin';
 export type ProviderSubType = 'designer' | 'company' | 'foreman';
 
 export interface Identity {

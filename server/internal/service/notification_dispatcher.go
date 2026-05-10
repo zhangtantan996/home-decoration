@@ -7,21 +7,42 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+
+	"gorm.io/gorm"
 )
 
 type NotificationDispatcher struct {
 	service *NotificationService
+	tx      *gorm.DB
 }
 
 func NewNotificationDispatcher() *NotificationDispatcher {
 	return &NotificationDispatcher{service: &NotificationService{}}
 }
 
+func NewNotificationDispatcherTx(tx *gorm.DB) *NotificationDispatcher {
+	return &NotificationDispatcher{service: &NotificationService{}, tx: tx}
+}
+
+func (d *NotificationDispatcher) create(input *CreateNotificationInput) error {
+	if d.tx != nil {
+		return d.service.CreateTx(d.tx, input)
+	}
+	return d.service.Create(input)
+}
+
+func (d *NotificationDispatcher) providerUserIDFromProvider(providerID uint64) uint64 {
+	if d.tx != nil {
+		return providerUserIDFromProviderTx(d.tx, providerID)
+	}
+	return providerUserIDFromProvider(providerID)
+}
+
 func (d *NotificationDispatcher) NotifySiteSurveySubmitted(userID, bookingID, surveyID uint64) {
 	if userID == 0 || bookingID == 0 || surveyID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      userID,
 		UserType:    "user",
 		Title:       "量房资料已上传",
@@ -42,7 +63,7 @@ func (d *NotificationDispatcher) NotifyBudgetConfirmationSubmitted(userID, booki
 	if userID == 0 || bookingID == 0 || confirmationID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      userID,
 		UserType:    "user",
 		Title:       "沟通确认待处理",
@@ -63,7 +84,7 @@ func (d *NotificationDispatcher) NotifyBudgetConfirmationResubmitted(userID, boo
 	if userID == 0 || bookingID == 0 || confirmationID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      userID,
 		UserType:    "user",
 		Title:       "沟通确认已重提",
@@ -209,6 +230,98 @@ func (d *NotificationDispatcher) NotifyQuoteSubmittedToUser(ownerUserID, quoteLi
 	})
 }
 
+func (d *NotificationDispatcher) NotifyLegacyQuoteTaskCreated(providerUserID, quoteTaskID, bookingID uint64) {
+	if providerUserID == 0 || quoteTaskID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "新的报价任务待处理",
+		Content:     "有新的报价记录已分配，请尽快查看。",
+		Type:        "quote.submitted",
+		RelatedID:   quoteTaskID,
+		RelatedType: "quote_task",
+		ActionURL:   buildLegacyQuotePKProviderActionURL(quoteTaskID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"quoteTaskId": quoteTaskID,
+			"bookingId":   bookingID,
+			"sourceType":  "legacy_quote_pk",
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyLegacyQuoteSubmittedToUser(ownerUserID, quoteTaskID, submissionID uint64, providerName string) {
+	if ownerUserID == 0 || quoteTaskID == 0 {
+		return
+	}
+	content := "已有商家提交报价记录，请尽快查看。"
+	if strings.TrimSpace(providerName) != "" {
+		content = fmt.Sprintf("%s 已提交报价，请尽快查看。", strings.TrimSpace(providerName))
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      ownerUserID,
+		UserType:    "user",
+		Title:       "报价待确认",
+		Content:     content,
+		Type:        "quote.submitted",
+		RelatedID:   quoteTaskID,
+		RelatedType: "quote_task",
+		ActionURL:   buildLegacyQuotePKUserActionURL(quoteTaskID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"quoteTaskId":         quoteTaskID,
+			"quotePKSubmissionId": submissionID,
+			"sourceType":          "legacy_quote_pk",
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyLegacyQuoteSelected(providerUserID, quoteTaskID, submissionID uint64) {
+	if providerUserID == 0 || quoteTaskID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "报价已中选",
+		Content:     "用户已选择你的报价记录，请及时跟进后续沟通。",
+		Type:        "quote.awarded",
+		RelatedID:   quoteTaskID,
+		RelatedType: "quote_task",
+		ActionURL:   buildLegacyQuotePKProviderActionURL(quoteTaskID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"quoteTaskId":         quoteTaskID,
+			"quotePKSubmissionId": submissionID,
+			"sourceType":          "legacy_quote_pk",
+		},
+	})
+}
+
+func (d *NotificationDispatcher) NotifyLegacyQuoteRejected(providerUserID, quoteTaskID, submissionID uint64) {
+	if providerUserID == 0 || quoteTaskID == 0 {
+		return
+	}
+	_ = d.service.Create(&CreateNotificationInput{
+		UserID:      providerUserID,
+		UserType:    "provider",
+		Title:       "报价未中选",
+		Content:     "该报价记录已完成，当前方案未被用户选择。",
+		Type:        "quote.rejected",
+		RelatedID:   quoteTaskID,
+		RelatedType: "quote_task",
+		ActionURL:   buildLegacyQuotePKProviderActionURL(quoteTaskID),
+		Category:    NotificationCategoryProject,
+		Extra: map[string]interface{}{
+			"quoteTaskId":         quoteTaskID,
+			"quotePKSubmissionId": submissionID,
+			"sourceType":          "legacy_quote_pk",
+		},
+	})
+}
+
 func (d *NotificationDispatcher) NotifyQuoteDecision(providerUserID, quoteListID, projectID uint64, approved bool, reason string) {
 	if providerUserID == 0 {
 		return
@@ -268,7 +381,7 @@ func (d *NotificationDispatcher) notifyConstructionQuoteAwarded(providerUserID, 
 		if orderID > 0 {
 			extra["orderId"] = orderID
 		}
-		_ = d.service.Create(&CreateNotificationInput{
+		_ = d.create(&CreateNotificationInput{
 			UserID:      providerUserID,
 			UserType:    "provider",
 			Title:       "施工报价已中标",
@@ -295,13 +408,21 @@ func (d *NotificationDispatcher) notifyConstructionQuoteAwarded(providerUserID, 
 	})
 }
 
+func buildLegacyQuotePKUserActionURL(quoteTaskID uint64) string {
+	return fmt.Sprintf("/quote-pk/tasks/%d", quoteTaskID)
+}
+
+func buildLegacyQuotePKProviderActionURL(quoteTaskID uint64) string {
+	return fmt.Sprintf("/quote-pk/tasks?quoteTaskId=%d", quoteTaskID)
+}
+
 func (d *NotificationDispatcher) NotifyPlannedStartDateUpdated(userID, providerUserID, projectID uint64, plannedStartDate *time.Time) {
 	if projectID == 0 || plannedStartDate == nil {
 		return
 	}
 	formatted := plannedStartDate.Format("2006-01-02")
 	if userID > 0 {
-		_ = d.service.Create(&CreateNotificationInput{
+		_ = d.create(&CreateNotificationInput{
 			UserID:      userID,
 			UserType:    "user",
 			Title:       "计划进场时间已更新",
@@ -599,7 +720,7 @@ func (d *NotificationDispatcher) NotifyConstructionPaymentPlanCreated(userID, qu
 	if userID == 0 || orderID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      userID,
 		UserType:    "user",
 		Title:       "施工首付款待支付",
@@ -665,7 +786,7 @@ func (d *NotificationDispatcher) NotifyMilestoneSubmitted(ownerUserID, projectID
 	if name == "" {
 		name = "当前节点"
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      ownerUserID,
 		UserType:    "user",
 		Title:       "阶段验收待处理",
@@ -750,7 +871,7 @@ func (d *NotificationDispatcher) NotifyProjectCompletionSubmitted(ownerUserID, p
 	if ownerUserID == 0 || projectID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      ownerUserID,
 		UserType:    "user",
 		Title:       "完工材料待验收",
@@ -778,7 +899,7 @@ func (d *NotificationDispatcher) NotifyProjectCompletionDecision(providerUserID,
 		content = fmt.Sprintf("业主已驳回完工材料。原因：%s", strings.TrimSpace(reason))
 		notificationType = "project.completion.rejected"
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      providerUserID,
 		UserType:    "provider",
 		Title:       title,
@@ -1305,11 +1426,18 @@ func (d *NotificationDispatcher) NotifyOrderExpired(userID uint64, orderID uint6
 }
 
 func providerUserIDFromProvider(providerID uint64) uint64 {
+	return providerUserIDFromProviderTx(repository.DB, providerID)
+}
+
+func providerUserIDFromProviderTx(tx *gorm.DB, providerID uint64) uint64 {
 	if providerID == 0 {
 		return 0
 	}
+	if tx == nil {
+		tx = repository.DB
+	}
 	var provider model.Provider
-	if err := repository.DB.Select("user_id").First(&provider, providerID).Error; err != nil {
+	if err := tx.Select("user_id").First(&provider, providerID).Error; err != nil {
 		return 0
 	}
 	return provider.UserID
@@ -1440,11 +1568,11 @@ func (d *NotificationDispatcher) NotifyMilestoneAccepted(providerID, projectID, 
 	if providerID == 0 || projectID == 0 || milestoneID == 0 {
 		return
 	}
-	providerUserID := providerUserIDFromProvider(providerID)
+	providerUserID := d.providerUserIDFromProvider(providerID)
 	if providerUserID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      providerUserID,
 		UserType:    "provider",
 		Title:       "阶段验收已通过",
@@ -1466,7 +1594,7 @@ func (d *NotificationDispatcher) NotifyMilestoneRejected(providerID, projectID, 
 	if providerID == 0 || projectID == 0 || milestoneID == 0 {
 		return
 	}
-	providerUserID := providerUserIDFromProvider(providerID)
+	providerUserID := d.providerUserIDFromProvider(providerID)
 	if providerUserID == 0 {
 		return
 	}
@@ -1474,7 +1602,7 @@ func (d *NotificationDispatcher) NotifyMilestoneRejected(providerID, projectID, 
 	if strings.TrimSpace(reason) != "" {
 		content = fmt.Sprintf("业主已驳回阶段验收。驳回原因：%s", strings.TrimSpace(reason))
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      providerUserID,
 		UserType:    "provider",
 		Title:       "阶段验收被驳回",
@@ -1497,7 +1625,7 @@ func (d *NotificationDispatcher) NotifyMilestoneResubmitted(userID, projectID, m
 	if userID == 0 || projectID == 0 || milestoneID == 0 {
 		return
 	}
-	_ = d.service.Create(&CreateNotificationInput{
+	_ = d.create(&CreateNotificationInput{
 		UserID:      userID,
 		UserType:    "user",
 		Title:       "阶段验收已重新提交",

@@ -15,6 +15,7 @@ import {
     getMerchantNotificationTagColor,
     MERCHANT_NOTIFICATION_TYPE_LABELS,
 } from '../../constants/statuses';
+import { resolveMerchantNotificationPath } from '../../utils/notificationNavigation';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 const PAGE_SIZE = 10;
@@ -142,8 +143,9 @@ const MerchantNotifications: React.FC = () => {
         if (!item.isRead) {
             await handleMarkAsRead(item);
         }
-        if (item.actionUrl) {
-            navigate(item.actionUrl);
+        const targetPath = resolveMerchantNotificationPath(item.actionUrl);
+        if (targetPath) {
+            navigate(targetPath);
         }
     };
 

@@ -213,6 +213,11 @@ body {
   color: var(--hz-muted);
 }
 
+.hz-modal-loading {
+  text-align: center;
+  padding: 48px 0;
+}
+
 .ant-drawer .ant-drawer-header {
   padding: 20px 24px;
   border-bottom: 1px solid var(--hz-border);
@@ -370,6 +375,26 @@ body {
 .hz-table-card .ant-card-body {
   padding: 20px 24px;
   min-width: 0;
+}
+
+.hz-order-center-shortcuts {
+  margin-bottom: 16px;
+}
+
+.hz-order-center-filter-sm {
+  width: 120px;
+}
+
+.hz-order-center-filter-md {
+  width: 130px;
+}
+
+.hz-order-center-detail-table {
+  margin-top: 16px;
+}
+
+.hz-identity-switcher-check {
+  color: var(--hz-success);
 }
 
 .hz-toolbar {
@@ -1376,6 +1401,30 @@ body {
 
 .user-list-column-settings {
   width: 220px;
+}
+
+.user-type-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 12px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--hz-border);
+}
+
+.user-type-filter .ant-segmented {
+  border-radius: 6px;
+}
+
+.user-type-filter-help {
+  color: var(--hz-muted);
+  cursor: pointer;
+  font-size: 14px;
+  transition: color 0.2s;
+}
+
+.user-type-filter-help:hover {
+  color: var(--hz-brand);
 }
 
 .provider-list-column-settings {

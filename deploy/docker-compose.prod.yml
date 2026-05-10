@@ -105,9 +105,9 @@ services:
       dockerfile: deploy/Dockerfile.frontend
       args:
         VITE_APP_ENV: ${VITE_APP_ENV:-production}
-        VITE_API_URL: ${VITE_API_URL:-https://api.hezeyunchuang.com/api/v1}
+        VITE_API_URL: ${VITE_API_URL:?VITE_API_URL not set}
         VITE_ROUTER_BASENAME: ${VITE_ROUTER_BASENAME:-/app}
-        VITE_PUBLIC_SITE_URL: ${VITE_PUBLIC_SITE_URL:?VITE_PUBLIC_SITE_URL not set (e.g. https://hezeyunchuang.com)}
+        VITE_PUBLIC_SITE_URL: ${VITE_PUBLIC_SITE_URL:?VITE_PUBLIC_SITE_URL not set}
         VITE_USER_WEB_URL: ${VITE_USER_WEB_URL:-/app/}
         VITE_MERCHANT_WEB_URL: ${VITE_MERCHANT_WEB_URL:-/merchant/}
     container_name: prod_web

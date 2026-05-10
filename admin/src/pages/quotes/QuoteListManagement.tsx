@@ -353,7 +353,7 @@ const QuoteListManagement: React.FC = () => {
       await openDetail(result.quoteListId);
     } catch (error) {
       if (error && typeof error === 'object' && 'errorFields' in error) return;
-      message.error(readErrorMessage(error, '重建 legacy quote-pk 失败'));
+      message.error(readErrorMessage(error, '重建历史报价失败'));
     } finally {
       setSubmitting(false);
     }
@@ -546,7 +546,7 @@ const QuoteListManagement: React.FC = () => {
             />
             <InlinePill tone="muted" text={formatDateTime(record.updatedAt)} />
             {record.sourceType === 'legacy_quote_pk_rebuild' ? (
-              <InlinePill tone="warning" text="legacy 重建" />
+              <InlinePill tone="warning" text="历史报价重建" />
             ) : null}
           </Space>
           {record.flowSummary ? (
@@ -739,7 +739,7 @@ const QuoteListManagement: React.FC = () => {
             新建报价任务
           </Button>
           <Button onClick={() => setRebuildVisible(true)}>
-            重建 legacy quote-pk
+            重建历史报价
           </Button>
         </div>
       </ToolbarCard>
@@ -846,7 +846,7 @@ const QuoteListManagement: React.FC = () => {
       </Modal>
 
       <Modal
-        title="重建 legacy quote-pk"
+        title="重建历史报价"
         open={rebuildVisible}
         onCancel={() => setRebuildVisible(false)}
         onOk={() => void handleRebuildLegacy()}
@@ -864,8 +864,8 @@ const QuoteListManagement: React.FC = () => {
           />
           <Form.Item
             name="legacyTaskId"
-            label="legacyTaskId"
-            rules={[{ required: true, message: '请填写 legacy 任务 ID' }]}
+            label="历史任务 ID"
+            rules={[{ required: true, message: '请填写历史任务 ID' }]}
           >
             <InputNumber min={1} style={{ width: '100%' }} />
           </Form.Item>
@@ -878,7 +878,7 @@ const QuoteListManagement: React.FC = () => {
             </Form.Item>
           </Space>
           <Form.Item name="title" label="新标题">
-            <Input placeholder="可选，不填则自动使用 legacy quote-pk 重建标题" />
+            <Input placeholder="可选，不填则自动使用历史报价重建标题" />
           </Form.Item>
         </Form>
       </Modal>

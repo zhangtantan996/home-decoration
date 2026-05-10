@@ -23,6 +23,7 @@ type SupervisionProjectListQuery struct {
 	PhaseStatus    string
 	BusinessStage  string
 	HasPendingRisk *bool
+	ProjectIDs     []uint64 // 限定项目范围，为空时查全部
 }
 
 type SupervisionProjectListItem struct {
@@ -93,7 +94,11 @@ func (s *SupervisionService) ListProjects(query *SupervisionProjectListQuery) ([
 	}
 
 	var projects []model.Project
-	if err := repository.DB.Order("updated_at DESC, id DESC").Find(&projects).Error; err != nil {
+	db := repository.DB.Order("updated_at DESC, id DESC")
+	if query != nil && len(query.ProjectIDs) > 0 {
+		db = db.Where("id IN ?", query.ProjectIDs)
+	}
+	if err := db.Find(&projects).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -224,6 +229,23 @@ func (s *SupervisionService) CreatePhaseLog(projectID, phaseID, adminID uint64, 
 	return s.projectService.CreateAdminWorkLog(projectID, adminID, req)
 }
 
+func (s *SupervisionService) CreateSupervisorPhaseLog(projectID, phaseID, supervisorID uint64, req *CreateWorkLogRequest) (*model.WorkLog, error) {
+	if projectID == 0 || phaseID == 0 {
+		return nil, errors.New("无效项目或阶段ID")
+	}
+	if supervisorID == 0 {
+		return nil, errors.New("无效监理ID")
+	}
+	if _, err := s.getProjectPhase(projectID, phaseID); err != nil {
+		return nil, err
+	}
+	if req == nil {
+		req = &CreateWorkLogRequest{}
+	}
+	req.PhaseID = phaseID
+	return s.projectService.CreateSupervisorWorkLog(projectID, supervisorID, req)
+}
+
 func (s *SupervisionService) UpdatePhase(projectID, phaseID uint64, req *UpdatePhaseRequest) error {
 	if _, err := s.getProjectPhase(projectID, phaseID); err != nil {
 		return err
@@ -266,6 +288,9 @@ func (s *SupervisionService) CreateRiskWarning(projectID uint64, input *CreateSu
 	description := strings.TrimSpace(input.Description)
 	if description == "" {
 		return nil, errors.New("请填写风险描述")
+	}
+	if len([]rune(description)) > 1000 {
+		return nil, errors.New("风险描述不能超过1000字")
 	}
 
 	phaseName := ""

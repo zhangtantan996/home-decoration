@@ -143,9 +143,9 @@ func MerchantSubmitOnboardingCompletion(c *gin.Context) {
 		return
 	}
 
-	serviceAreaCodes, err := regionService.NormalizeServiceCityCodes(applyInput.ServiceArea)
+	serviceAreaCodes, err := regionService.NormalizeServiceAreaCodes(applyInput.ServiceArea)
 	if err != nil {
-		response.BadRequest(c, "服务城市验证失败: "+err.Error())
+		response.BadRequest(c, "服务区域验证失败: "+err.Error())
 		return
 	}
 

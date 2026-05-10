@@ -231,3 +231,178 @@ func TestMerchantUpdateInfo_DoesNotOverwriteUserProfile(t *testing.T) {
 		t.Fatalf("expected provider display name updated, got %s", provider.DisplayName)
 	}
 }
+
+func TestMerchantUpdateInfo_RejectsEmptyServiceAreaAndKeepsExistingValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	providerID := uint64(91002)
+	userID := uint64(91002)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800001002", Nickname: "服务商用户"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{
+		Base:          model.Base{ID: providerID},
+		UserID:        userID,
+		ProviderType:  1,
+		DisplayName:   "服务商名称",
+		OfficeAddress: "西安市高新区",
+		ServiceArea:   `["610100"]`,
+		Status:        1,
+		Verified:      true,
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	updatePayload := map[string]any{
+		"name":          "服务商名称",
+		"officeAddress": "西安市高新区",
+		"serviceArea":   []string{},
+	}
+	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", updatePayload, providerID, userID, MerchantUpdateInfo)
+	if updateResp.Code == 0 {
+		t.Fatalf("expected empty service area to be rejected")
+	}
+
+	var provider model.Provider
+	if err := db.First(&provider, providerID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if provider.ServiceArea != `["610100"]` {
+		t.Fatalf("service area should remain unchanged, got %s", provider.ServiceArea)
+	}
+}
+
+func TestMerchantUpdateInfo_DoesNotResetOmittedProfileFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	providerID := uint64(91003)
+	userID := uint64(91003)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800001003", Nickname: "设计师用户"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{
+		Base:             model.Base{ID: providerID},
+		UserID:           userID,
+		ProviderType:     1,
+		DisplayName:      "设计师原名",
+		CompanyName:      "设计工作室",
+		YearsExperience:  9,
+		Specialty:        "现代简约 · 北欧",
+		TeamSize:         6,
+		ServiceIntro:     "原简介",
+		OfficeAddress:    "西安市高新区",
+		SurveyDepositPrice: 399,
+		Status:           1,
+		Verified:         true,
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", map[string]any{
+		"name":          "设计师新名",
+		"officeAddress": "西安市高新区",
+	}, providerID, userID, MerchantUpdateInfo)
+	if updateResp.Code != 0 {
+		t.Fatalf("unexpected update code: %d message=%s", updateResp.Code, updateResp.Message)
+	}
+
+	var provider model.Provider
+	if err := db.First(&provider, providerID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if provider.YearsExperience != 9 {
+		t.Fatalf("expected years experience unchanged, got %d", provider.YearsExperience)
+	}
+	if provider.Specialty != "现代简约 · 北欧" {
+		t.Fatalf("expected specialty unchanged, got %q", provider.Specialty)
+	}
+	if provider.TeamSize != 6 {
+		t.Fatalf("expected team size unchanged, got %d", provider.TeamSize)
+	}
+	if provider.ServiceIntro != "原简介" {
+		t.Fatalf("expected introduction unchanged, got %q", provider.ServiceIntro)
+	}
+	if provider.SurveyDepositPrice != 399 {
+		t.Fatalf("expected survey deposit price unchanged, got %v", provider.SurveyDepositPrice)
+	}
+}
+
+func TestMerchantUpdateInfo_AllowsPricingOnlyUpdateWithoutOfficeAddress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	providerID := uint64(91004)
+	userID := uint64(91004)
+	if err := db.Create(&model.User{Base: model.Base{ID: userID}, Phone: "13800001004", Nickname: "设计师用户"}).Error; err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	if err := db.Create(&model.Provider{
+		Base:               model.Base{ID: providerID},
+		UserID:             userID,
+		ProviderType:       1,
+		DisplayName:        "设计师原名",
+		CompanyName:        "设计工作室",
+		Specialty:          "现代简约 · 北欧",
+		OfficeAddress:      "西安市高新区",
+		SurveyDepositPrice: 399,
+		PriceMin:           120,
+		PriceMax:           180,
+		Status:             1,
+		Verified:           true,
+	}).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", map[string]any{
+		"pricing": map[string]float64{
+			"flat": 150,
+		},
+		"surveyDepositPrice": 499,
+	}, providerID, userID, MerchantUpdateInfo)
+	if updateResp.Code != 0 {
+		t.Fatalf("unexpected update code: %d message=%s", updateResp.Code, updateResp.Message)
+	}
+
+	var provider model.Provider
+	if err := db.First(&provider, providerID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if provider.OfficeAddress != "西安市高新区" {
+		t.Fatalf("expected office address unchanged, got %q", provider.OfficeAddress)
+	}
+	if provider.Specialty != "现代简约 · 北欧" {
+		t.Fatalf("expected specialty unchanged, got %q", provider.Specialty)
+	}
+	if provider.SurveyDepositPrice != 499 {
+		t.Fatalf("expected survey deposit updated, got %v", provider.SurveyDepositPrice)
+	}
+	if provider.PriceMin != 150 || provider.PriceMax != 150 {
+		t.Fatalf("expected pricing range updated to 150, got min=%v max=%v", provider.PriceMin, provider.PriceMax)
+	}
+}

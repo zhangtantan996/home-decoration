@@ -186,10 +186,11 @@ func applyProviderRecommendOrder(db *gorm.DB) *gorm.DB {
 	if db == nil {
 		return db
 	}
+	// 默认推荐优先展示已入驻主体；显式评分/成交等排序仍由调用方单独指定。
 	if supportsProviderSettlementVisibility() {
-		return db.Order("is_settled DESC").Order("verified DESC").Order("rating DESC").Order("review_count DESC").Order("completed_cnt DESC")
+		return db.Order("is_settled DESC").Order("verified DESC").Order("rating DESC").Order("review_count DESC").Order("completed_cnt DESC").Order("years_experience DESC")
 	}
-	return db.Order("verified DESC").Order("rating DESC").Order("review_count DESC").Order("completed_cnt DESC")
+	return db.Order("rating DESC").Order("review_count DESC").Order("completed_cnt DESC").Order("years_experience DESC").Order("verified DESC")
 }
 
 func positiveProviderPriceAmount(value float64) float64 {

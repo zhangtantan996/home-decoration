@@ -85,13 +85,15 @@ const Login: React.FC = () => {
       return;
     }
 
-    if (!payload.accessToken || !payload.admin) {
+    const accessToken = payload.accessToken || payload.token;
+
+    if (!accessToken || !payload.admin) {
       message.error('登录响应缺少会话信息');
       return;
     }
 
     setSession({
-      accessToken: payload.accessToken,
+      accessToken,
       refreshToken: payload.refreshToken,
       admin: payload.admin,
       permissions: payload.permissions || [],
@@ -167,7 +169,7 @@ const Login: React.FC = () => {
       </section>
 
       <section className="hz-login__form">
-        <Card className="hz-login__form-card" bordered={false}>
+        <Card className="hz-login__form-card" variant="borderless">
           <div className="hz-login__form-header">
             <div className="hz-login__swatches" aria-hidden="true">
               <span className="hz-login__swatch" style={{ background: '#2563eb' }} />

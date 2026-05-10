@@ -17,11 +17,13 @@ var defaultDevAllowedOrigins = []string{
 	"http://localhost:5175", // Admin开发环境备用端口
 	"http://localhost:5176", // Admin开发环境备用端口
 	"http://localhost:5177", // Admin开发环境备用端口
+	"http://localhost:5178", // Supervisor开发环境
 	"http://127.0.0.1:5173", // Admin开发环境（本地回环）
 	"http://127.0.0.1:5174", // Admin开发环境备用端口（本地回环）
 	"http://127.0.0.1:5175", // Admin开发环境备用端口（本地回环）
 	"http://127.0.0.1:5176", // Admin开发环境备用端口（本地回环）
 	"http://127.0.0.1:5177", // Admin开发环境备用端口（本地回环）
+	"http://127.0.0.1:5178", // Supervisor开发环境（本地回环）
 	"http://localhost:3000", // Mobile开发环境
 }
 
@@ -653,6 +655,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			supervisionWorkspaceViewPerm := middleware.RequirePermission("supervision:workspace:view")
 			supervisionWorkspaceEditPerm := middleware.RequirePermission("supervision:workspace:edit")
 			supervisionRiskCreatePerm := middleware.RequirePermission("supervision:risk:create")
+			supervisorListPerm := middleware.RequirePermission("supervision:supervisor:list")
+			supervisorEditPerm := middleware.RequirePermission("supervision:supervisor:edit")
+			supervisorAssignPerm := middleware.RequirePermission("supervision:assignment:manage")
 			orderCenterListPerm := middleware.RequirePermission("order:center:list")
 			orderCenterViewPerm := middleware.RequirePermission("order:center:view")
 			proposalReviewPerm := middleware.RequirePermission("proposal:review")
@@ -699,6 +704,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 预约管理
 			admin.GET("/bookings", bookingListPerm, handler.AdminListBookings)
+			admin.GET("/bookings/:id", bookingListPerm, handler.AdminGetBooking)
 			admin.PATCH("/bookings/:id/status", bookingEditPerm, handler.AdminUpdateBookingStatus)
 			admin.GET("/bookings/refundable", financeTransactionApprovePerm, handler.AdminGetRefundableBookings)
 			admin.POST("/bookings/:bookingId/refund", financeTransactionApprovePerm, handler.AdminRefundIntentFee)
@@ -709,6 +715,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 主材门店管理
 			admin.GET("/material-shops", materialShopListPerm, handler.AdminListMaterialShops)
+			admin.GET("/material-shops/:id", materialShopListPerm, handler.AdminGetMaterialShop)
 			admin.POST("/material-shops", materialShopCreatePerm, handler.AdminCreateMaterialShop)
 			admin.PUT("/material-shops/:id", materialShopEditPerm, handler.AdminUpdateMaterialShop)
 			admin.DELETE("/material-shops/:id", materialShopDeletePerm, handler.AdminDeleteMaterialShop)
@@ -781,7 +788,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/finance/freeze", financeEscrowFreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminFreezeFunds)
 			admin.POST("/finance/unfreeze", financeEscrowUnfreezePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUnfreezeFunds)
 			admin.POST("/finance/manual-release", financeTransactionApprovePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminManualReleaseFunds)
-			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, handler.AdminWithdraw)
+			admin.POST("/finance/escrow-accounts/:accountId/withdraw", financeTransactionApprovePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminWithdraw)
 
 			// 对账报表管理
 			admin.GET("/reconciliation/list", financeTransactionListPerm, handler.AdminReconciliationList)
@@ -857,23 +864,23 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// ========== 项目管理 ==========
 			admin.GET("/business-flows", orderCenterListPerm, handler.AdminListBusinessFlows)
 			admin.GET("/business-flows/:id", orderCenterViewPerm, handler.AdminGetBusinessFlow)
-			admin.POST("/proposals/:id/confirm", proposalReviewPerm, handler.AdminConfirmProposal)
-			admin.POST("/proposals/:id/reject", proposalReviewPerm, handler.AdminRejectProposal)
+			admin.POST("/proposals/:id/confirm", proposalReviewPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminConfirmProposal)
+			admin.POST("/proposals/:id/reject", proposalReviewPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminRejectProposal)
 			admin.GET("/projects", projectListPerm, handler.AdminListProjects)
 			admin.GET("/projects/:id", projectViewPerm, handler.AdminGetProject)
 			admin.GET("/projects/:id/change-orders", projectViewPerm, handler.AdminListProjectChangeOrders)
 			admin.POST("/projects/:id/change-orders", projectEditPerm, handler.AdminCreateProjectChangeOrder)
 			admin.POST("/projects/:id/audit", complaintResolvePerm, handler.AdminCreateProjectAudit)
 			admin.PUT("/projects/:id/status", projectEditPerm, handler.AdminUpdateProjectStatus)
-			admin.POST("/projects/:id/construction/confirm", projectEditPerm, handler.AdminConfirmProjectConstruction)
-			admin.POST("/projects/:id/construction/quote/confirm", projectEditPerm, handler.AdminConfirmProjectConstructionQuote)
-			admin.POST("/projects/:id/start", projectEditPerm, handler.AdminStartProject)
-			admin.POST("/projects/:id/pause", projectEditPerm, handler.AdminPauseProject)
-			admin.POST("/projects/:id/resume", projectEditPerm, handler.AdminResumeProject)
-			admin.POST("/projects/:id/milestones/:milestoneId/approve", projectEditPerm, handler.AdminApproveProjectMilestone)
-			admin.POST("/projects/:id/milestones/:milestoneId/reject", projectEditPerm, handler.AdminRejectProjectMilestone)
-			admin.POST("/projects/:id/completion/approve", projectEditPerm, handler.AdminApproveProjectCompletion)
-			admin.POST("/projects/:id/completion/reject", projectEditPerm, handler.AdminRejectProjectCompletion)
+			admin.POST("/projects/:id/construction/confirm", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminConfirmProjectConstruction)
+			admin.POST("/projects/:id/construction/quote/confirm", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminConfirmProjectConstructionQuote)
+			admin.POST("/projects/:id/start", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminStartProject)
+			admin.POST("/projects/:id/pause", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminPauseProject)
+			admin.POST("/projects/:id/resume", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminResumeProject)
+			admin.POST("/projects/:id/milestones/:milestoneId/approve", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminApproveProjectMilestone)
+			admin.POST("/projects/:id/milestones/:milestoneId/reject", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminRejectProjectMilestone)
+			admin.POST("/projects/:id/completion/approve", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminApproveProjectCompletion)
+			admin.POST("/projects/:id/completion/reject", projectEditPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminRejectProjectCompletion)
 			admin.GET("/projects/:id/phases", projectViewPerm, handler.AdminGetProjectPhases)
 			admin.PUT("/projects/:id/phases/:phaseId", projectEditPerm, handler.AdminUpdatePhase)
 			admin.GET("/projects/:id/logs", projectViewPerm, handler.AdminGetProjectLogs)
@@ -890,6 +897,33 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/supervision/projects/:id/phases/:phaseId", supervisionWorkspaceEditPerm, handler.AdminUpdateSupervisionPhase)
 			admin.PUT("/supervision/projects/:id/phases/:phaseId/tasks/:taskId", supervisionWorkspaceEditPerm, handler.AdminUpdateSupervisionPhaseTask)
 			admin.POST("/supervision/projects/:id/risk-warnings", supervisionRiskCreatePerm, handler.AdminCreateSupervisionRiskWarning)
+
+			// ========== 监理白名单管理 ==========
+			admin.GET("/supervisor-whitelists", supervisorListPerm, handler.AdminListSupervisorWhitelists)
+			admin.POST("/supervisor-whitelists", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateSupervisorWhitelist)
+			admin.PATCH("/supervisor-whitelists/:id/status", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSupervisorWhitelistStatus)
+
+			// ========== 监理申请审核 ==========
+			admin.GET("/supervisor-applications", supervisorListPerm, handler.AdminListSupervisorApplications)
+			admin.POST("/supervisor-applications/:id/approve", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminApproveSupervisorApplication)
+			admin.POST("/supervisor-applications/:id/reject", supervisorEditPerm, middleware.RequireAdminReason("reason", "rejectReason", "remark", "note", "adminNotes"), middleware.RequireAdminReauth(), handler.AdminRejectSupervisorApplication)
+
+			// ========== 监理账号启停 ==========
+			admin.PATCH("/supervisor-accounts/:id/status", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSupervisorAccountStatus)
+
+			// ========== 监理人员管理 ==========
+			admin.GET("/supervisors", supervisorListPerm, handler.AdminListSupervisors)
+			admin.POST("/supervisors", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateSupervisor)
+			admin.GET("/supervisors/available", supervisorListPerm, handler.AdminListAvailableSupervisors)
+			admin.GET("/supervisors/:id", supervisorListPerm, handler.AdminGetSupervisor)
+			admin.PUT("/supervisors/:id", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSupervisor)
+			admin.PATCH("/supervisors/:id/status", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateSupervisorStatus)
+			admin.DELETE("/supervisors/:id", supervisorEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteSupervisor)
+
+			// ========== 监理分配管理 ==========
+			admin.GET("/supervisor-assignments", supervisorAssignPerm, handler.AdminListSupervisorAssignments)
+			admin.POST("/supervisor-assignments", supervisorAssignPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateSupervisorAssignment)
+			admin.DELETE("/supervisor-assignments/:id", supervisorAssignPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteSupervisorAssignment)
 			admin.POST("/quote-library/import", projectEditPerm, handler.AdminImportQuoteLibrary)
 			admin.POST("/quote-library/import-preview", projectEditPerm, handler.AdminImportQuoteLibraryPreview)
 			admin.GET("/quote-categories", projectListPerm, handler.AdminListQuoteCategories)
@@ -1042,7 +1076,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.POST("/quote-tasks/:id/recommend-foremen", handler.MerchantRecommendForemen)
 			merchant.POST("/quote-tasks/:id/select-foremen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
 
-			// Legacy quote-pk 历史兼容区：商家写入口固定 retired，仅保留深链兼容。
+			// Legacy quote-pk 历史兼容区：保留商家历史深链和补交流程，不再作为现行主链扩展入口。
 			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                         // 商家获取报价任务列表
 			merchant.POST("/quote-pk/tasks/:id/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
 			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)
@@ -1137,6 +1171,52 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			materialShop.PUT("/me/products/:id", handler.MaterialShopRequireCompletedOnboarding(), handler.MaterialShopUpdateProduct)
 			materialShop.DELETE("/me/products/:id", handler.MaterialShopRequireCompletedOnboarding(), handler.MaterialShopDeleteProduct)
 		}
+	}
+
+	// ==================== Supervisor 监理端 ====================
+	// 监理登录 (无需认证)
+	v1.POST("/supervisor/login", middleware.LoginRateLimit(), handler.SupervisorLogin(cfg))
+	v1.POST("/supervisor/send-code", middleware.LoginRateLimit(), handler.SendCode)
+	v1.POST("/supervisor/token/refresh", handler.SupervisorRefreshToken)
+
+	// ========== 监理入驻申请（公网，无需登录） ==========
+	v1.POST("/supervisor/onboarding/send-code", middleware.LoginRateLimit(), handler.SendSupervisorOnboardingCode)
+	v1.GET("/supervisor/onboarding/status", handler.GetSupervisorOnboardingStatus)
+	v1.GET("/supervisor/onboarding/check-eligibility", handler.CheckSupervisorOnboardingEligibility)
+	v1.POST("/supervisor/onboarding/upload", middleware.LoginRateLimit(), handler.SupervisorOnboardingUploadImage)
+	v1.POST("/supervisor/onboarding/submit", middleware.LoginRateLimit(), handler.SubmitSupervisorOnboardingApplication)
+
+	// 监理端路由（使用 SupervisorJWT 中间件验证 token 类型）
+	supervisor := v1.Group("/supervisor")
+	supervisor.Use(middleware.SupervisorJWT(cfg.JWT.Secret))
+	{
+		// 会话治理
+		supervisor.POST("/logout", handler.SupervisorLogout)
+		supervisor.POST("/logout-all", handler.SupervisorLogoutAll)
+		supervisor.GET("/sessions", handler.SupervisorListSessions)
+		supervisor.POST("/sessions/:sid/revoke", handler.SupervisorRevokeSession)
+
+		// 监理资料
+		supervisor.GET("/info", handler.SupervisorGetInfo)
+		supervisor.GET("/dashboard", handler.SupervisorDashboard)
+		supervisor.POST("/upload", handler.SupervisorUploadImage)
+
+		// 分配的项目
+		supervisor.GET("/projects", handler.SupervisorListProjects)
+		supervisor.GET("/projects/:id", handler.SupervisorGetProject)
+		supervisor.GET("/projects/:id/phases", handler.SupervisorGetProjectPhases)
+
+		// 施工日志
+		supervisor.GET("/projects/:id/logs", handler.SupervisorListLogs)
+		supervisor.POST("/projects/:id/phases/:phaseId/logs", handler.SupervisorCreateLog)
+		supervisor.POST("/projects/:id/logs/sync", handler.SupervisorSyncOfflineLogs)
+
+		// 阶段操作
+		supervisor.PUT("/projects/:id/phases/:phaseId", handler.SupervisorUpdatePhase)
+		supervisor.PUT("/projects/:id/phases/:phaseId/tasks/:taskId", handler.SupervisorUpdatePhaseTask)
+
+		// 风险预警
+		supervisor.POST("/projects/:id/risk-warnings", handler.SupervisorCreateRiskWarning)
 	}
 
 	return r

@@ -181,6 +181,12 @@ export default {
       ],
     },
     {
+      root: 'pages/quote-pk',
+      pages: [
+        'comparison/index',
+      ],
+    },
+    {
       root: 'pages/identity',
       pages: [
         'apply/index',

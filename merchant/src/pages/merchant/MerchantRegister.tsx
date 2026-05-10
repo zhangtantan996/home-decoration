@@ -8,6 +8,7 @@ import {
     IdcardOutlined,
     PhoneOutlined,
     PictureOutlined,
+    QuestionCircleOutlined,
     SafetyOutlined,
     UserOutlined,
 } from '@ant-design/icons';
@@ -24,6 +25,8 @@ import {
     Modal,
     Row,
     Select,
+    Space,
+    Tooltip,
     Typography,
     Upload,
     message,
@@ -53,15 +56,47 @@ import {
     type MerchantCompletionStatusResponse,
     type MerchantCompletionSubmitPayload,
 } from '../../services/merchantApi';
-import { regionApi, type ServiceCityRegion } from '../../services/regionApi';
+import { regionApi, type Region } from '../../services/regionApi';
 import { IMAGE_UPLOAD_SPECS, validateImageUploadBeforeSend } from '../../utils/imageUpload';
 import { isValidBusinessLicenseNo, isValidChineseIDCard, isValidCompanyName, normalizeLicenseNo } from '../../utils/onboardingValidation';
 import { buildStoredAssetFile, getAssetPreviewUrl, getStoredPathFromUploadFile, normalizeStoredAssetValue, normalizeStoredAssetValues } from '../../utils/uploadAsset';
 import { readSafeErrorMessage } from '../../utils/userFacingText';
+import {
+    buildServiceAreaPickerOptions,
+    filterServiceCityOption,
+    normalizeServiceAreaSelectionValues,
+    type ServiceAreaPickerProvince,
+} from '../../utils/serviceCityOptions';
 import MerchantOnboardingShell from './components/MerchantOnboardingShell';
 
 const { Title, Text } = Typography;
 const { TextArea } = Input;
+
+const normalizeStringArray = (values: unknown): string[] => (
+    Array.isArray(values)
+        ? values
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+        : []
+);
+
+const areStringArraysEqual = (left: string[], right: string[]) => (
+    left.length === right.length && left.every((value, index) => value === right[index])
+);
+
+const mergeUniqueStrings = (...groups: string[][]) => {
+    const seen = new Set<string>();
+    const result: string[] = [];
+    groups.flat().forEach((value) => {
+        const normalized = String(value || '').trim();
+        if (!normalized || seen.has(normalized)) {
+            return;
+        }
+        seen.add(normalized);
+        result.push(normalized);
+    });
+    return result;
+};
 
 type MerchantApplyRole = 'designer' | 'foreman' | 'company';
 type MerchantEntityType = 'personal' | 'company';
@@ -85,9 +120,29 @@ const PRICING_MIN: number = 1;
 const PRICING_MAX: number = 99999;
 
 const DRAFT_STORAGE_KEY = 'merchant_register_draft';
+const DRAFT_RESTORE_ACK_KEY = 'merchant_register_draft_restore_ack';
 const DRAFT_EXPIRY_MS = 2 * 60 * 60 * 1000;
 const VERIFICATION_STORAGE_KEY = 'merchant_register_phone_verification';
 const VERIFICATION_EXPIRE_MS = 30 * 60 * 1000;
+
+const buildDraftRestoreAckKey = (draftStorageKey: string, timestamp: number) => (
+    `${DRAFT_RESTORE_ACK_KEY}:${draftStorageKey}:${timestamp}`
+);
+
+const ensureDraftTimestamp = (
+    draftStorageKey: string,
+    draft: { timestamp?: number; currentStep: number; formValues: Record<string, unknown>; portfolioCases: PortfolioCase[] },
+) => {
+    if (typeof draft.timestamp === 'number') {
+        return draft.timestamp;
+    }
+    const timestamp = Date.now();
+    sessionStorage.setItem(draftStorageKey, JSON.stringify({
+        ...draft,
+        timestamp,
+    }));
+    return timestamp;
+};
 
 interface PhoneVerificationState {
     phoneVerified: boolean;
@@ -117,35 +172,25 @@ const generatePortfolioCaseId = (): string => {
 
 type ForemanCaseCategory = 'water' | 'electric' | 'wood' | 'masonry' | 'paint' | 'other';
 
-interface ServiceCityGroupOption {
-    label: string;
-    options: Array<{ label: string; value: string }>;
-}
-
-const buildServiceCityGroups = (cities: ServiceCityRegion[]): ServiceCityGroupOption[] => {
-    const grouped = new Map<string, Array<{ label: string; value: string }>>();
-    cities.forEach((city) => {
-        const provinceName = city.parentName?.trim() || '未分组';
-        const bucket = grouped.get(provinceName) || [];
-        bucket.push({ label: city.name, value: city.code });
-        grouped.set(provinceName, bucket);
-    });
-    return [...grouped.entries()].map(([label, options]) => ({ label, options }));
-};
-
 const FOREMAN_CASE_SECTIONS: Array<{ category: ForemanCaseCategory; title: string; required: boolean }> = [
-    { category: 'water', title: '水电工施工展示', required: true },
-    { category: 'electric', title: '防水施工展示', required: true },
+    { category: 'water', title: '水工施工展示', required: true },
+    { category: 'electric', title: '电工施工展示', required: true },
     { category: 'wood', title: '木作施工展示', required: true },
     { category: 'masonry', title: '瓦工施工展示', required: true },
     { category: 'paint', title: '油漆施工展示', required: true },
     { category: 'other', title: '其他施工展示', required: false },
 ];
 
-const getForemanCaseImageBounds = (category?: ForemanCaseCategory) => ({
-    min: category === 'water' ? 3 : 2,
+const getForemanCaseImageBounds = (_category?: ForemanCaseCategory) => ({
+    min: 2,
     max: 6,
 });
+
+const isForemanCaseRequired = (category?: ForemanCaseCategory) =>
+    FOREMAN_CASE_SECTIONS.find((section) => section.category === category)?.required ?? false;
+
+const hasForemanCaseContent = (caseItem?: Pick<PortfolioCase, 'description' | 'images'>) =>
+    Boolean(caseItem?.description.trim() || (caseItem?.images.length || 0) > 0);
 
 const createEmptyPortfolioCase = (category?: ForemanCaseCategory): PortfolioCase => ({
     id: generatePortfolioCaseId(),
@@ -170,6 +215,13 @@ interface PortfolioCase {
     style: string;
     area: string;
     category?: ForemanCaseCategory;
+}
+
+interface MerchantRegisterDraftState {
+    timestamp: number;
+    currentStep: number;
+    formValues: Record<string, unknown>;
+    portfolioCases: PortfolioCase[];
 }
 
 interface ResolvedApplyMeta {
@@ -269,7 +321,7 @@ const resolveApplyMeta = (searchParams: URLSearchParams): ResolvedApplyMeta => {
 
 const caseImageRuleText = (role: MerchantApplyRole, entityType: MerchantEntityType) => {
     if (role === 'designer') return entityType === 'company' ? '每套 6-12 张图' : '每套 4-12 张图';
-    if (role === 'foreman') return '水电工 3-6 张，其余每类 2-6 张图';
+    if (role === 'foreman') return '必填工种每类 2-6 张图，其他施工展示选填';
     return '每套至少 3 张图';
 };
 
@@ -318,10 +370,14 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         ]
     );
     const [styleOptions, setStyleOptions] = useState<string[]>([]);
-    const [areaOptions, setAreaOptions] = useState<ServiceCityGroupOption[]>([]);
+    const [serviceAreaOptions, setServiceAreaOptions] = useState<ServiceAreaPickerProvince[]>([]);
+    const [serviceAreaLoadFailed, setServiceAreaLoadFailed] = useState(false);
+    const [districtOptionsByCity, setDistrictOptionsByCity] = useState<Record<string, Array<{ label: string; value: string }>>>({});
+    const [districtLoadingByCity, setDistrictLoadingByCity] = useState<Record<string, boolean>>({});
     const [uploadingCaseCountMap, setUploadingCaseCountMap] = useState<Record<number, number>>({});
     const [previewVisible, setPreviewVisible] = useState(false);
     const [previewImage, setPreviewImage] = useState('');
+    const [draftToRestore, setDraftToRestore] = useState<MerchantRegisterDraftState | null>(null);
     const [resubmitLoading, setResubmitLoading] = useState(false);
     const [resubmitPrefillFailed, setResubmitPrefillFailed] = useState(false);
     const [phoneVerified, setPhoneVerified] = useState(false);
@@ -334,8 +390,13 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         applicationId: undefined,
     });
     const watchedAvatar = Form.useWatch('avatar', form);
+    const watchedCompanyAlbum = Form.useWatch('companyAlbum', form);
+    const selectedProvinceCodes = Form.useWatch('serviceProvinceCodes', { form, preserve: true });
+    const selectedCityCodes = Form.useWatch('serviceCityCodes', { form, preserve: true });
+    const selectedDistrictCodes = Form.useWatch('serviceDistrictCodes', { form, preserve: true });
     const countdownTimerRef = useRef<number | null>(null);
     const draftRestoreHandledRef = useRef(false);
+    const serviceAreaDefaultAppliedRef = useRef(false);
 
     const currentVerificationMode = resubmitId ? 'resubmit' as const : 'apply' as const;
     const currentVerificationApplicationId = resubmitId ? Number(resubmitId) : undefined;
@@ -351,7 +412,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     const isForeman = role === 'foreman';
     const isCompanyRole = role === 'company';
     const isCompanyEntity = entityType === 'company' || role === 'company';
-    const serviceAreaLabel = isForeman ? '常驻城市' : '服务城市';
+    const serviceAreaLabel = '服务区域';
     const realNameLabel = isCompanyEntity ? '法人/经营者姓名' : (isForeman ? '工长姓名' : '负责人姓名');
     const phoneLabel = isCompanyEntity ? '联系手机号' : '手机号';
     const idCardLabel = isCompanyEntity ? '法人/经营者身份证号' : '身份证号';
@@ -360,6 +421,49 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         () => Object.values(uploadingCaseCountMap).some((count) => count > 0),
         [uploadingCaseCountMap],
     );
+    const normalizedSelectedProvinceCodes = useMemo(() => normalizeStringArray(selectedProvinceCodes), [selectedProvinceCodes]);
+    const normalizedSelectedCityCodes = useMemo(() => normalizeStringArray(selectedCityCodes), [selectedCityCodes]);
+    const normalizedSelectedDistrictCodes = useMemo(() => normalizeStringArray(selectedDistrictCodes), [selectedDistrictCodes]);
+    const serviceAreaCityOptions = useMemo(
+        () => serviceAreaOptions.flatMap((province) => province.cities),
+        [serviceAreaOptions],
+    );
+    const serviceAreaCityMap = useMemo(
+        () => new Map(serviceAreaCityOptions.map((city) => [city.value, city])),
+        [serviceAreaCityOptions],
+    );
+    const serviceDistrictCityMap = useMemo(() => {
+        const map = new Map<string, string>();
+        Object.entries(districtOptionsByCity).forEach(([cityCode, districts]) => {
+            districts.forEach((district) => map.set(district.value, cityCode));
+        });
+        return map;
+    }, [districtOptionsByCity]);
+    const provinceSelectOptions = useMemo(
+        () => serviceAreaOptions.map((province) => ({ label: province.label, value: province.value })),
+        [serviceAreaOptions],
+    );
+    const citySelectOptions = useMemo(() => {
+        const provinceSet = new Set(normalizedSelectedProvinceCodes);
+        return serviceAreaOptions
+            .filter((province) => provinceSet.size === 0 || provinceSet.has(province.value))
+            .flatMap((province) => province.cities.map((city) => ({
+                label: city.label,
+                value: city.value,
+                searchText: city.searchText,
+            })));
+    }, [normalizedSelectedProvinceCodes, serviceAreaOptions]);
+    const districtSelectOptions = useMemo(() => normalizedSelectedCityCodes
+        .map((cityCode) => {
+            const city = serviceAreaCityMap.get(cityCode);
+            const districts = districtOptionsByCity[cityCode] || [];
+            return {
+                label: city?.label || cityCode,
+                options: districts.map((district) => ({ label: district.label, value: district.value })),
+            };
+        })
+        .filter((group) => group.options.length > 0), [districtOptionsByCity, normalizedSelectedCityCodes, serviceAreaCityMap]);
+    const districtSelectLoading = normalizedSelectedCityCodes.some((cityCode) => Boolean(districtLoadingByCity[cityCode]));
 
     useEffect(() => {
         const style = document.createElement('style');
@@ -430,6 +534,10 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
             .premium-case-card:hover {
                 transform: translateY(-4px);
                 box-shadow: 0 12px 32px rgba(0,0,0,0.08);
+            }
+            .merchant-inline-alert {
+                margin-bottom: 16px;
+                border-radius: 8px;
             }
             .animate-fade-in {
                 animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -542,16 +650,197 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     const loadAreaOptions = useCallback(async () => {
         try {
             const cities = await regionApi.getServiceCities();
-            setAreaOptions(buildServiceCityGroups(cities));
+            setServiceAreaOptions(buildServiceAreaPickerOptions(cities));
+            setServiceAreaLoadFailed(false);
         } catch {
-            setAreaOptions([
-                {
-                    label: '陕西省',
-                    options: [{ label: '西安市', value: '610100' }],
-                },
-            ]);
+            setServiceAreaOptions([]);
+            setServiceAreaLoadFailed(true);
+            message.error('服务区域加载失败，请稍后重试');
         }
     }, []);
+
+    const syncServiceAreaFields = useCallback((rawValues?: unknown) => {
+        if (serviceAreaOptions.length === 0) {
+            return;
+        }
+
+        const currentRawValues = rawValues ?? form.getFieldValue('serviceArea');
+        const normalizedFromServiceArea = normalizeServiceAreaSelectionValues(currentRawValues, serviceAreaOptions);
+        const currentProvinces = normalizeStringArray(form.getFieldValue('serviceProvinceCodes'));
+        const currentCities = normalizeStringArray(form.getFieldValue('serviceCityCodes'));
+        const currentDistricts = normalizeStringArray(form.getFieldValue('serviceDistrictCodes'));
+        const normalizedFromFields = normalizeServiceAreaSelectionValues(
+            mergeUniqueStrings(currentProvinces, currentCities, currentDistricts),
+            serviceAreaOptions,
+        );
+        const nextProvinces = mergeUniqueStrings(
+            [...normalizedFromServiceArea.selectedProvinces],
+            [...normalizedFromFields.selectedProvinces],
+        );
+        const nextCities = mergeUniqueStrings(
+            [...normalizedFromServiceArea.selectedCities],
+            [...normalizedFromFields.selectedCities],
+        );
+        const nextDistricts = mergeUniqueStrings(
+            [...normalizedFromServiceArea.selectedDistricts],
+            [...normalizedFromFields.selectedDistricts],
+        );
+
+        if (
+            nextProvinces.length > 0
+            || nextCities.length > 0
+            || nextDistricts.length > 0
+        ) {
+            const inferredSingleCity = nextCities.length === 0 && nextDistricts.length > 0 && serviceAreaCityOptions.length === 1
+                ? [serviceAreaCityOptions[0].value]
+                : nextCities;
+            const inferredSingleProvince = nextProvinces.length === 0 && inferredSingleCity.length > 0
+                ? mergeUniqueStrings(inferredSingleCity.map((cityCode) => serviceAreaCityMap.get(cityCode)?.provinceCode || '').filter(Boolean))
+                : nextProvinces;
+            if (!areStringArraysEqual(currentProvinces, inferredSingleProvince)) {
+                form.setFieldValue('serviceProvinceCodes', inferredSingleProvince);
+            }
+            if (!areStringArraysEqual(currentCities, inferredSingleCity)) {
+                form.setFieldValue('serviceCityCodes', inferredSingleCity);
+            }
+            if (!areStringArraysEqual(currentDistricts, nextDistricts)) {
+                form.setFieldValue('serviceDistrictCodes', nextDistricts);
+            }
+            form.setFieldValue('serviceArea', mergeUniqueStrings(inferredSingleCity, nextDistricts));
+            return;
+        }
+
+        if (
+            serviceAreaDefaultAppliedRef.current
+            || currentProvinces.length > 0
+            || currentCities.length > 0
+            || currentDistricts.length > 0
+        ) {
+            return;
+        }
+
+        const defaultProvince = serviceAreaOptions.find((province) => province.cities.length > 0);
+        const defaultCity = defaultProvince?.cities[0];
+        if (!defaultProvince || !defaultCity) {
+            return;
+        }
+
+        serviceAreaDefaultAppliedRef.current = true;
+        form.setFieldsValue({
+            serviceProvinceCodes: [defaultProvince.value],
+            serviceCityCodes: [defaultCity.value],
+            serviceDistrictCodes: [],
+            serviceArea: [defaultCity.value],
+        });
+    }, [form, serviceAreaCityMap, serviceAreaCityOptions, serviceAreaOptions]);
+
+    useEffect(() => {
+        syncServiceAreaFields();
+    }, [syncServiceAreaFields]);
+
+    useEffect(() => {
+        syncServiceAreaFields();
+    }, [districtOptionsByCity, syncServiceAreaFields]);
+
+    useEffect(() => {
+        if (normalizedSelectedCityCodes.length === 0) {
+            return;
+        }
+
+        normalizedSelectedCityCodes.forEach((cityCode) => {
+            if (!serviceAreaCityMap.has(cityCode)) {
+                return;
+            }
+            if (districtOptionsByCity[cityCode]) {
+                return;
+            }
+            if (districtLoadingByCity[cityCode]) {
+                return;
+            }
+            setDistrictLoadingByCity((prev) => ({
+                ...prev,
+                [cityCode]: true,
+            }));
+            void regionApi.getChildren(cityCode)
+                .then((districts: Region[]) => {
+                    setDistrictOptionsByCity((prev) => ({
+                        ...prev,
+                        [cityCode]: districts.map((district) => ({
+                            label: district.name,
+                            value: district.code,
+                        })),
+                    }));
+                })
+                .catch(() => {
+                    message.warning('区县数据加载失败，请稍后重试');
+                })
+                .finally(() => {
+                    setDistrictLoadingByCity((prev) => ({
+                        ...prev,
+                        [cityCode]: false,
+                    }));
+                });
+        });
+    }, [districtLoadingByCity, districtOptionsByCity, normalizedSelectedCityCodes, serviceAreaCityMap]);
+
+    const updateServiceAreaValue = useCallback((cityCodes: string[], districtCodes: string[]) => {
+        form.setFieldValue('serviceArea', mergeUniqueStrings(cityCodes, districtCodes));
+    }, [form]);
+
+    const handleServiceProvinceChange = useCallback((values: unknown) => {
+        const nextProvinceCodes = normalizeStringArray(values);
+        const allowedCityCodes = new Set(
+            serviceAreaOptions
+                .filter((province) => nextProvinceCodes.includes(province.value))
+                .flatMap((province) => province.cities.map((city) => city.value)),
+        );
+        const nextCityCodes = normalizedSelectedCityCodes.filter((cityCode) => allowedCityCodes.has(cityCode));
+        const nextDistrictCodes = normalizedSelectedDistrictCodes.filter((districtCode) => {
+            const cityCode = serviceDistrictCityMap.get(districtCode);
+            return cityCode ? nextCityCodes.includes(cityCode) : true;
+        });
+
+        form.setFieldsValue({
+            serviceProvinceCodes: nextProvinceCodes,
+            serviceCityCodes: nextCityCodes,
+            serviceDistrictCodes: nextDistrictCodes,
+        });
+        updateServiceAreaValue(nextCityCodes, nextDistrictCodes);
+    }, [form, normalizedSelectedCityCodes, normalizedSelectedDistrictCodes, serviceAreaOptions, serviceDistrictCityMap, updateServiceAreaValue]);
+
+    const handleServiceCityChange = useCallback((values: unknown) => {
+        const nextCityCodes = normalizeStringArray(values);
+        const inferredProvinceCodes = nextCityCodes
+            .map((cityCode) => serviceAreaCityMap.get(cityCode)?.provinceCode || '')
+            .filter(Boolean);
+        const nextProvinceCodes = mergeUniqueStrings(normalizedSelectedProvinceCodes, inferredProvinceCodes);
+        const nextDistrictCodes = normalizedSelectedDistrictCodes.filter((districtCode) => {
+            const cityCode = serviceDistrictCityMap.get(districtCode);
+            return cityCode ? nextCityCodes.includes(cityCode) : true;
+        });
+
+        form.setFieldsValue({
+            serviceProvinceCodes: nextProvinceCodes,
+            serviceCityCodes: nextCityCodes,
+            serviceDistrictCodes: nextDistrictCodes,
+        });
+        updateServiceAreaValue(nextCityCodes, nextDistrictCodes);
+    }, [form, normalizedSelectedDistrictCodes, normalizedSelectedProvinceCodes, serviceAreaCityMap, serviceDistrictCityMap, updateServiceAreaValue]);
+
+    const handleServiceDistrictChange = useCallback((values: unknown) => {
+        const nextDistrictCodes = normalizeStringArray(values);
+        form.setFieldValue('serviceDistrictCodes', nextDistrictCodes);
+        updateServiceAreaValue(normalizedSelectedCityCodes, nextDistrictCodes);
+    }, [form, normalizedSelectedCityCodes, updateServiceAreaValue]);
+
+    const serviceAreaLabelNode = (
+        <span>
+            {serviceAreaLabel}
+            <Tooltip title="仅已开通服务地区可选；至少选择服务城市，区县可选。">
+                <QuestionCircleOutlined aria-label="服务区域说明" />
+            </Tooltip>
+        </span>
+    );
 
     const restoreDraft = useCallback(() => {
         if (draftRestoreHandledRef.current) {
@@ -564,38 +853,51 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
 
         try {
             const draft = JSON.parse(stored) as {
-                timestamp: number;
+                timestamp?: number;
                 currentStep: number;
                 formValues: Record<string, unknown>;
                 portfolioCases: PortfolioCase[];
             };
 
-            if (Date.now() - draft.timestamp > DRAFT_EXPIRY_MS) {
+            const draftTimestamp = ensureDraftTimestamp(draftStorageKey, draft);
+            if (Date.now() - draftTimestamp > DRAFT_EXPIRY_MS) {
                 sessionStorage.removeItem(draftStorageKey)
                 return;
             }
+            if (sessionStorage.getItem(buildDraftRestoreAckKey(draftStorageKey, draftTimestamp))) {
+                return;
+            }
 
-            Modal.confirm({
-                title: '检测到未完成的申请',
-                content: '是否恢复之前填写的内容？',
-                okText: '恢复',
-                cancelText: '清除',
-                onOk: () => {
-                    form.setFieldsValue(draft.formValues);
-                    setCurrentStep(resubmitId ? 0 : draft.currentStep);
-                    const restoredCases = normalizePortfolioCasesForForm(draft.portfolioCases, isForeman);
-                    if (restoredCases.length > 0) {
-                        setPortfolioCases(restoredCases);
-                    }
-                },
-                onCancel: () => {
-                    sessionStorage.removeItem(draftStorageKey)
-                },
+            setDraftToRestore({
+                timestamp: draftTimestamp,
+                currentStep: draft.currentStep,
+                formValues: draft.formValues || {},
+                portfolioCases: Array.isArray(draft.portfolioCases) ? draft.portfolioCases : [],
             });
         } catch {
             sessionStorage.removeItem(draftStorageKey)
         }
-    }, [draftStorageKey, form, isForeman]);
+    }, [draftStorageKey]);
+
+    const handleRestoreDraft = useCallback(() => {
+        if (!draftToRestore) {
+            return;
+        }
+        form.setFieldsValue(draftToRestore.formValues);
+        syncServiceAreaFields(draftToRestore.formValues.serviceArea);
+        setCurrentStep(resubmitId ? 0 : draftToRestore.currentStep);
+        const restoredCases = normalizePortfolioCasesForForm(draftToRestore.portfolioCases, isForeman);
+        if (restoredCases.length > 0) {
+            setPortfolioCases(restoredCases);
+        }
+        sessionStorage.setItem(buildDraftRestoreAckKey(draftStorageKey, draftToRestore.timestamp), '1');
+        setDraftToRestore(null);
+    }, [draftStorageKey, draftToRestore, form, isForeman, resubmitId, syncServiceAreaFields]);
+
+    const handleClearDraftRestore = useCallback(() => {
+        sessionStorage.removeItem(draftStorageKey);
+        setDraftToRestore(null);
+    }, [draftStorageKey]);
 
     useEffect(() => {
         const baseValues: Record<string, unknown> = {
@@ -936,7 +1238,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         } finally {
             setResubmitLoading(false);
         }
-    }, [applicantType, clearPhoneVerification, confirmReapplyWarning, currentStep, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, persistDraftSnapshot, persistPhoneVerification, portfolioCases, resubmitId, role]);
+    }, [applicantType, clearPhoneVerification, confirmReapplyWarning, currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode, entityType, hydrateResubmitDetail, isForeman, persistDraftSnapshot, persistPhoneVerification, portfolioCases, resubmitId, role]);
 
     const validateImageBeforeUpload = (file: File, spec: typeof IMAGE_UPLOAD_SPECS.avatar) =>
         validateImageUploadBeforeSend(file, spec);
@@ -947,6 +1249,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         try {
             const uploaded = await merchantUploadApi.uploadOnboardingImageData(options.file as File);
             form.setFieldsValue({ [fieldName]: normalizeStoredAssetValue(uploaded) });
+            void form.validateFields([fieldName]).catch(() => undefined);
             options.onSuccess?.(uploaded);
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -988,6 +1291,9 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
             return '';
         }
         if (role === 'foreman') {
+            if (!isForemanCaseRequired(category) && imageCount === 0) {
+                return '';
+            }
             const { min, max } = getForemanCaseImageBounds(category);
             if (imageCount < min) return `至少上传 ${min} 张，当前 ${imageCount} 张`;
             if (imageCount > max) return `最多上传 ${max} 张，当前 ${imageCount} 张`;
@@ -1111,6 +1417,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
             const storedPath = normalizeStoredAssetValue(uploaded);
             if (storedPath && !latestImages.includes(storedPath)) {
                 form.setFieldValue('companyAlbum', [...latestImages, storedPath].slice(0, 8));
+                void form.validateFields(['companyAlbum']).catch(() => undefined);
             }
         } catch (error) {
             const errorMessage = getErrorMessage(error, '上传失败');
@@ -1123,7 +1430,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         if (role === 'foreman') {
             for (const section of FOREMAN_CASE_SECTIONS) {
                 const caseItem = portfolioCases.find((item) => item.category === section.category);
-                const hasAnyContent = Boolean(caseItem?.description.trim() || (caseItem?.images.length || 0) > 0);
+                const hasAnyContent = hasForemanCaseContent(caseItem);
                 if (section.required && !caseItem) {
                     message.error(`${section.title}不能为空`);
                     return false;
@@ -1332,7 +1639,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     };
 
     const handleSubmit = async () => {
-        const fields = ['realName', 'avatar', 'idCardNo', 'idCardFront', 'idCardBack', 'serviceArea', 'legalAccepted'];
+        const fields = ['realName', 'avatar', 'idCardNo', 'idCardFront', 'idCardBack', 'serviceCityCodes', 'legalAccepted'];
         if (!isCompletionMode) {
             fields.unshift('phone');
         }
@@ -1360,6 +1667,14 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
             ...form.getFieldsValue(true),
             ...validatedValues,
         };
+        const serviceAreaValues = mergeUniqueStrings(
+            normalizeStringArray(values.serviceCityCodes),
+            normalizeStringArray(values.serviceDistrictCodes),
+        );
+        if (serviceAreaValues.length === 0) {
+            message.error('请至少选择服务城市，区县可选');
+            return;
+        }
 
         if (!isCompletionMode && !hasValidVerification(String(values.phone || '').trim())) {
             setCurrentStep(0);
@@ -1422,7 +1737,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                         teamSize: values.teamSize,
                         officeAddress: String(values.officeAddress || '').trim(),
                         yearsExperience: values.yearsExperience,
-                        serviceArea: values.serviceArea || [],
+                        serviceArea: serviceAreaValues,
                         styles: role === 'designer' ? values.styles || [] : [],
                         highlightTags: role === 'foreman' ? values.highlightTags || [] : [],
                         pricing: buildPricingPayload(values),
@@ -1431,6 +1746,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                         designPhilosophy: values.designPhilosophy,
                         companyAlbum: role === 'company' ? normalizeStoredAssetValues(values.companyAlbum || []) : undefined,
                         portfolioCases: portfolioCases
+                            .filter((caseItem) => !isForeman || isForemanCaseRequired(caseItem.category) || hasForemanCaseContent(caseItem))
                             .filter((caseItem) => caseItem.description.trim() && caseItem.images.length > 0)
                             .map((caseItem) => ({
                                 title: isForeman ? (FOREMAN_CASE_SECTIONS.find((section) => section.category === caseItem.category)?.title || caseItem.title.trim()) : caseItem.title.trim(),
@@ -1715,14 +2031,14 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                             listType="picture-card"
                                             multiple
                                             maxCount={8}
-                                            fileList={toCaseUploadFileList(form.getFieldValue('companyAlbum') || [])}
+                                            fileList={toCaseUploadFileList(Array.isArray(watchedCompanyAlbum) ? watchedCompanyAlbum : [])}
                                             accept=".jpg,.jpeg,.png"
                                             beforeUpload={async (file, fileList) => {
                                                 const basicValidation = await validateImageBeforeUpload(file as File, IMAGE_UPLOAD_SPECS.showcase);
                                                 if (basicValidation !== true) {
                                                     return basicValidation;
                                                 }
-                                                const current = (form.getFieldValue('companyAlbum') || []) as string[];
+                                                const current = (Array.isArray(watchedCompanyAlbum) ? watchedCompanyAlbum : []) as string[];
                                                 const remaining = 8 - current.length;
                                                 const currentIndexInBatch = fileList.findIndex((item) => item.uid === file.uid);
                                                 return currentIndexInBatch >= remaining ? Upload.LIST_IGNORE : true;
@@ -1730,14 +2046,15 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                             customRequest={handleCompanyAlbumUpload}
                                             onPreview={handleCasePreview}
                                             onRemove={(file) => {
-                                                const current = (form.getFieldValue('companyAlbum') || []) as string[];
+                                                const current = (Array.isArray(watchedCompanyAlbum) ? watchedCompanyAlbum : []) as string[];
                                                 const target = getStoredPathFromUploadFile(file as UploadFile<MerchantUploadResult>);
                                                 if (!target) return false;
                                                 form.setFieldValue('companyAlbum', normalizeStoredAssetValues(current).filter((image) => image !== target));
+                                                void form.validateFields(['companyAlbum']).catch(() => undefined);
                                                 return true;
                                             }}
                                         >
-                                            {((form.getFieldValue('companyAlbum') || []) as string[]).length < 8 ? (
+                                            {(Array.isArray(watchedCompanyAlbum) ? watchedCompanyAlbum : []).length < 8 ? (
                                                 <div>
                                                     <PictureOutlined aria-hidden="true" />
                                                     <div style={{ marginTop: 8 }}>上传图片</div>
@@ -1824,6 +2141,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                         onPreview={(file) => handleSinglePreview(file, 'idCardFront')}
                                         onRemove={() => {
                                             form.setFieldsValue({ idCardFront: undefined });
+                                            void form.validateFields(['idCardFront']).catch(() => undefined);
                                             return true;
                                         }}
                                         aria-label="上传身份证正面照片"
@@ -1855,6 +2173,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                         onPreview={(file) => handleSinglePreview(file, 'idCardBack')}
                                         onRemove={() => {
                                             form.setFieldsValue({ idCardBack: undefined });
+                                            void form.validateFields(['idCardBack']).catch(() => undefined);
                                             return true;
                                         }}
                                         aria-label="上传身份证反面照片"
@@ -1927,6 +2246,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                         onPreview={(file) => handleSinglePreview(file, 'licenseImage')}
                                         onRemove={() => {
                                             form.setFieldsValue({ licenseImage: undefined });
+                                            void form.validateFields(['licenseImage']).catch(() => undefined);
                                             return true;
                                         }}
                                         aria-label="上传营业执照照片"
@@ -1987,6 +2307,13 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                         </Title>
                         {portfolioCases.map((caseItem, index) => {
                             const section = isForeman ? FOREMAN_CASE_SECTIONS.find((item) => item.category === caseItem.category) : undefined;
+                            const isRequiredCase = isForeman ? Boolean(section?.required) : true;
+                            const showCaseValidation = isRequiredCase || hasForemanCaseContent(caseItem);
+                            const imageCountError = showCaseValidation ? getCaseImageCountError(caseItem.images.length, caseItem.category) : '';
+                            const { min: foremanMinImages, max: foremanMaxImages } = getForemanCaseImageBounds(caseItem.category);
+                            const imageRuleHint = isForeman
+                                ? `${isRequiredCase ? '必填' : '选填'}，${foremanMinImages}-${foremanMaxImages} 张`
+                                : `${caseMinImages}-${caseMaxImages} 张`;
                             return (
                                 <Card
                                     key={caseItem.id}
@@ -2022,7 +2349,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                             />
                                         </Form.Item>
                                     )}
-                                    <Form.Item label={isForeman ? '工艺说明' : '案例说明'} required={Boolean(isForeman ? section?.required || caseItem.description || caseItem.images.length : true)}>
+                                    <Form.Item label={isForeman ? '工艺说明' : '案例说明'} required={isRequiredCase}>
                                         <TextArea
                                             className="premium-input"
                                             rows={3}
@@ -2056,7 +2383,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                             </Col>
                                         </Row>
                                     )}
-                                    <Form.Item label={isForeman ? '施工图片' : '案例图片'} required>
+                                    <Form.Item label={isForeman ? '施工图片' : '案例图片'} required={isRequiredCase}>
                                         <Upload
                                             listType="picture-card"
                                             multiple
@@ -2094,9 +2421,9 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                                 </div>
                                             ) : null}
                                         </Upload>
-                                        <div style={{ marginTop: 8, color: getCaseImageCountError(caseItem.images.length, caseItem.category) ? '#ff4d4f' : '#8c8c8c' }}>
-                                            {getCaseImageCountError(caseItem.images.length, caseItem.category) || `已上传 ${caseItem.images.length} 张，可一次选择多张`}
-                                        </div>
+                                        <Text type={imageCountError ? 'danger' : 'secondary'}>
+                                            {imageCountError || `已上传 ${caseItem.images.length} 张，${imageRuleHint}，可一次选择多张`}
+                                        </Text>
                                     </Form.Item>
                                 </Card>
                             );
@@ -2112,18 +2439,90 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                     <div className="animate-fade-in glassmorphism-form">
                         <Title level={4} style={{ marginBottom: 24, color: '#1e293b' }}>服务与报价</Title>
                         <Form.Item
-                            name="serviceArea"
-                            label={serviceAreaLabel}
-                            rules={[{ required: true, message: `请选择${serviceAreaLabel}` }]}
+                            label={serviceAreaLabelNode}
+                            required
                         >
-                            <Select className="premium-input"
-                                mode="multiple"
-                                placeholder={`选择${serviceAreaLabel}`}
-                                aria-label={serviceAreaLabel}
-                                aria-required="true"
-                                options={areaOptions}
-                                optionFilterProp="label"
-                            />
+                            <Row gutter={[12, 12]}>
+                                <Col xs={24} md={8}>
+                                    <Form.Item name="serviceProvinceCodes" noStyle>
+                                        <Select
+                                            className="premium-input"
+                                            mode="multiple"
+                                            allowClear
+                                            placeholder="省份"
+                                            options={provinceSelectOptions}
+                                            disabled={serviceAreaLoadFailed || serviceAreaOptions.length === 0}
+                                            maxTagCount="responsive"
+                                            onChange={handleServiceProvinceChange}
+                                            aria-label="服务省份"
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                    <Form.Item
+                                        name="serviceCityCodes"
+                                        noStyle
+                                        rules={[
+                                            {
+                                                validator: (_, value) => normalizeStringArray(value).length > 0
+                                                    ? Promise.resolve()
+                                                    : Promise.reject(new Error('请至少选择服务城市，区县可选')),
+                                            },
+                                        ]}
+                                    >
+                                        <Select
+                                            className="premium-input"
+                                            mode="multiple"
+                                            allowClear
+                                            placeholder="城市（必选）"
+                                            options={citySelectOptions}
+                                            disabled={serviceAreaLoadFailed || serviceAreaOptions.length === 0}
+                                            maxTagCount="responsive"
+                                            filterOption={filterServiceCityOption}
+                                            onChange={handleServiceCityChange}
+                                            aria-label="服务城市"
+                                            aria-required="true"
+                                        />
+                                    </Form.Item>
+                                </Col>
+                                <Col xs={24} md={8}>
+                                    <Form.Item name="serviceDistrictCodes" noStyle>
+                                        <Select
+                                            className="premium-input"
+                                            mode="multiple"
+                                            allowClear
+                                            placeholder="区县（可选）"
+                                            options={districtSelectOptions}
+                                            disabled={serviceAreaLoadFailed || serviceAreaOptions.length === 0 || normalizedSelectedCityCodes.length === 0}
+                                            loading={districtSelectLoading}
+                                            maxTagCount="responsive"
+                                            onChange={handleServiceDistrictChange}
+                                            aria-label="服务区县"
+                                            notFoundContent={serviceAreaLoadFailed ? '服务区域加载失败，请刷新重试' : (districtSelectLoading ? '区县加载中' : (normalizedSelectedCityCodes.length > 0 ? '暂无可选区县' : '请先选择城市'))}
+                                        />
+                                    </Form.Item>
+                                </Col>
+                            </Row>
+                            <Form.Item noStyle shouldUpdate>
+                                {() => {
+                                    const cityErrors = form.getFieldError('serviceCityCodes');
+                                    if (cityErrors.length > 0) {
+                                        return null;
+                                    }
+                                    if (serviceAreaLoadFailed) {
+                                        return (
+                                            <Text type="danger">
+                                                当前无法加载已开通服务地区，请稍后刷新页面重试。
+                                            </Text>
+                                        );
+                                    }
+                                    return (
+                                        <Text type="secondary">
+                                            当前仅展示平台已开通服务的地区；区县不选时默认覆盖所选城市。
+                                        </Text>
+                                    );
+                                }}
+                            </Form.Item>
                         </Form.Item>
 
                         {role === 'designer' && (
@@ -2354,7 +2753,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                     <Alert
                         type="info"
                         showIcon
-                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        className="merchant-inline-alert"
                         message="正在校验手机号并回填原申请资料，请稍候。"
                         data-testid="merchant-register-resubmit-loading"
                     />
@@ -2363,9 +2762,29 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                     <Alert
                         type="warning"
                         showIcon
-                        style={{ marginBottom: 16, borderRadius: 8 }}
+                        className="merchant-inline-alert"
                         message="原申请资料回填失败，请确认手机号与验证码正确后重试；手机号与商家子类型仍保持原申请约束。"
                         data-testid="merchant-register-resubmit-failed"
+                    />
+                )}
+                {!isCompletionMode && draftToRestore && (
+                    <Alert
+                        type="info"
+                        showIcon
+                        className="merchant-inline-alert"
+                        message="检测到未完成的申请草稿"
+                        description="可恢复上次填写内容，或清除草稿后重新开始。"
+                        action={(
+                            <Space size={8} wrap>
+                                <Button size="small" type="primary" onClick={handleRestoreDraft}>
+                                    恢复内容
+                                </Button>
+                                <Button size="small" onClick={handleClearDraftRestore}>
+                                    清除草稿
+                                </Button>
+                            </Space>
+                        )}
+                        data-testid="merchant-register-draft-restore"
                     />
                 )}
                 {!isCompletionMode && phoneVerified && hasValidVerification(String(form.getFieldValue('phone') || phoneFromUrl || '').trim()) && (
@@ -2468,7 +2887,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                 }}
                 title="图片预览"
                 width={720}
-                destroyOnClose
+                destroyOnHidden
             >
                 <img src={previewImage} alt="案例图片预览" style={{ width: '100%', maxHeight: '70vh', objectFit: 'contain' }} />
             </Modal>

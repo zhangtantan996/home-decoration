@@ -1,0 +1,226 @@
+package handler
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gin-gonic/gin"
+
+	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/repository"
+)
+
+func requestAdminCreateProvider(t *testing.T, path string, payload string) responseEnvelope {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(payload))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	AdminCreateProvider(ctx)
+
+	var envelope responseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return envelope
+}
+
+func requestAdminUpdateProvider(t *testing.T, path string, payload string) responseEnvelope {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Request = httptest.NewRequest(http.MethodPut, path, strings.NewReader(payload))
+	ctx.Request.Header.Set("Content-Type", "application/json")
+	ctx.Params = gin.Params{{Key: "id", Value: "92001"}}
+	AdminUpdateProvider(ctx)
+
+	var envelope responseEnvelope
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	return envelope
+}
+
+func TestAdminUpdateProvider_RejectsEmptyServiceAreaAndKeepsExistingValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		Base:         model.Base{ID: 92001},
+		ProviderType: 1,
+		DisplayName:  "后台服务商",
+		CompanyName:  "后台服务商",
+		ServiceArea:  `["610100"]`,
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	resp := requestAdminUpdateProvider(t, "/api/v1/admin/providers/92001", `{"companyName":"后台服务商","serviceArea":[]}`)
+	if resp.Code == 0 {
+		t.Fatalf("expected empty service area to be rejected")
+	}
+
+	var stored model.Provider
+	if err := db.First(&stored, provider.ID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if stored.ServiceArea != `["610100"]` {
+		t.Fatalf("service area should remain unchanged, got %s", stored.ServiceArea)
+	}
+}
+
+func TestAdminCreateProvider_PersistsAdminFormFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Region{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	regions := []model.Region{
+		{Code: "610000", Name: "陕西省", Level: 1, Enabled: true},
+		{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, ServiceEnabled: true},
+	}
+	for _, region := range regions {
+		if err := db.Create(&region).Error; err != nil {
+			t.Fatalf("seed region %s: %v", region.Code, err)
+		}
+	}
+
+	resp := requestAdminCreateProvider(t, "/api/v1/admin/providers", `{
+		"providerType":3,
+		"companyName":"测试工长",
+		"realName":"张工",
+		"subType":"personal",
+		"specialty":"水电 · 木作",
+		"yearsExperience":12,
+		"status":1,
+		"serviceArea":["610100"]
+	}`)
+	if resp.Code != 0 {
+		t.Fatalf("expected create provider success, got code=%d message=%s", resp.Code, resp.Message)
+	}
+
+	var stored model.Provider
+	if err := db.Where("company_name = ?", "测试工长").First(&stored).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if stored.DisplayName != "张工" {
+		t.Fatalf("expected display name from realName, got %q", stored.DisplayName)
+	}
+	if stored.Specialty != "水电 · 木作" {
+		t.Fatalf("expected specialty persisted, got %q", stored.Specialty)
+	}
+	if stored.YearsExperience != 12 {
+		t.Fatalf("expected years experience 12, got %d", stored.YearsExperience)
+	}
+}
+
+func TestAdminUpdateProvider_PreservesExplicitPriceUnit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		Base:         model.Base{ID: 92001},
+		ProviderType: 3,
+		DisplayName:  "测试工长",
+		CompanyName:  "测试工长",
+		PriceUnit:    "元/天",
+		Status:       1,
+		ServiceArea:  `["610100"]`,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	resp := requestAdminUpdateProvider(t, "/api/v1/admin/providers/92001", `{
+		"companyName":"测试工长",
+		"priceMin":400,
+		"priceMax":800,
+		"priceUnit":"元/天"
+	}`)
+	if resp.Code != 0 {
+		t.Fatalf("expected update success, got code=%d message=%s", resp.Code, resp.Message)
+	}
+
+	var stored model.Provider
+	if err := db.First(&stored, provider.ID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if stored.PriceUnit != "元/天" {
+		t.Fatalf("expected price unit preserved as 元/天, got %q", stored.PriceUnit)
+	}
+}
+
+func TestAdminUpdateProvider_DoesNotResetOmittedGovernanceScores(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		Base:          model.Base{ID: 92001},
+		ProviderType:  1,
+		DisplayName:   "设计师A",
+		CompanyName:   "设计师A",
+		RestoreRate:   4.6,
+		BudgetControl: 4.2,
+		Status:        1,
+		ServiceArea:   `["610100"]`,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	resp := requestAdminUpdateProvider(t, "/api/v1/admin/providers/92001", `{
+		"companyName":"设计师A-更新",
+		"status":1
+	}`)
+	if resp.Code != 0 {
+		t.Fatalf("expected update success, got code=%d message=%s", resp.Code, resp.Message)
+	}
+
+	var stored model.Provider
+	if err := db.First(&stored, provider.ID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if stored.RestoreRate != 4.6 {
+		t.Fatalf("expected restore rate unchanged, got %v", stored.RestoreRate)
+	}
+	if stored.BudgetControl != 4.2 {
+		t.Fatalf("expected budget control unchanged, got %v", stored.BudgetControl)
+	}
+}

@@ -41,6 +41,7 @@ import { QuoteTaskDetailPage } from '../pages/QuoteTaskDetailPage';
 import { ProviderDetailPage } from '../pages/ProviderDetailPage';
 import { ProvidersPage } from '../pages/ProvidersPage';
 import { QuoteGeneratorLandingPage } from '../pages/QuoteGeneratorLandingPage';
+import { LegacyQuotePkTaskPage } from '../pages/LegacyQuotePkTaskPage';
 import { PrivacyPolicyPage } from '../pages/legal/PrivacyPolicyPage';
 import { LegalDocumentPage } from '../pages/legal/LegalDocumentPage';
 import { UserAgreementPage } from '../pages/legal/UserAgreementPage';
@@ -152,6 +153,7 @@ const router = createBrowserRouter(
         { path: 'bookings/:id/design-quote', element: <DesignFeeQuotePage /> },
         { path: 'bookings/:bookingId/design-deliverable', element: <DesignDeliverableReviewPage /> },
         { path: 'proposals/:id', element: <ProposalDetailPage /> },
+        { path: 'quote-pk/tasks/:id', element: <LegacyQuotePkTaskPage /> },
         { path: 'quote-tasks/:id', element: <QuoteTaskDetailPage /> },
         { path: 'projects/:id', element: <ProgressPage /> },
         { path: 'projects/:id/billing', element: <ProjectBillingPage /> },

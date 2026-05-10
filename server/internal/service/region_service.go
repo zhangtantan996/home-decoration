@@ -91,24 +91,31 @@ func (s *RegionService) NormalizeServiceCityCodes(inputs []string) ([]string, er
 		return nil, fmt.Errorf("查询服务城市失败: %v", err)
 	}
 
-	codeSet := make(map[string]struct{}, len(regions))
-	nameToCode := make(map[string]string, len(regions))
+	codeToRegion := make(map[string]model.Region, len(regions))
+	nameToRegion := make(map[string]model.Region, len(regions))
 	for _, region := range regions {
-		codeSet[region.Code] = struct{}{}
-		if _, exists := nameToCode[region.Name]; !exists {
-			nameToCode[region.Name] = region.Code
+		codeToRegion[region.Code] = region
+		if _, exists := nameToRegion[region.Name]; !exists {
+			nameToRegion[region.Name] = region
 		}
 	}
 
 	resolved := make([]string, 0, len(normalizedInputs))
 	var unresolved []string
 	for _, input := range normalizedInputs {
-		if _, ok := codeSet[input]; ok {
-			resolved = append(resolved, input)
-			continue
+		region, ok := codeToRegion[input]
+		if !ok {
+			region, ok = nameToRegion[input]
 		}
-		if code, ok := nameToCode[input]; ok {
-			resolved = append(resolved, code)
+		if ok {
+			switch region.Level {
+			case 2:
+				resolved = append(resolved, region.Code)
+			case 3:
+				if parentCode := strings.TrimSpace(region.ParentCode); parentCode != "" {
+					resolved = append(resolved, parentCode)
+				}
+			}
 			continue
 		}
 		unresolved = append(unresolved, input)
@@ -123,6 +130,77 @@ func (s *RegionService) NormalizeServiceCityCodes(inputs []string) ([]string, er
 		return nil, err
 	}
 	return resolved, nil
+}
+
+// NormalizeServiceAreaCodes 将服务区域输入统一解析为开放城市及其下属区县代码。
+// 城市用于满足“至少服务城市”约束；区县作为可选细分范围保留，不再在入库时丢失。
+func (s *RegionService) NormalizeServiceAreaCodes(inputs []string) ([]string, error) {
+	normalizedInputs := normalizeRegionInputs(inputs)
+	if len(normalizedInputs) == 0 {
+		return nil, fmt.Errorf("服务城市不能为空")
+	}
+
+	var regions []model.Region
+	if err := repository.DB.
+		Where("code IN ? OR name IN ?", normalizedInputs, normalizedInputs).
+		Find(&regions).Error; err != nil {
+		return nil, fmt.Errorf("查询服务区域失败: %v", err)
+	}
+
+	codeToRegion := make(map[string]model.Region, len(regions))
+	nameToRegion := make(map[string]model.Region, len(regions))
+	for _, region := range regions {
+		codeToRegion[region.Code] = region
+		if _, exists := nameToRegion[region.Name]; !exists {
+			nameToRegion[region.Name] = region
+		}
+	}
+
+	resolved := make([]string, 0, len(normalizedInputs))
+	cityCodes := make([]string, 0, len(normalizedInputs))
+	explicitCityCodes := make([]string, 0, len(normalizedInputs))
+	var unresolved []string
+	for _, input := range normalizedInputs {
+		region, ok := codeToRegion[input]
+		if !ok {
+			region, ok = nameToRegion[input]
+		}
+		if !ok {
+			unresolved = append(unresolved, input)
+			continue
+		}
+		if !region.Enabled {
+			return nil, fmt.Errorf("以下区域已被禁用: %v", region.Name)
+		}
+
+		switch region.Level {
+		case 2:
+			resolved = append(resolved, region.Code)
+			cityCodes = append(cityCodes, region.Code)
+			explicitCityCodes = append(explicitCityCodes, region.Code)
+		case 3:
+			parentCode := strings.TrimSpace(region.ParentCode)
+			if parentCode == "" {
+				return nil, fmt.Errorf("区县缺少所属城市: %v", region.Name)
+			}
+			resolved = append(resolved, region.Code)
+			cityCodes = append(cityCodes, parentCode)
+		default:
+			return nil, fmt.Errorf("以下地区不是服务城市或区县: %v", region.Name)
+		}
+	}
+
+	if len(unresolved) > 0 {
+		return nil, fmt.Errorf("以下地区不存在: %v", unresolved)
+	}
+	if len(explicitCityCodes) == 0 {
+		return nil, fmt.Errorf("请至少选择服务城市，区县可选")
+	}
+	cityCodes = dedupeRegionCodes(cityCodes)
+	if err := s.ValidateServiceCityCodes(cityCodes); err != nil {
+		return nil, err
+	}
+	return dedupeRegionCodes(resolved), nil
 }
 
 // ValidateServiceCityCodes 验证服务城市代码数组是否有效且已开放
@@ -333,6 +411,56 @@ func (s *RegionService) ResolveServiceAreaInputsToCityDisplay(inputs []string) (
 	}
 
 	return cityCodes, cityNames, nil
+}
+
+// ResolveServiceAreaInputsToDisplay 将服务区域输入转换成可回填展示的城市/区县代码与名称。
+// 与 ResolveServiceAreaInputsToCityDisplay 不同，这里保留已选择的区县。
+func (s *RegionService) ResolveServiceAreaInputsToDisplay(inputs []string) ([]string, []string, error) {
+	normalizedInputs := normalizeRegionInputs(inputs)
+	if len(normalizedInputs) == 0 {
+		return []string{}, []string{}, nil
+	}
+
+	var regions []model.Region
+	if err := repository.DB.
+		Where("code IN ? OR name IN ?", normalizedInputs, normalizedInputs).
+		Find(&regions).Error; err != nil {
+		return nil, nil, fmt.Errorf("查询服务区域失败: %v", err)
+	}
+
+	codeToRegion := make(map[string]model.Region, len(regions))
+	nameToRegion := make(map[string]model.Region, len(regions))
+	for _, region := range regions {
+		codeToRegion[region.Code] = region
+		if _, exists := nameToRegion[region.Name]; !exists {
+			nameToRegion[region.Name] = region
+		}
+	}
+
+	codes := make([]string, 0, len(normalizedInputs))
+	names := make([]string, 0, len(normalizedInputs))
+	seen := make(map[string]struct{}, len(normalizedInputs))
+	for _, input := range normalizedInputs {
+		region, ok := codeToRegion[input]
+		if !ok {
+			region, ok = nameToRegion[input]
+		}
+		if !ok || (region.Level != 2 && region.Level != 3) {
+			continue
+		}
+		code := strings.TrimSpace(region.Code)
+		if code == "" {
+			continue
+		}
+		if _, exists := seen[code]; exists {
+			continue
+		}
+		seen[code] = struct{}{}
+		codes = append(codes, code)
+		names = append(names, region.Name)
+	}
+
+	return codes, names, nil
 }
 
 // GetRegionsByCodesBatch 批量获取区域信息（用于展示）

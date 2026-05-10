@@ -1389,17 +1389,19 @@ export type AdminOnboardingStatus =
 export interface AdminUserListItem {
   id: number;
   phone: string;
+  phoneMasked?: string;
   nickname: string;
   avatar?: string;
   userType: number;
   roleType?: string;
   roleLabel?: string;
   status: number;
+  accountStatus?: AdminAccountStatus;
   lastLoginAt?: string;
   lastLoginIp?: string;
   loginFailedCount?: number;
   lockedUntil?: string;
-  primaryEntityType?: "provider" | "material_shop";
+  primaryEntityType?: "provider" | "material_shop" | "supervisor";
   primaryEntityId?: number;
   primaryEntityName?: string;
   createdAt: string;
@@ -1430,6 +1432,7 @@ export interface AdminProviderListItem {
   establishedYear: number;
   certifications: string;
   serviceArea: string;
+  serviceAreaCodes?: string[];
   isSettled?: boolean;
   collectedSource?: string;
   sourceLabel?: string;
@@ -2430,6 +2433,127 @@ export const adminQuoteInquiryApi = {
       AdminApiResponse<AdminQuoteInquiryDetail>,
       AdminApiResponse<AdminQuoteInquiryDetail>
     >(`/admin/quote-inquiries/${id}`),
+};
+
+// ========== 监理管理 ==========
+
+export interface AdminSupervisorListItem {
+  id: number;
+  userId: number;
+  supervisorAccountId?: number;
+  accountStatus?: 'active' | 'disabled' | 'unbound';
+  profileStatus?: 'active' | 'disabled';
+  lastLoginAt?: string;
+  lastLoginIp?: string;
+  activeSessionCount?: number;
+  realName: string;
+  phone: string;
+  cityCode: string;
+  serviceArea: string;
+  certifications: string;
+  status: number;
+  verified: boolean;
+  verifiedAt?: string;
+  assignmentCount?: number;
+  createdAt: string;
+}
+
+export interface AdminSupervisorAssignment {
+  id: number;
+  projectId: number;
+  supervisorId: number;
+  assignedBy: number;
+  status: number;
+  assignedAt: string;
+  projectName?: string;
+  supervisorName?: string;
+  supervisorPhone?: string;
+}
+
+export interface AdminSupervisorCreateInput {
+  phone: string;
+  realName: string;
+  cityCode?: string;
+  serviceArea?: string;
+  certifications?: string;
+  reason?: string;
+  recentReauthProof?: string;
+}
+
+export interface AdminSupervisorUpdateInput {
+  realName?: string;
+  cityCode?: string;
+  serviceArea?: string;
+  certifications?: string;
+  reason?: string;
+  recentReauthProof?: string;
+}
+
+export const adminSupervisorApi = {
+  list: (params?: {
+    page?: number;
+    pageSize?: number;
+    keyword?: string;
+    status?: number;
+    cityCode?: string;
+  }) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminSupervisorListItem>>,
+      AdminApiResponse<AdminListData<AdminSupervisorListItem>>
+    >("/admin/supervisors", { params }),
+  create: (data: AdminSupervisorCreateInput) =>
+    api.post<
+      AdminApiResponse<AdminSupervisorListItem>,
+      AdminApiResponse<AdminSupervisorListItem>
+    >("/admin/supervisors", data),
+  detail: (id: number) =>
+    api.get<
+      AdminApiResponse<AdminSupervisorListItem>,
+      AdminApiResponse<AdminSupervisorListItem>
+    >(`/admin/supervisors/${id}`),
+  update: (id: number, data: AdminSupervisorUpdateInput) =>
+    api.put<
+      AdminApiResponse<AdminSupervisorListItem>,
+      AdminApiResponse<AdminSupervisorListItem>
+    >(`/admin/supervisors/${id}`, data),
+  updateStatus: (id: number, status: number, extra?: { reason?: string; recentReauthProof?: string }) =>
+    api.patch<
+      AdminApiResponse<AdminSupervisorListItem>,
+      AdminApiResponse<AdminSupervisorListItem>
+    >(`/admin/supervisors/${id}/status`, { status, ...(extra || {}) }),
+  delete: (id: number, data?: { reason?: string; recentReauthProof?: string }) =>
+    api.delete<AdminApiResponse, AdminApiResponse>(`/admin/supervisors/${id}`, { data }),
+};
+
+export const adminSupervisorAssignmentApi = {
+  list: (params?: {
+    page?: number;
+    pageSize?: number;
+    projectId?: number;
+    supervisorId?: number;
+  }) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminSupervisorAssignment>>,
+      AdminApiResponse<AdminListData<AdminSupervisorAssignment>>
+    >("/admin/supervisor-assignments", { params }),
+  assign: (data: { projectId: number; supervisorId: number; reason?: string; recentReauthProof?: string }) =>
+    api.post<
+      AdminApiResponse<AdminSupervisorAssignment>,
+      AdminApiResponse<AdminSupervisorAssignment>
+    >("/admin/supervisor-assignments", data),
+  remove: (id: number, data?: { reason?: string; recentReauthProof?: string }) =>
+    api.delete<AdminApiResponse, AdminApiResponse>(
+      `/admin/supervisor-assignments/${id}`,
+      { data },
+    ),
+  availableSupervisors: (params?: {
+    projectId?: number;
+    cityCode?: string;
+  }) =>
+    api.get<
+      AdminApiResponse<AdminListData<AdminSupervisorListItem>>,
+      AdminApiResponse<AdminListData<AdminSupervisorListItem>>
+    >("/admin/supervisors/available", { params }),
 };
 
 export default api;
