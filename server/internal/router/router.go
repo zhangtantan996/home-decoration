@@ -1028,6 +1028,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)
 
 		// 商家登录 (无需认证)
+		v1.POST("/merchant/login/send-code", middleware.LoginRateLimit(), handler.MerchantSendLoginCode)
 		v1.POST("/merchant/login", middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
 
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）

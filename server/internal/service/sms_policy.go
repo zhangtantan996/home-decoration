@@ -35,6 +35,7 @@ type SMSTemplateContext struct {
 
 var smsPurposePolicies = map[SMSPurpose]smsPurposePolicy{
 	SMSPurposeLogin:            {RiskTier: SMSRiskTierLow},
+	SMSPurposeMerchantLogin:    {RiskTier: SMSRiskTierLow},
 	SMSPurposeRegister:         {RiskTier: SMSRiskTierLow},
 	SMSPurposeIdentityApply:    {RiskTier: SMSRiskTierMedium},
 	SMSPurposeChangePhone:      {RiskTier: SMSRiskTierMedium},
@@ -151,7 +152,7 @@ func smsTemplateCodeForPurpose(cfg *config.SMSConfig, purpose SMSPurpose) string
 	}
 
 	switch purpose {
-	case SMSPurposeLogin:
+	case SMSPurposeLogin, SMSPurposeMerchantLogin:
 		return firstNonEmptyString(cfg.TemplateCodeLogin, os.Getenv("SMS_TEMPLATE_CODE_LOGIN"))
 	case SMSPurposeRegister:
 		return firstNonEmptyString(cfg.TemplateCodeRegister, os.Getenv("SMS_TEMPLATE_CODE_REGISTER"))

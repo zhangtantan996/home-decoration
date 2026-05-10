@@ -27,3 +27,22 @@ func TestSendCodeRejectsInvalidPurpose(t *testing.T) {
 		t.Fatalf("expected invalid purpose message, got=%q", resp.Message)
 	}
 }
+
+func TestSendCodeRejectsMerchantLoginPurpose(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/send-code", strings.NewReader(`{"phone":"13800138000","purpose":"merchant_login"}`))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	SendCode(c)
+
+	resp := decodeResponse(t, w)
+	if w.Code != http.StatusBadRequest || resp.Code != 400 {
+		t.Fatalf("expected bad request, status=%d resp=%+v", w.Code, resp)
+	}
+	if !strings.Contains(resp.Message, "商家登录页") {
+		t.Fatalf("expected merchant login redirect message, got=%q", resp.Message)
+	}
+}

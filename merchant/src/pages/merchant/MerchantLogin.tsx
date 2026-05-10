@@ -109,7 +109,7 @@ const MerchantLogin: React.FC = () => {
         const phone = form.getFieldValue('phone');
         setSendingCode(true);
         try {
-            const res = await merchantAuthApi.sendCode(phone, 'login');
+            const res = await merchantAuthApi.sendLoginCode(phone);
             if (import.meta.env.DEV && res?.debugCode) {
                 console.debug(`[DEV] 验证码: ${res.debugCode}`);
             }
@@ -132,6 +132,11 @@ const MerchantLogin: React.FC = () => {
             }, 1000);
         } catch (error: unknown) {
             if (error instanceof MerchantApiError) {
+                const guideData = error.data as MerchantLoginGuideData | undefined;
+                if (error.code === 409 && guideData?.nextAction) {
+                    handleLoginGuide(phone, guideData.nextAction, guideData.applyStatus);
+                    return;
+                }
                 message.error(readSafeErrorMessage(error, '发送失败'));
                 return;
             }

@@ -12,6 +12,7 @@ import (
 	"home-decoration-server/internal/tinode"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
+	"home-decoration-server/pkg/utils"
 	"log"
 	"strconv"
 	"time"
@@ -458,6 +459,313 @@ func merchantLoginDenied(c *gin.Context, messageText string, nextAction string, 
 	})
 }
 
+type merchantLoginEligibility struct {
+	allowed    bool
+	code       int
+	message    string
+	nextAction string
+	guide      *merchantApplyGuide
+}
+
+func merchantLoginEligibilityAllowed() *merchantLoginEligibility {
+	return &merchantLoginEligibility{allowed: true}
+}
+
+func merchantLoginEligibilityDenied(code int, message string) *merchantLoginEligibility {
+	return &merchantLoginEligibility{code: code, message: message}
+}
+
+func merchantLoginEligibilityFromGuide(guide *merchantApplyGuide) *merchantLoginEligibility {
+	if guide == nil {
+		return &merchantLoginEligibility{
+			code:       409,
+			message:    "该手机号尚未入驻，请先完成入驻申请",
+			nextAction: merchantNextActionApply,
+		}
+	}
+
+	nextAction := resolveMerchantNextAction(guide.status, false)
+	switch nextAction {
+	case merchantNextActionPending:
+		return &merchantLoginEligibility{
+			code:       409,
+			message:    "入驻申请审核中，请耐心等待审核结果",
+			nextAction: nextAction,
+			guide:      guide,
+		}
+	case merchantNextActionResubmit:
+		return &merchantLoginEligibility{
+			code:       409,
+			message:    "入驻申请未通过，请修改后重新提交",
+			nextAction: nextAction,
+			guide:      guide,
+		}
+	default:
+		return &merchantLoginEligibility{
+			code:       409,
+			message:    "该手机号尚未入驻，请先完成入驻申请",
+			nextAction: merchantNextActionApply,
+			guide:      guide,
+		}
+	}
+}
+
+func merchantProviderLoginEligible(provider *model.Provider, userID uint64) bool {
+	if provider == nil || provider.Status != merchantProviderStatusActive {
+		return false
+	}
+	return provider.UserID == 0 || provider.UserID == userID
+}
+
+func merchantMaterialShopLoginEligible(shop *model.MaterialShop, userID uint64, allowClaimedCompletion bool) bool {
+	if shop == nil || !service.IsMaterialShopActive(shop) {
+		return false
+	}
+	if shop.UserID != 0 && shop.UserID != userID {
+		return false
+	}
+	return service.IsMaterialShopLoginEnabled(shop) || allowClaimedCompletion
+}
+
+func findReadonlyLegacyProviderLoginCandidate(tx *gorm.DB, user model.User) (*model.Provider, error) {
+	var app model.MerchantApplication
+	appQuery := tx.Where("application_scene = ? AND provider_id > 0", model.MerchantApplicationSceneClaimedCompletion).
+		Order("updated_at DESC, id DESC")
+	switch phone := strings.TrimSpace(user.Phone); {
+	case user.ID > 0 && phone != "":
+		appQuery = appQuery.Where("user_id = ? OR phone = ?", user.ID, phone)
+	case user.ID > 0:
+		appQuery = appQuery.Where("user_id = ?", user.ID)
+	case phone != "":
+		appQuery = appQuery.Where("phone = ?", phone)
+	}
+	if err := appQuery.First(&app).Error; err == nil {
+		var provider model.Provider
+		if err := tx.First(&provider, app.ProviderID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if merchantProviderLoginEligible(&provider, user.ID) {
+			return &provider, nil
+		}
+		return nil, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var identities []model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ? AND status = ?", user.ID, merchantIdentityTypeProvider, merchantIdentityStatusActive).
+		Order("verified DESC, updated_at DESC, id DESC").
+		Find(&identities).Error; err != nil {
+		return nil, err
+	}
+	for _, identity := range identities {
+		if identity.IdentityRefID == nil || *identity.IdentityRefID == 0 {
+			continue
+		}
+		var provider model.Provider
+		if err := tx.First(&provider, *identity.IdentityRefID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if merchantProviderLoginEligible(&provider, user.ID) {
+			return &provider, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func findReadonlyLegacyMaterialShopLoginCandidate(tx *gorm.DB, user model.User) (*model.MaterialShop, error) {
+	var app model.MaterialShopApplication
+	appQuery := tx.Where("application_scene = ? AND shop_id > 0", model.MerchantApplicationSceneClaimedCompletion).
+		Order("updated_at DESC, id DESC")
+	switch phone := strings.TrimSpace(user.Phone); {
+	case user.ID > 0 && phone != "":
+		appQuery = appQuery.Where("user_id = ? OR phone = ?", user.ID, phone)
+	case user.ID > 0:
+		appQuery = appQuery.Where("user_id = ?", user.ID)
+	case phone != "":
+		appQuery = appQuery.Where("phone = ?", phone)
+	}
+	if err := appQuery.First(&app).Error; err == nil {
+		var shop model.MaterialShop
+		if err := tx.First(&shop, app.ShopID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil, nil
+			}
+			return nil, err
+		}
+		if merchantMaterialShopLoginEligible(&shop, user.ID, true) {
+			return &shop, nil
+		}
+		return nil, nil
+	} else if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+
+	var identities []model.UserIdentity
+	if err := tx.Where("user_id = ? AND identity_type = ? AND status = ?", user.ID, merchantIdentityTypeMaterial, merchantIdentityStatusActive).
+		Order("verified DESC, updated_at DESC, id DESC").
+		Find(&identities).Error; err != nil {
+		return nil, err
+	}
+	for _, identity := range identities {
+		if identity.IdentityRefID == nil || *identity.IdentityRefID == 0 {
+			continue
+		}
+		var shop model.MaterialShop
+		if err := tx.First(&shop, *identity.IdentityRefID).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		if merchantMaterialShopLoginEligible(&shop, user.ID, true) {
+			return &shop, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func resolveMerchantLoginEligibility(phone string) (*merchantLoginEligibility, error) {
+	phone = strings.TrimSpace(phone)
+	if !utils.ValidatePhone(phone) {
+		return merchantLoginEligibilityDenied(400, "手机号格式不正确"), nil
+	}
+
+	var user model.User
+	if err := repository.DB.Where("phone = ?", phone).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			guide, guideErr := latestMerchantApplyGuide(0, phone)
+			if guideErr != nil {
+				return nil, guideErr
+			}
+			return merchantLoginEligibilityFromGuide(guide), nil
+		}
+		return nil, err
+	}
+
+	if user.Status != 1 {
+		return merchantLoginEligibilityDenied(403, "账号状态异常，请联系平台处理"), nil
+	}
+
+	var provider model.Provider
+	providerErr := repository.DB.Where("user_id = ?", user.ID).First(&provider).Error
+	if providerErr == nil {
+		if provider.Status != merchantProviderStatusActive {
+			return merchantLoginEligibilityDenied(403, "账号状态异常，请联系平台处理"), nil
+		}
+		return merchantLoginEligibilityAllowed(), nil
+	}
+	if providerErr != nil && !errors.Is(providerErr, gorm.ErrRecordNotFound) {
+		return nil, providerErr
+	}
+	if candidate, err := findReadonlyLegacyProviderLoginCandidate(repository.DB, user); err != nil {
+		return nil, err
+	} else if candidate != nil {
+		if candidate.Status != merchantProviderStatusActive {
+			return merchantLoginEligibilityDenied(403, "账号状态异常，请联系平台处理"), nil
+		}
+		return merchantLoginEligibilityAllowed(), nil
+	}
+
+	var materialShop model.MaterialShop
+	materialErr := repository.DB.Where("user_id = ?", user.ID).Order("id DESC").First(&materialShop).Error
+	if materialErr == nil {
+		if !service.IsMaterialShopActive(&materialShop) {
+			return merchantLoginEligibilityDenied(403, "账号状态异常，请联系平台处理"), nil
+		}
+		if service.IsMaterialShopLoginEnabled(&materialShop) {
+			return merchantLoginEligibilityAllowed(), nil
+		}
+	}
+	if materialErr != nil && !errors.Is(materialErr, gorm.ErrRecordNotFound) {
+		return nil, materialErr
+	}
+	if candidate, err := findReadonlyLegacyMaterialShopLoginCandidate(repository.DB, user); err != nil {
+		return nil, err
+	} else if candidate != nil {
+		if !service.IsMaterialShopActive(candidate) {
+			return merchantLoginEligibilityDenied(403, "账号状态异常，请联系平台处理"), nil
+		}
+		return merchantLoginEligibilityAllowed(), nil
+	}
+
+	guide, err := latestMerchantApplyGuide(user.ID, phone)
+	if err != nil {
+		return nil, err
+	}
+	return merchantLoginEligibilityFromGuide(guide), nil
+}
+
+func respondMerchantLoginEligibilityDenied(c *gin.Context, eligibility *merchantLoginEligibility) {
+	if eligibility == nil {
+		response.Error(c, 500, "登录校验失败，请稍后重试")
+		return
+	}
+	if eligibility.code == 409 {
+		merchantLoginDenied(c, eligibility.message, eligibility.nextAction, eligibility.guide)
+		return
+	}
+	response.Error(c, eligibility.code, eligibility.message)
+}
+
+// MerchantSendLoginCode 商家登录前校验账号权限并发送验证码
+func MerchantSendLoginCode(c *gin.Context) {
+	var input struct {
+		Phone        string `json:"phone" binding:"required"`
+		CaptchaToken string `json:"captchaToken"`
+	}
+	if err := c.ShouldBindJSON(&input); err != nil {
+		response.BadRequest(c, "请输入手机号")
+		return
+	}
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.CaptchaToken = strings.TrimSpace(input.CaptchaToken)
+
+	eligibility, err := resolveMerchantLoginEligibility(input.Phone)
+	if err != nil {
+		if repository.IsSchemaMismatchError(err) {
+			response.ServiceUnavailable(c, repository.SchemaServiceUnavailableMessage("商家登录服务"))
+			return
+		}
+		response.Error(c, 500, "登录校验失败，请稍后重试")
+		return
+	}
+	if eligibility == nil || !eligibility.allowed {
+		respondMerchantLoginEligibilityDenied(c, eligibility)
+		return
+	}
+
+	clientIP := c.ClientIP()
+	sendResult, err := service.SendSMSCode(input.Phone, service.SMSPurposeMerchantLogin, clientIP, input.CaptchaToken)
+	if err != nil {
+		if repository.IsSchemaMismatchError(err) {
+			response.ServiceUnavailable(c, repository.SchemaServiceUnavailableMessage("认证服务"))
+			return
+		}
+		response.BadRequest(c, err.Error())
+		return
+	}
+
+	data := gin.H{
+		"expiresIn": 300,
+		"requestId": sendResult.RequestID,
+	}
+	if sendResult.DebugOnly && sendResult.DebugCode != "" {
+		data["debugCode"] = sendResult.DebugCode
+		data["debugOnly"] = true
+	}
+
+	response.SuccessWithMessage(c, "验证码已发送", data)
+}
+
 // MerchantLogin 商家登录（手机号+验证码）
 func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -469,8 +777,10 @@ func MerchantLogin(cfg *config.Config) gin.HandlerFunc {
 			response.Error(c, 400, "参数错误")
 			return
 		}
+		input.Phone = strings.TrimSpace(input.Phone)
+		input.Code = strings.TrimSpace(input.Code)
 
-		if err := service.VerifySMSCode(input.Phone, service.SMSPurposeLogin, input.Code); err != nil {
+		if err := service.VerifySMSCode(input.Phone, service.SMSPurposeMerchantLogin, input.Code); err != nil {
 			response.Error(c, 400, err.Error())
 			return
 		}
@@ -868,7 +1178,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 	if input.Name != nil {
 		name := strings.TrimSpace(*input.Name)
 		if name != "" {
-		updates["display_name"] = name
+			updates["display_name"] = name
 		}
 	}
 	if input.CompanyName != nil {
@@ -909,7 +1219,7 @@ func MerchantUpdateInfo(c *gin.Context) {
 	} else {
 		if input.Specialty != nil {
 			if len(input.Specialty) > 0 {
-			updates["specialty"] = strings.Join(normalizeStringSlice(input.Specialty), " · ")
+				updates["specialty"] = strings.Join(normalizeStringSlice(input.Specialty), " · ")
 			} else {
 				updates["specialty"] = ""
 			}

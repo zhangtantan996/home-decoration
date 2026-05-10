@@ -166,6 +166,14 @@ export interface MerchantServiceSetting {
 export const merchantAuthApi = {
     login: async (data: { phone: string; code: string }) =>
         unwrapData<MerchantLoginData>(await merchantApi.post('/merchant/login', data), '登录失败'),
+    sendLoginCode: async (
+        phone: string,
+        captchaToken?: string,
+    ) =>
+        unwrapData<{ expiresIn?: number; requestId?: string; debugCode?: string; debugOnly?: boolean }>(
+            await merchantApi.post('/merchant/login/send-code', { phone, captchaToken }),
+            '发送验证码失败'
+        ),
     getInfo: async () =>
         unwrapData<MerchantProviderInfo>(await merchantApi.get('/merchant/info'), '获取商家信息失败'),
     updateInfo: async (data: Record<string, unknown>) =>

@@ -14,7 +14,7 @@ import (
 func TestMerchantLogin_StudioDesignerCompanyEntity_KeepsDesignerIdentity(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("SMS_DEBUG_BYPASS", "1")
+	t.Setenv("SMS_FIXED_CODE_MODE", "1")
 
 	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MerchantApplication{}); err != nil {
@@ -202,10 +202,10 @@ func TestMerchantUpdateInfo_DoesNotOverwriteUserProfile(t *testing.T) {
 	}
 
 	updatePayload := map[string]any{
-		"name":         "新的服务商品牌名",
+		"name":          "新的服务商品牌名",
 		"officeAddress": "西安市雁塔区",
-		"teamSize":     3,
-		"introduction": "新的服务介绍",
+		"teamSize":      3,
+		"introduction":  "新的服务介绍",
 	}
 	updateResp := requestMerchantJSON(t, http.MethodPut, "/api/v1/merchant/info", updatePayload, providerID, userID, MerchantUpdateInfo)
 	if updateResp.Code != 0 {
@@ -299,19 +299,19 @@ func TestMerchantUpdateInfo_DoesNotResetOmittedProfileFields(t *testing.T) {
 		t.Fatalf("seed user: %v", err)
 	}
 	if err := db.Create(&model.Provider{
-		Base:             model.Base{ID: providerID},
-		UserID:           userID,
-		ProviderType:     1,
-		DisplayName:      "设计师原名",
-		CompanyName:      "设计工作室",
-		YearsExperience:  9,
-		Specialty:        "现代简约 · 北欧",
-		TeamSize:         6,
-		ServiceIntro:     "原简介",
-		OfficeAddress:    "西安市高新区",
+		Base:               model.Base{ID: providerID},
+		UserID:             userID,
+		ProviderType:       1,
+		DisplayName:        "设计师原名",
+		CompanyName:        "设计工作室",
+		YearsExperience:    9,
+		Specialty:          "现代简约 · 北欧",
+		TeamSize:           6,
+		ServiceIntro:       "原简介",
+		OfficeAddress:      "西安市高新区",
 		SurveyDepositPrice: 399,
-		Status:           1,
-		Verified:         true,
+		Status:             1,
+		Verified:           true,
 	}).Error; err != nil {
 		t.Fatalf("seed provider: %v", err)
 	}

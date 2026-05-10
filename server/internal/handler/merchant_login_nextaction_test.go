@@ -17,7 +17,7 @@ import (
 func TestMerchantLogin_UnregisteredReturnsApplyGuide(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("SMS_DEBUG_BYPASS", "1")
+	t.Setenv("SMS_FIXED_CODE_MODE", "1")
 
 	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}, &model.MerchantApplication{}, &model.MaterialShopApplication{}); err != nil {
@@ -53,7 +53,7 @@ func TestMerchantLogin_UnregisteredReturnsApplyGuide(t *testing.T) {
 func TestMerchantLogin_PendingApplicationReturnsPendingGuide(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("SMS_DEBUG_BYPASS", "1")
+	t.Setenv("SMS_FIXED_CODE_MODE", "1")
 
 	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}, &model.MerchantApplication{}, &model.MaterialShopApplication{}); err != nil {
@@ -116,7 +116,7 @@ func TestMerchantLogin_PendingApplicationReturnsPendingGuide(t *testing.T) {
 func TestMerchantLogin_MaterialShopSuccess(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_ENV", "local")
-	t.Setenv("SMS_DEBUG_BYPASS", "1")
+	t.Setenv("SMS_FIXED_CODE_MODE", "1")
 
 	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}, &model.MerchantApplication{}, &model.MaterialShopApplication{}); err != nil {

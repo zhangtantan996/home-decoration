@@ -381,6 +381,10 @@ func SendCode(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if purpose == service.SMSPurposeMerchantLogin {
+		response.BadRequest(c, "请从商家登录页获取验证码")
+		return
+	}
 
 	// 获取客户端IP
 	clientIP := c.ClientIP()
