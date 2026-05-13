@@ -33,6 +33,18 @@ func AdminLogin(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
+	if service.ContainsWhitespace(req.Username) {
+		response.BadRequest(c, "用户名不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(req.Password) {
+		response.BadRequest(c, "密码不能包含空格")
+		return
+	}
+	if req.OTPCode != "" && service.ContainsWhitespace(req.OTPCode) {
+		response.BadRequest(c, "动态验证码不能包含空格")
+		return
+	}
 
 	securitySvc := service.NewAdminSecurityService()
 	failKey := fmt.Sprintf("admin_login_fail:%s", req.Username)
@@ -207,6 +219,10 @@ func AdminResetInitialPassword(c *gin.Context) {
 		response.BadRequest(c, "请输入新密码")
 		return
 	}
+	if service.ContainsWhitespace(req.NewPassword) {
+		response.BadRequest(c, "密码不能包含空格")
+		return
+	}
 	securitySvc := service.NewAdminSecurityService()
 	if err := securitySvc.ResetInitialPassword(admin, req.NewPassword); err != nil {
 		response.BadRequest(c, err.Error())
@@ -261,6 +277,10 @@ func AdminVerify2FA(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "请输入动态验证码")
+		return
+	}
+	if service.ContainsWhitespace(req.OTPCode) {
+		response.BadRequest(c, "动态验证码不能包含空格")
 		return
 	}
 	securitySvc := service.NewAdminSecurityService()
@@ -413,6 +433,14 @@ func AdminReauth(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
+		return
+	}
+	if req.OTPCode != "" && service.ContainsWhitespace(req.OTPCode) {
+		response.BadRequest(c, "动态验证码不能包含空格")
+		return
+	}
+	if req.Password != "" && service.ContainsWhitespace(req.Password) {
+		response.BadRequest(c, "密码不能包含空格")
 		return
 	}
 	proof, expiresAt, err := service.NewAdminSecurityService().CreateReauthProof(admin, c.GetString("admin_sid"), req.OTPCode, req.Password)

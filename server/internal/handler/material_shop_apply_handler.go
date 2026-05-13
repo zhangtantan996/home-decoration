@@ -85,7 +85,10 @@ type materialShopProductInput struct {
 	Description string   `json:"description"`
 	Price       float64  `json:"price"`
 	Images      []string `json:"images"`
-	Status      int      `json:"status"`
+	CoverImage  string   `json:"coverImage"`
+	SortOrder   int      `json:"sortOrder"`
+	ParamsJSON  string   `json:"paramsJson"`
+	Status      *int     `json:"status"`
 }
 
 func validateMaterialProductPrice(price float64, index int) error {
@@ -566,6 +569,14 @@ func MaterialShopApplyDetailForResubmit(c *gin.Context) {
 	var authInput resubmitDetailRequestInput
 	if err := c.ShouldBindJSON(&authInput); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+	if service.ContainsWhitespace(authInput.Phone) {
+		response.Error(c, 400, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(authInput.Code) {
+		response.Error(c, 400, "验证码不能包含空格")
 		return
 	}
 	authInput.Phone = strings.TrimSpace(authInput.Phone)
@@ -1125,11 +1136,15 @@ func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopPr
 		Name:        input.Name,
 		Unit:        input.Unit,
 		Description: input.Description,
-		ParamsJSON:  "{}",
+		ParamsJSON:  firstNonEmpty(strings.TrimSpace(input.ParamsJSON), "{}"),
 		Price:       input.Price,
 		ImagesJSON:  string(imagesJSON),
-		CoverImage:  input.Images[0],
+		CoverImage:  firstNonEmpty(normalizeStoredAsset(input.CoverImage), input.Images[0]),
 		Status:      1,
+		SortOrder:   input.SortOrder,
+	}
+	if input.Status != nil && *input.Status == 0 {
+		product.Status = 0
 	}
 
 	return product, nil
@@ -1210,8 +1225,8 @@ func MaterialShopUpdateProduct(c *gin.Context) {
 	existing.Price = updated.Price
 	existing.ImagesJSON = updated.ImagesJSON
 	existing.CoverImage = updated.CoverImage
-	if input.Status == 0 || input.Status == 1 {
-		existing.Status = int8(input.Status)
+	if input.Status != nil && (*input.Status == 0 || *input.Status == 1) {
+		existing.Status = int8(*input.Status)
 	}
 
 	if err := repository.DB.Transaction(func(tx *gorm.DB) error {

@@ -248,9 +248,15 @@ func TestMerchantApplyDetailForResubmit_PhoneMismatch(t *testing.T) {
 
 func TestMerchantResubmit_WithResubmitToken(t *testing.T) {
 	setupMerchantRound4TestDB(t)
+	t.Setenv("USER_REAL_NAME_VERIFY_PROVIDER", "fake")
 	input := newValidDesignerApplyInput()
+	user := model.User{Phone: input.Phone, Nickname: input.RealName, Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create user failed: %v", err)
+	}
 	oldCreatedAt := time.Date(2025, 3, 1, 9, 30, 0, 0, time.Local)
 	app := model.MerchantApplication{
+		UserID:        user.ID,
 		Phone:         input.Phone,
 		ApplicantType: input.ApplicantType,
 		Role:          input.Role,
@@ -273,12 +279,19 @@ func TestMerchantResubmit_WithResubmitToken(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", app.ID)}}
 	c.Request = newJSONRequest(t, http.MethodPost, input)
 	MerchantResubmit(c)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected response code: got=%d body=%s", resp.Code, w.Body.String())
 	}
 	var updated model.MerchantApplication
 	if err := repository.DB.First(&updated, app.ID).Error; err != nil {
@@ -351,9 +364,15 @@ func TestMaterialShopApplyDetailForResubmit_WithSMS(t *testing.T) {
 
 func TestMaterialShopResubmit_WithResubmitToken(t *testing.T) {
 	setupMerchantRound4TestDB(t)
+	t.Setenv("USER_REAL_NAME_VERIFY_PROVIDER", "fake")
 	input := newValidMaterialShopApplyInput()
+	user := model.User{Phone: input.Phone, Nickname: input.LegalPersonName, Status: 1}
+	if err := repository.DB.Create(&user).Error; err != nil {
+		t.Fatalf("create material applicant user failed: %v", err)
+	}
 	oldCreatedAt := time.Date(2025, 4, 2, 11, 0, 0, 0, time.Local)
 	app := model.MaterialShopApplication{
+		UserID:       user.ID,
 		Phone:        input.Phone,
 		EntityType:   input.EntityType,
 		ShopName:     input.ShopName,
@@ -379,12 +398,19 @@ func TestMaterialShopResubmit_WithResubmitToken(t *testing.T) {
 
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
-	c.Params = []gin.Param{{Key: "id", Value: "1"}}
+	c.Params = []gin.Param{{Key: "id", Value: fmt.Sprintf("%d", app.ID)}}
 	c.Request = newJSONRequest(t, http.MethodPost, input)
 	MaterialShopApplyResubmit(c)
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("unexpected status: %d body=%s", w.Code, w.Body.String())
+	}
+	var resp struct {
+		Code int `json:"code"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected response code: got=%d body=%s", resp.Code, w.Body.String())
 	}
 	var updated model.MaterialShopApplication
 	if err := repository.DB.First(&updated, app.ID).Error; err != nil {

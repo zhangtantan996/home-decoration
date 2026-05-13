@@ -132,6 +132,12 @@ func authorizeOnboarding(phone, verificationToken string, applicationID uint64, 
 		}
 		return fmt.Errorf("缺少手机号验证信息")
 	}
+	if service.ContainsWhitespace(phone) {
+		return fmt.Errorf("手机号不能包含空格")
+	}
+	if service.ContainsWhitespace(code) {
+		return fmt.Errorf("验证码不能包含空格")
+	}
 	return service.VerifySMSCode(strings.TrimSpace(phone), service.SMSPurposeIdentityApply, strings.TrimSpace(code))
 }
 

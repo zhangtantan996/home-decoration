@@ -37,13 +37,14 @@ import MerchantProjectFlow from '../pages/merchant/MerchantProjectFlow';
 import MerchantConstructionPrepPage from '../pages/merchant/MerchantConstructionPrepPage';
 import MerchantDesignerTasks from '../pages/merchant/MerchantDesignerTasks';
 import MerchantCrewTasks from '../pages/merchant/MerchantCrewTasks';
+import MerchantPortalUnavailable from '../pages/merchant/MerchantPortalUnavailable';
 import OnboardingAgreementPage from '../pages/merchant/legal/OnboardingAgreementPage';
 import PlatformRulesPage from '../pages/merchant/legal/PlatformRulesPage';
 import PrivacyDataProcessingPage from '../pages/merchant/legal/PrivacyDataProcessingPage';
 import MerchantLayout from '../layouts/MerchantLayout';
 import MerchantAuthGuard from '../components/MerchantAuthGuard';
 import MerchantCompletionGuard from '../components/MerchantCompletionGuard';
-import { getRouterBasename } from '../utils/env';
+import { getRouterBasename, isMerchantPortalFrontendEnabled } from '../utils/env';
 
 const LegacyBookingFlowRedirect = () => {
   const { id } = useParams<{ id: string }>();
@@ -55,7 +56,7 @@ const LegacyBookingFlowRedirect = () => {
   return <Navigate to={`/proposals/flow/${id}${query ? `?${query}` : ''}`} replace />;
 };
 
-const router = createBrowserRouter([
+const routes = isMerchantPortalFrontendEnabled() ? [
   { path: '/', element: <MerchantEntry /> },
   { path: '/login', element: <MerchantLogin /> },
   { path: '/register', element: <MerchantRegister /> },
@@ -115,7 +116,11 @@ const router = createBrowserRouter([
     ],
   },
   { path: '*', element: <Navigate to="/" replace /> },
-], {
+] : [
+  { path: '*', element: <MerchantPortalUnavailable /> },
+];
+
+const router = createBrowserRouter(routes, {
   basename: getRouterBasename(),
 });
 

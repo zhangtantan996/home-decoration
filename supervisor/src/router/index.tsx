@@ -3,7 +3,8 @@ import React, { Suspense } from "react";
 import { Spin } from "antd";
 import SupervisorLayout from "../layouts/SupervisorLayout";
 import SupervisorAuthGuard from "../components/SupervisorAuthGuard";
-import { getRouterBasename } from "../utils/env";
+import SupervisorPortalUnavailable from "../pages/SupervisorPortalUnavailable";
+import { getRouterBasename, isSupervisorPortalFrontendEnabled } from "../utils/env";
 
 // 懒加载所有页面组件，减少首屏 bundle 体积
 const SupervisorLogin = React.lazy(
@@ -45,8 +46,8 @@ const withSuspense = (element: React.ReactNode) => (
   <Suspense fallback={PageFallback}>{element}</Suspense>
 );
 
-const router = createBrowserRouter(
-  [
+const routes = isSupervisorPortalFrontendEnabled()
+  ? [
     { path: "/", element: <Navigate to="/dashboard" replace /> },
     {
       element: <SupervisorAuthGuard />,
@@ -81,7 +82,11 @@ const router = createBrowserRouter(
       ],
     },
     { path: "*", element: <Navigate to="/dashboard" replace /> },
-  ],
+  ]
+  : [{ path: "*", element: <SupervisorPortalUnavailable /> }];
+
+const router = createBrowserRouter(
+  routes,
   {
     basename: getRouterBasename(),
   },

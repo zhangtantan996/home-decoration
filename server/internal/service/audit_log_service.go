@@ -105,7 +105,7 @@ func (s *AuditLogService) CreateRecordTx(tx *gorm.DB, input *CreateAuditRecordIn
 		ResourceID:    input.ResourceID,
 		Reason:        strings.TrimSpace(input.Reason),
 		Result:        normalizeAuditResult(input.Result, input.StatusCode),
-		RequestBody:   strings.TrimSpace(input.RequestBody),
+		RequestBody:   maskAuditJSONString(strings.TrimSpace(input.RequestBody)),
 		BeforeState:   marshalAuditJSON(input.BeforeState),
 		AfterState:    marshalAuditJSON(input.AfterState),
 		Metadata:      marshalAuditJSON(input.Metadata),
@@ -263,6 +263,7 @@ func marshalAuditJSON(value interface{}) string {
 		return "{}"
 	}
 
+	var payload []byte
 	switch typed := value.(type) {
 	case string:
 		trimmed := strings.TrimSpace(typed)
@@ -270,7 +271,7 @@ func marshalAuditJSON(value interface{}) string {
 			return "{}"
 		}
 		if json.Valid([]byte(trimmed)) {
-			return trimmed
+			payload = []byte(trimmed)
 		}
 	case map[string]interface{}:
 		if len(typed) == 0 {
@@ -278,11 +279,118 @@ func marshalAuditJSON(value interface{}) string {
 		}
 	}
 
-	payload, err := json.Marshal(value)
-	if err != nil || string(payload) == "null" {
-		return "{}"
+	if len(payload) == 0 {
+		var err error
+		payload, err = json.Marshal(value)
+		if err != nil || string(payload) == "null" {
+			return "{}"
+		}
 	}
+
+	var decoded interface{}
+	if err := json.Unmarshal(payload, &decoded); err == nil {
+		if sanitized, err := json.Marshal(maskAuditValue(decoded, "")); err == nil && string(sanitized) != "null" {
+			return string(sanitized)
+		}
+	}
+
 	return string(payload)
+}
+
+func maskAuditJSONString(raw string) string {
+	if raw == "" || !json.Valid([]byte(raw)) {
+		return raw
+	}
+	var decoded interface{}
+	if err := json.Unmarshal([]byte(raw), &decoded); err != nil {
+		return raw
+	}
+	masked, err := json.Marshal(maskAuditValue(decoded, ""))
+	if err != nil {
+		return raw
+	}
+	return string(masked)
+}
+
+func maskAuditValue(value interface{}, fieldName string) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, nested := range typed {
+			typed[key] = maskAuditValue(nested, key)
+		}
+		return typed
+	case []interface{}:
+		for index, nested := range typed {
+			typed[index] = maskAuditValue(nested, fieldName)
+		}
+		return typed
+	case string:
+		return maskAuditString(fieldName, typed)
+	default:
+		return value
+	}
+}
+
+func maskAuditString(fieldName, value string) string {
+	if value == "" {
+		return value
+	}
+	switch auditSensitiveFieldKind(fieldName) {
+	case "phone":
+		return maskAuditPhone(value)
+	case "partial":
+		return maskAuditPartial(value)
+	case "address":
+		return "已脱敏"
+	case "hidden":
+		return "******"
+	default:
+		return value
+	}
+}
+
+func auditSensitiveFieldKind(fieldName string) string {
+	key := normalizeAuditFieldKey(fieldName)
+	switch key {
+	case "phone", "mobile", "tel", "telephone", "contactphone", "contactmobile", "legalpersonphone", "servicephone", "customerphone":
+		return "phone"
+	case "email", "contactemail", "legalpersonemail", "customeremail":
+		return "hidden"
+	case "realname", "contactname", "legalpersonname", "customername", "applicantname":
+		return "partial"
+	case "idcardno", "idcard", "idnumber", "idno", "identityno", "legalpersonidcardno", "legalpersonidno",
+		"accountno", "bankaccount", "bankcardno", "cardno", "licensecode", "licenseno", "businesslicenseno",
+		"unifiedsocialcreditcode", "creditcode", "taxno":
+		return "partial"
+	case "address", "detailaddress", "officeaddress", "contactaddress", "registeredaddress", "businessaddress", "storeaddress":
+		return "address"
+	case "password", "code", "smscode", "otpcode", "verificationcode", "token", "accesstoken", "refreshtoken",
+		"captchatoken", "recentreauthproof", "secret", "twofactorsecret", "apikey",
+		"idcardfront", "idcardback", "licenseimage", "businesslicenseimage", "certifications":
+		return "hidden"
+	default:
+		return ""
+	}
+}
+
+func normalizeAuditFieldKey(fieldName string) string {
+	normalized := strings.ToLower(strings.TrimSpace(fieldName))
+	replacer := strings.NewReplacer("_", "", "-", "", ".", "", " ", "")
+	return replacer.Replace(normalized)
+}
+
+func maskAuditPhone(value string) string {
+	if len(value) <= 7 {
+		return "******"
+	}
+	return value[:3] + "****" + value[len(value)-4:]
+}
+
+func maskAuditPartial(value string) string {
+	if len(value) <= 4 {
+		return "******"
+	}
+	return value[:2] + "****" + value[len(value)-2:]
 }
 
 func parseAuditJSON(raw string) map[string]interface{} {

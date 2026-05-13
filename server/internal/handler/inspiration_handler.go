@@ -210,6 +210,11 @@ func GetCaseComments(c *gin.Context) {
 }
 
 func CreateCaseComment(c *gin.Context) {
+	if !(&service.ConfigService{}).IsMiniCommentsEnabled() {
+		response.Forbidden(c, "评论功能暂未开放")
+		return
+	}
+
 	userID := c.GetUint64("userId")
 	if userID == 0 {
 		response.Unauthorized(c, "未登录")

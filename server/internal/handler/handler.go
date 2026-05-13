@@ -375,6 +375,10 @@ func SendCode(c *gin.Context) {
 		response.BadRequest(c, "请输入手机号和验证码用途")
 		return
 	}
+	if service.ContainsWhitespace(req.Phone) {
+		response.BadRequest(c, "手机号不能包含空格")
+		return
+	}
 
 	purpose, err := service.NormalizeSMSPurpose(req.Purpose)
 	if err != nil {

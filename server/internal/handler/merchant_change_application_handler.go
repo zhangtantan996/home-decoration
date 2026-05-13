@@ -55,6 +55,14 @@ func MerchantApplyIdentityChange(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	if service.ContainsWhitespace(input.Phone) {
+		response.Error(c, 400, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(input.Code) {
+		response.Error(c, 400, "验证码不能包含空格")
+		return
+	}
 
 	if !utils.ValidatePhone(input.Phone) {
 		response.Error(c, 400, "手机号格式不正确")

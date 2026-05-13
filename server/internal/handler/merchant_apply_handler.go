@@ -815,6 +815,14 @@ func MerchantApply(c *gin.Context) {
 		response.Error(c, 400, "参数错误: "+err.Error())
 		return
 	}
+	if service.ContainsWhitespace(input.Phone) {
+		response.Error(c, 400, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(input.Code) {
+		response.Error(c, 400, "验证码不能包含空格")
+		return
+	}
 	input.Phone = strings.TrimSpace(input.Phone)
 	input.Code = strings.TrimSpace(input.Code)
 	input.RealName = strings.TrimSpace(input.RealName)
@@ -1301,6 +1309,14 @@ func MerchantApplyDetailForResubmit(c *gin.Context) {
 	var authInput resubmitDetailRequestInput
 	if err := c.ShouldBindJSON(&authInput); err != nil {
 		response.Error(c, 400, "参数错误: "+err.Error())
+		return
+	}
+	if service.ContainsWhitespace(authInput.Phone) {
+		response.Error(c, 400, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(authInput.Code) {
+		response.Error(c, 400, "验证码不能包含空格")
 		return
 	}
 	authInput.Phone = strings.TrimSpace(authInput.Phone)

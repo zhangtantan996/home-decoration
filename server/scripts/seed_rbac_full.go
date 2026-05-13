@@ -415,21 +415,29 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"quote_erp_root", "project_quote_library", "project_quote_templates", "project_quote_lists", "project_quote_price_books", "project_quote_compare",
 		"orders_root", "order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_assign",
+		"bookings_root", "bookings_list", "booking_view", "booking_edit",
+		"cases_root", "cases_manage",
+		"logs_root", "logs_list", "log_view", "audit_logs",
 		"reviews_root", "reviews_list", "review_view",
 	}, "产品管理", menus)
 
 	assignPermissionsByKeys(roles["operations"].ID, []string{
 		"dashboard",
 		"users_root", "users_list", "user_view",
-		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
+		"providers_root", "provider_designers", "provider_designer_view", "provider_designer_create", "provider_designer_edit",
+		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit",
+		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit",
 		"provider_audit", "provider_audit_view", "provider_audit_approve", "provider_audit_reject",
-		"materials_root", "materials_audit", "material_audit_view", "material_audit_approve", "material_audit_reject",
+		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit",
+		"materials_audit", "material_audit_view", "material_audit_approve", "material_audit_reject",
 		"orders_root",
 		"order_center", "order_center_view", "proposal_review",
 		"demands_root", "demands_list", "demand_review", "demand_assign",
 		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail", "booking_dispute_resolve",
 		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications", "supervisors_assignments",
 		"supervisors_edit", "supervisors_assignment_manage",
+		"cases_root", "cases_manage",
+		"logs_root", "logs_list", "log_view", "audit_logs",
 		"reviews_root", "reviews_list", "review_view", "review_delete", "review_hide",
 	}, "运营管理", menus)
 
@@ -489,7 +497,18 @@ func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*mo
 		"supervision_root", "supervision_projects", "supervision_workspace_edit", "supervision_risk_create",
 	}, "监理专员", menus)
 
-	fmt.Println("   ✓ 三员分立保留角色: 默认不自动分配菜单，需按制度单独授权")
+	assignPermissionsByKeys(roles["system_admin"].ID, []string{
+		"dashboard",
+		"providers_root", "provider_designers", "provider_designer_view", "provider_designer_create", "provider_designer_edit",
+		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit",
+		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit",
+		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit",
+		"bookings_root", "bookings_list", "booking_view", "booking_edit",
+		"cases_root", "cases_manage",
+		"logs_root", "logs_list", "log_view", "audit_logs",
+	}, "系统管理员 Ops 工作台", menus)
+
+	fmt.Println("   ✓ 三员分立保留角色: 安全管理员/安全审计员默认不自动分配菜单，需按制度单独授权")
 }
 
 func assignAllMenusToSuperAdmin(roleID uint64) {

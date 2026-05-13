@@ -1,6 +1,7 @@
 package service
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -104,5 +105,52 @@ func TestCleanupExpiredAuditLogs(t *testing.T) {
 	}
 	if remaining[0].ID != newLog.ID {
 		t.Fatalf("expected remaining log id=%d, got %d", newLog.ID, remaining[0].ID)
+	}
+}
+
+func TestCreateRecordMasksSensitiveAuditPayloads(t *testing.T) {
+	db := setupAuditLogServiceDB(t)
+	svc := &AuditLogService{}
+
+	err := svc.CreateBusinessRecord(&CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    9,
+		OperationType: "update_provider",
+		ResourceType:  "provider",
+		RequestBody:   `{"contactPhone":"18612345678","contactName":"李四","contactEmail":"ops@example.com","recentReauthProof":"reauth-token"}`,
+		BeforeState: map[string]interface{}{
+			"phone":         "13800138000",
+			"officeAddress": "西安市新城区长乐路 1 号",
+		},
+		AfterState: map[string]interface{}{
+			"profile": map[string]interface{}{
+				"idCardNo": "110101199001011234",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	var log model.AuditLog
+	if err := db.First(&log).Error; err != nil {
+		t.Fatalf("query audit log: %v", err)
+	}
+	combined := log.RequestBody + log.BeforeState + log.AfterState
+	for _, forbidden := range []string{
+		"18612345678",
+		"李四",
+		"ops@example.com",
+		"reauth-token",
+		"13800138000",
+		"西安市新城区长乐路",
+		"110101199001011234",
+	} {
+		if strings.Contains(combined, forbidden) {
+			t.Fatalf("expected sensitive value %q to be masked, got request=%s before=%s after=%s", forbidden, log.RequestBody, log.BeforeState, log.AfterState)
+		}
+	}
+	if !strings.Contains(log.RequestBody, `"contactPhone":"186****5678"`) {
+		t.Fatalf("expected request phone to be partially masked, got %s", log.RequestBody)
 	}
 }

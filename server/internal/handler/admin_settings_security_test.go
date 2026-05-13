@@ -174,6 +174,104 @@ func TestAdminSetProviderAvailabilityWritesAudit(t *testing.T) {
 	}
 }
 
+func TestAdminSetProviderAvailabilityRejectsEnableWhenNotPublicVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupSQLiteDB(t)
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		DisplayName:               "未认证服务商",
+		Status:                    merchantProviderStatusFrozen,
+		IsSettled:                 true,
+		Verified:                  false,
+		PlatformDisplayEnabled:    false,
+		MerchantDisplayEnabled:    true,
+		NeedsOnboardingCompletion: false,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).Where("id = ?", provider.ID).Updates(map[string]any{
+		"status":                   merchantProviderStatusFrozen,
+		"platform_display_enabled": false,
+	}).Error; err != nil {
+		t.Fatalf("force provider hidden: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/providers/1/availability", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	c.Set("adminId", uint64(9))
+
+	AdminSetProviderAvailability(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "服务商未实名通过") {
+		t.Fatalf("expected unverified message, got %s", w.Body.String())
+	}
+	var updated model.Provider
+	if err := db.First(&updated, provider.ID).Error; err != nil {
+		t.Fatalf("query provider: %v", err)
+	}
+	if updated.Status != merchantProviderStatusFrozen || updated.PlatformDisplayEnabled {
+		t.Fatalf("provider should stay hidden after blocked enable: status=%d display=%v", updated.Status, updated.PlatformDisplayEnabled)
+	}
+}
+
+func TestAdminUpdateProviderPlatformDisplayRejectsEnableWhenNotPublicVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupSQLiteDB(t)
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		DisplayName:               "未认证服务商",
+		Status:                    merchantProviderStatusActive,
+		IsSettled:                 true,
+		Verified:                  false,
+		PlatformDisplayEnabled:    false,
+		MerchantDisplayEnabled:    true,
+		NeedsOnboardingCompletion: false,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+	if err := db.Model(&model.Provider{}).Where("id = ?", provider.ID).Update("platform_display_enabled", false).Error; err != nil {
+		t.Fatalf("force provider hidden: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/providers/1/platform-display", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+	AdminUpdateProviderPlatformDisplay(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "服务商未实名通过") {
+		t.Fatalf("expected unverified message, got %s", w.Body.String())
+	}
+	var updated model.Provider
+	if err := db.First(&updated, provider.ID).Error; err != nil {
+		t.Fatalf("query provider: %v", err)
+	}
+	if updated.PlatformDisplayEnabled {
+		t.Fatalf("provider should stay hidden after blocked enable")
+	}
+}
+
 func TestAdminSetMaterialShopAvailabilityWritesAudit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupSQLiteDB(t)
@@ -222,5 +320,105 @@ func TestAdminSetMaterialShopAvailabilityWritesAudit(t *testing.T) {
 	}
 	if !strings.Contains(audit.BeforeState, `"platformDisplayEnabled":true`) || !strings.Contains(audit.AfterState, `"platformDisplayEnabled":false`) {
 		t.Fatalf("audit should include before/after display state: before=%s after=%s", audit.BeforeState, audit.AfterState)
+	}
+}
+
+func TestAdminSetMaterialShopAvailabilityRejectsEnableWhenNotPublicVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupSQLiteDB(t)
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	status := merchantProviderStatusFrozen
+	shop := model.MaterialShop{
+		Name:                   "未认证主材门店",
+		Status:                 &status,
+		IsSettled:              true,
+		IsVerified:             false,
+		PlatformDisplayEnabled: false,
+		MerchantDisplayEnabled: true,
+	}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatalf("seed material shop: %v", err)
+	}
+	if err := db.Exec(
+		"UPDATE material_shops SET status = ?, platform_display_enabled = ? WHERE id = ?",
+		merchantProviderStatusFrozen,
+		false,
+		shop.ID,
+	).Error; err != nil {
+		t.Fatalf("force material shop hidden: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/material-shops/1/availability", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+	c.Set("adminId", uint64(9))
+
+	AdminSetMaterialShopAvailability(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "主材商未完成认证") {
+		t.Fatalf("expected unverified message, got %s", w.Body.String())
+	}
+	var updated model.MaterialShop
+	if err := db.First(&updated, shop.ID).Error; err != nil {
+		t.Fatalf("query material shop: %v", err)
+	}
+	if materialShopStatusValue(updated.Status) != merchantProviderStatusFrozen || updated.PlatformDisplayEnabled {
+		t.Fatalf("material shop should stay hidden after blocked enable: status=%d display=%v", materialShopStatusValue(updated.Status), updated.PlatformDisplayEnabled)
+	}
+}
+
+func TestAdminUpdateMaterialShopPlatformDisplayRejectsEnableWhenNotPublicVisible(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupSQLiteDB(t)
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	status := merchantProviderStatusActive
+	shop := model.MaterialShop{
+		Name:                   "未认证主材门店",
+		Status:                 &status,
+		IsSettled:              true,
+		IsVerified:             false,
+		PlatformDisplayEnabled: false,
+		MerchantDisplayEnabled: true,
+	}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatalf("seed material shop: %v", err)
+	}
+	if err := db.Model(&model.MaterialShop{}).Where("id = ?", shop.ID).Update("platform_display_enabled", false).Error; err != nil {
+		t.Fatalf("force material shop hidden: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/v1/admin/material-shops/1/platform-display", strings.NewReader(`{"enabled":true}`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = req
+	c.Params = gin.Params{{Key: "id", Value: "1"}}
+
+	AdminUpdateMaterialShopPlatformDisplay(c)
+
+	if w.Code != http.StatusConflict {
+		t.Fatalf("expected 409, got %d body=%s", w.Code, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "主材商未完成认证") {
+		t.Fatalf("expected unverified message, got %s", w.Body.String())
+	}
+	var updated model.MaterialShop
+	if err := db.First(&updated, shop.ID).Error; err != nil {
+		t.Fatalf("query material shop: %v", err)
+	}
+	if updated.PlatformDisplayEnabled {
+		t.Fatalf("material shop should stay hidden after blocked enable")
 	}
 }

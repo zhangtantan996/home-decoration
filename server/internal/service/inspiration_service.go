@@ -424,6 +424,9 @@ func (s *InspirationService) GetCaseComments(caseID uint64, query *CommentQuery)
 	if query.PageSize <= 0 || query.PageSize > 100 {
 		query.PageSize = 20
 	}
+	if !(&ConfigService{}).IsMiniCommentsEnabled() {
+		return []CommentItem{}, 0, nil
+	}
 
 	db := repository.DB.Model(&model.CaseComment{}).
 		Where("case_id = ? AND status = ?", caseID, "approved")
@@ -469,6 +472,10 @@ func (s *InspirationService) GetCaseComments(caseID uint64, query *CommentQuery)
 }
 
 func (s *InspirationService) CreateCaseComment(req *CreateCommentRequest) (*CommentItem, error) {
+	if !(&ConfigService{}).IsMiniCommentsEnabled() {
+		return nil, fmt.Errorf("评论功能暂未开放")
+	}
+
 	status := "approved"
 	if sw, err := s.matchSensitiveWord(req.Content); err != nil {
 		return nil, err

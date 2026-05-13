@@ -287,6 +287,14 @@ func SubmitSupervisorOnboardingApplication(c *gin.Context) {
 		response.BadRequest(c, "请填写完整信息")
 		return
 	}
+	if service.ContainsWhitespace(req.Phone) {
+		response.BadRequest(c, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(req.Code) {
+		response.BadRequest(c, "验证码不能包含空格")
+		return
+	}
 
 	phone := strings.TrimSpace(req.Phone)
 	if !utils.ValidatePhone(phone) {

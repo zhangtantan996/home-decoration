@@ -305,38 +305,38 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				bookings.GET("/:id", handler.GetBooking)
 				bookings.GET("/:id/site-survey", handler.GetSiteSurvey)
 				bookings.GET("/:id/budget-confirm", handler.GetBudgetConfirmation)
-				bookings.POST("/:id/budget-confirm/accept", handler.AcceptBudgetConfirmation)
-				bookings.POST("/:id/budget-confirm/reject", handler.RejectBudgetConfirmation)
-				bookings.POST("/:id/pay-intent", handler.PayIntentFee)
-				bookings.POST("/:id/refund", handler.CreateBookingRefundApplication)
+				bookings.POST("/:id/budget-confirm/accept", middleware.RequireTransactionFlowEnabled(), handler.AcceptBudgetConfirmation)
+				bookings.POST("/:id/budget-confirm/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectBudgetConfirmation)
+				bookings.POST("/:id/pay-intent", middleware.RequireTransactionFlowEnabled(), handler.PayIntentFee)
+				bookings.POST("/:id/refund", middleware.RequireTransactionFlowEnabled(), handler.CreateBookingRefundApplication)
 				bookings.DELETE("/:id/cancel", handler.CancelBooking)
 				bookings.DELETE("/:id", handler.DeleteBooking)
-				bookings.POST("/:id/pay-survey-deposit", handler.PaySurveyDeposit)
-				bookings.POST("/:id/survey-deposit/refund", handler.RefundSurveyDeposit)
+				bookings.POST("/:id/pay-survey-deposit", middleware.RequireTransactionFlowEnabled(), handler.PaySurveyDeposit)
+				bookings.POST("/:id/survey-deposit/refund", middleware.RequireTransactionFlowEnabled(), handler.RefundSurveyDeposit)
 				bookings.GET("/:id/design-fee-quote", handler.GetDesignFeeQuoteForUser)
 				bookings.GET("/:id/design-deliverable", handler.GetBookingDesignDeliverable)
-				bookings.POST("/:id/select-crew", handler.SelectConstructionParty)
+				bookings.POST("/:id/select-crew", middleware.RequireTransactionFlowEnabled(), handler.SelectConstructionParty)
 			}
 
 			// 设计费报价
 			designQuotes := authorized.Group("/design-quotes")
 			{
-				designQuotes.POST("/:id/confirm", handler.ConfirmDesignFeeQuote)
-				designQuotes.POST("/:id/reject", handler.RejectDesignFeeQuote)
+				designQuotes.POST("/:id/confirm", middleware.RequireTransactionFlowEnabled(), handler.ConfirmDesignFeeQuote)
+				designQuotes.POST("/:id/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectDesignFeeQuote)
 			}
 
 			// 设计交付物
 			designDeliverables := authorized.Group("/design-deliverables")
 			{
-				designDeliverables.POST("/:id/accept", handler.AcceptDesignDeliverable)
-				designDeliverables.POST("/:id/reject", handler.RejectDesignDeliverable)
+				designDeliverables.POST("/:id/accept", middleware.RequireTransactionFlowEnabled(), handler.AcceptDesignDeliverable)
+				designDeliverables.POST("/:id/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectDesignDeliverable)
 			}
 
 			// 售后
 			afterSales := authorized.Group("/after-sales")
 			{
 				afterSales.GET("", handler.GetAfterSalesList)
-				afterSales.POST("", handler.CreateAfterSales)
+				afterSales.POST("", middleware.RequireTransactionFlowEnabled(), handler.CreateAfterSales)
 				afterSales.GET("/:id", handler.GetAfterSalesDetail)
 				afterSales.DELETE("/:id", handler.CancelAfterSales)
 			}
@@ -356,75 +356,75 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			{
 				orderCenter.GET("/entries", handler.ListOrderCenterEntries)
 				orderCenter.GET("/entries/:entryKey", handler.GetOrderCenterEntry)
-				orderCenter.POST("/entries/:entryKey/payments", handler.StartOrderCenterEntryPayment)
-				orderCenter.POST("/entries/:entryKey/cancel", handler.CancelOrderCenterEntry)
+				orderCenter.POST("/entries/:entryKey/payments", middleware.RequireTransactionFlowEnabled(), handler.StartOrderCenterEntryPayment)
+				orderCenter.POST("/entries/:entryKey/cancel", middleware.RequireTransactionFlowEnabled(), handler.CancelOrderCenterEntry)
 			}
 
 			// 项目
 			projects := authorized.Group("/projects")
 			{
-				projects.POST("", handler.CreateProject)
+				projects.POST("", middleware.RequireTransactionFlowEnabled(), handler.CreateProject)
 				projects.GET("", handler.ListProjects)
 				projects.GET("/:id", handler.GetProject)
-				projects.PUT("/:id", handler.UpdateProject)
+				projects.PUT("/:id", middleware.RequireTransactionFlowEnabled(), handler.UpdateProject)
 				projects.GET("/:id/logs", handler.GetProjectLogs)
-				projects.POST("/:id/logs", handler.CreateProjectLog)
-				projects.POST("/:id/construction/confirm", handler.ConfirmProjectConstruction)
-				projects.POST("/:id/construction/quote/confirm", handler.ConfirmProjectConstructionQuote)
-				projects.POST("/:id/start", handler.StartProject)
-				projects.POST("/:id/pause", handler.PauseProject)
-				projects.POST("/:id/resume", handler.ResumeProject)
+				projects.POST("/:id/logs", middleware.RequireTransactionFlowEnabled(), handler.CreateProjectLog)
+				projects.POST("/:id/construction/confirm", middleware.RequireTransactionFlowEnabled(), handler.ConfirmProjectConstruction)
+				projects.POST("/:id/construction/quote/confirm", middleware.RequireTransactionFlowEnabled(), handler.ConfirmProjectConstructionQuote)
+				projects.POST("/:id/start", middleware.RequireTransactionFlowEnabled(), handler.StartProject)
+				projects.POST("/:id/pause", middleware.RequireTransactionFlowEnabled(), handler.PauseProject)
+				projects.POST("/:id/resume", middleware.RequireTransactionFlowEnabled(), handler.ResumeProject)
 				projects.GET("/:id/closure", handler.GetProjectClosure)
 				projects.GET("/:id/change-orders", handler.ListProjectChangeOrders)
-				projects.POST("/:id/dispute", handler.SubmitProjectDispute)
+				projects.POST("/:id/dispute", middleware.RequireTransactionFlowEnabled(), handler.SubmitProjectDispute)
 				projects.GET("/:id/milestones", handler.GetMilestones)
-				projects.POST("/:id/milestones/:milestoneId/submit", handler.SubmitMilestone)
-				projects.POST("/:id/milestones/:milestoneId/approve", handler.AcceptMilestone)
-				projects.POST("/:id/milestones/:milestoneId/accept", handler.AcceptMilestone)
-				projects.POST("/:id/milestones/:milestoneId/reject", handler.RejectMilestone)
-				projects.POST("/:id/accept", handler.AcceptMilestone)
-				projects.POST("/:id/complete", handler.CompleteProject)
-				projects.POST("/:id/inspiration-draft", handler.CreateProjectInspirationDraft)
+				projects.POST("/:id/milestones/:milestoneId/submit", middleware.RequireTransactionFlowEnabled(), handler.SubmitMilestone)
+				projects.POST("/:id/milestones/:milestoneId/approve", middleware.RequireTransactionFlowEnabled(), handler.AcceptMilestone)
+				projects.POST("/:id/milestones/:milestoneId/accept", middleware.RequireTransactionFlowEnabled(), handler.AcceptMilestone)
+				projects.POST("/:id/milestones/:milestoneId/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectMilestone)
+				projects.POST("/:id/accept", middleware.RequireTransactionFlowEnabled(), handler.AcceptMilestone)
+				projects.POST("/:id/complete", middleware.RequireTransactionFlowEnabled(), handler.CompleteProject)
+				projects.POST("/:id/inspiration-draft", middleware.RequireTransactionFlowEnabled(), handler.CreateProjectInspirationDraft)
 				projects.GET("/:id/completion", handler.GetProjectCompletion)
-				projects.POST("/:id/completion/approve", handler.ApproveProjectCompletion)
-				projects.POST("/:id/completion/reject", handler.RejectProjectCompletion)
+				projects.POST("/:id/completion/approve", middleware.RequireTransactionFlowEnabled(), handler.ApproveProjectCompletion)
+				projects.POST("/:id/completion/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectProjectCompletion)
 
 				// 托管账户
 				projects.GET("/:id/escrow", handler.GetEscrowAccount)
-				projects.POST("/:id/deposit", handler.Deposit)
-				projects.POST("/:id/release", handler.ReleaseFunds)
+				projects.POST("/:id/deposit", middleware.RequireTransactionFlowEnabled(), handler.Deposit)
+				projects.POST("/:id/release", middleware.RequireTransactionFlowEnabled(), handler.ReleaseFunds)
 
 				// 节点付款系统
 				milestonePaymentHandler := handler.NewMilestonePaymentHandler()
-				projects.POST("/:id/milestone-payment-plan", milestonePaymentHandler.CreateMilestonePaymentPlan)
+				projects.POST("/:id/milestone-payment-plan", middleware.RequireTransactionFlowEnabled(), milestonePaymentHandler.CreateMilestonePaymentPlan)
 				projects.GET("/:id/milestone-payments", milestonePaymentHandler.GetMilestonePayments)
 
 				// 项目阶段
 				projects.GET("/:id/phases", handler.GetProjectPhases)
 
 				// 验收清单
-				projects.POST("/:id/inspections", handler.CreateInspectionChecklist)
+				projects.POST("/:id/inspections", middleware.RequireTransactionFlowEnabled(), handler.CreateInspectionChecklist)
 				projects.GET("/:id/inspections", handler.GetInspectionChecklist)
-				projects.PUT("/:id/inspections/:inspection_id", handler.UpdateInspectionChecklist)
-				projects.POST("/:id/accept-all-milestones", handler.AcceptAllMilestones)
+				projects.PUT("/:id/inspections/:inspection_id", middleware.RequireTransactionFlowEnabled(), handler.UpdateInspectionChecklist)
+				projects.POST("/:id/accept-all-milestones", middleware.RequireTransactionFlowEnabled(), handler.AcceptAllMilestones)
 				projects.GET("/inspection-template", handler.GetInspectionTemplate)
 
 				// 节点验收
 				milestones := authorized.Group("/milestones")
 				{
-					milestones.POST("/:id/submit-inspection", handler.SubmitInspection)         // 商家提交验收申请
-					milestones.POST("/:id/inspect", handler.InspectMilestone)                   // 用户验收节点
-					milestones.POST("/:id/request-rectification", handler.RequestRectification) // 用户要求整改
-					milestones.POST("/:id/resubmit-inspection", handler.ResubmitInspection)     // 商家重新提交
+					milestones.POST("/:id/submit-inspection", middleware.RequireTransactionFlowEnabled(), handler.SubmitInspection)         // 商家提交验收申请
+					milestones.POST("/:id/inspect", middleware.RequireTransactionFlowEnabled(), handler.InspectMilestone)                   // 用户验收节点
+					milestones.POST("/:id/request-rectification", middleware.RequireTransactionFlowEnabled(), handler.RequestRectification) // 用户要求整改
+					milestones.POST("/:id/resubmit-inspection", middleware.RequireTransactionFlowEnabled(), handler.ResubmitInspection)     // 商家重新提交
 
 					// 节点付款
-					milestones.POST("/:id/pay", milestonePaymentHandler.PayMilestone)
-					milestones.POST("/:id/release-payment", milestonePaymentHandler.ReleaseMilestonePayment)
+					milestones.POST("/:id/pay", middleware.RequireTransactionFlowEnabled(), milestonePaymentHandler.PayMilestone)
+					milestones.POST("/:id/release-payment", middleware.RequireTransactionFlowEnabled(), milestonePaymentHandler.ReleaseMilestonePayment)
 				}
 
 				// 项目账单
 				projects.GET("/:id/bill", handler.GetProjectBill)
-				projects.POST("/:id/bill", handler.GenerateBill)
+				projects.POST("/:id/bill", middleware.RequireTransactionFlowEnabled(), handler.GenerateBill)
 				projects.GET("/:id/files", handler.GetProjectFiles)
 				projects.GET("/:id/contract", handler.GetProjectContract)
 				projects.GET("/:id/design-deliverable", handler.GetDesignDeliverable)
@@ -433,8 +433,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 阶段管理
 			phases := authorized.Group("/phases")
 			{
-				phases.PUT("/:phaseId", handler.UpdatePhase)
-				phases.PUT("/:phaseId/tasks/:taskId", handler.UpdatePhaseTask)
+				phases.PUT("/:phaseId", middleware.RequireTransactionFlowEnabled(), handler.UpdatePhase)
+				phases.PUT("/:phaseId/tasks/:taskId", middleware.RequireTransactionFlowEnabled(), handler.UpdatePhaseTask)
 			}
 
 			// 用户方案管理 (用户查看/确认/拒绝设计师提交的方案)
@@ -444,32 +444,32 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				proposals.GET("/pending-count", handler.GetPendingCount)
 				proposals.GET("/booking/:bookingId/history", handler.GetProposalVersionHistory) // 获取版本历史
 				proposals.GET("/:id", handler.GetProposal)
-				proposals.POST("/:id/confirm", handler.ConfirmProposal)
-				proposals.POST("/:id/reject", handler.RejectProposal) // 支持拒绝原因
+				proposals.POST("/:id/confirm", middleware.RequireTransactionFlowEnabled(), handler.ConfirmProposal)
+				proposals.POST("/:id/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectProposal) // 支持拒绝原因
 			}
 
 			demands := authorized.Group("/demands")
 			{
-				demands.POST("", handler.CreateDemand)
+				demands.POST("", middleware.RequireTransactionFlowEnabled(), handler.CreateDemand)
 				demands.GET("", handler.ListDemands)
 				demands.GET("/:id", handler.GetDemand)
-				demands.PUT("/:id", handler.UpdateDemand)
-				demands.POST("/:id/submit", handler.SubmitDemand)
+				demands.PUT("/:id", middleware.RequireTransactionFlowEnabled(), handler.UpdateDemand)
+				demands.POST("/:id/submit", middleware.RequireTransactionFlowEnabled(), handler.SubmitDemand)
 			}
 
 			complaints := authorized.Group("/complaints")
 			{
-				complaints.POST("", handler.CreateComplaint)
+				complaints.POST("", middleware.RequireTransactionFlowEnabled(), handler.CreateComplaint)
 				complaints.GET("", handler.ListComplaints)
 				complaints.GET("/:id", handler.GetComplaint)
 			}
 
-			authorized.POST("/contracts/:id/confirm", handler.ConfirmContract)
+			authorized.POST("/contracts/:id/confirm", middleware.RequireTransactionFlowEnabled(), handler.ConfirmContract)
 			authorized.GET("/contracts/:id", handler.GetContract)
-			authorized.POST("/contracts/:id/sign", handler.SignContractByUser)
+			authorized.POST("/contracts/:id/sign", middleware.RequireTransactionFlowEnabled(), handler.SignContractByUser)
 			authorized.GET("/contracts/:id/status", handler.GetContractStatus)
 			authorized.GET("/contracts/:id/download", handler.DownloadContract)
-			authorized.POST("/contracts/:id/pay-deposit", handler.StartContractDepositPayment)
+			authorized.POST("/contracts/:id/pay-deposit", middleware.RequireTransactionFlowEnabled(), handler.StartContractDepositPayment)
 
 			quoteTasks := authorized.Group("/quote-tasks")
 			{
@@ -480,23 +480,23 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// Legacy quote-pk 历史兼容只读区：写入口保留路由但固定返回 retired 冲突，不再承接现行主链。
 			quotePK := authorized.Group("/quote-pk")
 			{
-				quotePK.POST("/tasks", handler.CreateQuoteTask)                   // 用户发起报价需求
-				quotePK.GET("/tasks/:id", handler.GetQuoteTask)                   // 获取报价任务详情
-				quotePK.GET("/tasks/:id/submissions", handler.GetQuoteComparison) // 获取报价对比表
-				quotePK.POST("/tasks/:id/select", handler.SelectQuote)            // 用户选择报价
+				quotePK.POST("/tasks", middleware.RequireTransactionFlowEnabled(), handler.CreateQuoteTask)        // 用户发起报价需求
+				quotePK.GET("/tasks/:id", handler.GetQuoteTask)                                                    // 获取报价任务详情
+				quotePK.GET("/tasks/:id/submissions", handler.GetQuoteComparison)                                  // 获取报价对比表
+				quotePK.POST("/tasks/:id/select", middleware.RequireTransactionFlowEnabled(), handler.SelectQuote) // 用户选择报价
 			}
 
 			quoteSubmissions := authorized.Group("/quote-submissions")
 			{
-				quoteSubmissions.POST("/:id/confirm", handler.UserConfirmQuoteSubmission)
-				quoteSubmissions.POST("/:id/reject", handler.UserRejectQuoteSubmission)
+				quoteSubmissions.POST("/:id/confirm", middleware.RequireTransactionFlowEnabled(), handler.UserConfirmQuoteSubmission)
+				quoteSubmissions.POST("/:id/reject", middleware.RequireTransactionFlowEnabled(), handler.UserRejectQuoteSubmission)
 				quoteSubmissions.GET("/:id/print", handler.UserPrintQuoteSubmission)
 			}
 
 			changeOrders := authorized.Group("/change-orders")
 			{
-				changeOrders.POST("/:id/confirm", handler.ConfirmChangeOrder)
-				changeOrders.POST("/:id/reject", handler.RejectChangeOrder)
+				changeOrders.POST("/:id/confirm", middleware.RequireTransactionFlowEnabled(), handler.ConfirmChangeOrder)
+				changeOrders.POST("/:id/reject", middleware.RequireTransactionFlowEnabled(), handler.RejectChangeOrder)
 			}
 
 			// 订单（用户端）
@@ -506,10 +506,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 				orders.GET("/pending-payments", handler.ListPendingPayments)
 				orders.GET("/:id/plans", handler.GetOrderPaymentPlans)
 				orders.GET("/:id", handler.GetOrder)
-				orders.POST("/:id/pay", handler.PayOrder)
-				orders.DELETE("/:id", handler.CancelOrder)
+				orders.POST("/:id/pay", middleware.RequireTransactionFlowEnabled(), handler.PayOrder)
+				orders.DELETE("/:id", middleware.RequireTransactionFlowEnabled(), handler.CancelOrder)
 				// 分期付款
-				orders.POST("/plans/:planId/pay", handler.PayPaymentPlan)
+				orders.POST("/plans/:planId/pay", middleware.RequireTransactionFlowEnabled(), handler.PayPaymentPlan)
 			}
 
 			// 服务商通用 (关注/收藏)
@@ -697,7 +697,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.PUT("/providers/:id", providerEditPerm, handler.AdminUpdateProvider)
 			admin.PATCH("/providers/:id/verify", providerEditPerm, handler.AdminVerifyProvider)
 			admin.PATCH("/providers/:id/status", providerEditPerm, handler.AdminUpdateProviderStatus)
-			admin.PATCH("/providers/:id/platform-display", providerEditPerm, handler.AdminUpdateProviderPlatformDisplay)
+			admin.PATCH("/providers/:id/platform-display", providerEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateProviderPlatformDisplay)
 			admin.PATCH("/providers/:id/availability", providerEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminSetProviderAvailability)
 			admin.POST("/providers/:id/claim-account", providerEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminClaimProviderAccount)
 			admin.POST("/providers/:id/complete-settlement", providerEditPerm, handler.AdminCompleteProviderSettlement)
@@ -719,9 +719,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/material-shops", materialShopCreatePerm, handler.AdminCreateMaterialShop)
 			admin.PUT("/material-shops/:id", materialShopEditPerm, handler.AdminUpdateMaterialShop)
 			admin.DELETE("/material-shops/:id", materialShopDeletePerm, handler.AdminDeleteMaterialShop)
+			admin.GET("/material-shops/:id/products", materialShopListPerm, handler.AdminListMaterialShopProducts)
+			admin.POST("/material-shops/:id/products", materialShopEditPerm, handler.AdminCreateMaterialShopProduct)
+			admin.PUT("/material-shops/:id/products/:productId", materialShopEditPerm, handler.AdminUpdateMaterialShopProduct)
+			admin.DELETE("/material-shops/:id/products/:productId", materialShopEditPerm, handler.AdminDeleteMaterialShopProduct)
 			admin.PATCH("/material-shops/:id/verify", materialShopEditPerm, handler.AdminVerifyMaterialShop)
 			admin.PATCH("/material-shops/:id/status", materialShopEditPerm, handler.AdminUpdateMaterialShopStatus)
-			admin.PATCH("/material-shops/:id/platform-display", materialShopEditPerm, handler.AdminUpdateMaterialShopPlatformDisplay)
+			admin.PATCH("/material-shops/:id/platform-display", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateMaterialShopPlatformDisplay)
 			admin.PATCH("/material-shops/:id/availability", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminSetMaterialShopAvailability)
 			admin.POST("/material-shops/:id/complete-account", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCompleteMaterialShopAccount)
 
@@ -1013,34 +1017,37 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 		// ==================== Merchant 商家端 ====================
 		// 商家入驻 (无需认证)
-		v1.POST("/merchant/apply", handler.MerchantApply)
-		v1.GET("/merchant/apply/:phone/status", handler.MerchantApplyStatus)
-		v1.POST("/merchant/apply/:id/detail-for-resubmit", handler.MerchantApplyDetailForResubmit)
-		v1.POST("/merchant/apply/:id/resubmit", handler.MerchantResubmit)
-		v1.POST("/merchant/change-application", handler.MerchantApplyIdentityChange)
-		v1.POST("/merchant/upload-public", handler.MerchantUploadImage)
-		v1.POST("/merchant/onboarding/validate-license", handler.MerchantValidateOnboardingLicense)
-		v1.POST("/merchant/onboarding/validate-id-card", handler.MerchantValidateOnboardingIDCard)
-		v1.POST("/merchant/onboarding/verify-phone", handler.MerchantVerifyOnboardingPhone)
-		v1.POST("/material-shop/apply", handler.MaterialShopApply)
-		v1.GET("/material-shop/apply/:phone/status", handler.MaterialShopApplyStatus)
-		v1.POST("/material-shop/apply/:id/detail-for-resubmit", handler.MaterialShopApplyDetailForResubmit)
-		v1.POST("/material-shop/apply/:id/resubmit", handler.MaterialShopApplyResubmit)
+		v1.POST("/merchant/apply", middleware.RequireMerchantPortalEnabled(), handler.MerchantApply)
+		v1.GET("/merchant/apply/:phone/status", middleware.RequireMerchantPortalEnabled(), handler.MerchantApplyStatus)
+		v1.POST("/merchant/apply/:id/detail-for-resubmit", middleware.RequireMerchantPortalEnabled(), handler.MerchantApplyDetailForResubmit)
+		v1.POST("/merchant/apply/:id/resubmit", middleware.RequireMerchantPortalEnabled(), handler.MerchantResubmit)
+		v1.POST("/merchant/change-application", middleware.RequireMerchantPortalEnabled(), handler.MerchantApplyIdentityChange)
+		v1.POST("/merchant/upload-public", middleware.RequireMerchantPortalEnabled(), handler.MerchantUploadImage)
+		v1.POST("/merchant/onboarding/validate-license", middleware.RequireMerchantPortalEnabled(), handler.MerchantValidateOnboardingLicense)
+		v1.POST("/merchant/onboarding/validate-id-card", middleware.RequireMerchantPortalEnabled(), handler.MerchantValidateOnboardingIDCard)
+		v1.POST("/merchant/onboarding/verify-phone", middleware.RequireMerchantPortalEnabled(), handler.MerchantVerifyOnboardingPhone)
+		v1.POST("/material-shop/apply", middleware.RequireMerchantPortalEnabled(), handler.MaterialShopApply)
+		v1.GET("/material-shop/apply/:phone/status", middleware.RequireMerchantPortalEnabled(), handler.MaterialShopApplyStatus)
+		v1.POST("/material-shop/apply/:id/detail-for-resubmit", middleware.RequireMerchantPortalEnabled(), handler.MaterialShopApplyDetailForResubmit)
+		v1.POST("/material-shop/apply/:id/resubmit", middleware.RequireMerchantPortalEnabled(), handler.MaterialShopApplyResubmit)
 
 		// 商家登录 (无需认证)
-		v1.POST("/merchant/login/send-code", middleware.LoginRateLimit(), handler.MerchantSendLoginCode)
-		v1.POST("/merchant/login", middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
+		v1.POST("/merchant/login/send-code", middleware.RequireMerchantPortalEnabled(), middleware.LoginRateLimit(), handler.MerchantSendLoginCode)
+		v1.POST("/merchant/login", middleware.RequireMerchantPortalEnabled(), middleware.LoginRateLimit(), handler.MerchantLogin(cfg))
 
 		// 商家端路由（使用 MerchantJWT 中间件验证 token 类型）
 		merchant := v1.Group("/merchant")
 		merchant.Use(middleware.MerchantJWT(cfg.JWT.Secret))
+		merchant.Use(middleware.RequireMerchantPortalEnabled())
 		{
+			transactionGate := middleware.RequireTransactionFlowEnabled()
+
 			// Tinode helper endpoints
 			merchant.GET("/tinode/userid/:userId", handler.GetTinodeUserID)
 
 			// 合同管理
-			merchant.POST("/contracts", handler.MerchantRequireCompletedOnboarding(), handler.CreateContract)
-			merchant.POST("/contracts/:id/sign", handler.SignContractByProvider)
+			merchant.POST("/contracts", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.CreateContract)
+			merchant.POST("/contracts/:id/sign", transactionGate, handler.SignContractByProvider)
 
 			// 获取当前商家信息
 			merchant.GET("/info", handler.MerchantGetInfo)
@@ -1059,43 +1066,43 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/bookings", handler.MerchantListBookings)
 			merchant.GET("/bookings/:id", handler.MerchantGetBookingDetail)
 			merchant.GET("/bookings/:id/flow-summary", handler.MerchantGetBookingFlowSummary)
-			merchant.PUT("/bookings/:id/handle", handler.MerchantRequireCompletedOnboarding(), handler.MerchantHandleBooking)
+			merchant.PUT("/bookings/:id/handle", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantHandleBooking)
 			merchant.GET("/bookings/:id/site-survey", handler.MerchantGetSiteSurvey)
-			merchant.POST("/bookings/:id/site-survey", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitSiteSurvey)
+			merchant.POST("/bookings/:id/site-survey", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitSiteSurvey)
 			merchant.GET("/bookings/:id/budget-confirm", handler.MerchantGetBudgetConfirmation)
-			merchant.POST("/bookings/:id/budget-confirm", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitBudgetConfirmation)
-			merchant.POST("/bookings/:id/confirm-crew", handler.ConfirmConstructionParty)
+			merchant.POST("/bookings/:id/budget-confirm", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitBudgetConfirmation)
+			merchant.POST("/bookings/:id/confirm-crew", transactionGate, handler.ConfirmConstructionParty)
 			merchant.GET("/quote-lists", handler.MerchantListQuoteLists)
 			merchant.GET("/quote-lists/:id", handler.MerchantGetQuoteListDetail)
-			merchant.PUT("/quote-lists/:id/submission", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSaveQuoteSubmission)
-			merchant.POST("/quote-lists/:id/submission/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuoteSubmission)
+			merchant.PUT("/quote-lists/:id/submission", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSaveQuoteSubmission)
+			merchant.POST("/quote-lists/:id/submission/submit", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuoteSubmission)
 			merchant.GET("/quote-tasks", handler.MerchantListQuoteTasks)
 			merchant.GET("/quote-tasks/:id", handler.MerchantGetQuoteTask)
 			merchant.GET("/quote-tasks/:id/preparation", handler.MerchantGetQuoteTaskPreparation)
-			merchant.PUT("/quote-tasks/:id/prerequisites", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateQuoteTaskPrerequisites)
-			merchant.PUT("/quote-tasks/:id/quantity-items", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateQuoteTaskQuantityItems)
-			merchant.POST("/quote-tasks/:id/recommend-foremen", handler.MerchantRecommendForemen)
-			merchant.POST("/quote-tasks/:id/select-foremen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
+			merchant.PUT("/quote-tasks/:id/prerequisites", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateQuoteTaskPrerequisites)
+			merchant.PUT("/quote-tasks/:id/quantity-items", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateQuoteTaskQuantityItems)
+			merchant.POST("/quote-tasks/:id/recommend-foremen", transactionGate, handler.MerchantRecommendForemen)
+			merchant.POST("/quote-tasks/:id/select-foremen", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSelectForemen)
 
 			// Legacy quote-pk 历史兼容区：保留商家历史深链和补交流程，不再作为现行主链扩展入口。
-			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                         // 商家获取报价任务列表
-			merchant.POST("/quote-pk/tasks/:id/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
-			merchant.POST("/bookings/:id/working-docs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)
+			merchant.GET("/quote-pk/tasks", handler.MerchantGetQuoteTasks)                                                                          // 商家获取报价任务列表
+			merchant.POST("/quote-pk/tasks/:id/submit", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitQuote) // 商家提交报价
+			merchant.POST("/bookings/:id/working-docs", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantUploadWorkingDoc)
 			merchant.GET("/bookings/:id/working-docs", handler.MerchantListWorkingDocs)
-			merchant.POST("/bookings/:id/design-fee-quote", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateDesignFeeQuote)
+			merchant.POST("/bookings/:id/design-fee-quote", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateDesignFeeQuote)
 			merchant.GET("/bookings/:id/design-fee-quote", handler.MerchantGetDesignFeeQuote)
-			merchant.POST("/bookings/:id/deliverable", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitDeliverable)
-			merchant.POST("/bookings/:id/construction-prep/start", handler.MerchantRequireCompletedOnboarding(), handler.MerchantStartConstructionPreparation)
+			merchant.POST("/bookings/:id/deliverable", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitDeliverable)
+			merchant.POST("/bookings/:id/construction-prep/start", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantStartConstructionPreparation)
 
 			// 方案管理
-			merchant.POST("/proposals", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProposal)
+			merchant.POST("/proposals", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProposal)
 			merchant.GET("/proposals", handler.MerchantListProposals)
 			merchant.GET("/proposals/:id", handler.MerchantGetProposal)
-			merchant.PUT("/proposals/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateProposal)
-			merchant.DELETE("/proposals/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCancelProposal)
-			merchant.POST("/proposals/:id/reopen", handler.MerchantRequireCompletedOnboarding(), handler.MerchantReopenProposal)
-			merchant.POST("/proposals/resubmit", handler.MerchantRequireCompletedOnboarding(), handler.ResubmitProposal) // 重新提交方案（生成新版本）
-			merchant.GET("/proposals/:id/rejection-info", handler.GetRejectionInfo)                                      // 获取拒绝信息
+			merchant.PUT("/proposals/:id", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantUpdateProposal)
+			merchant.DELETE("/proposals/:id", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCancelProposal)
+			merchant.POST("/proposals/:id/reopen", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantReopenProposal)
+			merchant.POST("/proposals/resubmit", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.ResubmitProposal) // 重新提交方案（生成新版本）
+			merchant.GET("/proposals/:id/rejection-info", handler.GetRejectionInfo)                                                       // 获取拒绝信息
 
 			// 线索管理
 			merchant.GET("/leads", handler.MerchantListLeads)
@@ -1111,13 +1118,13 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/projects", handler.MerchantListProjects)
 			merchant.GET("/projects/:projectId", handler.MerchantGetProjectDetail)
 			merchant.GET("/projects/:projectId/change-orders", handler.MerchantListProjectChangeOrders)
-			merchant.POST("/projects/:projectId/change-orders", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectChangeOrder)
+			merchant.POST("/projects/:projectId/change-orders", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectChangeOrder)
 			merchant.GET("/projects/:projectId/dispute", handler.MerchantGetProjectDispute)
-			merchant.POST("/projects/:projectId/dispute/respond", handler.MerchantRequireCompletedOnboarding(), handler.MerchantRespondProjectDispute)
-			merchant.POST("/projects/:projectId/logs", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectLog)
-			merchant.POST("/projects/:projectId/start", handler.MerchantRequireCompletedOnboarding(), handler.MerchantStartProject)
-			merchant.POST("/projects/:projectId/milestones/:milestoneId/submit", handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProjectMilestone)
-			merchant.POST("/projects/:projectId/complete", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCompleteProject)
+			merchant.POST("/projects/:projectId/dispute/respond", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantRespondProjectDispute)
+			merchant.POST("/projects/:projectId/logs", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCreateProjectLog)
+			merchant.POST("/projects/:projectId/start", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantStartProject)
+			merchant.POST("/projects/:projectId/milestones/:milestoneId/submit", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantSubmitProjectMilestone)
+			merchant.POST("/projects/:projectId/complete", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCompleteProject)
 
 			// 仪表盘
 			merchant.GET("/dashboard", handler.MerchantDashboardStats)
@@ -1140,8 +1147,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			merchant.GET("/cases", handler.MerchantCaseList)
 			merchant.GET("/cases/:id", handler.MerchantCaseGet)
 			merchant.POST("/cases", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreate)
-			merchant.POST("/projects/:projectId/cases", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreateFromProject)
-			merchant.POST("/change-orders/:id/cancel", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCancelChangeOrder)
+			merchant.POST("/projects/:projectId/cases", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseCreateFromProject)
+			merchant.POST("/change-orders/:id/cancel", transactionGate, handler.MerchantRequireCompletedOnboarding(), handler.MerchantCancelChangeOrder)
 			merchant.PUT("/cases/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseUpdate)
 			merchant.DELETE("/cases/:id", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseDelete)
 			merchant.PUT("/cases/reorder", handler.MerchantRequireCompletedOnboarding(), handler.MerchantCaseReorder)
@@ -1160,6 +1167,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 		materialShop := v1.Group("/material-shop")
 		materialShop.Use(middleware.MerchantJWT(cfg.JWT.Secret))
+		materialShop.Use(middleware.RequireMerchantPortalEnabled())
 		{
 			materialShop.GET("/me", handler.MaterialShopGetMe)
 			materialShop.GET("/onboarding/completion", handler.MaterialShopGetOnboardingCompletion)
@@ -1176,20 +1184,21 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 	// ==================== Supervisor 监理端 ====================
 	// 监理登录 (无需认证)
-	v1.POST("/supervisor/login", middleware.LoginRateLimit(), handler.SupervisorLogin(cfg))
-	v1.POST("/supervisor/send-code", middleware.LoginRateLimit(), handler.SendCode)
-	v1.POST("/supervisor/token/refresh", handler.SupervisorRefreshToken)
+	v1.POST("/supervisor/login", middleware.RequireSupervisorPortalEnabled(), middleware.LoginRateLimit(), handler.SupervisorLogin(cfg))
+	v1.POST("/supervisor/send-code", middleware.RequireSupervisorPortalEnabled(), middleware.LoginRateLimit(), handler.SendCode)
+	v1.POST("/supervisor/token/refresh", middleware.RequireSupervisorPortalEnabled(), handler.SupervisorRefreshToken)
 
 	// ========== 监理入驻申请（公网，无需登录） ==========
-	v1.POST("/supervisor/onboarding/send-code", middleware.LoginRateLimit(), handler.SendSupervisorOnboardingCode)
-	v1.GET("/supervisor/onboarding/status", handler.GetSupervisorOnboardingStatus)
-	v1.GET("/supervisor/onboarding/check-eligibility", handler.CheckSupervisorOnboardingEligibility)
-	v1.POST("/supervisor/onboarding/upload", middleware.LoginRateLimit(), handler.SupervisorOnboardingUploadImage)
-	v1.POST("/supervisor/onboarding/submit", middleware.LoginRateLimit(), handler.SubmitSupervisorOnboardingApplication)
+	v1.POST("/supervisor/onboarding/send-code", middleware.RequireSupervisorPortalEnabled(), middleware.LoginRateLimit(), handler.SendSupervisorOnboardingCode)
+	v1.GET("/supervisor/onboarding/status", middleware.RequireSupervisorPortalEnabled(), handler.GetSupervisorOnboardingStatus)
+	v1.GET("/supervisor/onboarding/check-eligibility", middleware.RequireSupervisorPortalEnabled(), handler.CheckSupervisorOnboardingEligibility)
+	v1.POST("/supervisor/onboarding/upload", middleware.RequireSupervisorPortalEnabled(), middleware.LoginRateLimit(), handler.SupervisorOnboardingUploadImage)
+	v1.POST("/supervisor/onboarding/submit", middleware.RequireSupervisorPortalEnabled(), middleware.LoginRateLimit(), handler.SubmitSupervisorOnboardingApplication)
 
 	// 监理端路由（使用 SupervisorJWT 中间件验证 token 类型）
 	supervisor := v1.Group("/supervisor")
 	supervisor.Use(middleware.SupervisorJWT(cfg.JWT.Secret))
+	supervisor.Use(middleware.RequireSupervisorPortalEnabled())
 	{
 		// 会话治理
 		supervisor.POST("/logout", handler.SupervisorLogout)

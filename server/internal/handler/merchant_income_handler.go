@@ -429,6 +429,10 @@ func MerchantWithdrawCreate(c *gin.Context) {
 		response.Error(c, 400, "参数错误")
 		return
 	}
+	if service.ContainsWhitespace(input.VerificationCode) {
+		response.Error(c, 400, "验证码不能包含空格")
+		return
+	}
 
 	withdrawAmount := roundMoney(input.Amount)
 	if withdrawAmount <= 0 {
@@ -549,6 +553,10 @@ func MerchantBankAccountCreate(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.Error(c, 400, "参数错误")
+		return
+	}
+	if service.ContainsWhitespace(input.VerificationCode) {
+		response.Error(c, 400, "验证码不能包含空格")
 		return
 	}
 
