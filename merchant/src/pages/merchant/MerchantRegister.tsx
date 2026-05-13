@@ -540,6 +540,13 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                 margin-bottom: 16px;
                 border-radius: 8px;
             }
+            .merchant-auth-reset {
+                margin-top: -12px;
+                margin-bottom: 20px;
+            }
+            .merchant-auth-reset .ant-btn-link {
+                padding-inline: 0;
+            }
             .animate-fade-in {
                 animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             }
@@ -1883,8 +1890,8 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                             />
                         </Form.Item>
                         {phoneLocked && !(resubmitId && phoneFromUrl) ? (
-                            <div style={{ marginTop: -12, marginBottom: 20 }}>
-                                <Button type="link" onClick={resetPhoneVerificationStage} style={{ paddingInline: 0 }}>
+                            <div className="merchant-auth-reset">
+                                <Button type="link" onClick={resetPhoneVerificationStage}>
                                     修改手机号
                                 </Button>
                             </div>

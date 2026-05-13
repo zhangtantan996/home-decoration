@@ -265,7 +265,7 @@ const Login: React.FC = () => {
             ) : null}
 
             {otpRequired ? (
-              <Form.Item style={{ marginBottom: 12 }}>
+              <Form.Item className="hz-login__otp-reset">
                 <Button block onClick={handleResetOtpStage}>
                   返回修改账号和密码
                 </Button>

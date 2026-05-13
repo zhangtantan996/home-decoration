@@ -95,6 +95,13 @@ const MerchantLogin: React.FC = () => {
                 border-color: ${MERCHANT_THEME.primaryColor};
                 box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.1);
             }
+            .merchant-auth-reset {
+                margin-top: -16px;
+                margin-bottom: 24px;
+            }
+            .merchant-auth-reset .ant-btn-link {
+                padding-inline: 0;
+            }
             .welcome-fade-in {
                 animation: fadeInUp 0.8s ease-out;
             }
@@ -391,8 +398,8 @@ const MerchantLogin: React.FC = () => {
                         </Form.Item>
 
                         {phoneLocked ? (
-                            <Form.Item style={{ marginTop: -16, marginBottom: 24 }}>
-                                <Button type="link" onClick={handleResetPhoneStage} style={{ paddingInline: 0 }}>
+                            <Form.Item className="merchant-auth-reset">
+                                <Button type="link" onClick={handleResetPhoneStage}>
                                     修改手机号
                                 </Button>
                             </Form.Item>

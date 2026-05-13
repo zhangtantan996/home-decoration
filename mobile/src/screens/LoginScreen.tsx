@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from '../store/authStore';
 import { authApi } from '../services/api';
 import { useToast } from '../components/Toast';
+import { colors } from '../theme/tokens';
 
 const LoginScreen: React.FC = () => {
     const { showToast, showAgreementModal } = useToast();
@@ -581,7 +582,7 @@ const styles = StyleSheet.create({
         marginTop: 10,
         marginLeft: 4,
         fontSize: 12,
-        color: '#2563EB',
+        color: colors.info,
         fontWeight: '600',
     },
 });

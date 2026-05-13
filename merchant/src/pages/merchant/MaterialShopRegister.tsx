@@ -401,6 +401,13 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                 margin-bottom: 16px;
                 border-radius: 8px;
             }
+            .merchant-auth-reset {
+                margin-top: -12px;
+                margin-bottom: 20px;
+            }
+            .merchant-auth-reset .ant-btn-link {
+                padding-inline: 0;
+            }
         `;
         document.head.appendChild(style);
         return () => { document.head.removeChild(style); };
@@ -1261,8 +1268,8 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                         }} />
                                 </Form.Item>
                                 {phoneLocked && !(resubmitId && phoneFromUrl) ? (
-                                    <div style={{ marginTop: -12, marginBottom: 20 }}>
-                                        <Button type="link" onClick={resetPhoneVerificationStage} style={{ paddingInline: 0 }}>
+                                    <div className="merchant-auth-reset">
+                                        <Button type="link" onClick={resetPhoneVerificationStage}>
                                             修改手机号
                                         </Button>
                                     </div>
