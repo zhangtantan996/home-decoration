@@ -9,12 +9,14 @@ on:
     paths:
       - 'server/**'
       - 'admin/**'
+      - 'ops/**'
       - 'merchant/**'
       - 'web/**'
       - 'mini/**'
       - 'mobile/**'
       - 'package-lock.json'
       - 'admin/package-lock.json'
+      - 'ops/package-lock.json'
       - 'merchant/package-lock.json'
       - 'web/package-lock.json'
       - 'mini/package-lock.json'
@@ -62,7 +64,7 @@ jobs:
         run: |
           set +e
           python -m pip install --upgrade pip semgrep
-          semgrep --config auto server admin merchant web mini mobile \
+          semgrep --config auto server admin ops merchant web mini mobile \
             --json \
             --output security-reports/semgrep.json
           echo $? > security-reports/semgrep.exitcode
@@ -82,7 +84,7 @@ jobs:
       - name: Run npm audit (package-lock only)
         run: |
           set +e
-          apps=(admin merchant web mini mobile)
+          apps=(admin ops merchant web mini mobile)
           for app in "${apps[@]}"; do
             if [ -f "$app/package-lock.json" ]; then
               (
