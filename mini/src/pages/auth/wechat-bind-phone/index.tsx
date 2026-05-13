@@ -1,6 +1,6 @@
 import Taro, { useRouter } from '@tarojs/taro';
 import { View } from '@tarojs/components';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -17,8 +17,22 @@ export default function WechatBindPhonePage() {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const [phoneLocked, setPhoneLocked] = useState(false);
   const normalizePhone = (value: string) => value.replace(/\D/g, '').slice(0, 11);
   const normalizeCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
+
+  useEffect(() => {
+    if (countdown <= 0) {
+      return undefined;
+    }
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => (prev > 0 ? prev - 1 : 0));
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [countdown]);
 
   const phoneError = useMemo(() => {
     const v = phone.trim();
@@ -40,6 +54,8 @@ export default function WechatBindPhonePage() {
     setSending(true);
     try {
       const res = await sendLoginCode(phone.trim());
+      setPhoneLocked(true);
+      setCountdown(60);
       if (res.debugCode) {
         console.debug(`[DEV] 绑定手机号验证码: ${res.debugCode}`);
       }
@@ -49,6 +65,12 @@ export default function WechatBindPhonePage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleResetPhoneStage = () => {
+    setPhoneLocked(false);
+    setCode('');
+    setCountdown(0);
   };
 
   const handleBind = async () => {
@@ -85,9 +107,15 @@ export default function WechatBindPhonePage() {
           <Input
             label="手机号"
             value={phone}
-            onChange={(value) => setPhone(normalizePhone(value))}
+            onChange={(value) => {
+              if (phoneLocked) {
+                return;
+              }
+              setPhone(normalizePhone(value));
+            }}
             placeholder="请输入手机号"
             type="phone"
+            disabled={phoneLocked}
             error={phoneError}
           />
           <View className="mt-md" />
@@ -101,8 +129,8 @@ export default function WechatBindPhonePage() {
           <View className="mt-md" />
           <View className="flex gap-sm">
             <View className="flex-1">
-              <Button onClick={handleSendCode} variant="outline" disabled={sending}>
-                {sending ? '发送中' : '发送验证码'}
+              <Button onClick={handleSendCode} variant="outline" disabled={sending || countdown > 0}>
+                {countdown > 0 ? `${countdown}s` : sending ? '发送中' : '发送验证码'}
               </Button>
             </View>
             <View className="flex-1">
@@ -111,6 +139,13 @@ export default function WechatBindPhonePage() {
               </Button>
             </View>
           </View>
+          {phoneLocked ? (
+            <View className="mt-md">
+              <Button onClick={handleResetPhoneStage} variant="ghost">
+                修改手机号
+              </Button>
+            </View>
+          ) : null}
         </Card>
 
         <Card title="说明">

@@ -27,6 +27,7 @@ const stripSensitiveWhitespace = (value?: string) => (
 
 const LoginPage = () => {
   const { message } = App.useApp();
+  const [form] = Form.useForm<LoginForm>();
   const [loading, setLoading] = useState(false);
   const [otpRequired, setOtpRequired] = useState(false);
   const navigate = useNavigate();
@@ -70,6 +71,11 @@ const LoginPage = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBackToCredentials = () => {
+    setOtpRequired(false);
+    form.setFieldValue('otpCode', undefined);
   };
 
   return (
@@ -133,9 +139,16 @@ const LoginPage = () => {
             </div>
           </div>
 
-          <Form className="ops-login__form" layout="vertical" onFinish={handleFinish} autoComplete="off" requiredMark={false}>
+          <Form form={form} className="ops-login__form" layout="vertical" onFinish={handleFinish} autoComplete="off" requiredMark={false}>
             <Form.Item name="username" label="账号" normalize={stripSensitiveWhitespace} rules={[{ required: true, message: '请输入账号' }]}>
-              <Input size="large" prefix={<UserOutlined />} placeholder="请输入账号" autoComplete="username" />
+              <Input
+                size="large"
+                prefix={<UserOutlined />}
+                placeholder="请输入账号"
+                autoComplete="username"
+                disabled={otpRequired}
+                readOnly={otpRequired}
+              />
             </Form.Item>
             <Form.Item
               name="password"
@@ -147,7 +160,14 @@ const LoginPage = () => {
                 },
               ]}
             >
-              <Input.Password size="large" prefix={<LockOutlined />} placeholder="请输入密码" autoComplete="current-password" />
+              <Input.Password
+                size="large"
+                prefix={<LockOutlined />}
+                placeholder="请输入密码"
+                autoComplete="current-password"
+                disabled={otpRequired}
+                readOnly={otpRequired}
+              />
             </Form.Item>
             {otpRequired ? (
               <Form.Item
@@ -161,6 +181,11 @@ const LoginPage = () => {
               >
                 <Input size="large" prefix={<SafetyCertificateOutlined />} inputMode="numeric" maxLength={6} placeholder="请输入 6 位动态验证码" />
               </Form.Item>
+            ) : null}
+            {otpRequired ? (
+              <Button className="ops-login__secondary" onClick={handleBackToCredentials} block size="large">
+                返回修改账号和密码
+              </Button>
             ) : null}
             <Button className="ops-login__submit" type="primary" htmlType="submit" block loading={loading} size="large">
               {otpRequired ? '验证并登录' : '登录工作台'}

@@ -24,6 +24,7 @@ const LoginScreen: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [countdown, setCountdown] = useState(0);
     const [errorMessage, setErrorMessage] = useState('');
+    const [phoneLocked, setPhoneLocked] = useState(false);
     const setAuth = useAuthStore((state) => state.setAuth);
 
     // 只允许输入数字的过滤函数
@@ -68,10 +69,20 @@ const LoginScreen: React.FC = () => {
 
     // 处理手机号输入变化
     const handlePhoneChange = (text: string) => {
+        if (phoneLocked && loginMethod === 'code') {
+            return;
+        }
         // 移除所有非数字字符，保留纯数字
         const digits = text.replace(/\D/g, '');
         // 限制最多11位
         setPhone(digits.slice(0, 11));
+    };
+
+    const resetCodeStage = () => {
+        setPhoneLocked(false);
+        setCode('');
+        setCountdown(0);
+        setErrorMessage('');
     };
 
     useEffect(() => {
@@ -90,6 +101,7 @@ const LoginScreen: React.FC = () => {
         try {
             const res: any = await authApi.sendCode(phone, 'login');
             setCountdown(60);
+            setPhoneLocked(true);
             const debugCode = __DEV__ ? res?.data?.debugCode : undefined;
             const suffix = debugCode ? ` (测试码: ${debugCode})` : '';
             showToast({ message: `验证码已发送${suffix}`, type: 'success' });
@@ -215,6 +227,7 @@ const LoginScreen: React.FC = () => {
                                     placeholderTextColor="#ccc"
                                     keyboardType="phone-pad"
                                     maxLength={13}
+                                    editable={!(phoneLocked && loginMethod === 'code')}
                                     value={formatPhoneDisplay(phone)}
                                     onChangeText={handlePhoneChange}
                                     onFocus={() => {
@@ -238,7 +251,15 @@ const LoginScreen: React.FC = () => {
                                 <Text style={styles.inputLabel}>
                                     {loginMethod === 'code' ? '验证码' : '密码'}
                                 </Text>
-                                <TouchableOpacity onPress={() => setLoginMethod(loginMethod === 'code' ? 'password' : 'code')}>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const nextMethod = loginMethod === 'code' ? 'password' : 'code';
+                                        setLoginMethod(nextMethod);
+                                        if (nextMethod === 'password') {
+                                            resetCodeStage();
+                                        }
+                                    }}
+                                >
                                     <Text style={styles.passwordLoginText}>
                                         {loginMethod === 'code' ? '使用密码登录' : '使用验证码登录'}
                                     </Text>
@@ -302,6 +323,11 @@ const LoginScreen: React.FC = () => {
                             {/* 错误提示 - 内联显示在输入框下方 */}
                             {errorMessage ? (
                                 <Text style={styles.inlineErrorText}>{errorMessage}</Text>
+                            ) : null}
+                            {loginMethod === 'code' && phoneLocked ? (
+                                <TouchableOpacity onPress={resetCodeStage}>
+                                    <Text style={styles.secondaryActionText}>修改手机号</Text>
+                                </TouchableOpacity>
                             ) : null}
                         </View>
 
@@ -550,6 +576,13 @@ const styles = StyleSheet.create({
         color: '#FF4D4F',
         marginTop: 8,
         marginLeft: 4,
+    },
+    secondaryActionText: {
+        marginTop: 10,
+        marginLeft: 4,
+        fontSize: 12,
+        color: '#2563EB',
+        fontWeight: '600',
     },
 });
 

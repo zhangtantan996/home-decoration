@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import companyLogo from '../assets/company-logo.png';
@@ -74,6 +74,8 @@ export function LoginPage() {
   const [statusTone, setStatusTone] = useState<'success' | 'error'>('success');
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
+  const [phoneLocked, setPhoneLocked] = useState(false);
+  const countdownTimerRef = useRef<number | null>(null);
 
   const safeRedirect = useMemo(() => normalizeRedirectPath(searchParams.get('redirect')), [searchParams]);
   const phoneError = phone.length > 0 && !phonePattern.test(phone) ? '请输入 11 位手机号' : '';
@@ -82,11 +84,17 @@ export function LoginPage() {
   const canSubmit = phonePattern.test(phone) && codePattern.test(code) && agreed && !loggingIn;
 
   const startCountdown = () => {
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+    }
     setCountdown(60);
-    const timer = window.setInterval(() => {
+    countdownTimerRef.current = window.setInterval(() => {
       setCountdown((current) => {
         if (current <= 1) {
-          window.clearInterval(timer);
+          if (countdownTimerRef.current !== null) {
+            window.clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+          }
           return 0;
         }
         return current - 1;
@@ -94,7 +102,18 @@ export function LoginPage() {
     }, 1000);
   };
 
+  useEffect(() => (
+    () => {
+      if (countdownTimerRef.current !== null) {
+        window.clearInterval(countdownTimerRef.current);
+      }
+    }
+  ), []);
+
   const handlePhoneChange = (value: string) => {
+    if (phoneLocked) {
+      return;
+    }
     setPhone(value.replace(/\D/g, '').slice(0, 11));
     setStatusMessage('');
   };
@@ -120,6 +139,7 @@ export function LoginPage() {
       }
       setStatusTone('success');
       setStatusMessage(`验证码已发送至 ${phone.slice(0, 3)}****${phone.slice(-4)}`);
+      setPhoneLocked(true);
       startCountdown();
     } catch (error) {
       setStatusTone('error');
@@ -127,6 +147,17 @@ export function LoginPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleResetPhoneStage = () => {
+    if (countdownTimerRef.current !== null) {
+      window.clearInterval(countdownTimerRef.current);
+      countdownTimerRef.current = null;
+    }
+    setPhoneLocked(false);
+    setCode('');
+    setCountdown(0);
+    setStatusMessage('');
   };
 
   const handleLogin = async () => {
@@ -257,6 +288,7 @@ export function LoginPage() {
                   <span className={styles.inputIcon}><PhoneIcon /></span>
                   <input
                     autoComplete="tel"
+                    disabled={phoneLocked}
                     id="login-phone"
                     inputMode="tel"
                     maxLength={11}
@@ -293,6 +325,11 @@ export function LoginPage() {
                   </button>
                 </div>
                 {codeError && <p className={styles.fieldErrorMsg}>{codeError}</p>}
+                {phoneLocked ? (
+                  <button className={styles.secondaryBtn} onClick={handleResetPhoneStage} type="button">
+                    修改手机号
+                  </button>
+                ) : null}
               </div>
 
               {statusMessage && (
