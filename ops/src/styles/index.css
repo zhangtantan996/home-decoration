@@ -1055,6 +1055,23 @@ body {
   font-weight: 800;
 }
 
+.ops-login__secondary.ant-btn {
+  height: 48px;
+  margin-top: 2px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border-color: var(--ant-color-border);
+  background: var(--ant-color-bg-container);
+  color: var(--ant-color-text);
+  font-weight: 600;
+}
+
+.ops-login__secondary.ant-btn:hover,
+.ops-login__secondary.ant-btn:focus {
+  border-color: var(--ant-color-primary);
+  color: var(--ant-color-primary);
+}
+
 .ops-login__notice {
   display: flex;
   align-items: center;

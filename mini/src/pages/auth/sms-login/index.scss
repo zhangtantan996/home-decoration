@@ -136,6 +136,20 @@
     line-height: 1.45;
   }
 
+  &__field-meta {
+    display: flex;
+    justify-content: flex-start;
+    margin-top: 12rpx;
+    padding-left: 4rpx;
+  }
+
+  &__field-link {
+    color: $color-info;
+    font-size: 24rpx;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
   &__send-code {
     flex-shrink: 0;
     min-width: 182rpx;

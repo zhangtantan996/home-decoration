@@ -204,6 +204,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
+    const [phoneLocked, setPhoneLocked] = useState(false);
     const [showRedirectAlert, setShowRedirectAlert] = useState(!isCompletionMode && (searchParams.get('from') || '').startsWith('login_'));
     const [products, setProducts] = useState<MaterialProductForm[]>([createEmptyProduct()]);
     const [previewVisible, setPreviewVisible] = useState(false);
@@ -399,6 +400,13 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
             .merchant-inline-alert {
                 margin-bottom: 16px;
                 border-radius: 8px;
+            }
+            .merchant-auth-reset {
+                margin-top: -12px;
+                margin-bottom: 20px;
+            }
+            .merchant-auth-reset .ant-btn-link {
+                padding-inline: 0;
             }
         `;
         document.head.appendChild(style);
@@ -674,6 +682,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                 console.debug('验证码（仅开发环境）:', response.debugCode);
             }
             message.success('验证码已发送');
+            setPhoneLocked(true);
             setCountdown(60);
             if (timerRef.current !== null) {
                 window.clearInterval(timerRef.current);
@@ -799,6 +808,17 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
         setVerificationContext({ mode: currentVerificationMode, merchantKind: currentVerificationMerchantKind, applicationId: currentVerificationApplicationId });
         sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
     }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode]);
+
+    const resetPhoneVerificationStage = useCallback(() => {
+        if (timerRef.current !== null) {
+            window.clearInterval(timerRef.current);
+            timerRef.current = null;
+        }
+        setPhoneLocked(false);
+        setCountdown(0);
+        form.setFieldsValue({ code: '' });
+        clearPhoneVerification();
+    }, [clearPhoneVerification, form]);
 
     const persistPhoneVerification = useCallback((state: PhoneVerificationState) => {
         setPhoneVerified(state.phoneVerified);
@@ -1238,7 +1258,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                         { pattern: /^1[3-9]\d{9}$/, message: '请输入正确手机号' },
                                     ]}
                                 >
-                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} readOnly={Boolean(resubmitId && phoneFromUrl)} disabled={Boolean(resubmitId && phoneFromUrl)} data-testid="material-register-phone-input"
+                                    <Input className="premium-input" placeholder="请输入11位手机号" maxLength={11} readOnly={Boolean(resubmitId && phoneFromUrl) || phoneLocked} disabled={Boolean(resubmitId && phoneFromUrl) || phoneLocked} data-testid="material-register-phone-input"
                                         onChange={(event) => {
                                             const nextPhone = event.target.value.replace(/\D/g, '').slice(0, 11);
                                             form.setFieldsValue({ phone: nextPhone });
@@ -1247,6 +1267,13 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                             }
                                         }} />
                                 </Form.Item>
+                                {phoneLocked && !(resubmitId && phoneFromUrl) ? (
+                                    <div className="merchant-auth-reset">
+                                        <Button type="link" onClick={resetPhoneVerificationStage}>
+                                            修改手机号
+                                        </Button>
+                                    </div>
+                                ) : null}
 
                                 <Form.Item
                                     name="code"

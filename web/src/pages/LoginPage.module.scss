@@ -592,6 +592,22 @@
   cursor: not-allowed;
 }
 
+.secondaryBtn {
+  margin: 8px 0 0 4px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #2563eb;
+  font-size: 0.84rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.secondaryBtn:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
 .counting {
   background: transparent;
   color: #64748b;
@@ -876,4 +892,3 @@
     font-size: 0.95rem;
   }
 }
-

@@ -901,6 +901,10 @@ body {
   margin-top: 4px;
 }
 
+.hz-login__otp-reset {
+  margin-bottom: 12px;
+}
+
 .hz-login__footer {
   margin-top: 24px;
   text-align: center;

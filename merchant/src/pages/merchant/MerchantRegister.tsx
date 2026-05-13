@@ -360,6 +360,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
     const [loading, setLoading] = useState(false);
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
+    const [phoneLocked, setPhoneLocked] = useState(false);
     const [showRedirectAlert, setShowRedirectAlert] = useState(!isCompletionMode && fromLogin.startsWith('login_'));
     const [form] = Form.useForm();
     const [portfolioCases, setPortfolioCases] = useState<PortfolioCase[]>(
@@ -538,6 +539,13 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
             .merchant-inline-alert {
                 margin-bottom: 16px;
                 border-radius: 8px;
+            }
+            .merchant-auth-reset {
+                margin-top: -12px;
+                margin-bottom: 20px;
+            }
+            .merchant-auth-reset .ant-btn-link {
+                padding-inline: 0;
             }
             .animate-fade-in {
                 animation: fadeInUp 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
@@ -1071,6 +1079,17 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
         sessionStorage.removeItem(VERIFICATION_STORAGE_KEY);
     }, [currentVerificationApplicationId, currentVerificationMerchantKind, currentVerificationMode]);
 
+    const resetPhoneVerificationStage = useCallback(() => {
+        if (countdownTimerRef.current !== null) {
+            clearInterval(countdownTimerRef.current);
+            countdownTimerRef.current = null;
+        }
+        setPhoneLocked(false);
+        setCountdown(0);
+        form.setFieldsValue({ code: '' });
+        clearPhoneVerification();
+    }, [clearPhoneVerification, form]);
+
     const persistPhoneVerification = useCallback((state: PhoneVerificationState) => {
         setPhoneVerified(state.phoneVerified);
         setVerifiedPhone(state.verifiedPhone);
@@ -1534,6 +1553,7 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                 console.debug(`[DEV] 验证码: ${response.debugCode}`);
             }
             message.success('验证码已发送');
+            setPhoneLocked(true);
             setCountdown(60);
             countdownTimerRef.current = window.setInterval(() => {
                 setCountdown((prev) => {
@@ -1857,8 +1877,8 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                 maxLength={11}
                                 aria-label="手机号"
                                 aria-required="true"
-                                readOnly={Boolean(resubmitId && phoneFromUrl)}
-                                disabled={Boolean(resubmitId && phoneFromUrl)}
+                                readOnly={Boolean(resubmitId && phoneFromUrl) || phoneLocked}
+                                disabled={Boolean(resubmitId && phoneFromUrl) || phoneLocked}
                                 data-testid="merchant-register-phone-input"
                                 onChange={(event) => {
                                     const nextPhone = event.target.value.replace(/\D/g, '').slice(0, 11);
@@ -1869,6 +1889,13 @@ const MerchantRegister: React.FC<MerchantRegisterProps> = ({
                                 }}
                             />
                         </Form.Item>
+                        {phoneLocked && !(resubmitId && phoneFromUrl) ? (
+                            <div className="merchant-auth-reset">
+                                <Button type="link" onClick={resetPhoneVerificationStage}>
+                                    修改手机号
+                                </Button>
+                            </div>
+                        ) : null}
                         <Form.Item
                             name="code"
                             label="验证码"

@@ -143,6 +143,11 @@ const Login: React.FC = () => {
     }
   };
 
+  const handleResetOtpStage = () => {
+    setOtpRequired(false);
+    form.setFieldValue('otpCode', '');
+  };
+
   return (
     <div className="hz-login">
       <section className="hz-login__brand">
@@ -214,7 +219,13 @@ const Login: React.FC = () => {
                 { validator: (_, value) => (containsWhitespace(value) ? Promise.reject(new Error('用户名不能包含空格')) : Promise.resolve()) },
               ]}
             >
-              <Input prefix={<UserOutlined />} placeholder="请输入用户名" autoComplete="username" />
+              <Input
+                prefix={<UserOutlined />}
+                placeholder="请输入用户名"
+                autoComplete="username"
+                readOnly={otpRequired}
+                disabled={otpRequired}
+              />
             </Form.Item>
 
             <Form.Item
@@ -229,6 +240,8 @@ const Login: React.FC = () => {
                 prefix={<LockOutlined />}
                 placeholder="请输入密码"
                 autoComplete="current-password"
+                readOnly={otpRequired}
+                disabled={otpRequired}
               />
             </Form.Item>
 
@@ -248,6 +261,14 @@ const Login: React.FC = () => {
                   inputMode="numeric"
                   maxLength={6}
                 />
+              </Form.Item>
+            ) : null}
+
+            {otpRequired ? (
+              <Form.Item className="hz-login__otp-reset">
+                <Button block onClick={handleResetOtpStage}>
+                  返回修改账号和密码
+                </Button>
               </Form.Item>
             ) : null}
 

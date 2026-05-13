@@ -61,6 +61,7 @@ export default function SmsLoginPage() {
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(getAuthAgreementAccepted);
   const [agreementTouched, setAgreementTouched] = useState(false);
+  const [phoneLocked, setPhoneLocked] = useState(false);
 
   useDidShow(() => {
     setAgreed(getAuthAgreementAccepted());
@@ -88,6 +89,9 @@ export default function SmsLoginPage() {
   const canSubmitSms = PHONE_PATTERN.test(phone) && /^\d{4,6}$/.test(code.trim()) && !submitting;
 
   const handlePhoneChange = (value: string) => {
+    if (phoneLocked) {
+      return;
+    }
     setPhone(value.replace(/\D/g, '').slice(0, 11));
   };
 
@@ -128,6 +132,7 @@ export default function SmsLoginPage() {
       setSending(true);
       const result = await sendLoginCode(phone.trim());
       setCountdown(60);
+      setPhoneLocked(true);
       if (result.debugCode) {
         console.debug(`[DEV] 登录验证码: ${result.debugCode}`);
       }
@@ -137,6 +142,12 @@ export default function SmsLoginPage() {
     } finally {
       setSending(false);
     }
+  };
+
+  const handleResetPhoneStage = () => {
+    setPhoneLocked(false);
+    setCode('');
+    setCountdown(0);
   };
 
   const handleSubmit = async () => {
@@ -198,6 +209,7 @@ export default function SmsLoginPage() {
               <TaroInput
                 className="mini-sms-login__field-input"
                 type="number"
+                disabled={phoneLocked}
                 maxlength={11}
                 value={phone}
                 onInput={(event) => handlePhoneChange(event.detail.value)}
@@ -229,6 +241,13 @@ export default function SmsLoginPage() {
                 </Text>
               </View>
             </View>
+            {phoneLocked ? (
+              <View className="mini-sms-login__field-meta">
+                <Text className="mini-sms-login__field-link" onClick={handleResetPhoneStage}>
+                  修改手机号
+                </Text>
+              </View>
+            ) : null}
           </View>
 
           <Button
