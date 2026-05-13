@@ -277,7 +277,7 @@ bash deploy/scripts/rollback_prod.sh --tag v1.12.2 --service all
 3. 打生产 Tag
 4. push Tag
 5. 等 `Release Production` 完成
-6. 检查健康页、首页、`/admin/`、`/ops/`、`/app/`、`/merchant/`
+6. 检查健康页、首页、`/admin/`、`/ops/`，并确认 `/app/`、`/merchant/`、`/supervisor/` 为关闭态
 
 ## 9. 后续可选增强
 

@@ -75,7 +75,7 @@ export const isSupervisorPortalFrontendEnabled = (): boolean => {
     .trim()
     .toLowerCase();
   if (!value) {
-    return true;
+    return getAppEnv() === "local";
   }
   return ["1", "true", "yes", "on"].includes(value);
 };

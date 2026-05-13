@@ -47,10 +47,10 @@
   -> /tinode/*   -> tinode:6060
   -> /v0/*       -> tinode:6060
   -> /admin/*    -> Admin 前端
-  -> /ops/*      -> Ops 前端
-  -> /app*       -> 用户 Web 入口
-  -> /merchant*  -> 商家端入口
-  -> /supervisor* -> 监理端入口（受前后端 gate 控制）
+  -> /ops/*       -> Ops 前端
+  -> /app*        -> 用户端关闭态
+  -> /merchant*   -> 商家端关闭态
+  -> /supervisor* -> 监理端关闭态
   -> /           -> 官网静态页
 ```
 

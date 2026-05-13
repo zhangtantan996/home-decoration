@@ -35,16 +35,16 @@
 `hezeyunchuang.com` / `www.hezeyunchuang.com`：
 
 - `/` → 官网首页
-- `/app`、`/app/*` → 用户 Web SPA 路由
-- `/merchant`、`/merchant/*` → 商家端 SPA 路由
-- `/supervisor`、`/supervisor/*` → 监理端入口，是否可用由前后端 gate 控制
+- `/app`、`/app/*` → 用户端关闭态（仅保留法务页）
+- `/merchant`、`/merchant/*` → 商家端关闭态
+- `/supervisor`、`/supervisor/*` → 监理端关闭态
 - **不再承担**：`/api/`、`/uploads/`、`/tinode/`、`/v0/`
 
 标准结果：
 
 - `http://hezeyunchuang.com/` → `200`
-- `http://hezeyunchuang.com/merchant` → `200`
-- `http://hezeyunchuang.com/app` → `200`
+- `http://hezeyunchuang.com/merchant` → 关闭态
+- `http://hezeyunchuang.com/app` → 关闭态
 - `http://hezeyunchuang.com/api/v1/health` → `404`
 
 ### 2.2 后台域
@@ -141,9 +141,9 @@
 
 - `root /usr/share/nginx/html/web`
 - `/` → 官网
-- `/app`、`/app/*` → 用户 Web 静态资源
-- `/merchant`、`/merchant/*` → 商家端静态资源
-- `/supervisor`、`/supervisor/*` → 监理端入口由前端 gate 控制
+- `/app`、`/app/*` → 用户端关闭态（法务页白名单）
+- `/merchant`、`/merchant/*` → 商家端关闭态
+- `/supervisor`、`/supervisor/*` → 监理端关闭态
 
 当前仍保留：
 
@@ -252,8 +252,8 @@ VITE_API_URL=http://api.hezeyunchuang.com/api/v1
 ### 7.1 站点域
 
 - `http://hezeyunchuang.com/`
-- `http://hezeyunchuang.com/merchant` → 应为 `200`
-- `http://hezeyunchuang.com/app` → 应为 `200`
+- `http://hezeyunchuang.com/merchant` → 应为关闭态
+- `http://hezeyunchuang.com/app` → 应为关闭态
 - `http://hezeyunchuang.com/api/v1/health` → 应为 `404`
 
 ### 7.2 后台域
