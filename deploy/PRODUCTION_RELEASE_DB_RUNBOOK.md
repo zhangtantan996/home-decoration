@@ -185,8 +185,9 @@ bash deploy/scripts/deploy_prod.sh --tag <tag> --service all --skip-git --skip-b
    - `/`
    - `/admin/`
    - `/ops/`
-   - `/merchant/`
-   - `/app/`
+   - `/merchant/`（应为关闭态）
+   - `/app/`（应为关闭态）
+   - `/supervisor/`（应为关闭态）
    - 服务商详情 / 案例详情
    - 后台关键安全接口
 

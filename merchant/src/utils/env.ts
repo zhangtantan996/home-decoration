@@ -72,7 +72,7 @@ export const getLoginPath = (): string => buildAppPath('/login');
 export const isMerchantPortalFrontendEnabled = (): boolean => {
   const value = String(import.meta.env.VITE_MERCHANT_PORTAL_ENABLED || '').trim().toLowerCase();
   if (!value) {
-    return true;
+    return getAppEnv() === 'local';
   }
   return ['1', 'true', 'yes', 'on'].includes(value);
 };

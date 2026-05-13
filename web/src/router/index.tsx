@@ -53,22 +53,19 @@ import { OrdersPage } from '../pages/profile/OrdersPage';
 import { ProjectsPage } from '../pages/profile/ProjectsPage';
 import { ProposalsPage } from '../pages/profile/ProposalsPage';
 import { SettingsPage } from '../pages/profile/SettingsPage';
+import { UserWebUnavailablePage } from '../pages/UserWebUnavailablePage';
 import { ProtectedRoute } from './ProtectedRoute';
 import { PublicOnlyRoute } from './PublicOnlyRoute';
 import { ProviderRoleRedirectPage, RouteErrorPage, RouteNotFoundPage } from './RouteStatePages';
+import { getRouterBasename, isUserWebFrontendEnabled } from '../utils/env';
 
-const basename = (() => {
-  const raw = (import.meta.env.VITE_ROUTER_BASENAME || '/').trim();
-  if (!raw || raw === '/') {
-    return '/';
-  }
-  return `/${raw.replace(/^\/+|\/+$/g, '')}`;
-})();
+const basename = getRouterBasename();
+const userWebEnabled = isUserWebFrontendEnabled();
 
 const errorElement = <RouteErrorPage />;
 
 const router = createBrowserRouter(
-  [
+  userWebEnabled ? [
     {
       path: '/',
       element: <PublicAuthLayout />,
@@ -164,6 +161,20 @@ const router = createBrowserRouter(
         { path: 'projects/:id/completion', element: <ProjectCompletionPage /> },
         { path: 'projects/:projectId/design-deliverable', element: <DesignDeliverableReviewPage /> },
         { path: 'projects/:id/change-request', element: <ProjectChangeRequestPage /> },
+      ],
+    },
+  ] : [
+    {
+      path: '/',
+      element: <PublicAuthLayout />,
+      errorElement,
+      children: [
+        { index: true, element: <UserWebUnavailablePage /> },
+        { path: 'login', element: <UserWebUnavailablePage /> },
+        { path: 'legal/user-agreement', element: <UserAgreementPage /> },
+        { path: 'legal/privacy-policy', element: <PrivacyPolicyPage /> },
+        { path: 'legal/:slug', element: <LegalDocumentPage /> },
+        { path: '*', element: <UserWebUnavailablePage /> },
       ],
     },
   ],
