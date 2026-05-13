@@ -238,6 +238,7 @@ jobs:
       - name: Run smoke:test
         env:
           QUOTE_DB_URL: postgresql://postgres:postgres@127.0.0.1:5432/home_decoration?sslmode=disable
+          SMOKE_TEST_PROFILE: ops_only
         run: npm run smoke:test
 
       - name: Print API log on failure
