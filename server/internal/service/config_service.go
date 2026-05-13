@@ -113,6 +113,11 @@ func defaultConfigDefinitions() []configDefinition {
 		{model.ConfigKeyPaymentChannelWechatEnabled, "false", "是否启用微信支付", "boolean", configKindBool, true, false},
 		{model.ConfigKeyPaymentChannelAlipayEnabled, strconv.FormatBool(appconfig.GetConfig().Alipay.Enabled), "是否启用支付宝", "boolean", configKindBool, true, false},
 		{model.ConfigKeyMiniHomePopup, defaultMiniHomePopupConfigJSON(), "小程序首页运营弹窗配置", "json", configKindMiniHomePopup, true, false},
+		{model.ConfigKeyMerchantPortalEnabled, "false", "是否开放商家端登录、入驻与工作台", "boolean", configKindBool, true, false},
+		{model.ConfigKeySupervisorPortalEnabled, "false", "是否开放监理端登录、入驻与工作台", "boolean", configKindBool, true, false},
+		{model.ConfigKeyTransactionFlowEnabled, "false", "是否开放订单、支付、退款、投诉和履约主链路", "boolean", configKindBool, true, false},
+		{model.ConfigKeyMiniProgressEnabled, "false", "是否开放小程序项目进度入口", "boolean", configKindBool, true, false},
+		{model.ConfigKeyMiniCommentsEnabled, "false", "是否开放小程序灵感评论功能", "boolean", configKindBool, true, false},
 		{model.ConfigKeyOutboxWorkerEnabled, "true", "是否启用事件任务 worker", "boolean", configKindBool, true, false},
 		{model.ConfigKeyOutboxWorkerBatchSize, "20", "事件任务 worker 单批处理数量", "number", configKindPositiveInt, true, false},
 		{model.ConfigKeyOutboxWorkerPollIntervalSec, "5", "事件任务 worker 轮询间隔秒数", "number", configKindPositiveInt, true, false},
@@ -216,6 +221,38 @@ func (s *ConfigService) GetConfigBoolTx(tx *gorm.DB, key string) (bool, error) {
 		return false, err
 	}
 	return strconv.ParseBool(val)
+}
+
+func (s *ConfigService) GetConfigBoolWithDefault(key string, defaultValue bool) bool {
+	val, err := s.GetConfigBool(key)
+	if err != nil {
+		return defaultValue
+	}
+	return val
+}
+
+func featureGateDefaultClosed() bool {
+	return false
+}
+
+func (s *ConfigService) IsMerchantPortalEnabled() bool {
+	return s.GetConfigBoolWithDefault(model.ConfigKeyMerchantPortalEnabled, featureGateDefaultClosed())
+}
+
+func (s *ConfigService) IsSupervisorPortalEnabled() bool {
+	return s.GetConfigBoolWithDefault(model.ConfigKeySupervisorPortalEnabled, featureGateDefaultClosed())
+}
+
+func (s *ConfigService) IsTransactionFlowEnabled() bool {
+	return s.GetConfigBoolWithDefault(model.ConfigKeyTransactionFlowEnabled, featureGateDefaultClosed())
+}
+
+func (s *ConfigService) IsMiniProgressEnabled() bool {
+	return s.GetConfigBoolWithDefault(model.ConfigKeyMiniProgressEnabled, featureGateDefaultClosed())
+}
+
+func (s *ConfigService) IsMiniCommentsEnabled() bool {
+	return s.GetConfigBoolWithDefault(model.ConfigKeyMiniCommentsEnabled, false)
 }
 
 // GetConfigInt 获取整数配置

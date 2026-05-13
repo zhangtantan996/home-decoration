@@ -19,10 +19,11 @@ export interface ProviderQuery {
   lng?: number;
   radius?: number;
   keyword?: string;
-  sortBy?: 'rating' | 'distance' | 'price';
+  sortBy?: 'rating' | 'distance' | 'price' | 'experience';
   page?: number;
   pageSize?: number;
   subType?: string;
+  entityType?: 'personal' | 'company';
 }
 
 export type ProviderDetail = ProviderDetailDTO;

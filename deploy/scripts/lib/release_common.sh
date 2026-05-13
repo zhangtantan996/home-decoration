@@ -199,6 +199,9 @@ release_apply_known_migrations() {
     "server/migrations/v1.15.0_backfill_identity_data.sql"
     "server/migrations/v1.15.1_add_admin_phone_view_permission.sql"
     "server/migrations/v1.15.1_add_supervisor_runtime_schema.sql"
+    "server/migrations/v1.15.2_add_ops_light_booking_feature_gates.sql"
+    "server/migrations/v1.15.3_disable_mini_comments_feature_gate.sql"
+    "server/migrations/v1.15.4_grant_ops_workspace_role_permissions.sql"
   )
   local migration_file
   local latest_known_migration

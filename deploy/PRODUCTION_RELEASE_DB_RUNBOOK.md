@@ -184,8 +184,9 @@ bash deploy/scripts/deploy_prod.sh --tag <tag> --service all --skip-git --skip-b
    - `/api/v1/health`
    - `/`
    - `/admin/`
+   - `/ops/`
    - `/merchant/`
-   - `/app/login`
+   - `/app/`
    - 服务商详情 / 案例详情
    - 后台关键安全接口
 

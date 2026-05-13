@@ -33,6 +33,7 @@ const DeleteAccountScreen: React.FC<DeleteAccountScreenProps> = ({ navigation })
     const [code, setCode] = useState('');
     const [countdown, setCountdown] = useState(0);
     const timerRef = useRef<any>(null);
+    const normalizeCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
 
     const maskedPhone = user?.phone?.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2') || '未绑定手机';
 
@@ -153,7 +154,7 @@ const DeleteAccountScreen: React.FC<DeleteAccountScreenProps> = ({ navigation })
                                 keyboardType="number-pad"
                                 maxLength={6}
                                 value={code}
-                                onChangeText={setCode}
+                                onChangeText={(value) => setCode(normalizeCode(value))}
                             />
                         </View>
                         <TouchableOpacity

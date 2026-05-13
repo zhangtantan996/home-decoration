@@ -126,6 +126,10 @@ const LoginScreen: React.FC = () => {
                 return;
             }
         } else {
+            if (/\s/.test(password)) {
+                showError('密码不能包含空格');
+                return;
+            }
             if (password.length < 6) {
                 showError('请输入密码');
                 return;

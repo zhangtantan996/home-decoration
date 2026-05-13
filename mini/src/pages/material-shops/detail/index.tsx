@@ -265,11 +265,6 @@ const MaterialShopDetailPage: React.FC = () => {
               ) : null}
 
               <View className="material-detail-page__meta-row">
-                <View className="material-detail-page__rating">
-                  <Icon name="star" size={22} color="#111111" />
-                  <Text>{detail.rating.toFixed(1)}</Text>
-                </View>
-                <Text>{detail.reviewCount > 0 ? `${detail.reviewCount}条评价` : '暂无评价'}</Text>
                 <Text>{detail.distance || '附近'}</Text>
               </View>
 

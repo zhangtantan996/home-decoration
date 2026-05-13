@@ -125,7 +125,7 @@ func TestMerchantSendLoginCode_AllowsActiveProvider(t *testing.T) {
 	}
 }
 
-func TestMerchantSendLoginCode_TrimsPhoneBeforeLookupAndSending(t *testing.T) {
+func TestMerchantSendLoginCode_RejectsPhoneWithWhitespace(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	t.Setenv("APP_ENV", "local")
 	t.Setenv("SMS_FIXED_CODE_MODE", "1")
@@ -145,16 +145,19 @@ func TestMerchantSendLoginCode_TrimsPhoneBeforeLookupAndSending(t *testing.T) {
 	}
 
 	resp := requestMerchantSendLoginCode(t, " 13800004444 ")
-	if resp.Code != 0 {
+	if resp.Code != 400 {
 		t.Fatalf("unexpected code: got=%d message=%s", resp.Code, resp.Message)
 	}
-
-	var audit model.SMSAuditLog
-	if err := db.First(&audit).Error; err != nil {
-		t.Fatalf("load sms audit log: %v", err)
+	if !strings.Contains(resp.Message, "手机号不能包含空格") {
+		t.Fatalf("expected whitespace rejection message, got=%q", resp.Message)
 	}
-	if audit.Purpose != string(service.SMSPurposeMerchantLogin) || strings.TrimSpace(audit.RequestID) == "" {
-		t.Fatalf("expected merchant login SMS audit with request id, got %+v", audit)
+
+	var auditCount int64
+	if err := db.Model(&model.SMSAuditLog{}).Count(&auditCount).Error; err != nil {
+		t.Fatalf("count sms audit logs: %v", err)
+	}
+	if auditCount != 0 {
+		t.Fatalf("whitespace phone should not reach SMS sending, auditCount=%d", auditCount)
 	}
 }
 

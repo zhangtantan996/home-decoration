@@ -39,6 +39,14 @@ func SupervisorLogin(cfg *config.Config) gin.HandlerFunc {
 			response.BadRequest(c, "请输入手机号和验证码")
 			return
 		}
+		if service.ContainsWhitespace(input.Phone) {
+			response.BadRequest(c, "手机号不能包含空格")
+			return
+		}
+		if service.ContainsWhitespace(input.Code) {
+			response.BadRequest(c, "验证码不能包含空格")
+			return
+		}
 
 		phone := strings.TrimSpace(input.Phone)
 		if !utils.ValidatePhone(phone) {

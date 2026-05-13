@@ -8,7 +8,6 @@ import {
 import type {
   FavoriteItemDTO,
   InspirationAuthorDTO,
-  InspirationCommentDTO,
   InspirationDetailDTO,
   InspirationItemDTO,
 } from './dto';
@@ -21,11 +20,6 @@ export interface InspirationListQuery {
   layout?: string;
   priceMin?: number;
   priceMax?: number;
-}
-
-export interface InspirationCommentQuery {
-  page?: number;
-  pageSize?: number;
 }
 
 interface InspirationDetailRaw {
@@ -131,59 +125,6 @@ export const inspirationService = {
     request<{ message: string }>({
       url: `/inspiration/${id}/favorite`,
       method: 'DELETE',
-    }),
-
-  comments: (id: number, query: InspirationCommentQuery = {}) =>
-    request<PageData<InspirationCommentDTO>>({
-      url: `/inspiration/${id}/comments`,
-      data: query,
-    }),
-
-  createComment: (id: number, content: string) =>
-    request<InspirationCommentDTO>({
-      url: `/inspiration/${id}/comments`,
-      method: 'POST',
-      data: { content },
-      showLoading: true,
-    }),
-
-  // 删除评论（待后端实现）
-  deleteComment: (commentId: number) =>
-    request<{ message: string }>({
-      url: `/inspiration/comments/${commentId}`,
-      method: 'DELETE',
-      showLoading: true,
-    }),
-
-  // 举报评论（待后端实现）
-  reportComment: (commentId: number, reason: string) =>
-    request<{ message: string }>({
-      url: `/inspiration/comments/${commentId}/report`,
-      method: 'POST',
-      data: { reason },
-      showLoading: true,
-    }),
-
-  // 获取评论详情（待后端实现）
-  getCommentDetail: (commentId: number) =>
-    request<InspirationCommentDTO>({
-      url: `/inspiration/comments/${commentId}`,
-    }),
-
-  // 获取评论回复列表（待后端实现）
-  getCommentReplies: (commentId: number, query: InspirationCommentQuery = {}) =>
-    request<PageData<InspirationCommentDTO>>({
-      url: `/inspiration/comments/${commentId}/replies`,
-      data: query,
-    }),
-
-  // 回复评论（待后端实现）
-  replyComment: (commentId: number, data: { content: string; replyToUserId?: number }) =>
-    request<InspirationCommentDTO>({
-      url: `/inspiration/comments/${commentId}/replies`,
-      method: 'POST',
-      data,
-      showLoading: true,
     }),
 
   // 获取案例报价

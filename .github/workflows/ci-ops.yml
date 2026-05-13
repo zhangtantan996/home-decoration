@@ -1,0 +1,53 @@
+name: Ops CI
+
+on:
+  push:
+    branches: [ "dev" ]
+    paths:
+      - 'ops/**'
+      - 'shared/design-tokens/**'
+      - 'scripts/frontend-style-guard.mjs'
+      - 'scripts/frontend-style-baseline.json'
+      - 'stylelint.config.cjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci-ops.yml'
+  pull_request:
+    branches: [ "dev" ]
+    paths:
+      - 'ops/**'
+      - 'shared/design-tokens/**'
+      - 'scripts/frontend-style-guard.mjs'
+      - 'scripts/frontend-style-baseline.json'
+      - 'stylelint.config.cjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/ci-ops.yml'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+        cache-dependency-path: |
+          package-lock.json
+          ops/package-lock.json
+
+    - name: Install root dependencies
+      run: npm ci
+
+    - name: Install ops dependencies
+      working-directory: ops
+      run: npm ci --legacy-peer-deps
+
+    - name: Run verify:ops
+      run: npm run verify:ops
+      env:
+        VITE_API_URL: http://localhost:8080/api/v1

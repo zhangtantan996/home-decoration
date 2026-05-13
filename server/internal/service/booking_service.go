@@ -33,6 +33,10 @@ type CreateBookingRequest struct {
 
 // Create 创建预约
 func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*model.Booking, error) {
+	req.ProviderType = normalizeLightBookingProviderType(req.ProviderType)
+	if !isLightBookingProviderTypeAllowed(req.ProviderType) {
+		return nil, errors.New("当前仅支持预约设计师和装修公司")
+	}
 	// 输入校验
 	addressLen := len(strings.TrimSpace(req.Address))
 	if addressLen < 5 || addressLen > 100 {
@@ -52,11 +56,18 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	}
 	surveyDepositSource := "system_default"
 	var provider model.Provider
-	if err := repository.DB.First(&provider, req.ProviderID).Error; err == nil {
-		if provider.SurveyDepositPrice > 0 {
-			surveyDepositAmount = provider.SurveyDepositPrice
-			surveyDepositSource = "provider_override"
-		}
+	if err := repository.DB.First(&provider, req.ProviderID).Error; err != nil {
+		return nil, errors.New("服务商不存在")
+	}
+	if provider.ProviderType > 0 && normalizeLightBookingProviderTypeCode(provider.ProviderType) != req.ProviderType {
+		return nil, errors.New("预约对象类型不匹配")
+	}
+	if !isLightBookingProviderTypeAllowed(normalizeLightBookingProviderTypeCode(provider.ProviderType)) {
+		return nil, errors.New("当前仅支持预约设计师和装修公司")
+	}
+	if provider.SurveyDepositPrice > 0 {
+		surveyDepositAmount = provider.SurveyDepositPrice
+		surveyDepositSource = "provider_override"
 	}
 	surveyRefundNotice := configSvc.GetSurveyRefundNotice()
 
@@ -72,11 +83,11 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 		Phone:               req.Phone,
 		Notes:               req.Notes,
 		HouseLayout:         req.HouseLayout,
-		Status:                1,
-		IntentFee:             surveyDepositAmount, // 兼容镜像字段
-		IntentFeePaid:         false,               // 兼容镜像字段
-		SurveyDeposit:         surveyDepositAmount,
-		SurveyDepositPaid:     false,
+		Status:              1,
+		IntentFee:           surveyDepositAmount, // 兼容镜像字段
+		IntentFeePaid:       false,               // 兼容镜像字段
+		SurveyDeposit:       surveyDepositAmount,
+		SurveyDepositPaid:   false,
 		SurveyDepositSource: surveyDepositSource,
 		SurveyRefundNotice:  surveyRefundNotice,
 	}
@@ -104,6 +115,36 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	}
 
 	return booking, nil
+}
+
+func normalizeLightBookingProviderType(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "company", "2":
+		return "company"
+	case "designer", "1":
+		return "designer"
+	case "foreman", "worker", "3":
+		return "foreman"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func isLightBookingProviderTypeAllowed(providerType string) bool {
+	return providerType == "designer" || providerType == "company"
+}
+
+func normalizeLightBookingProviderTypeCode(value int8) string {
+	switch value {
+	case 1:
+		return "designer"
+	case 2:
+		return "company"
+	case 3:
+		return "foreman"
+	default:
+		return ""
+	}
 }
 
 // GetByID 根据ID获取预约详情

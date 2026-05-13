@@ -62,6 +62,14 @@ func ChangePassword(c *gin.Context) {
 		response.BadRequest(c, "新密码不能少于6位")
 		return
 	}
+	if req.OldPassword != "" && service.ContainsWhitespace(req.OldPassword) {
+		response.BadRequest(c, "密码不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(req.NewPassword) {
+		response.BadRequest(c, "密码不能包含空格")
+		return
+	}
 
 	if err := userSettingsService.ChangePassword(userID, req.OldPassword, req.NewPassword); err != nil {
 		response.BadRequest(c, err.Error())
@@ -87,6 +95,14 @@ func ChangePhone(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "请输入新手机号和验证码")
+		return
+	}
+	if service.ContainsWhitespace(req.NewPhone) {
+		response.BadRequest(c, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(req.Code) {
+		response.BadRequest(c, "验证码不能包含空格")
 		return
 	}
 
@@ -119,6 +135,10 @@ func DeleteAccount(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "请输入验证码")
+		return
+	}
+	if service.ContainsWhitespace(req.Code) {
+		response.BadRequest(c, "验证码不能包含空格")
 		return
 	}
 

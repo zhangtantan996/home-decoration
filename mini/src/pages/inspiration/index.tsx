@@ -37,7 +37,6 @@ interface InspirationCaseSyncPayload {
   isLiked?: boolean;
   likeCount?: number;
   isFavorited?: boolean;
-  commentCount?: number;
 }
 
 interface InspirationFilterState {
@@ -469,7 +468,6 @@ export default function Inspiration() {
         isLiked: syncPayload.isLiked ?? item.isLiked,
         likeCount: syncPayload.likeCount ?? item.likeCount,
         isFavorited: syncPayload.isFavorited ?? item.isFavorited,
-        commentCount: syncPayload.commentCount ?? item.commentCount,
       };
     }));
 

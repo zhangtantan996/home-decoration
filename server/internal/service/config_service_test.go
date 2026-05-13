@@ -147,6 +147,29 @@ func TestGetTencentIMConfigReadsSecretFromEnvOnly(t *testing.T) {
 	}
 }
 
+func TestFeatureGatesDefaultClosedWhenConfigMissing(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+	t.Setenv("APP_ENV", appconfig.AppEnvLocal)
+	svc.ClearCache()
+
+	if svc.IsMerchantPortalEnabled() {
+		t.Fatal("expected merchant portal to stay closed when config is missing")
+	}
+	if svc.IsSupervisorPortalEnabled() {
+		t.Fatal("expected supervisor portal to stay closed when config is missing")
+	}
+	if svc.IsTransactionFlowEnabled() {
+		t.Fatal("expected transaction flow to stay closed when config is missing")
+	}
+	if svc.IsMiniProgressEnabled() {
+		t.Fatal("expected mini progress to stay closed when config is missing")
+	}
+	if svc.IsMiniCommentsEnabled() {
+		t.Fatal("expected mini comments to stay closed when config is missing")
+	}
+}
+
 func setupConfigServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

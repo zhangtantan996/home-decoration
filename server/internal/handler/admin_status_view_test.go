@@ -531,6 +531,58 @@ func TestAdminCreateProviderPreservesDistrictServiceArea(t *testing.T) {
 	}
 }
 
+func TestAdminCreateProviderSavesVerifiedFlag(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Region{}); err != nil {
+		t.Fatalf("auto migrate regions: %v", err)
+	}
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	regions := []model.Region{
+		{Code: "610000", Name: "陕西省", Level: 1, Enabled: true},
+		{Code: "610100", Name: "西安市", Level: 2, ParentCode: "610000", Enabled: true, ServiceEnabled: true},
+	}
+	for _, region := range regions {
+		if err := db.Create(&region).Error; err != nil {
+			t.Fatalf("seed region %s: %v", region.Code, err)
+		}
+	}
+
+	body := map[string]any{
+		"providerType": 1,
+		"companyName":  "已认证设计师",
+		"status":       1,
+		"serviceArea":  []string{"610100"},
+		"verified":     true,
+	}
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/providers", bytes.NewReader(encoded))
+	c.Request.Header.Set("Content-Type", "application/json")
+	AdminCreateProvider(c)
+	resp := decodeResponse(t, w)
+	if resp.Code != 0 {
+		t.Fatalf("unexpected response: code=%d message=%s", resp.Code, resp.Message)
+	}
+
+	var provider model.Provider
+	if err := db.Where("company_name = ?", "已认证设计师").First(&provider).Error; err != nil {
+		t.Fatalf("query provider: %v", err)
+	}
+	if !provider.Verified {
+		t.Fatalf("expected provider verified flag to be saved")
+	}
+}
+
 func requestAdminUserList(t *testing.T, path string) responseEnvelope {
 	t.Helper()
 

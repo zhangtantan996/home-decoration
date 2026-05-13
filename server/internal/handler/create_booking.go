@@ -23,7 +23,7 @@ func CreateBooking(c *gin.Context) {
 	booking, err := bookingService.Create(userID, &req)
 	if err != nil {
 		log.Printf("[booking] create failed user_id=%d provider_id=%d provider_type=%s: %v", userID, req.ProviderID, req.ProviderType, err)
-		response.ServerError(c, "预约失败")
+		response.BadRequest(c, err.Error())
 		return
 	}
 

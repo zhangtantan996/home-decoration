@@ -71,6 +71,10 @@ func shouldAudit(path string) bool {
 		"/merchant/bank-accounts",      // 银行账户
 		"/merchant/apply",              // 入驻申请
 		"/admin/merchant-applications", // Admin审核
+		"/admin/providers",             // Ops商家信息维护
+		"/admin/material-shops",        // Ops主材商与商品维护
+		"/admin/cases",                 // Ops灵感内容维护
+		"/admin/bookings",              // Ops预约记录跟进
 		"/admin/finance/",              // P2 资金监控
 		"/admin/audits/",               // 审计仲裁
 		"/projects/",                   // 项目执行关键节点
@@ -93,26 +97,97 @@ func maskSensitiveFields(body string) string {
 	}
 
 	// 尝试解析JSON
-	var data map[string]interface{}
+	var data interface{}
 	if err := json.Unmarshal([]byte(body), &data); err != nil {
 		return body
 	}
 
-	// 需要脱敏的字段
-	sensitiveFields := []string{
-		"idCardNo", "accountNo", "password", "code",
+	maskedBody, err := json.Marshal(maskSensitiveValue(data, ""))
+	if err != nil {
+		return body
 	}
-
-	for _, field := range sensitiveFields {
-		if v, ok := data[field]; ok {
-			if str, isStr := v.(string); isStr && len(str) > 4 {
-				data[field] = str[:2] + "****" + str[len(str)-2:]
-			}
-		}
-	}
-
-	maskedBody, _ := json.Marshal(data)
 	return string(maskedBody)
+}
+
+func maskSensitiveValue(value interface{}, fieldName string) interface{} {
+	switch typed := value.(type) {
+	case map[string]interface{}:
+		for key, nested := range typed {
+			typed[key] = maskSensitiveValue(nested, key)
+		}
+		return typed
+	case []interface{}:
+		for index, nested := range typed {
+			typed[index] = maskSensitiveValue(nested, fieldName)
+		}
+		return typed
+	case string:
+		return maskSensitiveString(fieldName, typed)
+	default:
+		return value
+	}
+}
+
+func maskSensitiveString(fieldName, value string) string {
+	if value == "" {
+		return value
+	}
+	switch sensitiveFieldKind(fieldName) {
+	case "phone":
+		return maskPhone(value)
+	case "partial":
+		return maskPartial(value)
+	case "hidden":
+		return "******"
+	case "address":
+		return "已脱敏"
+	default:
+		return value
+	}
+}
+
+func sensitiveFieldKind(fieldName string) string {
+	key := normalizeAuditFieldName(fieldName)
+	switch key {
+	case "phone", "mobile", "tel", "telephone", "contactphone", "contactmobile", "legalpersonphone", "servicephone", "customerphone":
+		return "phone"
+	case "email", "contactemail", "legalpersonemail", "customeremail":
+		return "hidden"
+	case "realname", "contactname", "legalpersonname", "customername", "applicantname":
+		return "partial"
+	case "idcardno", "idcard", "idnumber", "idno", "identityno", "legalpersonidcardno", "legalpersonidno",
+		"accountno", "bankaccount", "bankcardno", "cardno", "licensecode", "licenseno", "businesslicenseno",
+		"unifiedsocialcreditcode", "creditcode", "taxno":
+		return "partial"
+	case "address", "detailaddress", "officeaddress", "contactaddress", "registeredaddress", "businessaddress", "storeaddress":
+		return "address"
+	case "password", "code", "smscode", "otpcode", "verificationcode", "token", "accesstoken", "refreshtoken",
+		"captchatoken", "recentreauthproof", "secret", "twofactorsecret", "apikey",
+		"idcardfront", "idcardback", "licenseimage", "businesslicenseimage", "certifications":
+		return "hidden"
+	default:
+		return ""
+	}
+}
+
+func normalizeAuditFieldName(fieldName string) string {
+	normalized := strings.ToLower(strings.TrimSpace(fieldName))
+	replacer := strings.NewReplacer("_", "", "-", "", ".", "", " ", "")
+	return replacer.Replace(normalized)
+}
+
+func maskPhone(value string) string {
+	if len(value) <= 7 {
+		return "******"
+	}
+	return value[:3] + "****" + value[len(value)-4:]
+}
+
+func maskPartial(value string) string {
+	if len(value) <= 4 {
+		return "******"
+	}
+	return value[:2] + "****" + value[len(value)-2:]
 }
 
 func buildAuditLogEntry(c *gin.Context, path, requestBody string, startTime time.Time) auditLogEntry {

@@ -19,6 +19,12 @@ interface AdminReauthModalProps {
   onConfirmed: (payload: ConfirmPayload) => Promise<void>;
 }
 
+const stripOTPWhitespace = (value?: string) =>
+  (typeof value === 'string' ? value.replace(/\s+/g, '') : value);
+
+const containsWhitespace = (value?: string) =>
+  typeof value === 'string' && /\s/.test(value);
+
 export const AdminReauthModal: React.FC<AdminReauthModalProps> = ({
   open,
   title,
@@ -46,7 +52,7 @@ export const AdminReauthModal: React.FC<AdminReauthModalProps> = ({
       const values = await form.validateFields();
       setSubmitting(true);
       const reauthRes = await adminSecurityApi.reauth({
-        otpCode: values.otpCode,
+        otpCode: stripOTPWhitespace(values.otpCode),
         password: values.password,
       }) as { code?: number; data?: { proof?: string } };
       const proof = reauthRes?.data?.proof;
@@ -102,6 +108,7 @@ export const AdminReauthModal: React.FC<AdminReauthModalProps> = ({
             <Form.Item
               label="动态验证码"
               name="otpCode"
+              normalize={stripOTPWhitespace}
               rules={[{ required: true, message: '请输入动态验证码' }, { len: 6, message: '动态验证码为 6 位数字' }]}
             >
               <Input inputMode="numeric" placeholder="请输入 6 位动态验证码" maxLength={6} />
@@ -110,7 +117,10 @@ export const AdminReauthModal: React.FC<AdminReauthModalProps> = ({
             <Form.Item
               label="当前密码"
               name="password"
-              rules={[{ required: true, message: '请输入当前密码' }]}
+              rules={[
+                { required: true, message: '请输入当前密码' },
+                { validator: (_, value) => (containsWhitespace(value) ? Promise.reject(new Error('密码不能包含空格')) : Promise.resolve()) },
+              ]}
             >
               <Input.Password placeholder="请输入当前密码" autoComplete="current-password" />
             </Form.Item>

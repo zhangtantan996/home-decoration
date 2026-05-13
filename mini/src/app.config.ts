@@ -11,7 +11,6 @@ export default {
     'pages/home/index',
     'pages/inspiration/index',
     'pages/inspiration/detail/index',
-    'pages/inspiration/comment-detail/index',
     'pages/inspiration/quote/index',
     'pages/progress/index',
     'pages/messages/index',
@@ -190,12 +189,6 @@ export default {
       root: 'pages/identity',
       pages: [
         'apply/index',
-      ],
-    },
-    {
-      root: 'pages/reviews',
-      pages: [
-        'index',
       ],
     },
     {

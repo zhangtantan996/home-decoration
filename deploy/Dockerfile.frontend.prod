@@ -1,5 +1,5 @@
 # ==========================================
-# Production Frontend (Admin + Merchant + Web) + Nginx Proxy
+# Production Frontend (Admin + Merchant + Ops + Web + Website) + Nginx Proxy
 # ==========================================
 FROM node:20-alpine AS admin-builder
 WORKDIR /app/admin
@@ -35,6 +35,25 @@ ENV VITE_API_URL=${VITE_API_URL}
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
+FROM node:20-alpine AS ops-builder
+WORKDIR /app/ops
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY ops/package*.json ./
+RUN npm install --legacy-peer-deps
+
+COPY ops/ ./
+
+ARG VITE_APP_ENV=production
+ARG VITE_API_URL=/api/v1
+ARG VITE_ROUTER_BASENAME=/ops
+ENV VITE_APP_ENV=${VITE_APP_ENV}
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_ROUTER_BASENAME=${VITE_ROUTER_BASENAME}
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+RUN npm run build
+
 FROM node:20-alpine AS website-builder
 WORKDIR /app/website
 
@@ -43,6 +62,7 @@ RUN npm config set registry https://registry.npmmirror.com
 COPY website/package*.json ./
 RUN npm ci
 
+COPY shared/ /app/shared/
 COPY website/ ./
 
 ARG VITE_USER_WEB_URL=/app/
@@ -82,6 +102,7 @@ COPY deploy/nginx/admin_allowlist.conf /etc/nginx/admin_allowlist.conf
 
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
 COPY --from=merchant-builder /app/merchant/dist /usr/share/nginx/html/merchant
+COPY --from=ops-builder /app/ops/dist /usr/share/nginx/html/ops
 COPY --from=website-builder /app/website/dist /usr/share/nginx/html/website
 COPY --from=web-builder /app/web/dist /usr/share/nginx/html/web
 

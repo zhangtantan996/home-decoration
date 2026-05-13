@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
 	"home-decoration-server/pkg/response"
 	"home-decoration-server/pkg/timeutil"
@@ -237,15 +238,24 @@ func AdminListAuditLogs(c *gin.Context) {
 		response.ServerError(c, "获取审计日志失败")
 		return
 	}
+	fullAccess := adminCanViewFullAuditPayload(c)
+	if !fullAccess {
+		list = redactAdminAuditLogDetails(list)
+	}
 	response.Success(c, gin.H{
-		"list":     list,
-		"total":    total,
-		"page":     page,
-		"pageSize": pageSize,
+		"list":       list,
+		"total":      total,
+		"page":       page,
+		"pageSize":   pageSize,
+		"fullAccess": fullAccess,
 	})
 }
 
 func AdminExportAuditLogs(c *gin.Context) {
+	if !adminCanViewFullAuditPayload(c) {
+		response.Forbidden(c, "仅高权限管理员可导出完整审计日志")
+		return
+	}
 	recordKind := strings.TrimSpace(c.DefaultQuery("recordKind", "business"))
 	payload, err := adminAuditService.ExportAdminAuditLogs(service.AdminAuditLogFilter{
 		RecordKind:    recordKind,
@@ -263,4 +273,50 @@ func AdminExportAuditLogs(c *gin.Context) {
 	c.Header("Content-Type", "text/csv; charset=utf-8")
 	c.Header("Content-Disposition", fmt.Sprintf("attachment; filename*=UTF-8''%s", url.QueryEscape(filename)))
 	c.Data(200, "text/csv; charset=utf-8", payload)
+}
+
+func adminCanViewFullAuditPayload(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if isSuperAdmin, _ := c.Get("is_super"); isSuperAdmin == true {
+		return true
+	}
+	adminID := c.GetUint64("admin_id")
+	if adminID == 0 {
+		return false
+	}
+
+	var count int64
+	err := repository.DB.Table("sys_admin_roles").
+		Joins("JOIN sys_roles ON sys_roles.id = sys_admin_roles.role_id AND sys_roles.status = 1").
+		Where("sys_admin_roles.admin_id = ?", adminID).
+		Where("sys_roles.key IN ?", []string{
+			"super_admin",
+			service.ReservedRoleSystemAdmin,
+			service.ReservedRoleSecurityAdmin,
+			service.ReservedRoleSecurityAudit,
+		}).
+		Limit(1).
+		Count(&count).Error
+	return err == nil && count > 0
+}
+
+func redactAdminAuditLogDetails(list []service.AdminAuditLogItem) []service.AdminAuditLogItem {
+	const restrictedMessage = "完整审计内容仅高权限管理员可见"
+	redacted := make([]service.AdminAuditLogItem, len(list))
+	copy(redacted, list)
+	restrictedPayload := map[string]interface{}{
+		"restricted": true,
+		"message":    restrictedMessage,
+	}
+	for i := range redacted {
+		redacted[i].RequestBody = ""
+		redacted[i].BeforeState = restrictedPayload
+		redacted[i].AfterState = restrictedPayload
+		redacted[i].Metadata = restrictedPayload
+		redacted[i].ClientIP = ""
+		redacted[i].UserAgent = ""
+	}
+	return redacted
 }

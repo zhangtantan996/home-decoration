@@ -149,7 +149,37 @@ func materialShopStatusValue(status *int8) int8 {
 const (
 	adminPlatformDisplayRequiresActiveMessage = "主体经营异常，平台展示设置当前不生效"
 	merchantDisplayRequiresActiveMessage      = "主体经营异常，商家展示设置当前不生效"
+	adminUserVisibleEnableBlockedMessage      = "当前主体暂不满足用户端展示条件"
 )
+
+func resolveProviderUserVisibleEnableBlocker(provider model.Provider) string {
+	candidate := provider
+	candidate.Status = merchantProviderStatusActive
+	candidate.PlatformDisplayEnabled = true
+	decision := service.EvaluateProviderPublicVisibility(&candidate)
+	if decision.PublicVisible {
+		return ""
+	}
+	if message := strings.TrimSpace(decision.PrimaryBlockerMsg); message != "" {
+		return message
+	}
+	return adminUserVisibleEnableBlockedMessage
+}
+
+func resolveMaterialShopUserVisibleEnableBlocker(shop model.MaterialShop) string {
+	candidate := shop
+	activeStatus := merchantProviderStatusActive
+	candidate.Status = &activeStatus
+	candidate.PlatformDisplayEnabled = true
+	decision := service.EvaluateMaterialShopPublicVisibility(&candidate, 0)
+	if decision.PublicVisible {
+		return ""
+	}
+	if message := strings.TrimSpace(decision.PrimaryBlockerMsg); message != "" {
+		return message
+	}
+	return adminUserVisibleEnableBlockedMessage
+}
 
 func resolveAdminProviderOnboardingStatus(provider model.Provider, hasBoundUser bool, app *model.MerchantApplication) string {
 	if !hasBoundUser {
@@ -1493,25 +1523,36 @@ func AdminVerifyProvider(c *gin.Context) {
 // AdminCreateProvider 创建服务商
 func AdminCreateProvider(c *gin.Context) {
 	var req struct {
-		UserId          uint64   `json:"userId"`
-		ProviderType    int8     `json:"providerType" binding:"required"`
-		CompanyName     string   `json:"companyName" binding:"required"`
-		RealName        string   `json:"realName"`
-		SubType         string   `json:"subType"`
-		Specialty       string   `json:"specialty"`
-		YearsExperience int      `json:"yearsExperience"`
-		Status          int8     `json:"status"`
-		PriceMin        float64  `json:"priceMin"`
-		PriceMax        float64  `json:"priceMax"`
-		PriceUnit       string   `json:"priceUnit"`
-		CoverImage      string   `json:"coverImage"`
-		ServiceIntro    string   `json:"serviceIntro"`
-		TeamSize        int      `json:"teamSize"`
-		EstablishedYear int      `json:"establishedYear"`
-		Certifications  string   `json:"certifications"`
-		IsSettled       *bool    `json:"isSettled"`       // nil 默认 true
-		CollectedSource string   `json:"collectedSource"` // 收录来源
-		ServiceArea     []string `json:"serviceArea"`     // 服务区域（区域代码数组）
+		UserId           uint64   `json:"userId"`
+		ProviderType     int8     `json:"providerType" binding:"required"`
+		CompanyName      string   `json:"companyName" binding:"required"`
+		RealName         string   `json:"realName"`
+		SubType          string   `json:"subType"`
+		EntityType       string   `json:"entityType"`
+		Specialty        string   `json:"specialty"`
+		WorkTypes        string   `json:"workTypes"`
+		HighlightTags    string   `json:"highlightTags"`
+		PricingJSON      string   `json:"pricingJson"`
+		GraduateSchool   string   `json:"graduateSchool"`
+		DesignPhilosophy string   `json:"designPhilosophy"`
+		YearsExperience  int      `json:"yearsExperience"`
+		Status           int8     `json:"status"`
+		Avatar           string   `json:"avatar"`
+		PriceMin         float64  `json:"priceMin"`
+		PriceMax         float64  `json:"priceMax"`
+		PriceUnit        string   `json:"priceUnit"`
+		CoverImage       string   `json:"coverImage"`
+		FollowersCount   int      `json:"followersCount"`
+		ServiceIntro     string   `json:"serviceIntro"`
+		TeamSize         int      `json:"teamSize"`
+		EstablishedYear  int      `json:"establishedYear"`
+		Certifications   string   `json:"certifications"`
+		OfficeAddress    string   `json:"officeAddress"`
+		CompanyAlbum     string   `json:"companyAlbumJson"`
+		IsSettled        *bool    `json:"isSettled"`       // nil 默认 true
+		Verified         *bool    `json:"verified"`        // 平台认证状态
+		CollectedSource  string   `json:"collectedSource"` // 收录来源
+		ServiceArea      []string `json:"serviceArea"`     // 服务区域（区域代码数组）
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -1531,31 +1572,47 @@ func AdminCreateProvider(c *gin.Context) {
 	}
 
 	provider := model.Provider{
-		UserID:          req.UserId,
-		ProviderType:    req.ProviderType,
-		CompanyName:     req.CompanyName,
-		DisplayName:     service.ResolveProviderStoredDisplayName(req.ProviderType, req.CompanyName, req.RealName),
-		SubType:         req.SubType,
-		Specialty:       req.Specialty,
-		YearsExperience: req.YearsExperience,
-		PriceMin:        req.PriceMin,
-		PriceMax:        req.PriceMax,
-		PriceUnit:       strings.TrimSpace(req.PriceUnit),
-		CoverImage:      normalizeStoredAsset(req.CoverImage),
-		ServiceIntro:    req.ServiceIntro,
-		TeamSize:        req.TeamSize,
-		EstablishedYear: req.EstablishedYear,
-		Certifications:  req.Certifications,
-		Status:          req.Status,
-		IsSettled:       isSettled,
-		CollectedSource: req.CollectedSource,
-		ServiceArea:     string(serviceAreaJSON),
+		UserID:           req.UserId,
+		ProviderType:     req.ProviderType,
+		CompanyName:      req.CompanyName,
+		DisplayName:      service.ResolveProviderStoredDisplayName(req.ProviderType, req.CompanyName, req.RealName),
+		SubType:          req.SubType,
+		EntityType:       strings.TrimSpace(req.EntityType),
+		Specialty:        req.Specialty,
+		WorkTypes:        strings.TrimSpace(req.WorkTypes),
+		HighlightTags:    strings.TrimSpace(req.HighlightTags),
+		PricingJSON:      strings.TrimSpace(req.PricingJSON),
+		GraduateSchool:   strings.TrimSpace(req.GraduateSchool),
+		DesignPhilosophy: strings.TrimSpace(req.DesignPhilosophy),
+		YearsExperience:  req.YearsExperience,
+		Avatar:           normalizeStoredAsset(req.Avatar),
+		PriceMin:         req.PriceMin,
+		PriceMax:         req.PriceMax,
+		PriceUnit:        strings.TrimSpace(req.PriceUnit),
+		CoverImage:       normalizeStoredAsset(req.CoverImage),
+		FollowersCount:   req.FollowersCount,
+		ServiceIntro:     req.ServiceIntro,
+		TeamSize:         req.TeamSize,
+		EstablishedYear:  req.EstablishedYear,
+		Certifications:   req.Certifications,
+		OfficeAddress:    strings.TrimSpace(req.OfficeAddress),
+		CompanyAlbumJSON: strings.TrimSpace(req.CompanyAlbum),
+		Status:           req.Status,
+		IsSettled:        isSettled,
+		CollectedSource:  req.CollectedSource,
+		ServiceArea:      string(serviceAreaJSON),
+	}
+	if req.Verified != nil {
+		provider.Verified = *req.Verified
 	}
 	if provider.Status == 0 {
 		provider.Status = 1 // 默认启用
 	}
 	if provider.SubType == "" {
 		provider.SubType = "personal"
+	}
+	if provider.EntityType == "" {
+		provider.EntityType = provider.SubType
 	}
 	if provider.PriceUnit == "" {
 		provider.PriceUnit = model.ProviderPriceUnitPerSquareMeter
@@ -1576,26 +1633,36 @@ func AdminUpdateProvider(c *gin.Context) {
 		return
 	}
 	var req struct {
-		CompanyName     *string   `json:"companyName"`
-		RealName        *string   `json:"realName"`
-		SubType         *string   `json:"subType"`
-		Specialty       *string   `json:"specialty"`
-		YearsExperience *int      `json:"yearsExperience"`
-		Status          *int8     `json:"status"`
-		RestoreRate     *float32  `json:"restoreRate"`     // 还原度
-		BudgetControl   *float32  `json:"budgetControl"`   // 预算控制力
-		WorkTypes       *string   `json:"workTypes"`       // 工种类型（逗号分隔）
-		PriceMin        *float64  `json:"priceMin"`        // 最低价格
-		PriceMax        *float64  `json:"priceMax"`        // 最高价格
-		PriceUnit       *string   `json:"priceUnit"`       // 价格单位
-		CoverImage      *string   `json:"coverImage"`      // 封面背景图
-		ServiceIntro    *string   `json:"serviceIntro"`    // 服务介绍
-		TeamSize        *int      `json:"teamSize"`        // 团队规模
-		EstablishedYear *int      `json:"establishedYear"` // 成立年份
-		Certifications  *string   `json:"certifications"`  // 资质认证（JSON数组）
-		ServiceArea     *[]string `json:"serviceArea"`      // 服务区域（区域代码数组）
-		IsSettled       *bool     `json:"isSettled"`        // 入驻状态
-		CollectedSource *string   `json:"collectedSource"`  // 收录来源
+		CompanyName      *string   `json:"companyName"`
+		RealName         *string   `json:"realName"`
+		SubType          *string   `json:"subType"`
+		EntityType       *string   `json:"entityType"`
+		Specialty        *string   `json:"specialty"`
+		YearsExperience  *int      `json:"yearsExperience"`
+		Status           *int8     `json:"status"`
+		Avatar           *string   `json:"avatar"`
+		RestoreRate      *float32  `json:"restoreRate"`      // 还原度
+		BudgetControl    *float32  `json:"budgetControl"`    // 预算控制力
+		WorkTypes        *string   `json:"workTypes"`        // 工种类型（逗号分隔）
+		HighlightTags    *string   `json:"highlightTags"`    // 亮点标签（JSON数组）
+		PricingJSON      *string   `json:"pricingJson"`      // 结构化报价（JSON对象）
+		GraduateSchool   *string   `json:"graduateSchool"`   // 毕业院校
+		DesignPhilosophy *string   `json:"designPhilosophy"` // 设计理念
+		PriceMin         *float64  `json:"priceMin"`         // 最低价格
+		PriceMax         *float64  `json:"priceMax"`         // 最高价格
+		PriceUnit        *string   `json:"priceUnit"`        // 价格单位
+		CoverImage       *string   `json:"coverImage"`       // 封面背景图
+		FollowersCount   *int      `json:"followersCount"`   // 关注数
+		ServiceIntro     *string   `json:"serviceIntro"`     // 服务介绍
+		TeamSize         *int      `json:"teamSize"`         // 团队规模
+		EstablishedYear  *int      `json:"establishedYear"`  // 成立年份
+		Certifications   *string   `json:"certifications"`   // 资质认证（JSON数组）
+		OfficeAddress    *string   `json:"officeAddress"`    // 办公地址
+		CompanyAlbum     *string   `json:"companyAlbumJson"` // 企业相册（JSON数组）
+		ServiceArea      *[]string `json:"serviceArea"`      // 服务区域（区域代码数组）
+		IsSettled        *bool     `json:"isSettled"`        // 入驻状态
+		Verified         *bool     `json:"verified"`         // 平台认证状态
+		CollectedSource  *string   `json:"collectedSource"`  // 收录来源
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -1639,11 +1706,17 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.SubType != nil && strings.TrimSpace(*req.SubType) != "" {
 		updates["sub_type"] = strings.TrimSpace(*req.SubType)
 	}
+	if req.EntityType != nil && strings.TrimSpace(*req.EntityType) != "" {
+		updates["entity_type"] = strings.TrimSpace(*req.EntityType)
+	}
 	if req.Specialty != nil {
 		updates["specialty"] = strings.TrimSpace(*req.Specialty)
 	}
 	if req.YearsExperience != nil && *req.YearsExperience > 0 {
 		updates["years_experience"] = *req.YearsExperience
+	}
+	if req.Avatar != nil {
+		updates["avatar"] = normalizeStoredAsset(strings.TrimSpace(*req.Avatar))
 	}
 	if req.RestoreRate != nil && *req.RestoreRate >= 0 {
 		updates["restore_rate"] = *req.RestoreRate
@@ -1653,6 +1726,18 @@ func AdminUpdateProvider(c *gin.Context) {
 	}
 	if req.WorkTypes != nil {
 		updates["work_types"] = strings.TrimSpace(*req.WorkTypes)
+	}
+	if req.HighlightTags != nil {
+		updates["highlight_tags"] = strings.TrimSpace(*req.HighlightTags)
+	}
+	if req.PricingJSON != nil {
+		updates["pricing_json"] = strings.TrimSpace(*req.PricingJSON)
+	}
+	if req.GraduateSchool != nil {
+		updates["graduate_school"] = strings.TrimSpace(*req.GraduateSchool)
+	}
+	if req.DesignPhilosophy != nil {
+		updates["design_philosophy"] = strings.TrimSpace(*req.DesignPhilosophy)
 	}
 	if req.PriceMin != nil && *req.PriceMin >= 0 {
 		updates["price_min"] = *req.PriceMin
@@ -1666,6 +1751,9 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.CoverImage != nil {
 		updates["cover_image"] = normalizeStoredAsset(strings.TrimSpace(*req.CoverImage))
 	}
+	if req.FollowersCount != nil && *req.FollowersCount >= 0 {
+		updates["followers_count"] = *req.FollowersCount
+	}
 	if req.ServiceIntro != nil {
 		updates["service_intro"] = strings.TrimSpace(*req.ServiceIntro)
 	}
@@ -1678,6 +1766,12 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.Certifications != nil {
 		updates["certifications"] = strings.TrimSpace(*req.Certifications)
 	}
+	if req.OfficeAddress != nil {
+		updates["office_address"] = strings.TrimSpace(*req.OfficeAddress)
+	}
+	if req.CompanyAlbum != nil {
+		updates["company_album_json"] = strings.TrimSpace(*req.CompanyAlbum)
+	}
 	if serviceAreaProvided {
 		serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
 		updates["service_area"] = string(serviceAreaJSON)
@@ -1687,6 +1781,9 @@ func AdminUpdateProvider(c *gin.Context) {
 	}
 	if req.IsSettled != nil {
 		updates["is_settled"] = *req.IsSettled
+	}
+	if req.Verified != nil {
+		updates["verified"] = *req.Verified
 	}
 	if req.CollectedSource != nil {
 		updates["collected_source"] = strings.TrimSpace(*req.CollectedSource)
@@ -1718,7 +1815,8 @@ func AdminUpdateProviderStatus(c *gin.Context) {
 }
 
 func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
-	id := c.Param("id")
+	providerID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -1733,7 +1831,7 @@ func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
 	}
 
 	var provider model.Provider
-	if err := repository.DB.First(&provider, "id = ?", id).Error; err != nil {
+	if err := repository.DB.First(&provider, providerID).Error; err != nil {
 		response.NotFound(c, "服务商不存在")
 		return
 	}
@@ -1741,7 +1839,47 @@ func AdminUpdateProviderPlatformDisplay(c *gin.Context) {
 		response.Conflict(c, adminPlatformDisplayRequiresActiveMessage)
 		return
 	}
-	if err := repository.DB.Model(&model.Provider{}).Where("id = ?", id).Update("platform_display_enabled", req.Enabled).Error; err != nil {
+	if req.Enabled {
+		if blocker := resolveProviderUserVisibleEnableBlocker(provider); blocker != "" {
+			response.Conflict(c, blocker)
+			return
+		}
+	}
+	tx := repository.DB.Begin()
+	beforeProvider := provider
+	if err := tx.Model(&model.Provider{}).Where("id = ?", providerID).Update("platform_display_enabled", req.Enabled).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+	provider.PlatformDisplayEnabled = req.Enabled
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "set_provider_platform_display",
+		ResourceType:  "provider",
+		ResourceID:    provider.ID,
+		Reason:        readAdminReason(c, "调整服务商用户端展示"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"status":                 beforeProvider.Status,
+			"platformDisplayEnabled": beforeProvider.PlatformDisplayEnabled,
+		},
+		AfterState: map[string]interface{}{
+			"status":                 provider.Status,
+			"platformDisplayEnabled": provider.PlatformDisplayEnabled,
+		},
+		Metadata: map[string]interface{}{
+			"enabled": req.Enabled,
+		},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "写入审计失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -1761,6 +1899,18 @@ func AdminSetProviderAvailability(c *gin.Context) {
 	if !service.SupportsProviderPlatformDisplayEnabled() {
 		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("服务商平台展示开关"))
 		return
+	}
+
+	if req.Enabled {
+		var provider model.Provider
+		if err := repository.DB.First(&provider, providerID).Error; err != nil {
+			response.NotFound(c, "服务商不存在")
+			return
+		}
+		if blocker := resolveProviderUserVisibleEnableBlocker(provider); blocker != "" {
+			response.Conflict(c, blocker)
+			return
+		}
 	}
 
 	tx := repository.DB.Begin()
@@ -2116,14 +2266,31 @@ func AdminGetBooking(c *gin.Context) {
 func AdminUpdateBookingStatus(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
-		Status int8 `json:"status"`
+		Status *int8   `json:"status"`
+		Notes  *string `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
 
-	if err := repository.DB.Model(&model.Booking{}).Where("id = ?", id).Update("status", req.Status).Error; err != nil {
+	updates := map[string]interface{}{}
+	if req.Status != nil {
+		if *req.Status < 1 || *req.Status > 4 {
+			response.BadRequest(c, "预约状态无效")
+			return
+		}
+		updates["status"] = *req.Status
+	}
+	if req.Notes != nil {
+		updates["notes"] = strings.TrimSpace(*req.Notes)
+	}
+	if len(updates) == 0 {
+		response.BadRequest(c, "没有可更新内容")
+		return
+	}
+
+	if err := repository.DB.Model(&model.Booking{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -2372,22 +2539,32 @@ func AdminGetMaterialShop(c *gin.Context) {
 // AdminCreateMaterialShop 创建主材门店
 func AdminCreateMaterialShop(c *gin.Context) {
 	var req struct {
-		Name              string   `json:"name" binding:"required"`
-		Type              string   `json:"type"` // showroom | brand
-		CompanyName       string   `json:"companyName"`
-		Address           string   `json:"address"`
-		ContactPhone      string   `json:"contactPhone"`
-		ContactName       string   `json:"contactName"`
-		MainProducts      string   `json:"mainProducts"`
-		ProductCategories string   `json:"productCategories"`
-		Cover             string   `json:"cover"`
-		BrandLogo         string   `json:"brandLogo"`
-		Latitude          *float64 `json:"latitude"`
-		Longitude         *float64 `json:"longitude"`
-		OpenTime          string   `json:"openTime"`
-		Tags              string   `json:"tags"`
-		IsSettled         *bool    `json:"isSettled"`       // nil 默认 true
-		CollectedSource   string   `json:"collectedSource"` // 收录来源
+		Name                   string   `json:"name" binding:"required"`
+		Type                   string   `json:"type"` // showroom | brand
+		CompanyName            string   `json:"companyName"`
+		Description            string   `json:"description"`
+		Address                string   `json:"address"`
+		ContactPhone           string   `json:"contactPhone"`
+		ContactName            string   `json:"contactName"`
+		MainProducts           string   `json:"mainProducts"`
+		ProductCategories      string   `json:"productCategories"`
+		Cover                  string   `json:"cover"`
+		BrandLogo              string   `json:"brandLogo"`
+		Latitude               *float64 `json:"latitude"`
+		Longitude              *float64 `json:"longitude"`
+		OpenTime               string   `json:"openTime"`
+		BusinessHoursJSON      string   `json:"businessHoursJson"`
+		ServiceArea            string   `json:"serviceArea"`
+		MainBrands             string   `json:"mainBrands"`
+		MainCategories         string   `json:"mainCategories"`
+		DeliveryCapability     string   `json:"deliveryCapability"`
+		InstallationCapability string   `json:"installationCapability"`
+		AfterSalesPolicy       string   `json:"afterSalesPolicy"`
+		InvoiceCapability      string   `json:"invoiceCapability"`
+		Tags                   string   `json:"tags"`
+		IsVerified             *bool    `json:"isVerified"`
+		IsSettled              *bool    `json:"isSettled"`       // nil 默认 true
+		CollectedSource        string   `json:"collectedSource"` // 收录来源
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -2397,12 +2574,6 @@ func AdminCreateMaterialShop(c *gin.Context) {
 	isSettled := true
 	if req.IsSettled != nil {
 		isSettled = *req.IsSettled
-	}
-
-	// 已入驻商家仍须走申请流程
-	if isSettled {
-		response.BadRequest(c, "已入驻主材门店请通过主材商入驻申请创建")
-		return
 	}
 
 	mainProducts, err := normalizeRequiredJSONArrayText(req.MainProducts, "主营产品")
@@ -2417,20 +2588,32 @@ func AdminCreateMaterialShop(c *gin.Context) {
 	}
 
 	shop := model.MaterialShop{
-		Name:              strings.TrimSpace(req.Name),
-		Type:              strings.TrimSpace(req.Type),
-		CompanyName:       strings.TrimSpace(req.CompanyName),
-		Address:           strings.TrimSpace(req.Address),
-		ContactPhone:      strings.TrimSpace(req.ContactPhone),
-		ContactName:       strings.TrimSpace(req.ContactName),
-		MainProducts:      mainProducts,
-		ProductCategories: strings.TrimSpace(req.ProductCategories),
-		Cover:             strings.TrimSpace(req.Cover),
-		BrandLogo:         strings.TrimSpace(req.BrandLogo),
-		OpenTime:          strings.TrimSpace(req.OpenTime),
-		Tags:              tags,
-		IsSettled:         false,
-		CollectedSource:   strings.TrimSpace(req.CollectedSource),
+		Name:                   strings.TrimSpace(req.Name),
+		Type:                   strings.TrimSpace(req.Type),
+		CompanyName:            strings.TrimSpace(req.CompanyName),
+		Description:            strings.TrimSpace(req.Description),
+		Address:                strings.TrimSpace(req.Address),
+		ContactPhone:           strings.TrimSpace(req.ContactPhone),
+		ContactName:            strings.TrimSpace(req.ContactName),
+		MainProducts:           mainProducts,
+		ProductCategories:      strings.TrimSpace(req.ProductCategories),
+		Cover:                  normalizeStoredAsset(req.Cover),
+		BrandLogo:              normalizeStoredAsset(req.BrandLogo),
+		OpenTime:               strings.TrimSpace(req.OpenTime),
+		BusinessHoursJSON:      strings.TrimSpace(req.BusinessHoursJSON),
+		ServiceArea:            strings.TrimSpace(req.ServiceArea),
+		MainBrands:             strings.TrimSpace(req.MainBrands),
+		MainCategories:         strings.TrimSpace(req.MainCategories),
+		DeliveryCapability:     strings.TrimSpace(req.DeliveryCapability),
+		InstallationCapability: strings.TrimSpace(req.InstallationCapability),
+		AfterSalesPolicy:       strings.TrimSpace(req.AfterSalesPolicy),
+		InvoiceCapability:      strings.TrimSpace(req.InvoiceCapability),
+		Tags:                   tags,
+		IsSettled:              isSettled,
+		CollectedSource:        firstNonEmpty(strings.TrimSpace(req.CollectedSource), "ops"),
+	}
+	if req.IsVerified != nil {
+		shop.IsVerified = *req.IsVerified
 	}
 	if req.Latitude != nil {
 		shop.Latitude = *req.Latitude
@@ -2445,11 +2628,6 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		response.ServerError(c, "创建失败")
 		return
 	}
-	if err := repository.DB.Model(&shop).Update("is_settled", false).Error; err != nil {
-		response.ServerError(c, "创建失败")
-		return
-	}
-	shop.IsSettled = false
 	response.Success(c, shop)
 }
 
@@ -2636,22 +2814,32 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		return
 	}
 	var req struct {
-		Name              *string  `json:"name"`
-		Type              *string  `json:"type"`
-		CompanyName       *string  `json:"companyName"`
-		Address           *string  `json:"address"`
-		ContactPhone      *string  `json:"contactPhone"`
-		ContactName       *string  `json:"contactName"`
-		MainProducts      *string  `json:"mainProducts"`
-		ProductCategories *string  `json:"productCategories"`
-		Cover             *string  `json:"cover"`
-		BrandLogo         *string  `json:"brandLogo"`
-		Latitude          *float64 `json:"latitude"`
-		Longitude         *float64 `json:"longitude"`
-		OpenTime          *string  `json:"openTime"`
-		Tags              *string  `json:"tags"`
-		IsSettled         *bool    `json:"isSettled"`
-		CollectedSource   *string  `json:"collectedSource"`
+		Name                   *string  `json:"name"`
+		Type                   *string  `json:"type"`
+		CompanyName            *string  `json:"companyName"`
+		Description            *string  `json:"description"`
+		Address                *string  `json:"address"`
+		ContactPhone           *string  `json:"contactPhone"`
+		ContactName            *string  `json:"contactName"`
+		MainProducts           *string  `json:"mainProducts"`
+		ProductCategories      *string  `json:"productCategories"`
+		Cover                  *string  `json:"cover"`
+		BrandLogo              *string  `json:"brandLogo"`
+		Latitude               *float64 `json:"latitude"`
+		Longitude              *float64 `json:"longitude"`
+		OpenTime               *string  `json:"openTime"`
+		BusinessHoursJSON      *string  `json:"businessHoursJson"`
+		ServiceArea            *string  `json:"serviceArea"`
+		MainBrands             *string  `json:"mainBrands"`
+		MainCategories         *string  `json:"mainCategories"`
+		DeliveryCapability     *string  `json:"deliveryCapability"`
+		InstallationCapability *string  `json:"installationCapability"`
+		AfterSalesPolicy       *string  `json:"afterSalesPolicy"`
+		InvoiceCapability      *string  `json:"invoiceCapability"`
+		Tags                   *string  `json:"tags"`
+		IsVerified             *bool    `json:"isVerified"`
+		IsSettled              *bool    `json:"isSettled"`
+		CollectedSource        *string  `json:"collectedSource"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -2687,6 +2875,9 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 	if req.CompanyName != nil {
 		updates["company_name"] = strings.TrimSpace(*req.CompanyName)
 	}
+	if req.Description != nil {
+		updates["description"] = strings.TrimSpace(*req.Description)
+	}
 	if req.Address != nil {
 		updates["address"] = strings.TrimSpace(*req.Address)
 	}
@@ -2703,10 +2894,10 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		updates["product_categories"] = strings.TrimSpace(*req.ProductCategories)
 	}
 	if req.Cover != nil {
-		updates["cover"] = strings.TrimSpace(*req.Cover)
+		updates["cover"] = normalizeStoredAsset(*req.Cover)
 	}
 	if req.BrandLogo != nil {
-		updates["brand_logo"] = strings.TrimSpace(*req.BrandLogo)
+		updates["brand_logo"] = normalizeStoredAsset(*req.BrandLogo)
 	}
 	if req.Latitude != nil {
 		updates["latitude"] = *req.Latitude
@@ -2717,8 +2908,35 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 	if req.OpenTime != nil {
 		updates["open_time"] = strings.TrimSpace(*req.OpenTime)
 	}
+	if req.BusinessHoursJSON != nil {
+		updates["business_hours_json"] = strings.TrimSpace(*req.BusinessHoursJSON)
+	}
+	if req.ServiceArea != nil {
+		updates["service_area"] = strings.TrimSpace(*req.ServiceArea)
+	}
+	if req.MainBrands != nil {
+		updates["main_brands"] = strings.TrimSpace(*req.MainBrands)
+	}
+	if req.MainCategories != nil {
+		updates["main_categories"] = strings.TrimSpace(*req.MainCategories)
+	}
+	if req.DeliveryCapability != nil {
+		updates["delivery_capability"] = strings.TrimSpace(*req.DeliveryCapability)
+	}
+	if req.InstallationCapability != nil {
+		updates["installation_capability"] = strings.TrimSpace(*req.InstallationCapability)
+	}
+	if req.AfterSalesPolicy != nil {
+		updates["after_sales_policy"] = strings.TrimSpace(*req.AfterSalesPolicy)
+	}
+	if req.InvoiceCapability != nil {
+		updates["invoice_capability"] = strings.TrimSpace(*req.InvoiceCapability)
+	}
 	if req.Tags != nil {
 		updates["tags"] = strings.TrimSpace(*req.Tags)
+	}
+	if req.IsVerified != nil {
+		updates["is_verified"] = *req.IsVerified
 	}
 	if req.IsSettled != nil {
 		updates["is_settled"] = *req.IsSettled
@@ -2844,7 +3062,8 @@ func AdminUpdateMaterialShopStatus(c *gin.Context) {
 }
 
 func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
-	id := c.Param("id")
+	shopID := parseUint64(c.Param("id"))
+	adminID := c.GetUint64("adminId")
 	var req struct {
 		Enabled bool `json:"enabled"`
 	}
@@ -2859,7 +3078,7 @@ func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
 	}
 
 	var shop model.MaterialShop
-	if err := repository.DB.First(&shop, "id = ?", id).Error; err != nil {
+	if err := repository.DB.First(&shop, shopID).Error; err != nil {
 		response.NotFound(c, "门店不存在")
 		return
 	}
@@ -2867,7 +3086,47 @@ func AdminUpdateMaterialShopPlatformDisplay(c *gin.Context) {
 		response.Conflict(c, adminPlatformDisplayRequiresActiveMessage)
 		return
 	}
-	if err := repository.DB.Model(&model.MaterialShop{}).Where("id = ?", id).Update("platform_display_enabled", req.Enabled).Error; err != nil {
+	if req.Enabled {
+		if blocker := resolveMaterialShopUserVisibleEnableBlocker(shop); blocker != "" {
+			response.Conflict(c, blocker)
+			return
+		}
+	}
+	tx := repository.DB.Begin()
+	beforeShop := shop
+	if err := tx.Model(&model.MaterialShop{}).Where("id = ?", shopID).Update("platform_display_enabled", req.Enabled).Error; err != nil {
+		tx.Rollback()
+		response.ServerError(c, "更新失败")
+		return
+	}
+	shop.PlatformDisplayEnabled = req.Enabled
+	if err := (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    adminID,
+		OperationType: "set_material_shop_platform_display",
+		ResourceType:  "material_shop",
+		ResourceID:    shop.ID,
+		Reason:        readAdminReason(c, "调整主材门店用户端展示"),
+		Result:        "success",
+		BeforeState: map[string]interface{}{
+			"status":                 materialShopStatusValue(beforeShop.Status),
+			"platformDisplayEnabled": beforeShop.PlatformDisplayEnabled,
+		},
+		AfterState: map[string]interface{}{
+			"status":                 materialShopStatusValue(shop.Status),
+			"platformDisplayEnabled": shop.PlatformDisplayEnabled,
+		},
+		Metadata: map[string]interface{}{
+			"enabled": req.Enabled,
+		},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	}); err != nil {
+		tx.Rollback()
+		response.ServerError(c, "写入审计失败")
+		return
+	}
+	if err := tx.Commit().Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
@@ -2887,6 +3146,18 @@ func AdminSetMaterialShopAvailability(c *gin.Context) {
 	if !service.SupportsMaterialShopPlatformDisplayEnabled() {
 		response.Error(c, 503, repository.SchemaServiceUnavailableMessage("主材商平台展示开关"))
 		return
+	}
+
+	if req.Enabled {
+		var shop model.MaterialShop
+		if err := repository.DB.First(&shop, shopID).Error; err != nil {
+			response.NotFound(c, "门店不存在")
+			return
+		}
+		if blocker := resolveMaterialShopUserVisibleEnableBlocker(shop); blocker != "" {
+			response.Conflict(c, blocker)
+			return
+		}
 	}
 
 	tx := repository.DB.Begin()

@@ -151,6 +151,14 @@ func WechatH5BindPhone(c *gin.Context) {
 		response.BadRequest(c, "请提供绑定凭证、手机号和验证码")
 		return
 	}
+	if service.ContainsWhitespace(req.Phone) {
+		response.BadRequest(c, "手机号不能包含空格")
+		return
+	}
+	if service.ContainsWhitespace(req.Code) {
+		response.BadRequest(c, "验证码不能包含空格")
+		return
+	}
 
 	tokenResp, user, err := wechatH5AuthService.BindPhone(req.BindToken, req.Phone, req.Code, c.ClientIP(), jwtConfig)
 	if err != nil {

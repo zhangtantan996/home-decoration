@@ -11,6 +11,7 @@ const baselinePath = path.join(repoRoot, 'scripts', 'frontend-style-baseline.jso
 
 const SCOPES = {
   admin: ['admin/src'],
+  ops: ['ops/src'],
   merchant: ['merchant/src'],
   web: ['web/src'],
   website: ['website/index.html', 'website/scripts', 'website/styles'],
@@ -20,6 +21,7 @@ const SCOPES = {
 
 const STYLELINT_GLOBS = {
   admin: ['admin/src/**/*.{css,scss}'],
+  ops: ['ops/src/**/*.{css,scss}'],
   merchant: ['merchant/src/**/*.{css,scss}'],
   web: ['web/src/**/*.{css,scss}'],
   website: ['website/styles/**/*.css'],

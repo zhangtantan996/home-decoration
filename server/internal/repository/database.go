@@ -82,8 +82,12 @@ func InitDB(cfg *config.DatabaseConfig) error {
 		log.Println("AutoMigrate disabled. Please ensure database schema is up to date manually.")
 	}
 
-	if err := ensureRuntimeSchemaColumns(); err != nil {
-		return fmt.Errorf("runtime schema alignment failed: %w", err)
+	if config.IsLocalLikeAppEnv() {
+		if err := ensureRuntimeSchemaColumns(); err != nil {
+			return fmt.Errorf("runtime schema alignment failed: %w", err)
+		}
+	} else {
+		log.Println("Runtime schema alignment disabled outside local/test; production must use versioned migrations and schema health checks.")
 	}
 
 	log.Println("Database connected successfully")

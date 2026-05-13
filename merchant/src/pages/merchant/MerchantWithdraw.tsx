@@ -53,6 +53,9 @@ const STATUS_META: Record<number, { text: string; color: string }> = {
 const getErrorMessage = (error: unknown, fallback: string) => readSafeErrorMessage(error, fallback);
 
 const formatCurrency = (value?: number) => `¥${Number(value || 0).toFixed(2)}`;
+const stripSensitiveWhitespace = (value?: string) => (
+    typeof value === 'string' ? value.replace(/\s+/g, '') : value
+);
 
 const MerchantWithdraw: React.FC = () => {
     const navigate = useNavigate();
@@ -210,7 +213,7 @@ const MerchantWithdraw: React.FC = () => {
             await merchantWithdrawApi.apply({
                 amount: Number(values.amount),
                 bankAccountId: Number(values.bankAccountId),
-                verificationCode: values.verificationCode,
+                verificationCode: stripSensitiveWhitespace(values.verificationCode) || '',
             });
             message.success('提现申请已提交，等待平台审核');
             form.resetFields(['amount', 'verificationCode']);
@@ -330,6 +333,7 @@ const MerchantWithdraw: React.FC = () => {
                                 <Form.Item
                                     noStyle
                                     name="verificationCode"
+                                    normalize={stripSensitiveWhitespace}
                                     rules={[{ required: true, message: '请输入验证码' }]}
                                 >
                                     <Input placeholder="请输入短信验证码" maxLength={6} />

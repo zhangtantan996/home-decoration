@@ -209,6 +209,9 @@ func (s *UserService) Register(req *RegisterRequest, cfg *config.JWTConfig) (*To
 
 // Login 用户登录
 func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenResponse, *model.User, error) {
+	if ContainsWhitespace(req.Phone) {
+		return nil, nil, errors.New("手机号不能包含空格")
+	}
 	// 校验手机号格式
 	if err := validatePhone(req.Phone); err != nil {
 		return nil, nil, err
@@ -219,9 +222,14 @@ func (s *UserService) Login(req *LoginRequest, cfg *config.JWTConfig) (*TokenRes
 		if req.Password == "" {
 			return nil, nil, errors.New("请输入密码")
 		}
+		if ContainsWhitespace(req.Password) {
+			return nil, nil, errors.New("密码不能包含空格")
+		}
 	} else if req.Code == "" {
 		// 默认验证码登录
 		return nil, nil, errors.New("请输入验证码")
+	} else if ContainsWhitespace(req.Code) {
+		return nil, nil, errors.New("验证码不能包含空格")
 	}
 
 	// 查找用户
@@ -898,8 +906,20 @@ func CheckPassword(password, hash string) bool {
 	return err == nil
 }
 
+func ContainsWhitespace(value string) bool {
+	for _, r := range value {
+		if unicode.IsSpace(r) {
+			return true
+		}
+	}
+	return false
+}
+
 // validatePhone 校验手机号格式
 func validatePhone(phone string) error {
+	if ContainsWhitespace(phone) {
+		return errors.New("手机号不能包含空格")
+	}
 	// 中国大陆手机号：以1开头，第二位是3-9，总共11位数字
 	phoneRegex := regexp.MustCompile(`^1[3-9]\d{9}$`)
 	if !phoneRegex.MatchString(phone) {
@@ -910,6 +930,9 @@ func validatePhone(phone string) error {
 
 // validatePassword 校验密码强度
 func validatePassword(password string) error {
+	if ContainsWhitespace(password) {
+		return errors.New("密码不能包含空格")
+	}
 	if len(password) < 8 {
 		return errors.New("密码长度不能少于8位")
 	}
