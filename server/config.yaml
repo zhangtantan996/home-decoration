@@ -36,7 +36,7 @@ admin_auth:
   password_max_age_days: 90
   totp_enabled: true
   totp_issuer: "禾泽云管理后台"
-  required_role_keys: "*" # 生产建议至少 system_admin,security_admin,security_auditor
+  required_role_keys: "super_admin,system_admin,admin" # 仅管理员/超级管理员默认强制 TOTP
   reauth_ttl_minutes: 10
   max_active_sessions: 5
   api_ip_enforced: false

@@ -18,6 +18,7 @@ import { OPS_ACCESS_DENIED_MESSAGE, hasOpsAccess, type OpsUser } from '../stores
 interface LoginForm {
   username: string;
   password: string;
+  otpCode?: string;
 }
 
 const stripSensitiveWhitespace = (value?: string) => (
@@ -27,6 +28,7 @@ const stripSensitiveWhitespace = (value?: string) => (
 const LoginPage = () => {
   const { message } = App.useApp();
   const [loading, setLoading] = useState(false);
+  const [otpRequired, setOtpRequired] = useState(false);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
 
@@ -47,7 +49,21 @@ const LoginPage = () => {
   const handleFinish = async (values: LoginForm) => {
     setLoading(true);
     try {
-      await login(stripSensitiveWhitespace(values.username) || '', stripSensitiveWhitespace(values.password) || '');
+      const payload = await login(
+        stripSensitiveWhitespace(values.username) || '',
+        values.password || '',
+        otpRequired ? stripSensitiveWhitespace(values.otpCode) || '' : undefined,
+      );
+      if (payload.loginStage === 'otp_required') {
+        setOtpRequired(true);
+        message.info('请输入当前 TOTP 动态验证码完成登录');
+        return;
+      }
+      if (payload.loginStage === 'setup_required') {
+        navigate('/security/setup', { replace: true });
+        return;
+      }
+      setOtpRequired(false);
       navigate(searchParams.get('redirect') || '/supply', { replace: true });
     } catch (error) {
       showApiError(error, '登录失败');
@@ -121,11 +137,33 @@ const LoginPage = () => {
             <Form.Item name="username" label="账号" normalize={stripSensitiveWhitespace} rules={[{ required: true, message: '请输入账号' }]}>
               <Input size="large" prefix={<UserOutlined />} placeholder="请输入账号" autoComplete="username" />
             </Form.Item>
-            <Form.Item name="password" label="密码" normalize={stripSensitiveWhitespace} rules={[{ required: true, message: '请输入密码' }]}>
+            <Form.Item
+              name="password"
+              label="密码"
+              rules={[
+                { required: true, message: '请输入密码' },
+                {
+                  validator: (_, value) => (typeof value === 'string' && /\s/.test(value) ? Promise.reject(new Error('密码不能包含空格')) : Promise.resolve()),
+                },
+              ]}
+            >
               <Input.Password size="large" prefix={<LockOutlined />} placeholder="请输入密码" autoComplete="current-password" />
             </Form.Item>
+            {otpRequired ? (
+              <Form.Item
+                name="otpCode"
+                label="动态验证码"
+                normalize={stripSensitiveWhitespace}
+                rules={[
+                  { required: true, message: '请输入 6 位动态验证码' },
+                  { len: 6, message: '动态验证码为 6 位数字' },
+                ]}
+              >
+                <Input size="large" prefix={<SafetyCertificateOutlined />} inputMode="numeric" maxLength={6} placeholder="请输入 6 位动态验证码" />
+              </Form.Item>
+            ) : null}
             <Button className="ops-login__submit" type="primary" htmlType="submit" block loading={loading} size="large">
-              登录工作台
+              {otpRequired ? '验证并登录' : '登录工作台'}
             </Button>
           </Form>
 

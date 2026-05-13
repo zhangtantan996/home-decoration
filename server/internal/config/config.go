@@ -320,7 +320,7 @@ func Load() (*Config, error) {
 	if IsLocalLikeAppEnv() {
 		viper.SetDefault("admin_auth.required_role_keys", "")
 	} else {
-		viper.SetDefault("admin_auth.required_role_keys", "*")
+		viper.SetDefault("admin_auth.required_role_keys", "super_admin,system_admin,admin")
 	}
 	viper.SetDefault("admin_auth.reauth_ttl_minutes", 10)
 	viper.SetDefault("admin_auth.max_active_sessions", 5)

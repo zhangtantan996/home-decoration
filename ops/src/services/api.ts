@@ -5,6 +5,7 @@ import {
   OPS_ACCESS_DENIED_MESSAGE,
   hasOpsAccess,
   useAuthStore,
+  type OpsSecurityStatus,
   type OpsUser,
 } from '../stores/authStore';
 
@@ -81,22 +82,48 @@ const normalizeApiErrorMessage = (error: unknown, fallback: string): string => {
 export interface LoginResponse {
   token?: string;
   accessToken?: string;
+  refreshToken?: string;
   admin?: OpsUser;
   user?: OpsUser;
   loginStage?: string;
+  securitySetupRequired?: boolean;
+  security?: OpsSecurityStatus;
 }
 
-export const login = async (username: string, password: string) => {
-  const data = await api.post<unknown, LoginResponse>('/admin/login', { username, password });
-  const token = data.token || data.accessToken || '';
-  if (!token) throw new Error('登录失败，请检查账号');
+export const login = async (username: string, password: string, otpCode?: string) => {
+  const data = await api.post<unknown, LoginResponse>('/admin/login', { username, password, otpCode });
+  const loginStage = data.loginStage || data.security?.loginStage || 'active';
   const user = data.admin || data.user || { username };
   if (!hasOpsAccess(user)) {
     useAuthStore.getState().clearOpsSession();
     throw new Error(OPS_ACCESS_DENIED_MESSAGE);
   }
-  useAuthStore.getState().setSession(token, user);
+  const security = {
+    ...data.security,
+    loginStage,
+    securitySetupRequired: data.securitySetupRequired ?? data.security?.securitySetupRequired,
+  } as OpsSecurityStatus;
+  const token = data.token || data.accessToken || '';
+  if (token) {
+    useAuthStore.getState().setSession({ token, user, security });
+  }
+  return {
+    ...data,
+    loginStage,
+    security,
+    admin: user,
+    user,
+  };
 };
+
+export const resetInitialPassword = (newPassword: string) =>
+  api.post<{ newPassword: string }, LoginResponse>('/admin/security/password/reset-initial', { newPassword });
+
+export const beginBindTwoFactor = () =>
+  api.post<undefined, { secret?: string; otpauthUrl?: string; issuer?: string }>('/admin/security/2fa/bind');
+
+export const verifyTwoFactor = (otpCode: string) =>
+  api.post<{ otpCode: string }, LoginResponse>('/admin/security/2fa/verify', { otpCode });
 
 export const reauth = (payload: { password?: string; otpCode?: string }) =>
   api.post<{ password?: string; otpCode?: string }, { proof?: string }>('/admin/security/reauth', payload);
