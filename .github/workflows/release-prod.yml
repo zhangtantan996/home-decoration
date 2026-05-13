@@ -110,6 +110,7 @@ jobs:
             package-lock.json
             admin/package-lock.json
             merchant/package-lock.json
+            ops/package-lock.json
             web/package-lock.json
 
       - name: Set up Go
@@ -145,17 +146,21 @@ jobs:
           VITE_ROUTER_BASENAME: /merchant
         run: npm run build
 
+      - name: Install ops dependencies
+        working-directory: ops
+        run: npm ci --legacy-peer-deps
+
+      - name: Build ops
+        working-directory: ops
+        env:
+          VITE_APP_ENV: production
+          VITE_API_URL: /api/v1
+          VITE_ROUTER_BASENAME: /ops
+        run: npm run build
+
       - name: Install web dependencies
         working-directory: web
         run: npm ci
-
-      - name: Install PostgreSQL and Redis clients
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client redis-tools
-
-      - name: Restore base schema/data
-        env:
-          PGPASSWORD: postgres
-        run: psql -h 127.0.0.1 -U postgres -d home_decoration -f public.sql
 
       - name: Build user web
         working-directory: web
@@ -165,6 +170,14 @@ jobs:
           VITE_ROUTER_BASENAME: /
           VITE_PUBLIC_SITE_URL: /
         run: npm run build
+
+      - name: Install PostgreSQL and Redis clients
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client redis-tools
+
+      - name: Restore base schema/data
+        env:
+          PGPASSWORD: postgres
+        run: psql -h 127.0.0.1 -U postgres -d home_decoration -f public.sql
 
       - name: Start API
         env:

@@ -7,6 +7,7 @@ cd "$ROOT_DIR"
 node ./scripts/testing/run_command_suite.mjs \
   --suite smoke-test \
   --step "api-health::./scripts/health-smoke.sh" \
+  --step "ops-verify::npm run verify:ops" \
   --step "user-web-fixture::npm run fixture:user-web" \
   --step "reset-rate-limit::npm run reset:user-web:rate-limit" \
   --step "identity-api-acceptance::npm run test:identity:acceptance:api" \

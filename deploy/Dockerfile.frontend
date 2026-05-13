@@ -39,7 +39,29 @@ ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
 # ==========================================
-# Stage 3: Build Marketing Website
+# Stage 3: Build Ops Panel
+# ==========================================
+FROM docker.m.daocloud.io/library/node:20-alpine AS ops-builder
+WORKDIR /app/ops
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY ops/package*.json ./
+RUN npm install --legacy-peer-deps
+
+COPY ops/ ./
+
+ARG VITE_APP_ENV=production
+ARG VITE_API_URL=/api/v1
+ARG VITE_ROUTER_BASENAME=/ops
+ENV VITE_APP_ENV=${VITE_APP_ENV}
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_ROUTER_BASENAME=${VITE_ROUTER_BASENAME}
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+RUN npm run build
+
+# ==========================================
+# Stage 4: Build Marketing Website
 # ==========================================
 FROM docker.m.daocloud.io/library/node:20-alpine AS website-builder
 WORKDIR /app/website
@@ -60,7 +82,7 @@ ENV NODE_OPTIONS="--max-old-space-size=2048"
 RUN npm run build
 
 # ==========================================
-# Stage 4: Build User Web
+# Stage 5: Build User Web
 # ==========================================
 FROM docker.m.daocloud.io/library/node:20-alpine AS web-builder
 WORKDIR /app/web
@@ -83,7 +105,7 @@ ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
 # ==========================================
-# Stage 5: Nginx Static File Server
+# Stage 6: Nginx Static File Server
 # ==========================================
 FROM docker.m.daocloud.io/library/nginx:alpine
 
@@ -95,6 +117,7 @@ COPY deploy/nginx/nginx.conf /etc/nginx/nginx.conf
 
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
 COPY --from=merchant-builder /app/merchant/dist /usr/share/nginx/html/merchant
+COPY --from=ops-builder /app/ops/dist /usr/share/nginx/html/ops
 COPY --from=website-builder /app/website/dist /usr/share/nginx/html/website
 COPY --from=web-builder /app/web/dist /usr/share/nginx/html/web
 

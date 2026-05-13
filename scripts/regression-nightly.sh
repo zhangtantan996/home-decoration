@@ -10,6 +10,7 @@ node ./scripts/testing/run_command_suite.mjs \
   --step "verify-backend::npm run verify:backend" \
   --step "verify-admin::npm run verify:admin" \
   --step "verify-merchant::npm run verify:merchant" \
+  --step "verify-ops::npm run verify:ops" \
   --step "verify-web::npm run verify:web" \
   --step "verify-mobile::npm run verify:mobile" \
   --step "verify-mini::npm run verify:mini" \
