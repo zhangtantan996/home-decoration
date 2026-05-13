@@ -3,6 +3,7 @@ import OpsLayout from './components/OpsLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 import DashboardPage from './pages/DashboardPage';
 import LoginPage from './pages/LoginPage';
+import OpsSecuritySetupPage from './pages/OpsSecuritySetupPage';
 import SupplyPage from './pages/SupplyPage';
 import SupplyProviderEditPage, { MaterialShopEditPage } from './pages/SupplyEditPage';
 import MaterialProductsPage from './pages/MaterialProductsPage';
@@ -18,6 +19,7 @@ const router = createBrowserRouter([
   {
     element: <ProtectedRoute />,
     children: [
+      { path: '/security/setup', element: <OpsSecuritySetupPage /> },
       {
         element: <OpsLayout />,
         children: [

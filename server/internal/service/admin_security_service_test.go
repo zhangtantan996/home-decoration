@@ -81,6 +81,48 @@ func TestResolveSecurityStatusKeepsSetupInProductionEnv(t *testing.T) {
 	}
 }
 
+func TestAdminRequiresTwoFactorRespectsRoleScope(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.AdminAuth.TOTPEnabled = true
+	cfg.AdminAuth.RequiredRoleKeys = "super_admin,system_admin,admin"
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
+
+	svc := NewAdminSecurityService()
+
+	superAdmin := &model.SysAdmin{
+		Username:     "super-admin",
+		IsSuperAdmin: true,
+	}
+	if !svc.AdminRequiresTwoFactor(superAdmin) {
+		t.Fatalf("expected super admin to require two-factor")
+	}
+
+	systemAdmin := &model.SysAdmin{
+		Username: "system-admin",
+		Roles: []model.SysRole{
+			{Key: "system_admin"},
+		},
+	}
+	if !svc.AdminRequiresTwoFactor(systemAdmin) {
+		t.Fatalf("expected system_admin role to require two-factor")
+	}
+
+	opsAdmin := &model.SysAdmin{
+		Username: "ops-admin",
+		Roles: []model.SysRole{
+			{Key: "operations"},
+		},
+	}
+	if svc.AdminRequiresTwoFactor(opsAdmin) {
+		t.Fatalf("expected operations role to skip mandatory two-factor")
+	}
+}
+
 func TestEnsureAdminUnifiedIdentityRepairsStaleAdminProfile(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
