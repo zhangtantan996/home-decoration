@@ -18,19 +18,20 @@ var mirrorKnownUnstableProviderImage = imgutil.MirrorKnownUnstableImageURL
 
 // ProviderQuery 服务商查询参数
 type ProviderQuery struct {
-	Type      string  `form:"type"`      // 1设计师 2公司 3工长, 或字符串设计师、施工队等
-	Lat       float64 `form:"lat"`       // 纬度
-	Lng       float64 `form:"lng"`       // 经度
-	Radius    float64 `form:"radius"`    // 半径(km)
-	Keyword   string  `form:"keyword"`   // 关键词
-	City      string  `form:"city"`      // 城市
-	RatingMin float64 `form:"ratingMin"` // 最低评分
-	BudgetMin float64 `form:"budgetMin"` // 预算下限
-	BudgetMax float64 `form:"budgetMax"` // 预算上限
-	SortBy    string  `form:"sortBy"`    // 排序: rating, distance, price
-	Page      int     `form:"page"`      // 页码
-	PageSize  int     `form:"pageSize"`  // 每页数量
-	SubType   string  `form:"subType"`   // 子类型筛选
+	Type       string  `form:"type"`       // 1设计师 2公司 3工长, 或字符串设计师、施工队等
+	Lat        float64 `form:"lat"`        // 纬度
+	Lng        float64 `form:"lng"`        // 经度
+	Radius     float64 `form:"radius"`     // 半径(km)
+	Keyword    string  `form:"keyword"`    // 关键词
+	City       string  `form:"city"`       // 城市
+	RatingMin  float64 `form:"ratingMin"`  // 最低评分
+	BudgetMin  float64 `form:"budgetMin"`  // 预算下限
+	BudgetMax  float64 `form:"budgetMax"`  // 预算上限
+	SortBy     string  `form:"sortBy"`     // 排序: rating, distance, price
+	Page       int     `form:"page"`       // 页码
+	PageSize   int     `form:"pageSize"`   // 每页数量
+	SubType    string  `form:"subType"`    // 子类型筛选
+	EntityType string  `form:"entityType"` // 主体类型筛选: personal/company
 }
 
 // ... (ProviderListItem struct unchanged)
@@ -50,6 +51,7 @@ type ProviderListItem struct {
 	Distance      float64 `json:"distance,omitempty"` // 距离(km)
 	// 新增字段
 	SubType         string               `json:"subType"`
+	EntityType      string               `json:"entityType,omitempty"`
 	YearsExperience int                  `json:"yearsExperience"`
 	Specialty       string               `json:"specialty"`
 	HighlightTags   string               `json:"highlightTags"`
@@ -403,6 +405,12 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 	if query.SubType != "" && query.SubType != "all" {
 		db = db.Where("sub_type = ?", query.SubType)
 	}
+	switch strings.ToLower(strings.TrimSpace(query.EntityType)) {
+	case "personal":
+		db = db.Where("(entity_type = ? OR (COALESCE(entity_type, '') = '' AND sub_type = ?))", "personal", "personal")
+	case "company":
+		db = db.Where("(entity_type = ? OR (COALESCE(entity_type, '') = '' AND sub_type IN ?))", "company", []string{"studio", "company"})
+	}
 
 	if query.City != "" {
 		db = applyProviderCityFilter(db, query.City)
@@ -483,6 +491,7 @@ func (s *ProviderService) ListProvidersInternal(providerTypes []int8, query *Pro
 			CompletedCnt:    p.CompletedCnt,
 			Verified:        p.Verified,
 			SubType:         p.SubType,
+			EntityType:      p.EntityType,
 			YearsExperience: p.YearsExperience,
 			Specialty:       specialty,
 			HighlightTags:   highlightTags,

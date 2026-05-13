@@ -8,7 +8,6 @@ import Taro, {
 
 import { Button } from "@/components/Button";
 import { Empty } from "@/components/Empty";
-import { Icon } from "@/components/Icon";
 import MiniPageNav from "@/components/MiniPageNav";
 import PageStateCard from "@/components/PageStateCard";
 import { PullToRefreshNotice } from "@/components/PullToRefreshNotice";
@@ -17,18 +16,15 @@ import { usePullToRefreshFeedback } from "@/hooks/usePullToRefreshFeedback";
 import {
   getProviderCases,
   getProviderDetail,
-  getProviderReviews,
   type ProviderCaseItem,
   type ProviderDetail,
   type ProviderPriceDisplayDTO,
-  type ProviderReviewItem,
   type ProviderType,
 } from "@/services/providers";
 import { useAuthStore } from "@/store/auth";
 import useSlowLoadingHint from "@/hooks/useSlowLoadingHint";
 import {
   collectCompanyAlbumImages,
-  DEFAULT_PROVIDER_AVATAR_URL,
   normalizeProviderMediaUrl,
   parseStringListValue,
   resolveProviderAvatarUrl,
@@ -79,9 +75,7 @@ const ProviderDetailPage: React.FC = () => {
   const auth = useAuthStore();
   const [detail, setDetail] = useState<ProviderDetail | null>(null);
   const [cases, setCases] = useState<ProviderCaseItem[]>([]);
-  const [reviews, setReviews] = useState<ProviderReviewItem[]>([]);
   const [caseTotal, setCaseTotal] = useState(0);
-  const [reviewTotal, setReviewTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [introExpanded, setIntroExpanded] = useState(false);
@@ -154,7 +148,7 @@ const ProviderDetailPage: React.FC = () => {
     setLoading(true);
     setLoadError(null);
     try {
-      const [detailRes, casesRes, reviewsRes] = await Promise.all([
+      const [detailRes, casesRes] = await Promise.all([
         getProviderDetail(params.type, Number(params.id)),
         getProviderCases(params.type, Number(params.id), 1, 5).catch(() => ({
           list: [],
@@ -162,28 +156,14 @@ const ProviderDetailPage: React.FC = () => {
           page: 1,
           pageSize: 5,
         })),
-        getProviderReviews(params.type, Number(params.id), 1, 3).catch(() => ({
-          list: [],
-          total: 0,
-          page: 1,
-          pageSize: 3,
-        })),
       ]);
 
       setDetail(detailRes);
       setCases(casesRes.list || []);
-      setReviews(reviewsRes.list || []);
       setCaseTotal(casesRes.total || 0);
-      setReviewTotal(
-        reviewsRes.total ||
-          Number(
-            (detailRes as unknown as { reviewCount?: number }).reviewCount || 0,
-          ),
-      );
     } catch (error) {
       setDetail(null);
       setCases([]);
-      setReviews([]);
       setLoadError("服务商信息加载失败，请检查网络后重试。");
     } finally {
       setLoading(false);
@@ -204,6 +184,7 @@ const ProviderDetailPage: React.FC = () => {
   const isDesigner = params.type === "designer";
   const isCompany = params.type === "company";
   const isForeman = params.type === "foreman";
+  const canBookProvider = isDesigner || isCompany;
 
   const displayName = useMemo(
     () =>
@@ -242,17 +223,12 @@ const ProviderDetailPage: React.FC = () => {
     if (Number(providerDetail?.completedCnt || 0) > 0) {
       tags.push(`已交付${providerDetail?.completedCnt}单`);
     }
-    if ((reviewTotal || reviews.length) > 0) {
-      tags.push(`${reviewTotal || reviews.length}条评价`);
-    }
 
     return Array.from(new Set(tags.filter(Boolean))).slice(0, 6);
   }, [
     providerDetail?.certifications,
     providerDetail?.completedCnt,
     providerDetail?.highlightTags,
-    reviewTotal,
-    reviews.length,
     settled,
   ]);
 
@@ -272,7 +248,7 @@ const ProviderDetailPage: React.FC = () => {
   const primaryActionText = useMemo(() => {
     if (params.fromQuote) return "带着需求预约";
     if (params.type === "designer") return "立即预约设计";
-    return "立即预约";
+    return "立即预约咨询";
   }, [params.fromQuote, params.type]);
 
   const experienceText = useMemo(() => {
@@ -325,7 +301,7 @@ const ProviderDetailPage: React.FC = () => {
     [companyAlbumImages],
   );
 
-  const hasFixedFooter = !settled || !isForeman;
+  const hasFixedFooter = !settled || canBookProvider;
   const slowLoadingVisible = useSlowLoadingHint(loading);
   const ratingValue = Number(providerDetail?.rating || 0);
   const introNeedsExpand =
@@ -360,6 +336,10 @@ const ProviderDetailPage: React.FC = () => {
 
   const handleBook = () => {
     if (!ensureLogin()) return;
+    if (!canBookProvider) {
+      Taro.showToast({ title: "当前仅支持预约设计师和装修公司", icon: "none" });
+      return;
+    }
     if (!detail || !params.id) {
       Taro.showToast({ title: "服务商信息异常", icon: "none" });
       return;
@@ -392,14 +372,6 @@ const ProviderDetailPage: React.FC = () => {
     const providerName = encodeURIComponent(displayName);
     Taro.navigateTo({
       url: `/pages/cases/scene-detail/index?sceneId=${sceneId}&providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
-    });
-  };
-
-  const handleOpenReviews = () => {
-    if (!params.id) return;
-    const providerName = encodeURIComponent(displayName);
-    Taro.navigateTo({
-      url: `/pages/reviews/index?providerId=${params.id}&providerType=${params.type}&providerName=${providerName}`,
     });
   };
 
@@ -696,13 +668,6 @@ const ProviderDetailPage: React.FC = () => {
           <View className="provider-detail-page__stat-divider" />
           <View className="provider-detail-page__stat">
             <Text className="provider-detail-page__stat-value">
-              {compactCount(reviewTotal || reviews.length)}
-            </Text>
-            <Text className="provider-detail-page__stat-label">业主评价</Text>
-          </View>
-          <View className="provider-detail-page__stat-divider" />
-          <View className="provider-detail-page__stat">
-            <Text className="provider-detail-page__stat-value">
               {caseTotal || providerDetail?.completedCnt || 0}
             </Text>
             <Text className="provider-detail-page__stat-label">案例数量</Text>
@@ -822,74 +787,6 @@ const ProviderDetailPage: React.FC = () => {
           </View>
         )}
       </View>
-
-      <View className="provider-detail-page__section provider-detail-page__section--reviews">
-        <View className="provider-detail-page__section-head">
-          <Text className="provider-detail-page__section-title">口碑评价</Text>
-          <Text
-            className="provider-detail-page__section-more"
-            onClick={handleOpenReviews}
-          >
-            全部 {reviewTotal || reviews.length} 条
-          </Text>
-        </View>
-
-        {reviews.length > 0 ? (
-          <View className="provider-detail-page__review-list">
-            {reviews.slice(0, 2).map((item) => (
-              <View key={item.id} className="provider-detail-page__review-card">
-                <View className="provider-detail-page__review-head">
-                  {item.userAvatar ? (
-                    <Image
-                      className="provider-detail-page__review-avatar"
-                      src={normalizeProviderMediaUrl(
-                        item.userAvatar,
-                        DEFAULT_PROVIDER_AVATAR_URL,
-                      )}
-                      mode="aspectFill"
-                      lazyLoad
-                    />
-                  ) : (
-                    <View className="provider-detail-page__review-avatar provider-detail-page__review-avatar--placeholder" />
-                  )}
-                  <Text className="provider-detail-page__review-user">
-                    {item.userName || "匿名业主"}
-                  </Text>
-                  <View className="provider-detail-page__review-rating">
-                    <Icon name="star" size={18} color="#F59E0B" />
-                    <Text className="provider-detail-page__review-rating-text">
-                      {Number(item.rating || 0)
-                        .toFixed(1)
-                        .replace(/\.0$/, "")}
-                    </Text>
-                  </View>
-                </View>
-                <Text
-                  className="provider-detail-page__review-content"
-                  numberOfLines={2}
-                >
-                  {item.content || "暂无评价内容"}
-                </Text>
-              </View>
-            ))}
-            <View className="provider-detail-page__review-all">
-              <Text
-                className="provider-detail-page__review-all-text"
-                onClick={handleOpenReviews}
-              >
-                查看所有评价
-              </Text>
-            </View>
-          </View>
-        ) : (
-          <View className="provider-detail-page__placeholder-card">
-            <Text className="provider-detail-page__placeholder-text">
-              暂无评价
-            </Text>
-          </View>
-        )}
-      </View>
-
       {!settled ? (
         <View className="provider-detail-page__unsettled-bar">
           <View className="provider-detail-page__unsettled-head">
@@ -902,7 +799,7 @@ const ProviderDetailPage: React.FC = () => {
             该商家信息来源于公开渠道，尚未在本平台入驻，当前展示内容仅供参考。
           </Text>
         </View>
-      ) : !isForeman ? (
+      ) : canBookProvider ? (
         <View className="provider-detail-page__bottom-bar">
           <View className="provider-detail-page__bottom-pill">
             <Button

@@ -22,6 +22,8 @@ export default function ChangePhonePage() {
   const [countdown, setCountdown] = useState(0);
   const [sending, setSending] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const normalizePhone = (value: string) => value.replace(/\D/g, '').slice(0, 11);
+  const normalizeCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
 
   useEffect(() => {
     if (countdown <= 0) {
@@ -153,7 +155,7 @@ export default function ChangePhonePage() {
               maxlength={11}
               placeholder="请输入新的手机号"
               value={newPhone}
-              onInput={(event) => setNewPhone(event.detail.value)}
+              onInput={(event) => setNewPhone(normalizePhone(event.detail.value))}
             />
           </View>
 
@@ -166,7 +168,7 @@ export default function ChangePhonePage() {
                 maxlength={6}
                 placeholder="请输入验证码"
                 value={code}
-                onInput={(event) => setCode(event.detail.value)}
+                onInput={(event) => setCode(normalizeCode(event.detail.value))}
               />
               <View className="security-form-page__code-button" onClick={handleSendCode}>
                 <Text className="security-form-page__code-button-text">{sendButtonText}</Text>

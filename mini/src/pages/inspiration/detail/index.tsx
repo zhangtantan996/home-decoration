@@ -1,22 +1,19 @@
-import Taro, { useLoad, usePageScroll, useReachBottom, useShareAppMessage } from '@tarojs/taro';
+import Taro, { useLoad, usePageScroll, useShareAppMessage } from '@tarojs/taro';
 import { Image, Text, View } from '@tarojs/components';
 import { useEffect, useMemo, useState } from 'react';
 
 import { Empty } from '@/components/Empty';
 import MiniPageNav from '@/components/MiniPageNav';
 import { Skeleton } from '@/components/Skeleton';
-import type { InspirationCommentDTO, InspirationDetailDTO } from '@/services/dto';
+import type { InspirationDetailDTO } from '@/services/dto';
 import { inspirationService } from '@/services/inspiration';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { getInspirationCoverImage, getInspirationGalleryImages } from '@/utils/inspirationImages';
-import { formatServerDateTime } from '@/utils/serverTime';
 
 import './index.scss';
 
 const INSPIRATION_CASE_SYNC_KEY = 'inspiration_case_sync';
-const COMMENT_DRAFT_KEY_PREFIX = 'inspiration_comment_draft_';
-const COMMENT_PAGE_SIZE = 20;
 const NAV_SCROLL_DISTANCE = 180;
 
 interface InspirationCaseSyncPayload {
@@ -24,10 +21,7 @@ interface InspirationCaseSyncPayload {
   isLiked?: boolean;
   likeCount?: number;
   isFavorited?: boolean;
-  commentCount?: number;
 }
-
-const getCommentDraftKey = (inspirationId: number) => `${COMMENT_DRAFT_KEY_PREFIX}${inspirationId}`;
 
 const mergeSyncPayload = (payload: InspirationCaseSyncPayload) => {
   const exists = Taro.getStorageSync(INSPIRATION_CASE_SYNC_KEY) as Partial<InspirationCaseSyncPayload> | undefined;
@@ -58,13 +52,8 @@ export default function InspirationDetailPage() {
   const auth = useAuthStore();
   const [id, setId] = useState<number>(0);
   const [detail, setDetail] = useState<InspirationDetailDTO | null>(null);
-  const [comments, setComments] = useState<InspirationCommentDTO[]>([]);
-  const [commentText, setCommentText] = useState('');
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [commentsPage, setCommentsPage] = useState(1);
-  const [commentsHasMore, setCommentsHasMore] = useState(true);
-  const [loadingCommentsMore, setLoadingCommentsMore] = useState(false);
   const [navProgress, setNavProgress] = useState(0);
 
   useLoad((options) => {
@@ -102,18 +91,8 @@ export default function InspirationDetailPage() {
 
     setLoading(true);
     try {
-      const [detailRes, commentsRes] = await Promise.all([
-        inspirationService.detail(id),
-        inspirationService.comments(id, { page: 1, pageSize: COMMENT_PAGE_SIZE }),
-      ]);
-
-      const firstComments = commentsRes.list || [];
+      const detailRes = await inspirationService.detail(id);
       setDetail(detailRes);
-      setComments(firstComments);
-      setCommentsPage(2);
-
-      const hasMoreByTotal = (commentsRes.total || 0) > COMMENT_PAGE_SIZE;
-      setCommentsHasMore(hasMoreByTotal || firstComments.length === COMMENT_PAGE_SIZE);
       return detailRes;
     } catch (error) {
       showErrorToast(error, '加载失败');
@@ -123,54 +102,11 @@ export default function InspirationDetailPage() {
     }
   };
 
-  const loadMoreComments = async () => {
-    if (!id || !commentsHasMore || loadingCommentsMore || loading) return;
-
-    const currentPage = commentsPage;
-    setLoadingCommentsMore(true);
-
-    try {
-      const commentsRes = await inspirationService.comments(id, {
-        page: currentPage,
-        pageSize: COMMENT_PAGE_SIZE,
-      });
-
-      const incoming = commentsRes.list || [];
-      setComments((prev) => [...prev, ...incoming]);
-      setCommentsPage(currentPage + 1);
-
-      const hasMoreByTotal = (commentsRes.total || 0) > currentPage * COMMENT_PAGE_SIZE;
-      setCommentsHasMore(hasMoreByTotal || incoming.length === COMMENT_PAGE_SIZE);
-    } catch (error) {
-      showErrorToast(error, '加载更多评论失败');
-    } finally {
-      setLoadingCommentsMore(false);
-    }
-  };
-
   useEffect(() => {
     if (!id) return;
 
-    const cachedDraft = Taro.getStorageSync(getCommentDraftKey(id));
-    setCommentText(typeof cachedDraft === 'string' ? cachedDraft : '');
     void fetchDetail();
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  useEffect(() => {
-    if (!id) return;
-
-    const draftKey = getCommentDraftKey(id);
-    if (!commentText.trim()) {
-      Taro.removeStorageSync(draftKey);
-      return;
-    }
-
-    Taro.setStorageSync(draftKey, commentText);
-  }, [id, commentText]);
-
-  useReachBottom(() => {
-    void loadMoreComments();
-  });
 
   const ensureAuth = () => {
     if (auth.token) return true;
@@ -219,7 +155,6 @@ export default function InspirationDetailPage() {
         isLiked: nextLiked,
         likeCount: nextLikeCount,
         isFavorited: detail.isFavorited,
-        commentCount: detail.commentCount,
       });
     } catch (error) {
       setDetail({ ...detail, isLiked: originLiked, likeCount: originCount });
@@ -249,7 +184,6 @@ export default function InspirationDetailPage() {
         isFavorited: nextFavorited,
         isLiked: detail.isLiked,
         likeCount: detail.likeCount,
-        commentCount: detail.commentCount,
       });
     } catch (error) {
       setDetail({ ...detail, isFavorited: originFavorited });
@@ -257,130 +191,6 @@ export default function InspirationDetailPage() {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleSubmitComment = async (rawContent?: string) => {
-    if (!detail || !ensureAuth() || submitting) return;
-
-    const content = (rawContent ?? commentText).trim();
-    if (!content) {
-      Taro.showToast({ title: '请输入评论内容', icon: 'none' });
-      return;
-    }
-
-    setSubmitting(true);
-    try {
-      await inspirationService.createComment(detail.id, content);
-      setCommentText('');
-      Taro.removeStorageSync(getCommentDraftKey(detail.id));
-      Taro.showToast({ title: '评论成功', icon: 'success' });
-
-      const latest = await fetchDetail();
-      if (latest) {
-        mergeSyncPayload({
-          id: latest.id,
-          isLiked: latest.isLiked,
-          likeCount: latest.likeCount,
-          isFavorited: latest.isFavorited,
-          commentCount: latest.commentCount,
-        });
-      }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      if (errorMessage.includes('敏感词')) {
-        Taro.showToast({ title: '评论包含敏感词，请修改后重试', icon: 'none', duration: 2500 });
-      } else {
-        showErrorToast(error, '评论失败');
-      }
-    } finally {
-      setSubmitting(false);
-    }
-  };
-
-  const openCommentComposer = () => {
-    Taro.showModal({
-      title: '发布评论',
-      editable: true,
-      placeholderText: commentText || '请输入评论内容',
-      success: (res: { confirm: boolean; content?: string }) => {
-        if (!res.confirm) return;
-
-        const nextContent = (res.content || '').trim();
-        if (!nextContent) {
-          Taro.showToast({ title: '请输入评论内容', icon: 'none' });
-          return;
-        }
-
-        setCommentText(nextContent);
-        void handleSubmitComment(nextContent);
-      },
-    } as any);
-  };
-
-  const handleReplyComment = (comment: InspirationCommentDTO) => {
-    if (!ensureAuth()) return;
-
-    Taro.navigateTo({
-      url: `/pages/inspiration/comment-detail/index?id=${comment.id}&caseId=${detail?.id || 0}`,
-    });
-  };
-
-  const handleCommentAction = (comment: InspirationCommentDTO) => {
-    if (!ensureAuth()) return;
-
-    const isOwnComment = auth.user?.id === comment.user?.id;
-    const itemList = isOwnComment ? ['删除评论'] : ['举报评论'];
-
-    Taro.showActionSheet({
-      itemList,
-      success: (res) => {
-        if (res.tapIndex === 0) {
-          if (isOwnComment) {
-            handleDeleteComment(comment);
-          } else {
-            handleReportComment(comment);
-          }
-        }
-      },
-    });
-  };
-
-  const handleDeleteComment = (comment: InspirationCommentDTO) => {
-    Taro.showModal({
-      title: '确认删除',
-      content: '删除后无法恢复，确定要删除这条评论吗？',
-      success: async (res) => {
-        if (!res.confirm) return;
-
-        try {
-          await inspirationService.deleteComment(comment.id);
-          Taro.showToast({ title: '删除成功', icon: 'success' });
-
-          // 刷新评论列表
-          await fetchDetail();
-        } catch (error) {
-          showErrorToast(error, '删除失败');
-        }
-      },
-    });
-  };
-
-  const handleReportComment = (comment: InspirationCommentDTO) => {
-    const reasonList = ['垃圾广告', '色情低俗', '政治敏感', '人身攻击', '其他'];
-
-    Taro.showActionSheet({
-      itemList: reasonList,
-      success: async (res) => {
-        const reason = reasonList[res.tapIndex];
-
-        try {
-          await inspirationService.reportComment(comment.id, reason);
-          Taro.showToast({ title: '举报成功，我们会尽快处理', icon: 'success', duration: 2000 });
-        } catch (error) {
-          showErrorToast(error, '举报失败');
-        }
-      },
-    });
   };
 
   const solidNav = <MiniPageNav title="灵感详情" onBack={handleBack} placeholder />;
@@ -503,56 +313,6 @@ export default function InspirationDetailPage() {
           </View>
         ) : null}
 
-        <View className="inspiration-detail-page__module-card inspiration-detail-page__comments-card">
-          <View className="inspiration-detail-page__section-head">
-            <Text className="inspiration-detail-page__section-title">评论区</Text>
-            <Text className="inspiration-detail-page__section-caption">{detail.commentCount || 0} 条</Text>
-          </View>
-
-          <View className="inspiration-detail-page__comment-entry" onClick={openCommentComposer}>
-            <Text className="inspiration-detail-page__comment-entry-text">
-              {commentText || '说说你的看法，发布后会展示在评论区。'}
-            </Text>
-          </View>
-
-          {comments.length === 0 ? (
-            <Empty description="暂无评论，快来抢沙发" />
-          ) : (
-            comments.map((item) => (
-              <View key={item.id} className="inspiration-detail-page__comment-card">
-                <View className="inspiration-detail-page__comment-head">
-                  {item.user?.avatar ? (
-                    <Image className="inspiration-detail-page__comment-avatar" src={item.user.avatar} mode="aspectFill" lazyLoad />
-                  ) : (
-                    <View className="inspiration-detail-page__comment-avatar inspiration-detail-page__comment-avatar--placeholder" />
-                  )}
-                  <View className="inspiration-detail-page__comment-user-meta">
-                    <Text className="inspiration-detail-page__comment-user">{item.user?.name || '匿名用户'}</Text>
-                    <Text className="inspiration-detail-page__comment-time">
-                      {formatServerDateTime(item.createdAt)}
-                    </Text>
-                  </View>
-                  <View className="inspiration-detail-page__comment-actions" onClick={() => handleCommentAction(item)}>
-                    <Text className="inspiration-detail-page__comment-actions-icon">···</Text>
-                  </View>
-                </View>
-                <Text className="inspiration-detail-page__comment-content">{item.content}</Text>
-                <View className="inspiration-detail-page__comment-footer">
-                  <View className="inspiration-detail-page__comment-reply-btn" onClick={() => handleReplyComment(item)}>
-                    <Text className="inspiration-detail-page__comment-reply-text">回复</Text>
-                  </View>
-                </View>
-              </View>
-            ))
-          )}
-
-          {loadingCommentsMore ? (
-            <View className="inspiration-detail-page__comment-tip">加载更多评论中...</View>
-          ) : null}
-          {!commentsHasMore && comments.length > 0 ? (
-            <View className="inspiration-detail-page__comment-tip">没有更多评论了</View>
-          ) : null}
-        </View>
       </View>
 
       <View className="inspiration-detail-page__footer">
@@ -570,14 +330,6 @@ export default function InspirationDetailPage() {
         >
           <Text className={buildFooterActionClass('inspiration-detail-page__footer-action-text', detail.isFavorited)}>
             {detail.isFavorited ? '已收藏' : '收藏'}
-          </Text>
-        </View>
-        <View
-          className={buildFooterActionClass('inspiration-detail-page__footer-action', false, true)}
-          onClick={openCommentComposer}
-        >
-          <Text className={buildFooterActionClass('inspiration-detail-page__footer-action-text', false, true)}>
-            评论
           </Text>
         </View>
       </View>

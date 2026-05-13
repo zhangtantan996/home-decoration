@@ -633,6 +633,67 @@ func TestProviderServiceListKeepsLegacyCompanySubtypeInDesignerTab(t *testing.T)
 	}
 }
 
+func TestProviderServiceListFiltersEntityTypeBeforePagination(t *testing.T) {
+	db := setupProviderServiceDB(t)
+	service := &ProviderService{}
+
+	providers := []struct {
+		phone      string
+		nickname   string
+		company    string
+		entityType string
+		subType    string
+	}{
+		{phone: "13800138120", nickname: "个人设计师", company: "独立设计师", entityType: "personal", subType: "personal"},
+		{phone: "13800138121", nickname: "入驻设计公司", company: "入驻设计公司", entityType: "company", subType: "company"},
+		{phone: "13800138122", nickname: "兼容旧公司", company: "兼容旧设计公司", entityType: "", subType: "company"},
+	}
+	for _, item := range providers {
+		user := model.User{Phone: item.phone, Nickname: item.nickname, PublicID: item.phone}
+		if err := db.Create(&user).Error; err != nil {
+			t.Fatalf("create user %s: %v", item.phone, err)
+		}
+		provider := model.Provider{
+			UserID:       user.ID,
+			ProviderType: 1,
+			DisplayName:  item.nickname,
+			CompanyName:  item.company,
+			EntityType:   item.entityType,
+			SubType:      item.subType,
+			Verified:     true,
+			Status:       1,
+			IsSettled:    true,
+		}
+		if err := db.Create(&provider).Error; err != nil {
+			t.Fatalf("create provider %s: %v", item.phone, err)
+		}
+		if item.entityType == "" {
+			if err := db.Model(&provider).Update("entity_type", "").Error; err != nil {
+				t.Fatalf("clear legacy entity type %s: %v", item.phone, err)
+			}
+		}
+	}
+
+	companyList, total, err := service.ListProviders(&ProviderQuery{Type: "designer", EntityType: "company", Page: 1, PageSize: 1})
+	if err != nil {
+		t.Fatalf("list company entity providers: %v", err)
+	}
+	if total != 2 || len(companyList) != 1 {
+		t.Fatalf("expected entity filter to run before pagination, total=%d len=%d", total, len(companyList))
+	}
+	if companyList[0].EntityType != "company" && companyList[0].SubType != "company" {
+		t.Fatalf("unexpected company entity list item: %+v", companyList[0])
+	}
+
+	personalList, total, err := service.ListProviders(&ProviderQuery{Type: "designer", EntityType: "personal", Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatalf("list personal entity providers: %v", err)
+	}
+	if total != 1 || len(personalList) != 1 || personalList[0].EntityType != "personal" {
+		t.Fatalf("expected only personal entity provider, total=%d list=%+v", total, personalList)
+	}
+}
+
 func TestProviderServiceListSupportsCityRatingAndBudgetFilters(t *testing.T) {
 	db := setupProviderServiceDB(t)
 	service := &ProviderService{}

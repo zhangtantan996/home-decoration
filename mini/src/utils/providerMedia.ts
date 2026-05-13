@@ -21,7 +21,7 @@ const normalizeFirstPartyAbsoluteUrl = (raw: string) => {
     return value;
   }
 
-  if (KNOWN_SECURE_FIRST_PARTY_HOSTS.has(targetUrl.hostname)) {
+  if (KNOWN_SECURE_FIRST_PARTY_HOSTS.has(targetUrl.hostname) && currentOrigin.protocol === 'https:') {
     return `https://${targetUrl.host}${targetUrl.pathname}${targetUrl.search}${targetUrl.hash}`;
   }
 

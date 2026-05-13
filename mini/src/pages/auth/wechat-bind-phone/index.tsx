@@ -17,6 +17,8 @@ export default function WechatBindPhonePage() {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [sending, setSending] = useState(false);
+  const normalizePhone = (value: string) => value.replace(/\D/g, '').slice(0, 11);
+  const normalizeCode = (value: string) => value.replace(/\D/g, '').slice(0, 6);
 
   const phoneError = useMemo(() => {
     const v = phone.trim();
@@ -83,7 +85,7 @@ export default function WechatBindPhonePage() {
           <Input
             label="手机号"
             value={phone}
-            onChange={setPhone}
+            onChange={(value) => setPhone(normalizePhone(value))}
             placeholder="请输入手机号"
             type="phone"
             error={phoneError}
@@ -92,7 +94,7 @@ export default function WechatBindPhonePage() {
           <Input
             label="验证码"
             value={code}
-            onChange={setCode}
+            onChange={(value) => setCode(normalizeCode(value))}
             placeholder="请输入验证码"
             type="number"
           />

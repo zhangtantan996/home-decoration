@@ -9,8 +9,6 @@ import { ListItem } from '@/components/ListItem';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import { useMountedRef } from '@/hooks/useMountedRef';
-import { favoriteService } from '@/services/inspiration';
-import { listOrderCenterEntries } from '@/services/orderCenter';
 import { getUserProfile, type UserProfile } from '@/services/profile';
 import { useAuthStore } from '@/store/auth';
 import { openAuthLoginPage } from '@/utils/authRedirect';
@@ -18,7 +16,6 @@ import { syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
 import { resolveProfileAvatarDisplayUrl } from '@/utils/profileAvatar';
-import { getQuoteInquiryLastResultForUser } from '@/utils/quoteInquiryLastResult';
 
 import './index.scss';
 
@@ -26,28 +23,16 @@ const PROFILE_HEADER_EXTRA_BOTTOM = 10;
 
 const GUEST_SHORTCUTS = [
   {
-    key: 'orders',
-    title: '我的订单',
-    description: '同步方案、支付与履约状态',
-    icon: 'orders' as const,
+    key: 'feedback',
+    title: '意见反馈',
+    description: '告诉我们你遇到的问题',
+    icon: 'support' as const,
   },
   {
-    key: 'bookings',
-    title: '我的预约',
-    description: '查看量房预约与服务进展',
-    icon: 'orders' as const,
-  },
-  {
-    key: 'progress',
-    title: '项目进度',
-    description: '跟进阶段节点与异常闭环',
-    icon: 'progress' as const,
-  },
-  {
-    key: 'refunds',
-    title: '退款记录',
-    description: '回看申请状态与处理结果',
-    icon: 'history' as const,
+    key: 'about',
+    title: '关于我们',
+    description: '了解平台与服务说明',
+    icon: 'about' as const,
   },
 ];
 
@@ -73,8 +58,6 @@ export default function Profile() {
   const isLoggedIn = Boolean(auth.token);
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const [profile, setProfile] = useState<UserProfile | null>(null);
-  const [pendingPaymentCount, setPendingPaymentCount] = useState(0);
-  const [favoriteCaseCount, setFavoriteCaseCount] = useState(0);
   const loadRequestIdRef = useRef(0);
 
   const headerInsetStyle = useMemo(
@@ -106,17 +89,14 @@ export default function Profile() {
     if (!useAuthStore.getState().token) {
       if (mountedRef.current) {
         setProfile(null);
-        setPendingPaymentCount(0);
-        setFavoriteCaseCount(0);
       }
       return;
     }
 
-    const [profileResult, pendingResult, favoriteResult] = await Promise.allSettled([
-      getUserProfile(),
-      listOrderCenterEntries({ statusGroup: 'pending_payment', page: 1, pageSize: 1 }),
-      favoriteService.listCases(1, 1),
-    ]);
+    const profileResult = await getUserProfile().then(
+      (value) => ({ status: 'fulfilled' as const, value }),
+      (reason) => ({ status: 'rejected' as const, reason }),
+    );
 
     if (profileResult.status === 'fulfilled') {
       const nextProfile = profileResult.value;
@@ -144,27 +124,6 @@ export default function Profile() {
       showErrorToast(profileResult.reason, '资料加载失败');
     }
 
-    if (pendingResult.status === 'fulfilled' && requestId === loadRequestIdRef.current && mountedRef.current) {
-      setPendingPaymentCount(Number(pendingResult.value.total || pendingResult.value.list?.length || 0));
-    } else if (
-      pendingResult.status === 'rejected'
-      && requestId === loadRequestIdRef.current
-      && mountedRef.current
-      && !silent
-    ) {
-      showErrorToast(pendingResult.reason, '待支付加载失败');
-    }
-
-    if (favoriteResult.status === 'fulfilled' && requestId === loadRequestIdRef.current && mountedRef.current) {
-      setFavoriteCaseCount(favoriteResult.value.total || 0);
-    } else if (
-      favoriteResult.status === 'rejected'
-      && requestId === loadRequestIdRef.current
-      && mountedRef.current
-      && !silent
-    ) {
-      showErrorToast(favoriteResult.reason, '收藏加载失败');
-    }
   }, [mountedRef]);
 
   const { refreshStatus, drawerHeight, drawerProgress, bindPullToRefresh, runReload } =
@@ -182,8 +141,6 @@ export default function Profile() {
       loadRequestIdRef.current += 1;
       if (mountedRef.current) {
         setProfile(null);
-        setPendingPaymentCount(0);
-        setFavoriteCaseCount(0);
       }
       return;
     }
@@ -209,31 +166,9 @@ export default function Profile() {
     action();
   };
 
-  const handleOrders = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/orders/list/index' });
-    });
-  };
-
   const handleBookings = () => {
     requireAuth(() => {
       Taro.navigateTo({ url: '/pages/booking/list/index' });
-    });
-  };
-
-  const handleProposals = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/proposals/list/index' });
-    });
-  };
-
-  const handleProgress = () => {
-    requireAuth(() => {
-      if (auth.user?.activeRole && !['owner', 'homeowner'].includes(auth.user.activeRole)) {
-        Taro.showToast({ title: '请切换回业主身份后查看项目进度', icon: 'none' });
-        return;
-      }
-      Taro.switchTab({ url: '/pages/progress/index' });
     });
   };
 
@@ -243,54 +178,12 @@ export default function Profile() {
     });
   };
 
-  const handleComplaints = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/complaints/list/index' });
-    });
-  };
-
-  const handleAfterSales = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/after-sales/list/index' });
-    });
-  };
-
-  const handleRefunds = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/refunds/list/index' });
-    });
-  };
-
-  const handleFavorites = () => {
-    requireAuth(() => {
-      Taro.navigateTo({ url: '/pages/profile/favorites/index' });
-    });
-  };
-
-  const handleQuoteInquiry = () => {
-    requireAuth(() => {
-      const userId = Number(useAuthStore.getState().user?.id || 0);
-      if (userId > 0) {
-        const last = getQuoteInquiryLastResultForUser(userId);
-        if (last) {
-          const query = last.accessToken
-            ? `id=${last.id}&accessToken=${encodeURIComponent(last.accessToken)}`
-            : `id=${last.id}`;
-          Taro.navigateTo({ url: `/pages/quote-inquiry/result/index?${query}` });
-          return;
-        }
-      }
-
-      Taro.navigateTo({ url: '/pages/quote-inquiry/create/index' });
-    });
-  };
-
   const handleSettings = () => {
     Taro.navigateTo({ url: '/pages/settings/index' });
   };
 
-  const handleSupport = () => {
-    Taro.navigateTo({ url: '/pages/support/index' });
+  const handleFeedback = () => {
+    Taro.navigateTo({ url: '/pages/settings/feedback/index' });
   };
 
   const handleAbout = () => {
@@ -343,25 +236,14 @@ export default function Profile() {
                 </View>
               </View>
 
-              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleQuoteInquiry}>
-                智能报价
+              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleBookings}>
+                我的预约
               </Button>
             </View>
           </View>
 
           <View className="profile-page__content">
-            <Card className="profile-page__card" title="业务中心">
-              <ListItem
-                title="我的订单"
-                arrow
-                icon={<Icon name="orders" size={28} color="#71717A" />}
-                extra={
-                  pendingPaymentCount > 0 ? (
-                    <View className="profile-page__payment-badge">{pendingPaymentCount}</View>
-                  ) : undefined
-                }
-                onClick={handleOrders}
-              />
+            <Card className="profile-page__card" title="基础服务">
               <ListItem
                 title="我的预约"
                 arrow
@@ -369,56 +251,28 @@ export default function Profile() {
                 onClick={handleBookings}
               />
               <ListItem
-                title="我的方案"
-                arrow
-                icon={<Icon name="orders" size={28} color="#71717A" />}
-                onClick={handleProposals}
-              />
-              <ListItem
-                title="我的项目"
-                arrow
-                icon={<Icon name="progress" size={28} color="#71717A" />}
-                onClick={handleProgress}
-              />
-            </Card>
-
-            <Card className="profile-page__card" title="个人与售后">
-              <ListItem
                 title="我的通知"
                 arrow
                 icon={<Icon name="notification" size={28} color="#71717A" />}
                 onClick={handleMessages}
               />
               <ListItem
-                title="我的投诉"
+                title="意见反馈"
                 arrow
                 icon={<Icon name="support" size={28} color="#71717A" />}
-                onClick={handleComplaints}
+                onClick={handleFeedback}
               />
               <ListItem
-                title="售后服务"
-                arrow
-                icon={<Icon name="history" size={28} color="#71717A" />}
-                onClick={handleAfterSales}
-              />
-              <ListItem
-                title="退款记录"
-                arrow
-                icon={<Icon name="history" size={28} color="#71717A" />}
-                onClick={handleRefunds}
-              />
-              <ListItem
-                title="灵感收藏"
-                arrow
-                icon={<Icon name="favorites" size={28} color="#71717A" />}
-                extra={<View className="profile-page__muted-value">{favoriteCaseCount}</View>}
-                onClick={handleFavorites}
-              />
-              <ListItem
-                title="设置"
+                title="账号与资料"
                 arrow
                 icon={<Icon name="settings" size={28} color="#71717A" />}
                 onClick={handleSettings}
+              />
+              <ListItem
+                title="关于我们"
+                arrow
+                icon={<Icon name="about" size={28} color="#71717A" />}
+                onClick={handleAbout}
               />
             </Card>
           </View>
@@ -432,7 +286,7 @@ export default function Profile() {
               </View>
               <View className="profile-page__guest-copy" onClick={handleGuestLogin}>
                 <Text className="profile-page__guest-title">点击登录 / 注册</Text>
-                <Text className="profile-page__guest-description">同步预约、订单、项目进度与退款记录</Text>
+                <Text className="profile-page__guest-description">登录后可查看预约和基础账号服务</Text>
               </View>
             </View>
           </View>
@@ -451,10 +305,10 @@ export default function Profile() {
 
           <Card className="profile-page__card profile-page__card--guest-services" title="平台服务">
             <ListItem
-              title="联系客服"
+              title="意见反馈"
               arrow
               icon={<Icon name="support" size={28} color="#71717A" />}
-              onClick={handleSupport}
+              onClick={handleFeedback}
             />
             <ListItem
               title="关于我们"

@@ -21,6 +21,7 @@ import {
 import {
   listProviders,
   type ProviderListItem,
+  type ProviderQuery,
   type ProviderType,
 } from "@/services/providers";
 import { showErrorToast } from "@/utils/error";
@@ -352,7 +353,6 @@ const getCompanyDisplayTags = (provider: ProviderListItem) => {
 
 const getCompanyInfoLine = (provider: ProviderListItem) => {
   return [
-    provider.reviewCount ? `${provider.reviewCount}条评价` : "",
     provider.completedCnt ? `${provider.completedCnt}单交付` : "",
     provider.yearsExperience ? `${provider.yearsExperience}年经验` : "",
   ]
@@ -389,7 +389,7 @@ const sortProviders = (items: ProviderListItem[], sortBy: string) => {
     if ((right.rating || 0) !== (left.rating || 0)) {
       return (right.rating || 0) - (left.rating || 0);
     }
-    return (right.reviewCount || 0) - (left.reviewCount || 0);
+    return (right.completedCnt || 0) - (left.completedCnt || 0);
   });
 };
 
@@ -410,7 +410,6 @@ const getMaterialDisplayTags = (shop: MaterialShopItem) => {
 
 const getMaterialInfoLine = (shop: MaterialShopItem) => {
   return [
-    shop.reviewCount ? `${shop.reviewCount}条评价` : "",
     isMeaningfulText(shop.openTime) ? shop.openTime : "",
   ]
     .filter(Boolean)
@@ -422,11 +421,13 @@ const loadAllProviders = async ({
   keyword,
   sortBy,
   page,
+  orgFilter,
 }: {
   type: ProviderType;
   keyword: string;
-  sortBy?: string;
+  sortBy?: ProviderQuery["sortBy"];
   page?: number;
+  orgFilter?: ProviderOrgFilter;
 }) => {
   const data = await listProviders({
     page: page || 1,
@@ -434,6 +435,7 @@ const loadAllProviders = async ({
     type,
     keyword,
     sortBy,
+    entityType: orgFilter && orgFilter !== "all" ? orgFilter : undefined,
   });
   return { list: data.list || [], total: data.total || 0 };
 };
@@ -593,18 +595,14 @@ export default function Home() {
     );
   }, [currentSortOptions, currentSortValue]);
 
-  const getBackendSortBy = (sortValue: string): string | undefined => {
+  const getBackendSortBy = (sortValue: string): ProviderQuery["sortBy"] => {
     if (sortValue === "recommend") return undefined;
     if (sortValue === "rating") return "rating";
     if (sortValue === "experience") return "experience";
     return undefined;
   };
 
-  // hasMore：当客户端 orgFilter 生效时 server total 不可信，禁止加载更多
-  const providerHasMore =
-    providerOrgFilter !== "all" && activeCategory !== "company"
-      ? false
-      : providerItems.length < providerTotal;
+  const providerHasMore = providerItems.length < providerTotal;
   const materialHasMore = materialItems.length < materialTotal;
 
   const loadPageData = useCallback(
@@ -647,13 +645,10 @@ export default function Home() {
           sortBy: getBackendSortBy(currentSort),
           keyword: "",
           page: 1,
+          orgFilter: activeCategory === "company" ? "all" : providerOrgFilter,
         });
 
-        const filtered =
-          activeCategory === "company" || providerOrgFilter === "all"
-            ? list
-            : list.filter((p) => getProviderOrgType(p) === providerOrgFilter);
-        setProviderItems(filtered);
+        setProviderItems(list);
         setProviderTotal(total);
         setProviderPage(1);
         setMaterialItems([]);
@@ -699,6 +694,7 @@ export default function Home() {
         sortBy: getBackendSortBy(currentSort),
         keyword: "",
         page: nextPage,
+        orgFilter: activeCategory === "company" ? "all" : providerOrgFilter,
       });
 
       setProviderItems((prev) => [...prev, ...list]);
@@ -716,6 +712,7 @@ export default function Home() {
     providerPage,
     providerHasMore,
     providerLoadingMore,
+    providerOrgFilter,
   ]);
 
   const handleLoadMoreMaterial = useCallback(async () => {
