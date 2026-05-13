@@ -70,6 +70,16 @@ export const withRouterBasename = buildAppPath;
 
 export const getLoginPath = (): string => buildAppPath("/login");
 
+export const isSupervisorPortalFrontendEnabled = (): boolean => {
+  const value = String(import.meta.env.VITE_SUPERVISOR_PORTAL_ENABLED || "")
+    .trim()
+    .toLowerCase();
+  if (!value) {
+    return true;
+  }
+  return ["1", "true", "yes", "on"].includes(value);
+};
+
 export const getApiBaseUrl = (): string => {
   const configured =
     typeof import.meta.env.VITE_API_URL === "string"

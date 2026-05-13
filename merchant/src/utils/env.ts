@@ -69,6 +69,14 @@ export const withRouterBasename = buildAppPath;
 
 export const getLoginPath = (): string => buildAppPath('/login');
 
+export const isMerchantPortalFrontendEnabled = (): boolean => {
+  const value = String(import.meta.env.VITE_MERCHANT_PORTAL_ENABLED || '').trim().toLowerCase();
+  if (!value) {
+    return true;
+  }
+  return ['1', 'true', 'yes', 'on'].includes(value);
+};
+
 export const getApiBaseUrl = (): string => {
   const configured = typeof import.meta.env.VITE_API_URL === 'string'
     ? import.meta.env.VITE_API_URL.trim()

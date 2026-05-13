@@ -385,3 +385,69 @@ func TestBuildAllowedOriginsRejectsWildcardInRelease(t *testing.T) {
 		t.Fatalf("expected default release origin fallback, got %#v", fallback)
 	}
 }
+
+func TestAdminNetworkGateBlocksDisallowedIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	cfg := config.GetConfig()
+	cfg.AdminAuth.APIIPEnforced = true
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    true,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "active",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/info", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected middleware business error over http 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":403`) || !strings.Contains(rec.Body.String(), "当前网络不允许访问管理接口") {
+		t.Fatalf("expected network gate error, got %s", rec.Body.String())
+	}
+}
+
+func TestAdminNetworkGateAllowsConfiguredCIDR(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	cfg := config.GetConfig()
+	cfg.AdminAuth.APIIPEnforced = true
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    true,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "setup_required",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/info", nil)
+	req.RemoteAddr = "10.2.3.4:12345"
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected allowed cidr to pass through admin network gate, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"loginStage\":\"setup_required\"") {
+		t.Fatalf("expected downstream handler response, got %s", rec.Body.String())
+	}
+}

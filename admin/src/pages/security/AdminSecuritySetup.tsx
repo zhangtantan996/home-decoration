@@ -42,6 +42,12 @@ interface Bind2FAData {
   issuer?: string;
 }
 
+const stripOTPWhitespace = (value?: string) =>
+  (typeof value === 'string' ? value.replace(/\s+/g, '') : value);
+
+const containsWhitespace = (value?: string) =>
+  typeof value === 'string' && /\s/.test(value);
+
 const AdminSecuritySetup: React.FC = () => {
   const { message } = App.useApp();
   const navigate = useNavigate();
@@ -100,7 +106,7 @@ const AdminSecuritySetup: React.FC = () => {
       const values = await passwordForm.validateFields();
       setPasswordSubmitting(true);
       const res = (await adminSecurityApi.resetInitialPassword({
-        newPassword: values.newPassword,
+        newPassword: values.newPassword || '',
       })) as AdminEnvelope<SecuritySetupPayload>;
 
       if (!applySecurityResponse(res, '密码已更新')) {
@@ -128,7 +134,7 @@ const AdminSecuritySetup: React.FC = () => {
       const values = await otpForm.validateFields();
       setBindSubmitting(true);
       const res = (await adminSecurityApi.verify2FA({
-        otpCode: values.otpCode,
+        otpCode: stripOTPWhitespace(values.otpCode) || '',
       })) as AdminEnvelope<SecuritySetupPayload>;
 
       if (!applySecurityResponse(res, 'TOTP 绑定成功')) {
@@ -187,6 +193,7 @@ const AdminSecuritySetup: React.FC = () => {
                 rules={[
                   { required: mustResetPassword, message: '请输入新密码' },
                   { min: ADMIN_PASSWORD_MIN_LENGTH, message: `密码至少 ${ADMIN_PASSWORD_MIN_LENGTH} 位` },
+                  { validator: (_, value) => (containsWhitespace(value) ? Promise.reject(new Error('密码不能包含空格')) : Promise.resolve()) },
                 ]}
               >
                 <Input.Password
@@ -201,6 +208,7 @@ const AdminSecuritySetup: React.FC = () => {
                 dependencies={['newPassword']}
                 rules={[
                   { required: mustResetPassword, message: '请再次输入新密码' },
+                  { validator: (_, value) => (containsWhitespace(value) ? Promise.reject(new Error('密码不能包含空格')) : Promise.resolve()) },
                   ({ getFieldValue }) => ({
                     validator(_, value) {
                       if (!mustResetPassword || !value || getFieldValue('newPassword') === value) {
@@ -276,6 +284,7 @@ const AdminSecuritySetup: React.FC = () => {
                         <Form.Item
                           label="动态验证码"
                           name="otpCode"
+                          normalize={stripOTPWhitespace}
                           rules={[
                             { required: true, message: '请输入 6 位动态验证码' },
                             { len: 6, message: '动态验证码为 6 位数字' },

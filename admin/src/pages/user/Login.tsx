@@ -30,6 +30,12 @@ interface AdminLoginEnvelope {
   data?: AdminLoginPayload;
 }
 
+const stripOTPWhitespace = (value?: string) =>
+  (typeof value === 'string' ? value.replace(/\s+/g, '') : value);
+
+const containsWhitespace = (value?: string) =>
+  typeof value === 'string' && /\s/.test(value);
+
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null;
 
@@ -116,7 +122,7 @@ const Login: React.FC = () => {
       const rawResponse: unknown = await adminAuthApi.login({
         username: values.username,
         password: values.password,
-        otpCode: values.otpCode,
+        otpCode: stripOTPWhitespace(values.otpCode),
       });
       const loginRes = parseAdminLoginResponse(rawResponse);
 
@@ -203,7 +209,10 @@ const Login: React.FC = () => {
             <Form.Item
               name="username"
               label="用户名"
-              rules={[{ required: true, message: '请输入用户名' }]}
+              rules={[
+                { required: true, message: '请输入用户名' },
+                { validator: (_, value) => (containsWhitespace(value) ? Promise.reject(new Error('用户名不能包含空格')) : Promise.resolve()) },
+              ]}
             >
               <Input prefix={<UserOutlined />} placeholder="请输入用户名" autoComplete="username" />
             </Form.Item>
@@ -211,7 +220,10 @@ const Login: React.FC = () => {
             <Form.Item
               name="password"
               label="密码"
-              rules={[{ required: true, message: '请输入密码' }]}
+              rules={[
+                { required: true, message: '请输入密码' },
+                { validator: (_, value) => (containsWhitespace(value) ? Promise.reject(new Error('密码不能包含空格')) : Promise.resolve()) },
+              ]}
             >
               <Input.Password
                 prefix={<LockOutlined />}
@@ -224,7 +236,11 @@ const Login: React.FC = () => {
               <Form.Item
                 name="otpCode"
                 label="动态验证码"
-                rules={[{ required: true, message: '请输入动态验证码' }, { len: 6, message: '动态验证码为 6 位数字' }]}
+                normalize={stripOTPWhitespace}
+                rules={[
+                  { required: true, message: '请输入动态验证码' },
+                  { len: 6, message: '动态验证码为 6 位数字' },
+                ]}
               >
                 <Input
                   prefix={<SafetyCertificateOutlined />}

@@ -19,12 +19,15 @@ func setupPublicVisibilitySchema(t *testing.T) {
 	t.Helper()
 
 	publicVisibilitySchemaCache = sync.Map{}
+	configCacheMu.Lock()
+	configCache = make(map[string]string)
+	configCacheMu.Unlock()
 
 	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}, &model.ProviderCase{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.Provider{}, &model.MaterialShop{}, &model.ProviderCase{}, &model.SystemConfig{}); err != nil {
 		t.Fatalf("auto migrate public visibility schema: %v", err)
 	}
 
@@ -38,8 +41,30 @@ func setupPublicVisibilitySchema(t *testing.T) {
 	t.Cleanup(func() {
 		repository.DB = previousDB
 		publicVisibilitySchemaCache = sync.Map{}
+		configCacheMu.Lock()
+		configCache = make(map[string]string)
+		configCacheMu.Unlock()
 		_ = sqlDB.Close()
 	})
+}
+
+func setMerchantPortalEnabledForVisibilityTest(t *testing.T, enabled bool) {
+	t.Helper()
+	value := "false"
+	if enabled {
+		value = "true"
+	}
+	configCacheMu.Lock()
+	configCache = make(map[string]string)
+	configCacheMu.Unlock()
+	if err := repository.DB.Create(&model.SystemConfig{
+		Key:      model.ConfigKeyMerchantPortalEnabled,
+		Value:    value,
+		Type:     "boolean",
+		Editable: true,
+	}).Error; err != nil {
+		t.Fatalf("set merchant portal config: %v", err)
+	}
 }
 
 func TestEvaluateProviderPublicVisibilityBlocksDisabledAccount(t *testing.T) {
@@ -171,6 +196,36 @@ func TestEvaluateProviderPublicVisibilityAddsDisplayBlockers(t *testing.T) {
 	}
 	if merchantHidden.PrimaryBlockerCode != "merchant_hidden" {
 		t.Fatalf("expected primary blocker merchant_hidden, got %+v", merchantHidden)
+	}
+}
+
+func TestProviderPublicVisibilityStillHonorsMerchantHideWhenPortalDisabled(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+	setMerchantPortalEnabledForVisibilityTest(t, false)
+
+	provider := model.Provider{
+		Verified:               true,
+		Status:                 1,
+		IsSettled:              true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: false,
+	}
+	if result := EvaluateProviderPublicVisibility(&provider); result.PublicVisible {
+		t.Fatalf("expected merchant-hidden provider to stay hidden when merchant portal disabled, got %+v", result)
+	}
+
+	if err := repository.DB.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	if err := repository.DB.Model(&provider).Update("merchant_display_enabled", false).Error; err != nil {
+		t.Fatalf("mark provider merchant hidden: %v", err)
+	}
+	var visible []model.Provider
+	if err := ApplyPublicProviderFilter(repository.DB.Model(&model.Provider{})).Find(&visible).Error; err != nil {
+		t.Fatalf("apply provider filter: %v", err)
+	}
+	if len(visible) != 0 {
+		t.Fatalf("expected merchant-hidden provider excluded while portal disabled, got %+v", visible)
 	}
 }
 
@@ -367,6 +422,37 @@ func TestEvaluateMaterialShopPublicVisibilityAddsDisplayBlockers(t *testing.T) {
 	}
 	if !hasBlockerCode(merchantHidden.Blockers, "merchant_hidden") {
 		t.Fatalf("expected merchant_hidden blocker, got %+v", merchantHidden.Blockers)
+	}
+}
+
+func TestMaterialShopPublicVisibilityStillHonorsMerchantHideWhenPortalDisabled(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+	setMerchantPortalEnabledForVisibilityTest(t, false)
+
+	activeStatus := int8(1)
+	shop := model.MaterialShop{
+		IsVerified:             true,
+		IsSettled:              true,
+		Status:                 &activeStatus,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: false,
+	}
+	if result := EvaluateMaterialShopPublicVisibility(&shop, 1); result.PublicVisible {
+		t.Fatalf("expected merchant-hidden material shop to stay hidden when merchant portal disabled, got %+v", result)
+	}
+
+	if err := repository.DB.Create(&shop).Error; err != nil {
+		t.Fatalf("create material shop: %v", err)
+	}
+	if err := repository.DB.Model(&shop).Update("merchant_display_enabled", false).Error; err != nil {
+		t.Fatalf("mark material shop merchant hidden: %v", err)
+	}
+	var visible []model.MaterialShop
+	if err := ApplyPublicMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).Find(&visible).Error; err != nil {
+		t.Fatalf("apply material shop filter: %v", err)
+	}
+	if len(visible) != 0 {
+		t.Fatalf("expected merchant-hidden material shop excluded while portal disabled, got %+v", visible)
 	}
 }
 
