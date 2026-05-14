@@ -4,6 +4,7 @@ import type { UploadFile } from 'antd';
 import type { UploadRequestOption } from 'rc-upload/lib/interface';
 import { DeleteOutlined, EyeOutlined, PictureOutlined } from '@ant-design/icons';
 import { showApiError, uploadImage } from '../services/api';
+import { getAssetPreviewUrl, getAssetStoredPath } from '../utils/asset';
 
 interface MediaPathInputProps {
   value?: string;
@@ -15,6 +16,7 @@ interface MediaPathInputProps {
 const MediaPathInput = ({ value, onChange, placeholder, maxSizeMB = 5 }: MediaPathInputProps) => {
   const [previewOpen, setPreviewOpen] = useState(false);
   const uploadLabel = /头像/.test(placeholder || '') ? '上传头像' : '上传图片';
+  const previewUrl = getAssetPreviewUrl(value);
 
   const beforeUpload = (file: UploadFile) => {
     const rawFile = file as unknown as File;
@@ -34,7 +36,7 @@ const MediaPathInput = ({ value, onChange, placeholder, maxSizeMB = 5 }: MediaPa
   const handleUpload = async (options: UploadRequestOption) => {
     try {
       const result = await uploadImage(options.file as File);
-      const nextPath = result.path || result.url || '';
+      const nextPath = getAssetStoredPath(result);
       onChange?.(nextPath);
       options.onSuccess?.(result);
     } catch (error) {
@@ -45,11 +47,11 @@ const MediaPathInput = ({ value, onChange, placeholder, maxSizeMB = 5 }: MediaPa
 
   return (
     <div className="ops-media-input">
-      <div className={`ops-media-input__preview ${value ? 'ops-media-input__preview--has-image' : ''}`}>
+      <div className="ops-media-input__content">
         {value ? (
-          <>
+          <div className="ops-media-input__preview ops-media-input__preview--has-image">
             <Image
-              src={value}
+              src={previewUrl}
               alt={placeholder || '图片预览'}
               rootClassName="ops-media-image"
               preview={{ visible: previewOpen, onVisibleChange: (visible) => setPreviewOpen(visible), mask: null }}
@@ -58,15 +60,14 @@ const MediaPathInput = ({ value, onChange, placeholder, maxSizeMB = 5 }: MediaPa
               <Button size="small" type="text" icon={<EyeOutlined />} aria-label="预览图片" onClick={() => setPreviewOpen(true)} />
               <Button size="small" type="text" danger icon={<DeleteOutlined />} aria-label="删除图片" onClick={() => onChange?.(undefined)} />
             </div>
-          </>
-        ) : (
-          <Upload showUploadList={false} customRequest={(options) => void handleUpload(options)} beforeUpload={beforeUpload} accept="image/*">
-            <button type="button" className="ops-media-upload-tile" aria-label={placeholder ? `上传${placeholder}` : '上传图片'}>
-              <PictureOutlined />
-              <span>{uploadLabel}</span>
-            </button>
-          </Upload>
-        )}
+          </div>
+        ) : null}
+        <Upload showUploadList={false} customRequest={(options) => void handleUpload(options)} beforeUpload={beforeUpload} accept="image/*">
+          <Button type="text" className="ops-media-upload-tile ops-media-upload-tile--button" aria-label={placeholder ? `上传${placeholder}` : '上传图片'}>
+            <PictureOutlined />
+            <span>{uploadLabel}</span>
+          </Button>
+        </Upload>
       </div>
     </div>
   );

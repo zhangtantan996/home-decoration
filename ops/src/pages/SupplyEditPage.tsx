@@ -7,12 +7,12 @@ import MediaPathInput from '../components/MediaPathInput';
 import {
   createMaterialShop,
   createProvider,
+  getMaterialShop,
   getDictOptions,
   getDistrictsByCity,
   getServiceCities,
   getServiceProvinces,
   listCases,
-  listMaterialShops,
   listProviders,
   showApiError,
   updateMaterialShop,
@@ -21,6 +21,7 @@ import {
   type MaterialShopItem,
   type ProviderItem,
 } from '../services/api';
+import { getAssetPreviewUrl, getAssetStoredPath } from '../utils/asset';
 
 type SelectOption = { value: string; label: string };
 type CityOption = SelectOption & { provinceCode: string; provinceName?: string };
@@ -206,9 +207,16 @@ const normalizeSubtype = (type?: string, subType?: string) => (type === 'company
 const normalizeEntityType = (type?: string, subType?: string) => (type === 'company' ? 'company' : deriveEntityType(subType));
 const normalizeWorkTypes = (type?: string, value?: unknown) => (type === 'foreman' ? toStringArray(value) : limitStringArray(value));
 const contactPhoneRules = [
-  { required: true, message: '请输入联系电话' },
   maxLengthRule('联系电话', MAX_TEXT.phone),
-  { pattern: /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})$/, message: '请输入正确的手机号或座机号' },
+  {
+    validator: (_: unknown, value?: string) => {
+      const trimmed = value?.trim() || '';
+      if (!trimmed) return Promise.resolve();
+      return /^(1[3-9]\d{9}|0\d{2,3}-?\d{7,8})$/.test(trimmed)
+        ? Promise.resolve()
+        : Promise.reject(new Error('请输入正确的手机号或座机号'));
+    },
+  },
 ];
 
 const constructionQualificationOptions = ['一级资质', '二级资质', '三级资质'].map((item) => ({ value: item, label: item }));
@@ -491,7 +499,7 @@ const SupplyProviderEditPage = () => {
       try {
         const current = (await listProviders(kind || 'designer', 1, 200)).list.find((item) => String(item.id) === id);
         if (!current) {
-          showApiError(new Error('未找到供给资料'), '未找到供给资料');
+          showApiError(new Error('未找到商家资料'), '未找到商家资料');
           navigate('/supply');
           return;
         }
@@ -507,8 +515,8 @@ const SupplyProviderEditPage = () => {
         const subType = normalizeSubtype(kind, current.subType);
         form.setFieldsValue({
           displayName: displayNameOfProvider(current),
-          avatar: current.avatar,
-          coverImage: current.coverImage,
+          avatar: getAssetStoredPath(current.avatar),
+          coverImage: getAssetStoredPath(current.coverImage),
           subType,
           entityType: normalizeEntityType(kind, subType),
           serviceArea: serviceAreaCodes,
@@ -777,7 +785,7 @@ const SupplyProviderEditPage = () => {
                       }}
                     >
                       <div className="ops-showcase-card__cover">
-                        {caseCover(item) ? <img src={caseCover(item)} alt={item.title} /> : <span>内容</span>}
+                        {caseCover(item) ? <img src={getAssetPreviewUrl(caseCover(item))} alt={item.title} /> : <span>内容</span>}
                       </div>
                       <div className="ops-showcase-card__content">
                         <strong>{item.title || `${showcaseTitle(kind)} #${item.id}`}</strong>
@@ -833,7 +841,7 @@ const SupplyProviderEditPage = () => {
         {previewCase ? (
           <div className="ops-showcase-preview">
             <div className="ops-showcase-preview__hero">
-              {caseCover(previewCase) ? <img src={caseCover(previewCase)} alt={previewCase.title} /> : <span>暂无封面</span>}
+              {caseCover(previewCase) ? <img src={getAssetPreviewUrl(caseCover(previewCase))} alt={previewCase.title} /> : <span>暂无封面</span>}
             </div>
             <div className="ops-showcase-preview__meta">
               {[previewCase.style, previewCase.layout, previewCase.area, previewCase.year].filter(Boolean).map((item) => (
@@ -844,7 +852,7 @@ const SupplyProviderEditPage = () => {
             {previewCase.images?.length ? (
               <div className="ops-showcase-preview__gallery">
                 {previewCase.images.map((image, index) => (
-                  <img key={`${image}-${index}`} src={image} alt={`${previewCase.title || '案例'} ${index + 1}`} />
+                  <img key={`${image}-${index}`} src={getAssetPreviewUrl(image)} alt={`${previewCase.title || '案例'} ${index + 1}`} />
                 ))}
               </div>
             ) : null}
@@ -883,7 +891,7 @@ export const MaterialShopEditPage = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const current = (await listMaterialShops(1, 200)).list.find((item) => String(item.id) === id);
+        const current = await getMaterialShop(Number(id));
         if (!current) {
           showApiError(new Error('未找到主材商资料'), '未找到主材商资料');
           navigate('/supply');
@@ -902,8 +910,8 @@ export const MaterialShopEditPage = () => {
           address: current.address,
           contactName: current.contactName,
           contactPhone: current.contactPhone,
-          cover: current.cover,
-          brandLogo: current.brandLogo,
+          cover: getAssetStoredPath(current.cover),
+          brandLogo: getAssetStoredPath(current.brandLogo),
           businessCategories: limitStringArray(businessCategories),
           openTime: current.openTime,
           serviceArea: serviceAreaValues,

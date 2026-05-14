@@ -373,6 +373,9 @@ export const uploadImage = async (file: File) => {
 export const listMaterialShops = async (page = 1, pageSize = 20) =>
   normalizePage<MaterialShopItem>(await api.get('/admin/material-shops', { params: { page, pageSize } }));
 
+export const getMaterialShop = (id: number) =>
+  api.get<unknown, MaterialShopItem>(`/admin/material-shops/${id}`);
+
 export const createMaterialShop = (payload: Record<string, unknown>) => api.post('/admin/material-shops', payload);
 export const updateMaterialShop = (id: number, payload: Record<string, unknown>) => api.put(`/admin/material-shops/${id}`, payload);
 export const setMaterialShopAvailability = (id: number, enabled: boolean, reason: string, recentReauthProof: string) =>

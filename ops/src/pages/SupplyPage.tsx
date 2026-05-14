@@ -38,6 +38,7 @@ import {
   type VisibilityBlocker,
 } from '../services/api';
 import ReauthModal from '../components/ReauthModal';
+import { getAssetPreviewUrl } from '../utils/asset';
 
 const SUPPLY_TABS = [
   { key: 'designer', label: '设计师', icon: <AppstoreOutlined /> },
@@ -95,13 +96,16 @@ const formatProviderPrice = (row: ProviderItem) => {
   return '按需报价';
 };
 
-const providerTypeLabel = (type: string) => SUPPLY_TABS.find((item) => item.key === type)?.label || '供给';
+const providerTypeLabel = (type: string) => SUPPLY_TABS.find((item) => item.key === type)?.label || '商家';
 
-const renderCover = (src?: string) => (
-  <div className="ops-primary-cell__cover">
-    {src ? <img src={src} alt="封面" /> : <span>封面</span>}
-  </div>
-);
+const renderCover = (src?: string) => {
+  const previewUrl = getAssetPreviewUrl(src);
+  return (
+    <div className="ops-primary-cell__cover">
+      {previewUrl ? <img src={previewUrl} alt="封面" /> : <span>封面</span>}
+    </div>
+  );
+};
 
 const renderTags = (items: string[], fallback = '未填写') => {
   const normalized = items.filter(Boolean).slice(0, 4);
@@ -166,7 +170,7 @@ const SupplyPage = () => {
       });
       setShops(materialShops.list);
     } catch (error) {
-      showApiError(error, '供给资料加载失败');
+      showApiError(error, '商家资料加载失败');
     } finally {
       setLoading(false);
     }
@@ -509,7 +513,7 @@ const SupplyPage = () => {
             dataSource={filteredRows}
             pagination={{ pageSize: 12 }}
             scroll={{ x: tableScrollX, y: 'calc(100vh - 394px)' }}
-            locale={{ emptyText: <Empty description="暂无供给资料" /> }}
+            locale={{ emptyText: <Empty description="暂无商家资料" /> }}
           />
         </div>
       </Card>

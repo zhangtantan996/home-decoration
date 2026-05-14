@@ -87,7 +87,6 @@ const HOME_POPUP_STORAGE_KEY = "home-popup-state-v2";
 const TAB_PAGE_PATHS = new Set([
   "/pages/home/index",
   "/pages/inspiration/index",
-  "/pages/progress/index",
   "/pages/messages/index",
   "/pages/profile/index",
 ]);

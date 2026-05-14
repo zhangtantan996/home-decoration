@@ -40,7 +40,6 @@ import './index.scss';
 const TAB_PAGE_PATHS = [
   '/pages/home/index',
   '/pages/inspiration/index',
-  '/pages/progress/index',
   '/pages/messages/index',
   '/pages/profile/index',
 ];

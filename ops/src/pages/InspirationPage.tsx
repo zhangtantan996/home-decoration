@@ -4,6 +4,7 @@ import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { deleteCase, listCases, showApiError, toggleCaseInspiration, type CaseItem } from '../services/api';
+import { getAssetPreviewUrl } from '../utils/asset';
 
 const isVisible = (value?: boolean) => value !== false;
 const formatBudget = (value?: number) => {
@@ -21,11 +22,14 @@ const VisibilityPill = ({ visible }: { visible?: boolean }) => (
   </span>
 );
 
-const renderCover = (src?: string, title?: string) => (
-  <div className="ops-primary-cell__cover ops-primary-cell__cover--poster">
-    {src ? <img src={src} alt={title || '封面'} /> : <span>封面</span>}
-  </div>
-);
+const renderCover = (src?: string, title?: string) => {
+  const previewUrl = getAssetPreviewUrl(src);
+  return (
+    <div className="ops-primary-cell__cover ops-primary-cell__cover--poster">
+      {previewUrl ? <img src={previewUrl} alt={title || '封面'} /> : <span>封面</span>}
+    </div>
+  );
+};
 
 const InspirationPage = () => {
   const navigate = useNavigate();

@@ -17,6 +17,7 @@ import {
   type MaterialProductItem,
   type MaterialShopItem,
 } from '../services/api';
+import { getAssetPreviewUrl } from '../utils/asset';
 
 const { Text, Title } = Typography;
 
@@ -28,15 +29,18 @@ const formatPrice = (value?: number) => {
   return `${amount.toLocaleString('zh-CN', { maximumFractionDigits: 2 })} 元`;
 };
 
-const ProductCover = ({ src, name }: { src?: string; name: string }) => (
-  <div className="ops-product-cover">
-    {src ? (
-      <Image src={src} alt={name} rootClassName="ops-product-cover__image" preview={{ mask: null }} />
-    ) : (
-      <ShopOutlined />
-    )}
-  </div>
-);
+const ProductCover = ({ src, name }: { src?: string; name: string }) => {
+  const previewUrl = getAssetPreviewUrl(src);
+  return (
+    <div className="ops-product-cover">
+      {previewUrl ? (
+        <Image src={previewUrl} alt={name} rootClassName="ops-product-cover__image" preview={{ mask: null }} />
+      ) : (
+        <ShopOutlined />
+      )}
+    </div>
+  );
+};
 
 const MaterialProductsPage = () => {
   const navigate = useNavigate();

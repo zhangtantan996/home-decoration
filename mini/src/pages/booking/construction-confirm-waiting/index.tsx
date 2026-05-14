@@ -99,7 +99,7 @@ const ConstructionConfirmWaiting: React.FC = () => {
   }, [pageVisible, bookingId, auth.token, detail, fetchDetail]);
 
   const handleGoToProject = () => {
-    Taro.switchTab({ url: '/pages/progress/index' });
+    Taro.navigateTo({ url: '/pages/progress/index' });
   };
 
   const handleBackToBooking = () => {

@@ -84,7 +84,7 @@ const LoginPage = () => {
         <section className="ops-login__story" aria-label="运营管理台说明">
           <div className="ops-login__brand">
             <img className="ops-login__brand-mark" src={companyLogo} alt="公司 Logo" />
-            <span>Ops 运营管理台</span>
+            <span>禾泽云运营管理平台</span>
           </div>
 
           <div className="ops-login__copy">

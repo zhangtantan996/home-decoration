@@ -5,6 +5,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MediaGalleryInput from '../components/MediaGalleryInput';
 import MediaPathInput from '../components/MediaPathInput';
 import { createCase, listCases, listProviders, showApiError, updateCase, type CaseItem, type ProviderItem } from '../services/api';
+import { getAssetPreviewUrl, getAssetStoredPath, joinStoredAssetText } from '../utils/asset';
 
 const splitText = (value?: string) => String(value || '').split(/[,，\n]/).map((item) => item.trim()).filter(Boolean);
 const CURRENT_YEAR = new Date().getFullYear();
@@ -108,13 +109,13 @@ const InspirationEditPage = () => {
         form.setFieldsValue({
           providerId: fixedProviderId || (current.providerId ? String(current.providerId) : OFFICIAL_PROVIDER_VALUE),
           title: current.title,
-          coverImage: current.coverImage,
+          coverImage: getAssetStoredPath(current.coverImage),
           style: current.style,
           layout: current.layout,
           area: parseAreaValue(current.area),
           price: current.price,
           year: current.year,
-          images: (current.images || []).join('，'),
+          images: joinStoredAssetText((current.images || []).map((item) => getAssetStoredPath(item))),
           description: current.description,
           showInInspiration: current.showInInspiration !== false,
         });
@@ -257,10 +258,11 @@ const InspirationEditPage = () => {
                   }
                   const selected = providers.find((item) => String(item.id) === selectedProviderValue);
                   if (!selected) return null;
+                  const cover = getAssetPreviewUrl(selected.avatar || selected.coverImage);
                   return (
                     <div className="ops-provider-linked-card">
                       <div className="ops-primary-cell__cover">
-                        {selected.avatar || selected.coverImage ? <img src={selected.avatar || selected.coverImage} alt={providerDisplayName(selected)} /> : <span>{providerTypeLabel(selected.type).slice(0, 1)}</span>}
+                        {cover ? <img src={cover} alt={providerDisplayName(selected)} /> : <span>{providerTypeLabel(selected.type).slice(0, 1)}</span>}
                       </div>
                       <div>
                         <strong>{providerDisplayName(selected)}</strong>

@@ -88,7 +88,7 @@ const DashboardPage = () => {
   const statCards = [
     {
       key: 'total',
-      label: '供给总数',
+      label: '商家总数',
       value: supply.length,
       changeLabel: '较昨日',
       changeValue: '—',
