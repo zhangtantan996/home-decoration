@@ -23,6 +23,15 @@ export const getRouterBasename = (): string => {
   return getAppEnv() === 'production' ? '/ops' : '/';
 };
 
+export const alignLocationWithRouterBasename = () => {
+  const basename = getRouterBasename();
+  if (basename === '/') return;
+  const { pathname, search, hash } = window.location;
+  if (pathname === basename || pathname.startsWith(`${basename}/`)) return;
+  const normalizedPath = pathname.startsWith('/') ? pathname : `/${pathname}`;
+  window.history.replaceState(null, '', `${basename}${normalizedPath}${search}${hash}`);
+};
+
 export const getApiBaseUrl = (): string => {
   const configured = typeof import.meta.env.VITE_API_URL === 'string'
     ? import.meta.env.VITE_API_URL.trim()

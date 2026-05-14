@@ -231,12 +231,6 @@ export default {
         selectedIconPath: 'assets/tab/inspiration-active.png',
       },
       {
-        pagePath: 'pages/progress/index',
-        text: '进度',
-        iconPath: 'assets/tab/progress.png',
-        selectedIconPath: 'assets/tab/progress-active.png',
-      },
-      {
         pagePath: 'pages/messages/index',
         text: '通知',
         iconPath: 'assets/tab/message.png',

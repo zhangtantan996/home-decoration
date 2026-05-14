@@ -14,7 +14,7 @@ import BookingsPage from './pages/BookingsPage';
 import AuditLogsPage from './pages/AuditLogsPage';
 import { getRouterBasename } from './utils/env';
 
-const router = createBrowserRouter([
+export const createOpsRouter = () => createBrowserRouter([
   { path: '/login', element: <LoginPage /> },
   {
     element: <ProtectedRoute />,
@@ -41,5 +41,3 @@ const router = createBrowserRouter([
   },
   { path: '*', element: <Navigate to="/dashboard" replace /> },
 ], { basename: getRouterBasename() });
-
-export default router;

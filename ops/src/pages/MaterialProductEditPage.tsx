@@ -13,6 +13,7 @@ import {
   type MaterialProductItem,
   type MaterialShopItem,
 } from '../services/api';
+import { getAssetStoredPath, joinStoredAssetText } from '../utils/asset';
 
 const { Text, Title } = Typography;
 
@@ -60,8 +61,8 @@ const MaterialProductEditPage = () => {
           unit: currentProduct?.unit,
           description: currentProduct?.description,
           price: currentProduct?.price,
-          coverImage: currentProduct?.coverImage,
-          images: (currentProduct?.images || []).join('，'),
+          coverImage: getAssetStoredPath(currentProduct?.coverImage),
+          images: joinStoredAssetText((currentProduct?.images || []).map((item) => getAssetStoredPath(item))),
           sortOrder: currentProduct?.sortOrder,
           status: currentProduct?.status !== 0,
         });
