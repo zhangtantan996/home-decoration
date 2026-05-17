@@ -26,6 +26,7 @@ RUN npm config set registry https://registry.npmmirror.com
 COPY merchant/package*.json ./
 RUN npm install --legacy-peer-deps
 
+COPY shared/ /app/shared/
 COPY merchant/ ./
 
 ARG VITE_APP_ENV=production
