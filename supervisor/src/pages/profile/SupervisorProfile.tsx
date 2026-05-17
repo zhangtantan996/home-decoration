@@ -14,6 +14,7 @@ import { supervisorProfileApi } from "../../services/supervisorApi";
 import { useRegionStore } from "../../stores/regionStore";
 import { useSupervisorAuthStore } from "../../stores/supervisorAuthStore";
 import type { SupervisorSession } from "../../stores/supervisorAuthStore";
+import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 
 const { Text } = Typography;
 
@@ -111,8 +112,9 @@ const SupervisorProfile: React.FC = () => {
   };
 
   return (
-    <div>
+    <div className="supervisor-page">
       <Card
+        className="supervisor-panel"
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <SafetyOutlined />
@@ -162,8 +164,8 @@ const SupervisorProfile: React.FC = () => {
                         src={url}
                         style={{
                           objectFit: "cover",
-                          borderRadius: 4,
-                          border: "1px solid #f0f0f0",
+                          borderRadius: 10,
+                          border: `1px solid ${SUPERVISOR_THEME.borderColor}`,
                         }}
                       />
                     ))}

@@ -136,12 +136,16 @@ func defaultConfigDefinitions() []configDefinition {
 		{model.ConfigKeyPublicPrivacyEmail, "", "隐私与个人信息保护联系邮箱，未开通时留空", "string", configKindString, true, false},
 		{model.ConfigKeyPublicUserAgreement, defaultPublicUserAgreement(), "用户服务协议正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicPrivacyPolicy, defaultPublicPrivacyPolicy(), "隐私政策正文", "string", configKindString, true, false},
+		{model.ConfigKeyPublicPersonalInfoCollectionList, defaultPublicPersonalInfoCollectionList(), "个人信息收集清单正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules(), "对外交易规则文案", "string", configKindString, true, false},
 		{model.ConfigKeyPublicRefundRules, defaultPublicRefundRules(), "对外退款与售后规则文案", "string", configKindString, true, false},
 		{model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules(), "对外商家准入规则文案", "string", configKindString, true, false},
+		{model.ConfigKeyPublicMerchantOnboardingAgreement, defaultMerchantOnboardingAgreement(), "商家平台入驻协议正文", "string", configKindString, true, false},
+		{model.ConfigKeyPublicPlatformRules, defaultMerchantPlatformRules(), "商家平台规则正文", "string", configKindString, true, false},
+		{model.ConfigKeyPublicPrivacyDataProcessing, defaultMerchantPrivacyDataProcessing(), "商家隐私与数据处理条款正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicThirdPartySharing, defaultPublicThirdPartySharing(), "第三方信息共享清单正文", "string", configKindString, true, false},
-		{model.ConfigKeyPublicLegalVersion, "v1.0.0-20260430", "对外协议规则版本号", "string", configKindString, true, false},
-		{model.ConfigKeyPublicLegalEffectiveDate, "2026-04-30", "对外协议规则生效日期", "string", configKindString, true, false},
+		{model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion(), "对外协议规则版本号", "string", configKindString, true, false},
+		{model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate(), "对外协议规则生效日期", "string", configKindString, true, false},
 	}
 }
 
@@ -524,6 +528,9 @@ func (s *ConfigService) InitDefaultConfigs() error {
 			return err
 		}
 	}
+	if err := s.migrateLegacyPublicLegalDefaults(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -551,6 +558,95 @@ func (s *ConfigService) migrateDeprecatedConstructionStages() error {
 		return nil
 	}
 	return s.upsertConfigValue(nil, model.ConfigKeyConstructionMilestones, oldConfig.Value, def.Description, def.Type, def.Editable)
+}
+
+func legacyPublicLegalDefaults() map[string]string {
+	return map[string]string{
+		model.ConfigKeyPublicUserAgreement:               legacyPublicUserAgreement(),
+		model.ConfigKeyPublicPrivacyPolicy:               legacyPublicPrivacyPolicy(),
+		model.ConfigKeyPublicPersonalInfoCollectionList:  legacyPublicPersonalInfoCollectionList(),
+		model.ConfigKeyPublicTransactionRules:            legacyPublicTransactionRules(),
+		model.ConfigKeyPublicRefundRules:                 legacyPublicRefundRules(),
+		model.ConfigKeyPublicMerchantOnboarding:          legacyPublicMerchantOnboardingRules(),
+		model.ConfigKeyPublicMerchantOnboardingAgreement: legacyMerchantOnboardingAgreement(),
+		model.ConfigKeyPublicPlatformRules:               legacyMerchantPlatformRules(),
+		model.ConfigKeyPublicPrivacyDataProcessing:       legacyMerchantPrivacyDataProcessing(),
+		model.ConfigKeyPublicThirdPartySharing:           legacyPublicThirdPartySharing(),
+		model.ConfigKeyPublicLegalVersion:                "v1.0.0-20260430",
+		model.ConfigKeyPublicLegalEffectiveDate:          "2026-04-30",
+	}
+}
+
+func (s *ConfigService) migrateLegacyPublicLegalDefaults() error {
+	defs := configDefinitionMap()
+	legacyDefaults := legacyPublicLegalDefaults()
+	legalContentKeys := map[string]bool{
+		model.ConfigKeyPublicUserAgreement:               true,
+		model.ConfigKeyPublicPrivacyPolicy:               true,
+		model.ConfigKeyPublicPersonalInfoCollectionList:  true,
+		model.ConfigKeyPublicTransactionRules:            true,
+		model.ConfigKeyPublicRefundRules:                 true,
+		model.ConfigKeyPublicMerchantOnboarding:          true,
+		model.ConfigKeyPublicMerchantOnboardingAgreement: true,
+		model.ConfigKeyPublicPlatformRules:               true,
+		model.ConfigKeyPublicPrivacyDataProcessing:       true,
+		model.ConfigKeyPublicThirdPartySharing:           true,
+	}
+	hasCustomLegalContent := false
+
+	for key := range legalContentKeys {
+		var existing model.SystemConfig
+		if err := repository.DB.Where("key = ?", key).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		currentValue := strings.TrimSpace(existing.Value)
+		currentDefault := ""
+		if def, ok := defs[key]; ok {
+			currentDefault = strings.TrimSpace(def.DefaultValue)
+		}
+		if currentValue != "" &&
+			currentValue != strings.TrimSpace(legacyDefaults[key]) &&
+			(currentDefault == "" || currentValue != currentDefault) {
+			hasCustomLegalContent = true
+			break
+		}
+	}
+
+	for key, legacyValue := range legacyDefaults {
+		var existing model.SystemConfig
+		if err := repository.DB.Where("key = ?", key).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		def, ok := defs[key]
+		if !ok {
+			continue
+		}
+		currentValue := strings.TrimSpace(existing.Value)
+		if currentValue != "" && currentValue != strings.TrimSpace(legacyValue) {
+			continue
+		}
+		if hasCustomLegalContent && (key == model.ConfigKeyPublicLegalVersion || key == model.ConfigKeyPublicLegalEffectiveDate) {
+			continue
+		}
+		updates := map[string]interface{}{
+			"value":       def.DefaultValue,
+			"type":        def.Type,
+			"description": def.Description,
+			"editable":    def.Editable,
+		}
+		if err := repository.DB.Model(&existing).Updates(updates).Error; err != nil {
+			return err
+		}
+	}
+
+	s.ClearCache()
+	return nil
 }
 
 type PublicThirdPartyService struct {
@@ -589,27 +685,43 @@ type PublicSiteConfig struct {
 }
 
 func defaultPublicUserAgreement() string {
-	return "本协议由你与陕西禾泽云创科技有限公司共同订立。你登录、浏览服务商、提交预约、确认报价、发起支付、查看项目进度、申请退款或投诉时，表示你已阅读并同意本协议。\n\n1. 服务范围与平台定位\n禾泽云提供家装服务撮合、交易流程管理与履约协同能力，包括服务商展示、预约沟通、报价确认、支付记录、项目进度、售后投诉和通知提醒。具体设计、施工、主材商品或服务由对应服务商承担交付责任。\n\n2. 账号注册与安全\n你应使用本人手机号登录，并妥善保管验证码和登录状态。通过你的账号完成的预约、确认、支付、验收、投诉等操作，平台将视为你本人操作。\n\n3. 交易与线下合同\n用户与服务商如在线下另行签署合同，该合同约定由签署双方自行履行，但不得规避平台已发生的交易记录与争议处理规则。\n\n4. 退款售后与投诉\n未开始服务前可按页面提示申请退款；服务已开始后，将结合实际履约进度、材料成本、双方证据和平台规则处理。客服电话：17764774797。"
+	return embeddedPublicDocumentContent("user-agreement", legacyPublicUserAgreement())
 }
 
 func defaultPublicPrivacyPolicy() string {
-	return "陕西禾泽云创科技有限公司尊重并保护你的个人信息。本政策说明禾泽云在登录、预约、报价、支付、项目协同、售后和投诉等场景中如何处理个人信息。\n\n1. 信息收集范围\n我们会根据业务需要处理手机号、联系人、房屋地址、装修需求、预算、预约记录、报价记录、订单与支付记录、项目进度、退款售后记录、投诉凭证和操作日志。\n\n2. 使用目的\n上述信息用于账号登录、身份验证、服务预约、报价与交易处理、项目履约协同、消息通知、客服支持、退款售后、投诉争议处理、风险审计和法定义务履行。\n\n3. 第三方服务共享\n如平台实际启用短信、支付、实名核验、对象存储、地图定位、即时通信等第三方服务，我们仅在完成对应功能所必需的范围内共享必要字段。\n\n4. 你的权利与联系\n你可以申请查询、更正、删除个人信息或撤回授权。客服电话：17764774797。"
+	return embeddedPublicDocumentContent("privacy-policy", legacyPublicPrivacyPolicy())
+}
+
+func defaultPublicPersonalInfoCollectionList() string {
+	return embeddedPublicDocumentContent("personal-info-collection-list", legacyPublicPersonalInfoCollectionList())
 }
 
 func defaultPublicTransactionRules() string {
-	return "禾泽云提供家装服务撮合、交易流程管理与履约协同能力。具体设计、施工、主材商品或服务由对应服务商承担交付责任；平台负责信息展示、流程留痕、支付与退款协同、投诉处理和必要的风控管理。用户与服务商如在线下另行签署合同，该合同约定由签署双方自行履行，但不得规避平台已发生的交易记录与争议处理规则。"
+	return embeddedPublicDocumentContent("transaction-rules", legacyPublicTransactionRules())
 }
 
 func defaultPublicRefundRules() string {
-	return "未开始服务前，用户可按页面提示申请退款；服务已开始后，将结合实际履约进度、材料成本、双方证据和平台规则处理。平台默认在1-3个工作日内受理退款或售后申请，复杂争议原则上在7个工作日内给出处理意见。出现服务未履约、严重延期、资料不实、费用争议或投诉证据充分等情况时，平台可介入协调并采取退款、整改、下架或限制账号等措施。"
+	return embeddedPublicDocumentContent("refund-rules", legacyPublicRefundRules())
 }
 
 func defaultPublicMerchantOnboardingRules() string {
-	return "个人设计师、独立工长需提交身份证、实名信息、服务能力证明及案例或工艺材料；个体户需提交经营者身份证和个体工商户营业执照；装修公司、主材商需提交企业营业执照、联系人信息、必要经营资质及服务或商品资料。平台可对资料进行审核、复核、抽查，并对资料不实、服务异常或违规经营主体采取驳回、下架、限权、清退等措施。"
+	return embeddedPublicDocumentContent("merchant-rules", legacyPublicMerchantOnboardingRules())
+}
+
+func defaultMerchantOnboardingAgreement() string {
+	return embeddedPublicDocumentContent("merchant-onboarding-agreement", legacyMerchantOnboardingAgreement())
+}
+
+func defaultMerchantPlatformRules() string {
+	return embeddedPublicDocumentContent("platform-rules", legacyMerchantPlatformRules())
+}
+
+func defaultMerchantPrivacyDataProcessing() string {
+	return embeddedPublicDocumentContent("privacy-data-processing", legacyMerchantPrivacyDataProcessing())
 }
 
 func defaultPublicThirdPartySharing() string {
-	return "禾泽云仅在实现具体功能所必需的范围内向第三方服务商共享必要信息，且不会出售个人信息。\n\n1. 短信服务\n如启用云短信服务，将向短信服务商提供手机号，用于发送登录、注册、身份核验、商家审核和账户安全验证码或通知。\n\n2. 支付服务\n如启用支付宝或微信支付，将向支付机构提供订单金额、交易标识和支付结果处理所需信息。\n\n3. 实名或企业核验\n如启用实名核验或企业核验服务，将向核验服务商提供姓名、身份证号、公司名称、证照号等核验所需信息。\n\n4. 对象存储、地图和即时通信\n如启用对象存储、地图定位或即时通信服务，将在图片文件存储、地址选择、服务城市、站内沟通等必要范围内处理相关信息。未实际启用的服务不会出现在公开清单中。"
+	return embeddedPublicDocumentContent("third-party-sharing", legacyPublicThirdPartySharing())
 }
 
 func (s *ConfigService) getPublicConfigValue(key, fallback string) string {
@@ -688,6 +800,13 @@ func (s *ConfigService) buildPublicLegalDocuments(version, effectiveDate string)
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicPrivacyPolicy, defaultPublicPrivacyPolicy()),
 		},
 		{
+			Slug:          "personal-info-collection-list",
+			Title:         "个人信息收集清单",
+			Version:       version,
+			EffectiveDate: effectiveDate,
+			Content:       s.getPublicConfigValue(model.ConfigKeyPublicPersonalInfoCollectionList, defaultPublicPersonalInfoCollectionList()),
+		},
+		{
 			Slug:          "transaction-rules",
 			Title:         "平台交易规则",
 			Version:       version,
@@ -709,6 +828,27 @@ func (s *ConfigService) buildPublicLegalDocuments(version, effectiveDate string)
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()),
 		},
 		{
+			Slug:          "merchant-onboarding-agreement",
+			Title:         "商家入驻协议",
+			Version:       version,
+			EffectiveDate: effectiveDate,
+			Content:       s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboardingAgreement, defaultMerchantOnboardingAgreement()),
+		},
+		{
+			Slug:          "platform-rules",
+			Title:         "商家平台规则",
+			Version:       version,
+			EffectiveDate: effectiveDate,
+			Content:       s.getPublicConfigValue(model.ConfigKeyPublicPlatformRules, defaultMerchantPlatformRules()),
+		},
+		{
+			Slug:          "privacy-data-processing",
+			Title:         "商家隐私与数据处理条款",
+			Version:       version,
+			EffectiveDate: effectiveDate,
+			Content:       s.getPublicConfigValue(model.ConfigKeyPublicPrivacyDataProcessing, defaultMerchantPrivacyDataProcessing()),
+		},
+		{
 			Slug:          "third-party-sharing",
 			Title:         "第三方信息共享清单",
 			Version:       version,
@@ -719,8 +859,8 @@ func (s *ConfigService) buildPublicLegalDocuments(version, effectiveDate string)
 }
 
 func (s *ConfigService) GetPublicSiteConfig() PublicSiteConfig {
-	version := s.getPublicConfigValue(model.ConfigKeyPublicLegalVersion, "v1.0.0-20260430")
-	effectiveDate := s.getPublicConfigValue(model.ConfigKeyPublicLegalEffectiveDate, "2026-04-30")
+	version := s.getPublicConfigValue(model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion())
+	effectiveDate := s.getPublicConfigValue(model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate())
 	return PublicSiteConfig{
 		BrandName:              s.getPublicConfigValue(model.ConfigKeyPublicBrandName, "禾泽云"),
 		CompanyName:            s.getPublicConfigValue(model.ConfigKeyPublicCompanyName, "陕西禾泽云创科技有限公司"),
@@ -790,6 +930,17 @@ func (s *ConfigService) GetDesignFeeUnlockDownload() bool {
 
 func (s *ConfigService) GetConstructionPaymentMode() string {
 	val, err := s.GetConfig(model.ConfigKeyConstructionPaymentMode)
+	if err != nil || (val != "staged" && val != "milestone" && val != "onetime") {
+		return "milestone"
+	}
+	if val == "staged" {
+		return "milestone"
+	}
+	return val
+}
+
+func (s *ConfigService) GetConstructionPaymentModeTx(tx *gorm.DB) string {
+	val, err := s.GetConfigTx(tx, model.ConfigKeyConstructionPaymentMode)
 	if err != nil || (val != "staged" && val != "milestone" && val != "onetime") {
 		return "milestone"
 	}

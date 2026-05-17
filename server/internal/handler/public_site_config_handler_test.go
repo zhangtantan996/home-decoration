@@ -80,8 +80,8 @@ func TestGetPublicSiteConfigReturnsOnlyPublicDefaults(t *testing.T) {
 	if config.CustomerPhone != "17764774797" {
 		t.Fatalf("unexpected phone: %q", config.CustomerPhone)
 	}
-	if len(config.LegalDocuments) != 6 {
-		t.Fatalf("expected 6 public legal documents, got %d", len(config.LegalDocuments))
+	if len(config.LegalDocuments) != 10 {
+		t.Fatalf("expected 10 public legal documents, got %d", len(config.LegalDocuments))
 	}
 	seenDocs := map[string]bool{}
 	for _, doc := range config.LegalDocuments {
@@ -90,7 +90,18 @@ func TestGetPublicSiteConfigReturnsOnlyPublicDefaults(t *testing.T) {
 		}
 		seenDocs[doc.Slug] = true
 	}
-	for _, slug := range []string{"user-agreement", "privacy-policy", "transaction-rules", "refund-rules", "merchant-rules", "third-party-sharing"} {
+	for _, slug := range []string{
+		"user-agreement",
+		"privacy-policy",
+		"personal-info-collection-list",
+		"transaction-rules",
+		"refund-rules",
+		"merchant-rules",
+		"merchant-onboarding-agreement",
+		"platform-rules",
+		"privacy-data-processing",
+		"third-party-sharing",
+	} {
 		if !seenDocs[slug] {
 			t.Fatalf("missing public legal document slug %q: %+v", slug, config.LegalDocuments)
 		}

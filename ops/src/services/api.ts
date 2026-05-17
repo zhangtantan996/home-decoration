@@ -85,16 +85,18 @@ export interface LoginResponse {
   refreshToken?: string;
   admin?: OpsUser;
   user?: OpsUser;
+  permissions?: string[];
   loginStage?: string;
   securitySetupRequired?: boolean;
   security?: OpsSecurityStatus;
 }
 
 export const login = async (username: string, password: string, otpCode?: string) => {
-  const data = await api.post<unknown, LoginResponse>('/admin/login', { username, password, otpCode });
+  const data = await api.post<unknown, LoginResponse>('/admin/ops/login', { username, password, otpCode });
   const loginStage = data.loginStage || data.security?.loginStage || 'active';
   const user = data.admin || data.user || { username };
-  if (!hasOpsAccess(user)) {
+  const permissions = Array.isArray(data.permissions) ? data.permissions : [];
+  if (!hasOpsAccess(user, permissions)) {
     useAuthStore.getState().clearOpsSession();
     throw new Error(OPS_ACCESS_DENIED_MESSAGE);
   }
@@ -105,16 +107,19 @@ export const login = async (username: string, password: string, otpCode?: string
   } as OpsSecurityStatus;
   const token = data.token || data.accessToken || '';
   if (token) {
-    useAuthStore.getState().setSession({ token, user, security });
+    useAuthStore.getState().setSession({ token, user, permissions, security });
   }
   return {
     ...data,
     loginStage,
+    permissions,
     security,
     admin: user,
     user,
   };
 };
+
+export const getOpsInfo = () => api.get<unknown, LoginResponse>('/admin/info');
 
 export const resetInitialPassword = (newPassword: string) =>
   api.post<{ newPassword: string }, LoginResponse>('/admin/security/password/reset-initial', { newPassword });
@@ -229,10 +234,77 @@ export interface BookingItem {
   userId?: number;
   phone?: string;
   address?: string;
+  area?: number;
+  budgetRange?: string;
+  preferredDate?: string;
   status?: number;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export interface ProjectOwnerOption {
+  id: number;
+  phone?: string;
+  phoneMasked?: string;
+  nickname?: string;
+  roleType?: string;
+  roleLabel?: string;
+}
+
+export interface ProjectSupervisorSummary {
+  assignmentId: number;
+  supervisorId: number;
+  name: string;
+  phone?: string;
+  assignedAt?: string;
+  assignedBy?: number;
+  assignedByName?: string;
+}
+
+export interface ProjectItem {
+  id: number;
+  ownerId?: number;
+  providerId?: number;
+  proposalId?: number;
+  name: string;
+  address?: string;
+  coverImage?: string;
+  area?: number;
+  budget?: number;
+  status?: number;
+  currentPhase?: string;
+  businessStatus?: string;
+  materialMethod?: string;
+  entryStartDate?: string;
+  entryEndDate?: string;
+  ownerName?: string;
+  providerName?: string;
+  businessStage?: string;
+  flowSummary?: string;
+  creationSource?: string;
+  creationSourceLabel?: string;
+  creationBookingId?: number;
+  currentSupervisor?: ProjectSupervisorSummary | null;
+}
+
+export interface ProjectPhaseItem {
+  id: number;
+  projectId: number;
+  phaseType: string;
+  name?: string;
+  seq: number;
+  status: string;
+  enabled?: boolean;
+  responsiblePerson?: string;
+  startDate?: string;
+  endDate?: string;
+  estimatedDays?: number;
+}
+
+export interface ProjectDetail extends ProjectItem {
+  phases?: ProjectPhaseItem[];
+  supervisorAssignments?: ProjectSupervisorSummary[];
 }
 
 export interface AuditLogItem {
@@ -327,6 +399,21 @@ const providerTypeParam = (type: string) => {
 export const listProviders = async (type: string, page = 1, pageSize = 20) =>
   normalizePage<ProviderItem>(await api.get('/admin/providers', { params: { type: providerTypeParam(type), page, pageSize } }));
 
+export const searchProjectOwners = async (params?: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  roleType?: string;
+}) =>
+  normalizePage<ProjectOwnerOption>(await api.get('/admin/users', { params: { ...params, roleType: params?.roleType || 'owner' } }));
+
+export const searchProjectProviders = async (params?: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+}) =>
+  normalizePage<ProviderItem>(await api.get('/admin/providers', { params }));
+
 export const createProvider = (payload: Record<string, unknown>) => api.post('/admin/providers', payload);
 export const updateProvider = (id: number, payload: Record<string, unknown>) => api.put(`/admin/providers/${id}`, payload);
 export const setProviderAvailability = (id: number, enabled: boolean, reason: string, recentReauthProof: string) =>
@@ -401,6 +488,37 @@ export const listBookings = async (page = 1, pageSize = 20) =>
 export const getBooking = (id: number) => api.get<unknown, BookingItem>(`/admin/bookings/${id}`);
 export const updateBookingStatus = (id: number, status: number, notes?: string) =>
   api.patch(`/admin/bookings/${id}/status`, { status, notes });
+
+export const listProjects = async (params?: {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  businessStage?: string;
+  status?: number;
+}) =>
+  normalizePage<ProjectItem>(await api.get('/admin/projects', { params }));
+export const getProject = (id: number) => api.get<unknown, ProjectDetail>(`/admin/projects/${id}`);
+export const createProject = (payload: Record<string, unknown>) => api.post<unknown, ProjectDetail>('/admin/projects', payload);
+export const updateProject = (id: number, payload: Record<string, unknown>) => api.put(`/admin/projects/${id}`, payload);
+export const listAvailableSupervisors = async (params?: { projectId?: number; cityCode?: string }) =>
+  normalizePage<{ id: number; realName?: string; phone?: string; cityCode?: string }>(await api.get('/admin/supervisors/available', { params }));
+export const listSupervisorAssignments = async (params?: {
+  projectId?: number;
+  supervisorId?: number;
+  page?: number;
+  pageSize?: number;
+}) =>
+  normalizePage<ProjectSupervisorSummary & { projectId?: number; status?: number }>(await api.get('/admin/supervisor-assignments', { params }));
+export const assignSupervisor = (payload: {
+  projectId: number;
+  supervisorId: number;
+  reason: string;
+  recentReauthProof?: string;
+}) => api.post('/admin/supervisor-assignments', payload);
+export const removeSupervisorAssignment = (assignmentId: number, payload: {
+  reason: string;
+  recentReauthProof?: string;
+}) => api.delete(`/admin/supervisor-assignments/${assignmentId}`, { data: payload });
 
 export const listAuditLogs = async (params?: AuditLogQuery) =>
   normalizePage<AuditLogItem>(await api.get('/admin/audit-logs', { params }));

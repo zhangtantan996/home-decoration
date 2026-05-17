@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/base64"
 	"fmt"
 	"testing"
 	"time"
@@ -27,10 +28,13 @@ func setupProjectServiceTestDB(t *testing.T) *gorm.DB {
 		&model.SysAdmin{},
 		&model.Notification{},
 		&model.AuditLog{},
+		&model.RiskWarning{},
 		&model.SystemConfig{},
 		&model.Booking{},
 		&model.Proposal{},
 		&model.Project{},
+		&model.SupervisorProfile{},
+		&model.ProjectSupervisorAssignment{},
 		&model.Milestone{},
 		&model.WorkLog{},
 		&model.ProjectPhase{},
@@ -120,6 +124,501 @@ func TestProjectServiceCreateWorkLog(t *testing.T) {
 	}
 	if log.Issues != "[]" {
 		t.Fatalf("expected default issues json array, got %s", log.Issues)
+	}
+}
+
+func TestProjectServiceCreateProjectManualPersistsEntryWindow(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 501}, Phone: "13800138501", Status: 1, Nickname: "业主D"}
+	provider := model.Provider{Base: model.Base{ID: 502}, ProviderType: 2, CompanyName: "测试装修公司"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	project, err := (&ProjectService{}).CreateProject(&CreateProjectRequest{
+		OwnerID:        owner.ID,
+		ProviderID:     provider.ID,
+		Name:           "Ops 手工建档项目",
+		Address:        "西安市高新区锦业路 66 号",
+		CoverImage:     "https://api.hezeyunchuang.com/uploads/projects/hero-a.png",
+		Area:           118,
+		Budget:         260000,
+		MaterialMethod: "platform",
+		EntryStartDate: "2026-05-20",
+		EntryEndDate:   "2026-05-30",
+	})
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	var stored model.Project
+	if err := db.First(&stored, project.ID).Error; err != nil {
+		t.Fatalf("load stored project: %v", err)
+	}
+	if stored.EntryStartDate == nil || stored.EntryStartDate.Format("2006-01-02") != "2026-05-20" {
+		t.Fatalf("expected entryStartDate persisted, got %#v", stored.EntryStartDate)
+	}
+	if stored.EntryEndDate == nil || stored.EntryEndDate.Format("2006-01-02") != "2026-05-30" {
+		t.Fatalf("expected entryEndDate persisted, got %#v", stored.EntryEndDate)
+	}
+	if stored.CoverImage != "/uploads/projects/hero-a.png" {
+		t.Fatalf("expected normalized coverImage, got %q", stored.CoverImage)
+	}
+	supervisor := model.SupervisorProfile{Base: model.Base{ID: 503}, UserID: 504, RealName: "张监理", Phone: "13800138503", Status: 1, Verified: true}
+	if err := db.Create(&supervisor).Error; err != nil {
+		t.Fatalf("create supervisor: %v", err)
+	}
+	assignedAt := time.Date(2026, 5, 19, 10, 0, 0, 0, time.Local)
+	assignment := model.ProjectSupervisorAssignment{
+		Base:         model.Base{ID: 505},
+		ProjectID:    project.ID,
+		SupervisorID: supervisor.ID,
+		Status:       1,
+		AssignedAt:   assignedAt,
+	}
+	if err := db.Create(&assignment).Error; err != nil {
+		t.Fatalf("create assignment: %v", err)
+	}
+
+	detail, err := (&ProjectService{}).GetProjectDetail(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectDetail: %v", err)
+	}
+	if detail.EntryStartDate == nil || detail.EntryStartDate.Format("2006-01-02") != "2026-05-20" {
+		t.Fatalf("expected detail entryStartDate, got %#v", detail.EntryStartDate)
+	}
+	if detail.EntryEndDate == nil || detail.EntryEndDate.Format("2006-01-02") != "2026-05-30" {
+		t.Fatalf("expected detail entryEndDate, got %#v", detail.EntryEndDate)
+	}
+	if detail.CoverImage != "/uploads/projects/hero-a.png" {
+		t.Fatalf("expected detail coverImage, got %q", detail.CoverImage)
+	}
+	if detail.CurrentSupervisor == nil || detail.CurrentSupervisor.Name != "张监理" {
+		t.Fatalf("expected current supervisor summary, got %#v", detail.CurrentSupervisor)
+	}
+	if detail.CurrentSupervisor.Phone != "138****8503" {
+		t.Fatalf("expected masked supervisor phone, got %q", detail.CurrentSupervisor.Phone)
+	}
+}
+
+func TestProjectServiceCreateProjectAppliesPhaseSelection(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 511}, Phone: "13800138511", Status: 1, Nickname: "业主阶段"}
+	provider := model.Provider{Base: model.Base{ID: 512}, ProviderType: 2, CompanyName: "阶段装修公司"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	project, err := (&ProjectService{}).CreateProject(&CreateProjectRequest{
+		OwnerID:           owner.ID,
+		ProviderID:        provider.ID,
+		Name:              "阶段裁剪项目",
+		Address:           "西安市高新区阶段路 1 号",
+		Area:              98,
+		Budget:            180000,
+		MaterialMethod:    "platform",
+		EnabledPhaseTypes: []string{"preparation", "electrical", "inspection"},
+	})
+	if err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+
+	phases, err := (&ProjectService{}).GetProjectPhases(project.ID)
+	if err != nil {
+		t.Fatalf("GetProjectPhases: %v", err)
+	}
+	got := make([]string, 0, len(phases))
+	for _, phase := range phases {
+		got = append(got, phase.PhaseType)
+	}
+	want := []string{"preparation", "electrical", "inspection"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Fatalf("expected enabled phases %v, got %v", want, got)
+	}
+
+	var disabled model.ProjectPhase
+	if err := db.Where("project_id = ? AND phase_type = ?", project.ID, "demolition").First(&disabled).Error; err != nil {
+		t.Fatalf("expected disabled phase kept for audit/history: %v", err)
+	}
+	if disabled.Enabled {
+		t.Fatalf("expected demolition phase disabled")
+	}
+}
+
+func TestProjectServiceCreateProjectRejectsPhaseSelectionWithoutExecutionPhase(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 521}, Phone: "13800138521", Status: 1, Nickname: "业主无阶段"}
+	provider := model.Provider{Base: model.Base{ID: 522}, ProviderType: 2, CompanyName: "无阶段装修公司"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	_, err := (&ProjectService{}).CreateProject(&CreateProjectRequest{
+		OwnerID:           owner.ID,
+		ProviderID:        provider.ID,
+		Name:              "无执行阶段项目",
+		Address:           "西安市高新区阶段路 2 号",
+		Area:              88,
+		Budget:            160000,
+		MaterialMethod:    "platform",
+		EnabledPhaseTypes: []string{"preparation", "inspection"},
+	})
+	if err == nil {
+		t.Fatalf("expected CreateProject to reject phase selection without execution phase")
+	}
+	if got := err.Error(); got != "至少保留一个施工执行阶段" {
+		t.Fatalf("expected execution phase error, got %q", got)
+	}
+}
+
+func TestProjectServiceCreateProjectRejectsInvalidManualInput(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 531}, Phone: "13800138531", Status: 1, Nickname: "业主校验"}
+	provider := model.Provider{Base: model.Base{ID: 532}, ProviderType: 2, CompanyName: "校验装修公司"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	testCases := []struct {
+		name    string
+		req     CreateProjectRequest
+		wantErr string
+	}{
+		{
+			name: "面积超过两位小数",
+			req: CreateProjectRequest{
+				OwnerID: owner.ID, ProviderID: provider.ID, Name: "校验项目", Address: "西安市高新区测试路 1 号",
+				Area: 88.123, Budget: 200000, MaterialMethod: "platform",
+			},
+			wantErr: "面积最多保留两位小数",
+		},
+		{
+			name: "预算超过上限",
+			req: CreateProjectRequest{
+				OwnerID: owner.ID, ProviderID: provider.ID, Name: "校验项目", Address: "西安市高新区测试路 1 号",
+				Area: 88.12, Budget: projectBudgetMax + 1, MaterialMethod: "platform",
+			},
+			wantErr: "预算不能超过100000000元",
+		},
+		{
+			name: "进场结束日期早于开始日期",
+			req: CreateProjectRequest{
+				OwnerID: owner.ID, ProviderID: provider.ID, Name: "校验项目", Address: "西安市高新区测试路 1 号",
+				Area: 88.12, Budget: 200000, MaterialMethod: "platform",
+				EntryStartDate: "2026-05-20", EntryEndDate: "2026-05-19",
+			},
+			wantErr: "进场结束日期不能早于进场开始日期",
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			_, err := (&ProjectService{}).CreateProject(&testCase.req)
+			if err == nil {
+				t.Fatalf("expected create project to fail")
+			}
+			if got := err.Error(); got != testCase.wantErr {
+				t.Fatalf("unexpected error: got=%q want=%q", got, testCase.wantErr)
+			}
+		})
+	}
+}
+
+func TestProjectServiceUpdatePhaseRequiresLogBeforeCompleted(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	project := model.Project{Base: model.Base{ID: 531}, OwnerID: 1, ProviderID: 2, Name: "阶段完成项目", Address: "阶段完成地址"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 532}, ProjectID: project.ID, PhaseType: "electrical", Seq: 3, Status: "in_progress", Enabled: true}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+
+	svc := &ProjectService{}
+	err := svc.UpdatePhase(phase.ID, &UpdatePhaseRequest{Status: "completed"})
+	if err == nil {
+		t.Fatalf("expected completed phase without log to fail")
+	}
+	if got := err.Error(); got != "阶段完成前至少需要一条巡检日志" {
+		t.Fatalf("expected missing log error, got %q", got)
+	}
+
+	if err := svc.CreateWorkLog(project.ID, 2, &CreateWorkLogRequest{
+		PhaseID:     phase.ID,
+		Title:       "阶段巡检",
+		Description: "阶段完成前巡检记录",
+	}); err != nil {
+		t.Fatalf("CreateWorkLog: %v", err)
+	}
+	if err := svc.UpdatePhase(phase.ID, &UpdatePhaseRequest{Status: "completed"}); err != nil {
+		t.Fatalf("expected completed phase with log to pass: %v", err)
+	}
+}
+
+func TestProjectServiceUpdatePhaseRejectsStartDateBeforeProjectKickoff(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	projectKickoff := time.Date(2026, 5, 20, 0, 0, 0, 0, time.Local)
+	project := model.Project{
+		Base:       model.Base{ID: 551},
+		OwnerID:    1,
+		ProviderID: 2,
+		Name:       "阶段时间校验项目",
+		Address:    "阶段时间校验地址",
+		StartDate:  &projectKickoff,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 552}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "pending", Enabled: true}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhase(phase.ID, &UpdatePhaseRequest{StartDate: "2026-05-19"})
+	if err == nil {
+		t.Fatalf("expected start date before kickoff to fail")
+	}
+	if got := err.Error(); got != "阶段计划开始时间不能早于项目开工日期" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestProjectServiceUpdatePhaseRejectsEndDateBeforeStartDate(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	startDate := time.Date(2026, 5, 21, 0, 0, 0, 0, time.Local)
+	project := model.Project{
+		Base:       model.Base{ID: 561},
+		OwnerID:    1,
+		ProviderID: 2,
+		Name:       "阶段完成时间校验项目",
+		Address:    "阶段完成时间校验地址",
+		StartDate:  &startDate,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{
+		Base:      model.Base{ID: 562},
+		ProjectID: project.ID,
+		PhaseType: "electrical",
+		Seq:       3,
+		Status:    "in_progress",
+		Enabled:   true,
+		StartDate: &startDate,
+	}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhase(phase.ID, &UpdatePhaseRequest{EndDate: "2026-05-20"})
+	if err == nil {
+		t.Fatalf("expected end date before start date to fail")
+	}
+	if got := err.Error(); got != "计划完成时间不能早于计划开始时间" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestProjectServiceUpdatePhaseRejectsStartDateBeforePreviousPhaseEndDate(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	projectStart := time.Date(2026, 5, 15, 0, 0, 0, 0, time.Local)
+	project := model.Project{
+		Base:       model.Base{ID: 571},
+		OwnerID:    1,
+		ProviderID: 2,
+		Name:       "阶段前序时间校验项目",
+		Address:    "阶段前序时间校验地址",
+		StartDate:  &projectStart,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	previousEnd := time.Date(2026, 5, 20, 0, 0, 0, 0, time.Local)
+	previousPhase := model.ProjectPhase{Base: model.Base{ID: 572}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "completed", Enabled: true, EndDate: &previousEnd}
+	currentPhase := model.ProjectPhase{Base: model.Base{ID: 573}, ProjectID: project.ID, PhaseType: "demolition", Seq: 2, Status: "in_progress", Enabled: true}
+	if err := db.Create(&[]model.ProjectPhase{previousPhase, currentPhase}).Error; err != nil {
+		t.Fatalf("create phases: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhase(currentPhase.ID, &UpdatePhaseRequest{StartDate: "2026-05-19"})
+	if err == nil {
+		t.Fatalf("expected start date before previous phase end date to fail")
+	}
+	if got := err.Error(); got != "阶段计划开始时间不能早于上一阶段计划完成时间" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestProjectServiceUpdatePhaseShiftsPendingFuturePhasesAfterDelayedEndDate(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	projectStart := time.Date(2026, 5, 15, 0, 0, 0, 0, time.Local)
+	project := model.Project{
+		Base:       model.Base{ID: 581},
+		OwnerID:    1,
+		ProviderID: 2,
+		Name:       "阶段后续时间校验项目",
+		Address:    "阶段后续时间校验地址",
+		StartDate:  &projectStart,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	currentStart := time.Date(2026, 5, 18, 0, 0, 0, 0, time.Local)
+	nextStart := time.Date(2026, 5, 24, 0, 0, 0, 0, time.Local)
+	nextEnd := time.Date(2026, 5, 28, 0, 0, 0, 0, time.Local)
+	thirdStart := time.Date(2026, 5, 29, 0, 0, 0, 0, time.Local)
+	thirdEnd := time.Date(2026, 6, 2, 0, 0, 0, 0, time.Local)
+	currentPhase := model.ProjectPhase{Base: model.Base{ID: 582}, ProjectID: project.ID, PhaseType: "demolition", Seq: 2, Status: "in_progress", Enabled: true, StartDate: &currentStart}
+	nextPhase := model.ProjectPhase{Base: model.Base{ID: 583}, ProjectID: project.ID, PhaseType: "electrical", Seq: 3, Status: "pending", Enabled: true, StartDate: &nextStart, EndDate: &nextEnd}
+	thirdPhase := model.ProjectPhase{Base: model.Base{ID: 584}, ProjectID: project.ID, PhaseType: "masonry", Seq: 4, Status: "pending", Enabled: true, StartDate: &thirdStart, EndDate: &thirdEnd}
+	if err := db.Create(&[]model.ProjectPhase{currentPhase, nextPhase, thirdPhase}).Error; err != nil {
+		t.Fatalf("create phases: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhase(currentPhase.ID, &UpdatePhaseRequest{EndDate: "2026-05-25"})
+	if err != nil {
+		t.Fatalf("expected delayed end date to shift pending future phases: %v", err)
+	}
+
+	var shiftedNext model.ProjectPhase
+	if err := db.First(&shiftedNext, nextPhase.ID).Error; err != nil {
+		t.Fatalf("load next phase: %v", err)
+	}
+	if shiftedNext.StartDate == nil || shiftedNext.StartDate.Format("2006-01-02") != "2026-05-25" {
+		t.Fatalf("unexpected shifted next start date: %v", shiftedNext.StartDate)
+	}
+	if shiftedNext.EndDate == nil || shiftedNext.EndDate.Format("2006-01-02") != "2026-05-29" {
+		t.Fatalf("unexpected shifted next end date: %v", shiftedNext.EndDate)
+	}
+	var shiftedThird model.ProjectPhase
+	if err := db.First(&shiftedThird, thirdPhase.ID).Error; err != nil {
+		t.Fatalf("load third phase: %v", err)
+	}
+	if shiftedThird.StartDate == nil || shiftedThird.StartDate.Format("2006-01-02") != "2026-05-30" {
+		t.Fatalf("unexpected shifted third start date: %v", shiftedThird.StartDate)
+	}
+	if shiftedThird.EndDate == nil || shiftedThird.EndDate.Format("2006-01-02") != "2026-06-03" {
+		t.Fatalf("unexpected shifted third end date: %v", shiftedThird.EndDate)
+	}
+}
+
+func TestProjectServiceUpdatePhaseRejectsDelayedEndDateWhenFuturePhaseStarted(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	project := model.Project{Base: model.Base{ID: 585}, OwnerID: 1, ProviderID: 2, Name: "已开始后续阶段项目", Address: "阶段时间地址"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	currentStart := time.Date(2026, 5, 18, 0, 0, 0, 0, time.Local)
+	nextStart := time.Date(2026, 5, 24, 0, 0, 0, 0, time.Local)
+	currentPhase := model.ProjectPhase{Base: model.Base{ID: 586}, ProjectID: project.ID, PhaseType: "demolition", Seq: 2, Status: "in_progress", Enabled: true, StartDate: &currentStart}
+	nextPhase := model.ProjectPhase{Base: model.Base{ID: 587}, ProjectID: project.ID, PhaseType: "electrical", Seq: 3, Status: "in_progress", Enabled: true, StartDate: &nextStart}
+	if err := db.Create(&[]model.ProjectPhase{currentPhase, nextPhase}).Error; err != nil {
+		t.Fatalf("create phases: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhase(currentPhase.ID, &UpdatePhaseRequest{EndDate: "2026-05-25"})
+	if err == nil {
+		t.Fatalf("expected delayed end date after started future phase to fail")
+	}
+	if got := err.Error(); got != "后续阶段已开始，不能自动顺延" {
+		t.Fatalf("unexpected error: %q", got)
+	}
+}
+
+func TestProjectServiceUpdatePhaseAllowsDelayedDatesAfterProjectExpectedEnd(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	projectStart := time.Date(2026, 5, 15, 0, 0, 0, 0, time.Local)
+	expectedEnd := time.Date(2026, 5, 30, 0, 0, 0, 0, time.Local)
+	project := model.Project{
+		Base:        model.Base{ID: 591},
+		OwnerID:     1,
+		ProviderID:  2,
+		Name:        "延期阶段时间项目",
+		Address:     "延期阶段时间地址",
+		StartDate:   &projectStart,
+		ExpectedEnd: &expectedEnd,
+	}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 592}, ProjectID: project.ID, PhaseType: "installation", Seq: 6, Status: "in_progress", Enabled: true}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhase(phase.ID, &UpdatePhaseRequest{
+		StartDate: "2026-06-01",
+		EndDate:   "2026-06-05",
+	})
+	if err != nil {
+		t.Fatalf("expected delayed phase dates after project expected end to pass: %v", err)
+	}
+}
+
+func TestProjectServiceUpdateProjectRejectsPhaseSelectionAfterStart(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 543}, Phone: "13800138543", Status: 1, Nickname: "开工业主"}
+	provider := model.Provider{Base: model.Base{ID: 544}, ProviderType: 2, CompanyName: "开工装修公司"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+	project := model.Project{Base: model.Base{ID: 541}, OwnerID: 1, ProviderID: 2, Name: "已开工项目", Address: "已开工地址"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 542}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "in_progress", Enabled: true}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+
+	_, err := (&ProjectService{}).UpdateProjectBasics(project.ID, &UpdateProjectBasicsRequest{
+		OwnerID:           owner.ID,
+		ProviderID:        provider.ID,
+		Name:              "已开工项目",
+		Address:           "已开工地址",
+		Area:              100,
+		Budget:            200000,
+		MaterialMethod:    "platform",
+		EnabledPhaseTypes: []string{"preparation", "electrical", "inspection"},
+	})
+	if err == nil {
+		t.Fatalf("expected phase selection update after start to fail")
+	}
+	if got := err.Error(); got != "项目开工后不可调整阶段结构" {
+		t.Fatalf("expected phase structure locked error, got %q", got)
 	}
 }
 

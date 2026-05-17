@@ -17,6 +17,7 @@ import './index.scss';
 const tabPages = new Set([
   '/pages/home/index',
   '/pages/inspiration/index',
+  '/pages/progress/index',
   '/pages/messages/index',
   '/pages/profile/index',
 ]);

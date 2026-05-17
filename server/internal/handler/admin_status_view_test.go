@@ -180,6 +180,23 @@ func TestAdminListProviders_DerivedStatusesAndFilters(t *testing.T) {
 	if paged.Total != 4 || len(paged.List) != 1 || paged.List[0].ID != 3003 {
 		t.Fatalf("unexpected paged provider result: %+v", paged)
 	}
+
+	keywordResp := requestAdminProviderList(t, "/api/v1/admin/providers?page=1&pageSize=10&keyword=02004")
+	if keywordResp.Code != 0 {
+		t.Fatalf("unexpected keyword code: got=%d message=%s", keywordResp.Code, keywordResp.Message)
+	}
+	var keywordFiltered struct {
+		List []struct {
+			ID uint64 `json:"id"`
+		} `json:"list"`
+		Total int64 `json:"total"`
+	}
+	if err := json.Unmarshal(keywordResp.Data, &keywordFiltered); err != nil {
+		t.Fatalf("decode keyword filtered data: %v", err)
+	}
+	if keywordFiltered.Total != 1 || len(keywordFiltered.List) != 1 || keywordFiltered.List[0].ID != 3004 {
+		t.Fatalf("unexpected keyword filtered result: %+v", keywordFiltered)
+	}
 }
 
 func TestAdminListUsers_IncludesAccountStatusAndPrimaryEntity(t *testing.T) {

@@ -7,6 +7,7 @@ import (
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -120,6 +121,53 @@ func TestAdminRequiresTwoFactorRespectsRoleScope(t *testing.T) {
 	}
 	if svc.AdminRequiresTwoFactor(opsAdmin) {
 		t.Fatalf("expected operations role to skip mandatory two-factor")
+	}
+}
+
+func TestCreateReauthProofRequiresRedisOutsideLocalEnv(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	previousRedis := repository.RedisClient
+	repository.RedisClient = nil
+	t.Cleanup(func() {
+		repository.RedisClient = previousRedis
+	})
+
+	password, err := bcrypt.GenerateFromPassword([]byte("SecurePassword123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	admin := &model.SysAdmin{ID: 7001, Username: "prod-admin", Password: string(password)}
+	if _, _, err := NewAdminSecurityService().CreateReauthProof(admin, "sid-prod", "", "SecurePassword123!"); err == nil {
+		t.Fatal("expected production reauth proof creation to fail closed without Redis")
+	}
+}
+
+func TestValidateReauthProofRequiresRedisOutsideLocalEnv(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	previousRedis := repository.RedisClient
+	repository.RedisClient = nil
+	t.Cleanup(func() {
+		repository.RedisClient = previousRedis
+	})
+
+	if err := NewAdminSecurityService().ValidateReauthProof(7001, "sid-prod", "proof"); err == nil {
+		t.Fatal("expected production reauth validation to fail closed without Redis")
+	}
+}
+
+func TestValidateReauthProofAllowsLocalFallbackWithoutRedis(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvLocal)
+
+	previousRedis := repository.RedisClient
+	repository.RedisClient = nil
+	t.Cleanup(func() {
+		repository.RedisClient = previousRedis
+	})
+
+	if err := NewAdminSecurityService().ValidateReauthProof(7001, "sid-local", "proof"); err != nil {
+		t.Fatalf("expected local reauth validation fallback without Redis, got %v", err)
 	}
 }
 

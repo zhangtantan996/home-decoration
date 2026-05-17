@@ -30,7 +30,7 @@ test.describe('user web app-aligned smoke', () => {
     await expect(page.getByRole('heading', { name: '禾泽云用户服务协议' })).toBeVisible();
 
     await page.goto('/app/legal/privacy-policy', { waitUntil: 'domcontentloaded' });
-    await expect(page.getByRole('heading', { name: '隐私与数据处理条款' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /隐私政策/ })).toBeVisible();
   });
 
   test('登录后首页按 app 心智展示搜索、分类和服务列表', async ({ page }) => {

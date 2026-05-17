@@ -1770,7 +1770,7 @@ const MaterialShopRegister: React.FC<MaterialShopRegisterProps> = ({
                                     我已阅读并同意
                                     {' '}
                                     <a href={MERCHANT_LEGAL_ROUTES.onboardingAgreement} target="_blank" rel="noreferrer">
-                                        《平台入驻协议（线上勾选版）》
+                                        《平台入驻协议》
                                     </a>
                                     {' '}
                                     <a href={MERCHANT_LEGAL_ROUTES.platformRules} target="_blank" rel="noreferrer">

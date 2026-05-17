@@ -6,8 +6,85 @@
 DO $$
 DECLARE
     finance_role_id BIGINT := 0;
+    finance_parent_id BIGINT := 0;
+    payout_menu_id BIGINT := 0;
+    settlement_menu_id BIGINT := 0;
 BEGIN
     SELECT id INTO finance_role_id FROM sys_roles WHERE key = 'finance' LIMIT 1;
+    SELECT id INTO finance_parent_id
+    FROM sys_menus
+    WHERE path = '/finance'
+       OR title IN ('资金中心', '财务管理', '资金管理')
+    ORDER BY id ASC
+    LIMIT 1;
+
+    IF finance_parent_id IS NULL THEN
+        finance_parent_id := 0;
+    END IF;
+
+    SELECT id INTO payout_menu_id
+    FROM sys_menus
+    WHERE path = '/finance/payouts'
+       OR component = 'pages/finance/PayoutList'
+    ORDER BY id ASC
+    LIMIT 1;
+
+    IF payout_menu_id IS NULL OR payout_menu_id = 0 THEN
+        INSERT INTO sys_menus (
+            parent_id, title, type, permission, path, component, icon, sort, visible, status, created_at, updated_at
+        )
+        VALUES (
+            finance_parent_id, '自动出款', 2, 'finance:transaction:list', '/finance/payouts', 'pages/finance/PayoutList', 'AccountBookOutlined', 6, true, 1, NOW(), NOW()
+        )
+        RETURNING id INTO payout_menu_id;
+    ELSE
+        UPDATE sys_menus
+        SET
+            parent_id = finance_parent_id,
+            title = '自动出款',
+            type = 2,
+            permission = 'finance:transaction:list',
+            path = '/finance/payouts',
+            component = 'pages/finance/PayoutList',
+            icon = 'AccountBookOutlined',
+            sort = 6,
+            visible = true,
+            status = 1,
+            updated_at = NOW()
+        WHERE id = payout_menu_id;
+    END IF;
+
+    SELECT id INTO settlement_menu_id
+    FROM sys_menus
+    WHERE path = '/finance/settlements'
+       OR component = 'pages/finance/SettlementList'
+    ORDER BY id ASC
+    LIMIT 1;
+
+    IF settlement_menu_id IS NULL OR settlement_menu_id = 0 THEN
+        INSERT INTO sys_menus (
+            parent_id, title, type, permission, path, component, icon, sort, visible, status, created_at, updated_at
+        )
+        VALUES (
+            finance_parent_id, '结算单', 2, 'finance:transaction:list', '/finance/settlements', 'pages/finance/SettlementList', 'AccountBookOutlined', 7, true, 1, NOW(), NOW()
+        )
+        RETURNING id INTO settlement_menu_id;
+    ELSE
+        UPDATE sys_menus
+        SET
+            parent_id = finance_parent_id,
+            title = '结算单',
+            type = 2,
+            permission = 'finance:transaction:list',
+            path = '/finance/settlements',
+            component = 'pages/finance/SettlementList',
+            icon = 'AccountBookOutlined',
+            sort = 7,
+            visible = true,
+            status = 1,
+            updated_at = NOW()
+        WHERE id = settlement_menu_id;
+    END IF;
 
     DELETE FROM sys_role_menus rm
     USING sys_roles r, sys_menus m

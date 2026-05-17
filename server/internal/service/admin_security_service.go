@@ -791,7 +791,10 @@ func (s *AdminSecurityService) CreateReauthProof(admin *model.SysAdmin, sid, otp
 	expiresAt := time.Now().Add(s.ReauthTTL())
 	redisClient := repository.GetRedis()
 	if redisClient == nil {
-		return proof, expiresAt, nil
+		if config.IsLocalLikeAppEnv() {
+			return proof, expiresAt, nil
+		}
+		return "", time.Time{}, errors.New("再认证服务不可用")
 	}
 	ctx, cancel := repository.RedisContext()
 	defer cancel()
@@ -810,11 +813,14 @@ func (s *AdminSecurityService) ValidateReauthProof(adminID uint64, sid, proof st
 	}
 	redisClient := repository.GetRedis()
 	if redisClient == nil {
-		return nil
+		if config.IsLocalLikeAppEnv() {
+			return nil
+		}
+		return errors.New("再认证服务不可用")
 	}
 	ctx, cancel := repository.RedisContext()
 	defer cancel()
-	stored, err := redisClient.Get(ctx, adminReauthKey(sid, proof)).Result()
+	stored, err := redisClient.GetDel(ctx, adminReauthKey(sid, proof)).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			return errAdminReauthRequired

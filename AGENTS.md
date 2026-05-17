@@ -8,6 +8,31 @@ Repo-wide instructions for coding agents. Module-local `AGENTS.md` may add detai
 - 默认不把用户结论当事实：独立思考并用代码/日志/运行结果验证；发现矛盾先提问引导校正，而不是直接附和。
 - 只有用户明确授权（开始/请实现/直接改/PLEASE IMPLEMENT 等）才可直接执行；若用户明确“只回答不改代码/不跑命令/不提交”，必须严格遵守。
 - 当任务可拆为边界清晰且互不冲突的子问题时，可启用子代理并行提效
+- 代码审查、复审与审查后修复默认遵守 `docs/CODE_REVIEW_SOP.md`，按边界确认、P0/P1 优先、修复复验、3 轮止损执行。
+
+## 12-Rule Execution Discipline
+
+以下 12 条默认约束所有读取、实现、审查、修复、验证和汇报动作：
+
+1. 先思考再编码：先明确目标、范围、非目标和验证方式；有歧义先指出，不要默默选一个解释开干。
+2. 简洁优先：只写解决当前问题的最小必要代码，不添加未要求功能，不为一次性逻辑造抽象。
+3. 手术式修改：只改与当前任务直接相关的代码，不顺手重构、不顺手清理无关区域。
+4. 目标驱动执行：把任务翻译成可验证目标；修 bug 要有复现，改功能要有成功标准，重构要验证前后行为一致。
+5. 模型只用于判断，不用于编造事实：代码现状、配置值、接口契约、测试结果、错误信息、线上状态必须基于代码、日志、命令输出、文档或用户提供信息。
+6. token 预算不是跳过关键步骤的理由：不要为了省上下文或省时间跳过关键文档、边界确认和验证说明；追求最小充分上下文，不是最少上下文。
+7. 暴露冲突，不要平均化处理：用户目标、仓库规则、业务口径、验证结果一旦冲突，要明确指出冲突点，不用模糊措辞弱化问题。
+8. 先读再写：动手前先读相关代码、调用链、接口、脚本和 source-of-truth 文档；Direct Fix 至少读目标文件和直接调用点，Structured Change 至少读规则文档、目标模块和验证入口。
+9. 测试验证的是需求意图，不只是表面行为：除 happy path 外，至少考虑关键边界、错误态、状态流转、权限影响和真实业务后果。
+10. 每一步都设检查点：多步骤任务分阶段验证；某一步失败就先解释失败现象、原因判断和下一步，不继续盲改。
+11. 即使不同意，也先匹配项目约定：组件、状态管理、分层、design tokens、验证命令优先遵守现有约定，不借任务顺手切技术路线。
+12. 明确失败，禁止静默带过：清楚区分“已验证通过”“环境阻塞”“状态未知”“未执行”，不把未验证内容包装成已完成。
+
+## Git Workflow Guardrail
+
+- 本地开发默认只在 `dev` 或从 `dev` 派生的功能分支进行，禁止把 `main` 当作本地开发分支。
+- 任何 `git push` 都需要用户明确确认；如获准推送，默认先推到 `origin/dev`，只有 `origin/dev` 验证通过后，才允许同步到 `origin/main`。
+- 若当前会话为了只读检查临时切到 `main`，完成后必须切回 `dev`，不得继续在 `main` 上开发、提交或累积未发布改动。
+- 未经用户明确确认，不得直接把本地改动推到 `origin/main`，也不得绕过 `origin/dev` 直接发版。
 
 ## Repo Map
 
@@ -17,7 +42,7 @@ Repo-wide instructions for coding agents. Module-local `AGENTS.md` may add detai
 | `admin/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Admin governance panel |
 | `merchant/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Merchant fulfillment panel |
 | `supervisor/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Supervisor project execution panel |
-| `web/` | React 18.3.1, Vite 7, Zustand | User-facing H5 app |
+| `web/` | React 18.3.1, Vite 7, Zustand | Login-gated auxiliary H5 for payment-result and browsing |
 | `mini/` | Taro 4.1, NutUI React Taro | WeChat mini program (primary transaction surface) |
 | `mobile/` | React 19.2, RN 0.83, Expo | Native mobile app |
 | `deploy/` | Docker, Nginx | Deployment configs and gateway |
@@ -132,8 +157,8 @@ cd admin && npm run lint
 ```
 cd merchant && npm run dev -- --host
 cd merchant && npm run build
+cd merchant && npm run lint
 ```
-Note: no `lint` script defined in merchant.
 
 **supervisor:**
 ```
@@ -244,7 +269,7 @@ Default operating strategy:
 - **mini** = primary transaction surface
 - **merchant** web = primary fulfillment surface
 - **admin** web = primary governance surface
-- **web/H5** = landing, payment-result, and auxiliary browsing
+- **web/H5** = login-gated auxiliary browsing and payment-result surface, not the primary transaction surface
 
 Hard business rules — do not change unless the user explicitly requests:
 - Full transaction flow: 设计方案确认(成交点A) → 报价基线提交 → 施工主体选择 → 施工报价 → 用户确认施工报价(成交点B) → 项目创建
@@ -288,3 +313,4 @@ Read these when you need deeper context:
 4. `docs/SECURITY.md`
 
 Treat `GEMINI.md` as potentially stale. If docs conflict with checked-in config or scripts, follow the executable source of truth.
+If you need an expanded explanation of the 12 execution rules, `docs/AGENT_EXECUTION_RULES.md` is a non-authoritative explainer only.

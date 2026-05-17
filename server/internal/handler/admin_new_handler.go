@@ -72,7 +72,7 @@ func AdminCreateAdmin(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
+	if _, err := service.ValidateAdminRoleAssignmentForOperator(operatorID, 0, req.RoleIDs); err != nil {
 		respondAdminRBACMutationError(c, err, "角色分配不合法")
 		return
 	}
@@ -191,8 +191,12 @@ func AdminUpdateAdmin(c *gin.Context) {
 		return
 	}
 	securitySvc := service.NewAdminSecurityService()
+	if err := service.ValidateAdminTargetManageableForOperator(operatorID, id); err != nil {
+		respondAdminRBACMutationError(c, err, "无权管理目标管理员")
+		return
+	}
 	if len(req.RoleIDs) > 0 {
-		if _, err := service.ValidateAdminRoleAssignment(req.RoleIDs); err != nil {
+		if _, err := service.ValidateAdminRoleAssignmentForOperator(operatorID, id, req.RoleIDs); err != nil {
 			respondAdminRBACMutationError(c, err, "角色分配不合法")
 			return
 		}
@@ -338,6 +342,10 @@ func AdminDeleteAdmin(c *gin.Context) {
 		response.BadRequest(c, "不能删除当前登录账号")
 		return
 	}
+	if err := service.ValidateAdminTargetManageableForOperator(operatorID, id); err != nil {
+		respondAdminRBACMutationError(c, err, "无权管理目标管理员")
+		return
+	}
 
 	// 使用事务删除管理员及其角色关联
 	auditService := &service.AuditLogService{}
@@ -408,6 +416,10 @@ func AdminUpdateAdminStatus(c *gin.Context) {
 	}
 	if operatorID == admin.ID && req.Status == 0 {
 		response.BadRequest(c, "不能禁用当前登录账号")
+		return
+	}
+	if err := service.ValidateAdminTargetManageableForOperator(operatorID, id); err != nil {
+		respondAdminRBACMutationError(c, err, "无权管理目标管理员")
 		return
 	}
 

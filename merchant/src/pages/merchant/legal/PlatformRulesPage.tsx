@@ -1,18 +1,21 @@
 import React from 'react';
-import {
-    MERCHANT_LEGAL_EFFECTIVE_DATE,
-    PLATFORM_RULES_SECTIONS,
-    PLATFORM_RULES_VERSION,
-} from '../../../constants/merchantLegal';
 import LegalDocumentLayout from './LegalDocumentLayout';
+import { useMerchantLegalDocument } from './useMerchantLegalDocument';
 
-const PlatformRulesPage: React.FC = () => (
-    <LegalDocumentLayout
-        title="平台规则"
-        version={PLATFORM_RULES_VERSION}
-        effectiveDate={MERCHANT_LEGAL_EFFECTIVE_DATE}
-        sections={PLATFORM_RULES_SECTIONS}
-    />
-);
+const PlatformRulesPage: React.FC = () => {
+    const { siteConfig, document } = useMerchantLegalDocument('platform-rules');
+
+    return (
+        <LegalDocumentLayout
+            title={document.title}
+            version={document.version}
+            effectiveDate={document.effectiveDate}
+            content={document.content}
+            brandName={siteConfig.brandName}
+            companyName={siteConfig.companyName}
+            customerPhone={siteConfig.customerPhone}
+        />
+    );
+};
 
 export default PlatformRulesPage;

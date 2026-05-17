@@ -35,6 +35,11 @@ const TAB_ITEMS: TabItem[] = [
     icon: 'inspiration',
   },
   {
+    pagePath: '/pages/progress/index',
+    text: '进度',
+    icon: 'progress',
+  },
+  {
     pagePath: '/pages/messages/index',
     text: '通知',
     icon: 'message',
@@ -47,6 +52,7 @@ const TAB_ITEMS: TabItem[] = [
 ];
 
 const PROTECTED_TAB_PATHS = new Set([
+  '/pages/progress/index',
   '/pages/messages/index',
 ]);
 

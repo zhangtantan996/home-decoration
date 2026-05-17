@@ -4,6 +4,7 @@ import { parseAbsoluteUrl, replaceAbsoluteUrlOrigin } from '@/utils/url';
 
 const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
 const UNSTABLE_IMAGE_HOST_FRAGMENTS = ['images.unsplash.com', 'via.placeholder.com'];
+const FIRST_PARTY_ASSET_PREFIXES = ['/uploads/', '/static/'];
 const firstPartyHost = parseAbsoluteUrl(API_ORIGIN)?.hostname || '';
 const KNOWN_SECURE_FIRST_PARTY_HOSTS = new Set(firstPartyHost ? [firstPartyHost] : []);
 export const DEFAULT_PROVIDER_AVATAR_URL = `${API_ORIGIN}/static/inspiration/default-avatar.png`;
@@ -32,6 +33,20 @@ const normalizeFirstPartyAbsoluteUrl = (raw: string) => {
   return replaceAbsoluteUrlOrigin(value, API_ORIGIN);
 };
 
+const normalizeFirstPartyAssetPath = (raw: string) => {
+  const value = raw.trim();
+  if (!value) {
+    return value;
+  }
+  if (FIRST_PARTY_ASSET_PREFIXES.some((prefix) => value.startsWith(prefix))) {
+    return `${API_ORIGIN}${value}`;
+  }
+  if (/^(uploads|static)\//i.test(value)) {
+    return `${API_ORIGIN}/${value.replace(/^\/+/, '')}`;
+  }
+  return value;
+};
+
 const isKnownUnstableImageUrl = (raw: string) => {
   const value = raw.trim().toLowerCase();
   if (!value) return false;
@@ -40,7 +55,9 @@ const isKnownUnstableImageUrl = (raw: string) => {
 
 export const normalizeProviderMediaUrl = (raw?: string, fallback = '') => {
   if (!raw) return fallback;
-  const normalized = normalizeFirstPartyAbsoluteUrl(raw.replace(/^http:\/\/localhost:8080/i, API_ORIGIN)).trim();
+  const normalized = normalizeFirstPartyAssetPath(
+    normalizeFirstPartyAbsoluteUrl(raw.replace(/^http:\/\/localhost:8080/i, API_ORIGIN)),
+  ).trim();
   if (!normalized) return fallback;
   if (isKnownUnstableImageUrl(normalized)) {
     return fallback;

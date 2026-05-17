@@ -19,23 +19,17 @@ import {
   type SupervisionProjectListItem,
 } from "../../services/supervisorApi";
 import { dicts } from "../../utils/dict";
+import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 
 const { Search } = Input;
 const { Title, Text } = Typography;
 
 const iosCardStyle: React.CSSProperties = {
-  borderRadius: 20,
-  boxShadow: "0 8px 30px rgba(0,0,0,0.04)",
-  border: "none",
-  transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
+  borderRadius: SUPERVISOR_THEME.cardRadius,
+  boxShadow: SUPERVISOR_THEME.subtleShadow,
+  border: `1px solid ${SUPERVISOR_THEME.borderColor}`,
+  transition: "all 180ms ease-out",
 };
-
-const iosHoverStyle = `
-    .ios-hover-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 14px 40px rgba(0,0,0,0.08) !important;
-    }
-`;
 
 const SupervisorProjectList: React.FC = () => {
   const [loading, setLoading] = useState(true);
@@ -74,16 +68,7 @@ const SupervisorProjectList: React.FC = () => {
   };
 
   return (
-    <div
-      style={{
-        maxWidth: 1200,
-        margin: "0 auto",
-        paddingBottom: 24,
-        padding: "0 16px",
-      }}
-    >
-      <style>{iosHoverStyle}</style>
-
+    <div className="supervisor-page">
       {/* Header & Search */}
       <div
         style={{
@@ -103,7 +88,6 @@ const SupervisorProjectList: React.FC = () => {
               fontWeight: 600,
               color: token.colorTextHeading,
               margin: 0,
-              letterSpacing: "-0.5px",
             }}
           >
             项目大厅
@@ -139,6 +123,7 @@ const SupervisorProjectList: React.FC = () => {
         </div>
       ) : projects.length === 0 ? (
         <Card
+          className="supervisor-panel"
           style={{ ...iosCardStyle, textAlign: "center", padding: "60px 0" }}
         >
           <Empty
@@ -155,7 +140,7 @@ const SupervisorProjectList: React.FC = () => {
             {projects.map((item) => (
               <Col xs={24} md={12} xl={8} key={item.id}>
                 <Card
-                  className="ios-hover-card"
+                  className="supervisor-lift-card"
                   onClick={() => navigate(`/projects/${item.id}`)}
                   style={{
                     ...iosCardStyle,
@@ -234,7 +219,7 @@ const SupervisorProjectList: React.FC = () => {
                   <div
                     style={{
                       padding: "20px 28px",
-                      backgroundColor: "rgba(0,0,0,0.015)",
+                      backgroundColor: SUPERVISOR_THEME.surfaceMuted,
                       display: "flex",
                       gap: 16,
                       flex: 1,

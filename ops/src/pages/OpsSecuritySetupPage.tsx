@@ -63,11 +63,12 @@ const OpsSecuritySetupPage = () => {
     }
   }, [navigate, security?.loginStage]);
 
-  const applySession = (payload: { accessToken?: string; token?: string; admin?: unknown; user?: unknown; security?: unknown }) => {
+  const applySession = (payload: { accessToken?: string; token?: string; admin?: unknown; user?: unknown; permissions?: string[]; security?: unknown }) => {
     const nextUser = (payload.admin || payload.user || user) as typeof user;
     setSession({
       token: payload.accessToken || payload.token || useAuthStore.getState().token,
       user: nextUser,
+      permissions: Array.isArray(payload.permissions) ? payload.permissions : undefined,
       security: (payload.security || useAuthStore.getState().security) as typeof security,
     });
   };

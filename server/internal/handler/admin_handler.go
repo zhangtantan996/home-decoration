@@ -403,7 +403,7 @@ func adminMaterialShopPriorityOrderExpr() string {
 	}, " ")
 }
 
-func buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter string, includeDerivedOrdering bool) *gorm.DB {
+func buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, keyword string, includeDerivedOrdering bool) *gorm.DB {
 	db := repository.DB.Model(&model.Provider{})
 	if providerType != "" {
 		db = db.Where("provider_type = ?", providerType)
@@ -419,7 +419,8 @@ func buildAdminProviderListQuery(providerType, verified, isSettled, accountStatu
 		db = db.Where("is_settled = false")
 	}
 
-	needsUserJoin := includeDerivedOrdering || strings.TrimSpace(accountStatusFilter) != "" || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
+	normalizedKeyword := strings.TrimSpace(keyword)
+	needsUserJoin := includeDerivedOrdering || normalizedKeyword != "" || strings.TrimSpace(accountStatusFilter) != "" || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
 	needsCompletionJoin := includeDerivedOrdering || strings.TrimSpace(onboardingStatusFilter) != "" || strings.TrimSpace(operatingStatusFilter) != ""
 	if needsUserJoin {
 		db = db.Joins(fmt.Sprintf("LEFT JOIN users AS %s ON %s.id = providers.user_id", adminProviderBoundUserAlias, adminProviderBoundUserAlias))
@@ -429,6 +430,17 @@ func buildAdminProviderListQuery(providerType, verified, isSettled, accountStatu
 	}
 	if needsUserJoin {
 		db = applyAdminProviderDerivedStatusFilters(db, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter)
+	}
+	if normalizedKeyword != "" {
+		like := "%" + normalizedKeyword + "%"
+		db = db.Where(fmt.Sprintf(`(
+			CAST(providers.id AS TEXT) LIKE ?
+			OR providers.company_name LIKE ?
+			OR providers.display_name LIKE ?
+			OR providers.specialty LIKE ?
+			OR %s.phone LIKE ?
+			OR %s.nickname LIKE ?
+		)`, adminProviderBoundUserAlias, adminProviderBoundUserAlias), like, like, like, like, like, like)
 	}
 
 	return db
@@ -1343,8 +1355,9 @@ func AdminListProviders(c *gin.Context) {
 	accountStatusFilter := c.Query("accountStatus")
 	onboardingStatusFilter := c.Query("onboardingStatus")
 	operatingStatusFilter := c.Query("operatingStatus")
+	keyword := c.Query("keyword")
 
-	query := buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, false)
+	query := buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, keyword, false)
 
 	var total int64
 	if err := query.Session(&gorm.Session{}).Count(&total).Error; err != nil {
@@ -1354,7 +1367,7 @@ func AdminListProviders(c *gin.Context) {
 
 	var providerIDs []uint64
 	if total > 0 {
-		if err := buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, true).
+		if err := buildAdminProviderListQuery(providerType, verified, isSettled, accountStatusFilter, onboardingStatusFilter, operatingStatusFilter, keyword, true).
 			Session(&gorm.Session{}).
 			Order(adminProviderPriorityOrderExpr()).
 			Order("providers.id DESC").

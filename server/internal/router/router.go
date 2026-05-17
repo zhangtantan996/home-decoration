@@ -564,6 +564,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		adminPublic.Use(middleware.AdminNetworkGate())
 		{
 			adminPublic.POST("/login", middleware.LoginRateLimit(), handler.AdminLogin)
+			adminPublic.POST("/ops/login", middleware.LoginRateLimit(), handler.AdminOpsLogin)
 			adminPublic.POST("/token/refresh", middleware.LoginRateLimit(), handler.AdminRefreshToken)
 		}
 
@@ -845,9 +846,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/roles/:id/menus", roleAssignPerm, handler.AdminGetRoleMenus)
 			admin.POST("/roles/:id/menus", roleAssignPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), middleware.RequireAdminReauth(), handler.AdminAssignRoleMenus)
 			admin.GET("/menus", menuListPerm, handler.AdminListMenus)
-			admin.POST("/menus", menuCreatePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateMenu)
-			admin.PUT("/menus/:id", menuEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateMenu)
-			admin.DELETE("/menus/:id", menuDeletePerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteMenu)
+			admin.POST("/menus", menuCreatePerm, superAdminOnly, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateMenu)
+			admin.PUT("/menus/:id", menuEditPerm, superAdminOnly, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateMenu)
+			admin.DELETE("/menus/:id", menuDeletePerm, superAdminOnly, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteMenu)
 
 			// 商家入驻审核
 			admin.GET("/merchant-applications", providerAuditListPerm, handler.AdminListApplications)
@@ -871,7 +872,9 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.POST("/proposals/:id/confirm", proposalReviewPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminConfirmProposal)
 			admin.POST("/proposals/:id/reject", proposalReviewPerm, middleware.RequireAdminReason("reason", "remark", "note", "adminNotes"), handler.AdminRejectProposal)
 			admin.GET("/projects", projectListPerm, handler.AdminListProjects)
+			admin.POST("/projects", projectEditPerm, handler.AdminCreateProject)
 			admin.GET("/projects/:id", projectViewPerm, handler.AdminGetProject)
+			admin.PUT("/projects/:id", projectEditPerm, handler.AdminUpdateProject)
 			admin.GET("/projects/:id/change-orders", projectViewPerm, handler.AdminListProjectChangeOrders)
 			admin.POST("/projects/:id/change-orders", projectEditPerm, handler.AdminCreateProjectChangeOrder)
 			admin.POST("/projects/:id/audit", complaintResolvePerm, handler.AdminCreateProjectAudit)
@@ -926,8 +929,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// ========== 监理分配管理 ==========
 			admin.GET("/supervisor-assignments", supervisorAssignPerm, handler.AdminListSupervisorAssignments)
-			admin.POST("/supervisor-assignments", supervisorAssignPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminCreateSupervisorAssignment)
-			admin.DELETE("/supervisor-assignments/:id", supervisorAssignPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteSupervisorAssignment)
+			admin.POST("/supervisor-assignments", supervisorAssignPerm, middleware.RequireAdminReason(), handler.AdminCreateSupervisorAssignment)
+			admin.DELETE("/supervisor-assignments/:id", supervisorAssignPerm, middleware.RequireAdminReason(), handler.AdminDeleteSupervisorAssignment)
 			admin.POST("/quote-library/import", projectEditPerm, handler.AdminImportQuoteLibrary)
 			admin.POST("/quote-library/import-preview", projectEditPerm, handler.AdminImportQuoteLibraryPreview)
 			admin.GET("/quote-categories", projectListPerm, handler.AdminListQuoteCategories)

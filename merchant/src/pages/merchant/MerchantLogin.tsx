@@ -1,11 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Form, Input, Button, message, Layout, Typography, Divider, Grid } from 'antd';
 import { PhoneOutlined, SafetyOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type MerchantLoginNextAction } from '../../services/merchantApi';
+import {
+    fallbackPublicSiteConfig,
+    findLegalDocument,
+    getPublicSiteConfig,
+    type PublicSiteConfig,
+} from '../../services/publicSiteConfig';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import merchantAppIcon from '../../assets/branding/company-logo.png';
+import { MERCHANT_LEGAL_ROUTES } from '../../constants/merchantLegal';
 import { MERCHANT_THEME } from '../../constants/merchantTheme';
 import { readSafeErrorMessage } from '../../utils/userFacingText';
 
@@ -33,12 +40,18 @@ const MerchantLogin: React.FC = () => {
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
     const [phoneLocked, setPhoneLocked] = useState(false);
+    const [siteConfig, setSiteConfig] = useState<PublicSiteConfig>(fallbackPublicSiteConfig);
     const timerRef = useRef<number | null>(null);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const screens = useBreakpoint();
     const [form] = Form.useForm();
     const requestedPath = normalizeRedirectPath(searchParams.get('redirect'));
+    const legalTitles = useMemo(() => ({
+        onboardingAgreement: findLegalDocument(siteConfig, 'merchant-onboarding-agreement').title,
+        platformRules: findLegalDocument(siteConfig, 'platform-rules').title,
+        privacyDataProcessing: findLegalDocument(siteConfig, 'privacy-data-processing').title,
+    }), [siteConfig]);
 
     // 手机号校验规则
     const phoneRules = [
@@ -65,6 +78,22 @@ const MerchantLogin: React.FC = () => {
         const value = e.target.value.replace(/\D/g, '').slice(0, 6);
         form.setFieldsValue({ code: value });
     };
+
+    useEffect(() => {
+        let active = true;
+        void getPublicSiteConfig()
+            .then((nextConfig) => {
+                if (active) {
+                    setSiteConfig(nextConfig);
+                }
+            })
+            .catch(() => {
+                // Keep fallback legal titles; login must remain usable when config API is unavailable.
+            });
+        return () => {
+            active = false;
+        };
+    }, []);
 
     useEffect(() => {
         // Init inject style for animated elements and custom ant overrides
@@ -101,6 +130,24 @@ const MerchantLogin: React.FC = () => {
             }
             .merchant-auth-reset .ant-btn-link {
                 padding-inline: 0;
+            }
+            .merchant-login-legal-copy {
+                margin-top: 18px;
+                text-align: center;
+                color: var(--ant-color-text-secondary);
+                font-size: 13px;
+                line-height: 1.8;
+            }
+            .merchant-entry-actions__hint {
+                margin-right: 8px;
+                color: var(--ant-color-text-secondary);
+            }
+            .merchant-entry-actions__link {
+                padding: 0;
+                font-weight: 500;
+            }
+            .merchant-entry-actions__link--muted {
+                color: var(--ant-color-text-secondary);
             }
             .welcome-fade-in {
                 animation: fadeInUp 0.8s ease-out;
@@ -419,6 +466,15 @@ const MerchantLogin: React.FC = () => {
                             </Button>
                         </Form.Item>
 
+                        <div className="merchant-login-legal-copy">
+                            登录或入驻即表示你已阅读
+                            <Link to={MERCHANT_LEGAL_ROUTES.onboardingAgreement}>《{legalTitles.onboardingAgreement}》</Link>
+                            、
+                            <Link to={MERCHANT_LEGAL_ROUTES.platformRules}>《{legalTitles.platformRules}》</Link>
+                            、
+                            <Link to={MERCHANT_LEGAL_ROUTES.privacyDataProcessing}>《{legalTitles.privacyDataProcessing}》</Link>
+                        </div>
+
                         <div style={{
                             display: 'flex',
                             alignItems: 'center',
@@ -428,11 +484,11 @@ const MerchantLogin: React.FC = () => {
                             background: '#f8fafc',
                             borderRadius: '8px'
                         }}>
-                            <Text style={{ color: '#64748b', marginRight: 8 }}>还没有账号极速入驻？</Text>
+                            <Text className="merchant-entry-actions__hint">还没有账号极速入驻？</Text>
                             <Button
                                 type="link"
                                 onClick={() => navigate('/')}
-                                style={{ padding: 0, fontWeight: 500 }}
+                                className="merchant-entry-actions__link"
                             >
                                 免费入驻
                             </Button>
@@ -440,7 +496,7 @@ const MerchantLogin: React.FC = () => {
                             <Button
                                 type="link"
                                 onClick={() => navigate('/apply-status')}
-                                style={{ padding: 0, color: '#64748b' }}
+                                className="merchant-entry-actions__link merchant-entry-actions__link--muted"
                             >
                                 审核进度查询
                             </Button>

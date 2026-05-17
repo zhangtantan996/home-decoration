@@ -101,6 +101,7 @@ func TestRespondAdminRBACMutationErrorSemantics(t *testing.T) {
 		wantCode   int
 	}{
 		{name: "not_found", err: errors.New("角色不存在"), wantStatus: http.StatusNotFound, wantCode: 404},
+		{name: "forbidden", err: errors.New("无权分配或管理超出自身范围的角色"), wantStatus: http.StatusForbidden, wantCode: 403},
 		{name: "conflict_reserved_roles", err: errors.New("三员分立角色不能同时分配给同一管理员"), wantStatus: http.StatusConflict, wantCode: 409},
 		{name: "conflict_disabled_role", err: errors.New("角色 审计员 已禁用，不能分配"), wantStatus: http.StatusConflict, wantCode: 409},
 		{name: "conflict_auditor_write", err: errors.New("审计员角色只能分配只读权限，当前权限 finance:transaction:approve 不允许"), wantStatus: http.StatusConflict, wantCode: 409},
@@ -120,6 +121,53 @@ func TestRespondAdminRBACMutationErrorSemantics(t *testing.T) {
 			envelope := decodeHandlerErrorEnvelope(t, recorder)
 			if envelope.Code != tc.wantCode {
 				t.Fatalf("unexpected business code: got=%d want=%d body=%s", envelope.Code, tc.wantCode, recorder.Body.String())
+			}
+		})
+	}
+}
+
+func TestRespondSchemaAwareDomainMutationErrorSemantics(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	testCases := []struct {
+		name         string
+		err          error
+		wantStatus   int
+		wantCode     int
+		wantMessage  string
+	}{
+		{
+			name:        "schema_mismatch_masks_sql",
+			err:         errors.New(`ERROR: column "enabled" of relation "project_phases" does not exist (SQLSTATE 42703)`),
+			wantStatus:  http.StatusInternalServerError,
+			wantCode:    500,
+			wantMessage: "创建项目失败，请联系管理员检查数据库是否已升级",
+		},
+		{
+			name:        "business_validation_keeps_message",
+			err:         errors.New("项目名称不能为空"),
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    400,
+			wantMessage: "项目名称不能为空",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			ctx, _ := gin.CreateTestContext(recorder)
+
+			respondSchemaAwareDomainMutationError(ctx, tc.err, "fallback", "创建项目失败，请联系管理员检查数据库是否已升级")
+
+			if recorder.Code != tc.wantStatus {
+				t.Fatalf("unexpected http status: got=%d want=%d body=%s", recorder.Code, tc.wantStatus, recorder.Body.String())
+			}
+			envelope := decodeHandlerErrorEnvelope(t, recorder)
+			if envelope.Code != tc.wantCode {
+				t.Fatalf("unexpected business code: got=%d want=%d body=%s", envelope.Code, tc.wantCode, recorder.Body.String())
+			}
+			if envelope.Message != tc.wantMessage {
+				t.Fatalf("unexpected message: got=%q want=%q body=%s", envelope.Message, tc.wantMessage, recorder.Body.String())
 			}
 		})
 	}

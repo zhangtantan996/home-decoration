@@ -1,18 +1,21 @@
 import React from 'react';
-import {
-    MERCHANT_LEGAL_EFFECTIVE_DATE,
-    ONBOARDING_AGREEMENT_SECTIONS,
-    ONBOARDING_AGREEMENT_VERSION,
-} from '../../../constants/merchantLegal';
 import LegalDocumentLayout from './LegalDocumentLayout';
+import { useMerchantLegalDocument } from './useMerchantLegalDocument';
 
-const OnboardingAgreementPage: React.FC = () => (
-    <LegalDocumentLayout
-        title="平台入驻协议（线上勾选版）"
-        version={ONBOARDING_AGREEMENT_VERSION}
-        effectiveDate={MERCHANT_LEGAL_EFFECTIVE_DATE}
-        sections={ONBOARDING_AGREEMENT_SECTIONS}
-    />
-);
+const OnboardingAgreementPage: React.FC = () => {
+    const { siteConfig, document } = useMerchantLegalDocument('merchant-onboarding-agreement');
+
+    return (
+        <LegalDocumentLayout
+            title={document.title}
+            version={document.version}
+            effectiveDate={document.effectiveDate}
+            content={document.content}
+            brandName={siteConfig.brandName}
+            companyName={siteConfig.companyName}
+            customerPhone={siteConfig.customerPhone}
+        />
+    );
+};
 
 export default OnboardingAgreementPage;

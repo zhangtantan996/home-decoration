@@ -9,7 +9,7 @@ import { Card } from '@/components/Card';
 
 const CreateQuoteTaskPage: React.FC = () => {
   const handleGoProgress = () => {
-    Taro.navigateTo({ url: '/pages/progress/index' });
+    Taro.switchTab({ url: '/pages/progress/index' });
   };
 
   return (

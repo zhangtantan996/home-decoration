@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { App, Button, Card, Form, Input, Modal, Select, Space, Switch, Table, Tag, Tooltip } from 'antd';
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 
@@ -8,6 +8,7 @@ import ToolbarCard from '../../components/ToolbarCard';
 import { ADMIN_PASSWORD_MIN_LENGTH } from '../../constants/security';
 import { adminManageApi, adminRoleApi } from '../../services/api';
 import { useAdaptiveTableScroll } from '../../hooks/useAdaptiveTableScroll';
+import { usePermission } from '../../hooks/usePermission';
 import { formatServerDateTime } from '../../utils/serverTime';
 
 interface Role {
@@ -38,6 +39,23 @@ interface Admin {
 
 type ReauthAction = 'submit' | 'delete' | 'status' | null;
 
+const STANDALONE_ASSIGNMENT_ROLE_KEYS = new Set([
+  'super_admin',
+  'system_admin',
+  'security_admin',
+  'security_auditor',
+  'operations',
+  'product_manager',
+  'finance',
+  'risk',
+  'customer_service',
+  'viewer',
+]);
+
+const HIDDEN_ROLE_KEYS = new Set([
+  'project_supervisor',
+]);
+
 const getSecurityStatusTag = (record: Admin) => {
   if (record.status !== 1) {
     return <Tag color="red">已禁用</Tag>;
@@ -50,6 +68,7 @@ const getSecurityStatusTag = (record: Admin) => {
 
 const AdminList: React.FC = () => {
   const { message } = App.useApp();
+  const { hasPermission } = usePermission();
   const [loading, setLoading] = useState(false);
   const [admins, setAdmins] = useState<Admin[]>([]);
   const [roles, setRoles] = useState<Role[]>([]);
@@ -65,6 +84,30 @@ const AdminList: React.FC = () => {
   const [pendingStatus, setPendingStatus] = useState<{ record: Admin; status: number } | null>(null);
   const [pendingSubmit, setPendingSubmit] = useState<Record<string, unknown> | null>(null);
   const [form] = Form.useForm();
+  const selectedRoleIds = Form.useWatch('roleIds', form) as number[] | undefined;
+  const canCreateAdmin = hasPermission('system:admin:create');
+  const canEditAdmin = hasPermission('system:admin:edit');
+  const canDeleteAdmin = hasPermission('system:admin:delete');
+  const hasAdminMutationPermission = canEditAdmin || canDeleteAdmin;
+  const roleById = useMemo(() => {
+    const roleMap = new Map<number, Role>();
+    roles.forEach((role) => roleMap.set(role.id, role));
+    return roleMap;
+  }, [roles]);
+  const visibleRoles = useMemo(
+    () => roles.filter((role) => !HIDDEN_ROLE_KEYS.has(role.key)),
+    [roles],
+  );
+  const selectedStandaloneRole = useMemo(() => {
+    const roleIDs = Array.isArray(selectedRoleIds) ? selectedRoleIds : [];
+    for (const id of roleIDs) {
+      const role = roleById.get(id);
+      if (role && STANDALONE_ASSIGNMENT_ROLE_KEYS.has(role.key)) {
+        return role;
+      }
+    }
+    return null;
+  }, [roleById, selectedRoleIds]);
 
   useEffect(() => {
     void loadData();
@@ -161,6 +204,24 @@ const AdminList: React.FC = () => {
       }
       message.error(error instanceof Error ? error.message : '表单校验失败');
     }
+  };
+
+  const handleRoleSelectionChange = (nextRoleIDs: number[]) => {
+    const normalized = Array.isArray(nextRoleIDs) ? nextRoleIDs : [];
+    const standaloneRole = normalized
+      .map((roleID) => roleById.get(roleID))
+      .find((candidate): candidate is Role => {
+        if (!candidate) {
+          return false;
+        }
+        return STANDALONE_ASSIGNMENT_ROLE_KEYS.has(candidate.key);
+      });
+    if (standaloneRole && normalized.length > 1) {
+      form.setFieldValue('roleIds', [standaloneRole.id]);
+      message.warning(`角色「${standaloneRole.name}」必须独立分配，已自动切换为单选`);
+      return;
+    }
+    form.setFieldValue('roleIds', normalized);
   };
 
   const handleReauthConfirmed = async (payload: { reason?: string; recentReauthProof: string }) => {
@@ -315,7 +376,7 @@ const AdminList: React.FC = () => {
           checked={value === 1}
           checkedChildren="启用"
           unCheckedChildren="禁用"
-          disabled={record.isSuperAdmin}
+          disabled={record.isSuperAdmin || !canEditAdmin}
           onChange={(checked) => requestStatusChange(record, checked ? 1 : 0)}
         />
       ),
@@ -334,18 +395,27 @@ const AdminList: React.FC = () => {
       width: 180,
       fixed: 'right' as const,
       className: 'hz-table-action-cell',
-      render: (_value: unknown, record: Admin) => (
-        <Space size={6} className="hz-table-action-group">
-          <Button type="link" size="small" onClick={() => handleEdit(record)}>
-            编辑
-          </Button>
-          {!record.isSuperAdmin ? (
-            <Button type="link" size="small" danger onClick={() => requestDelete(record)}>
-              删除
-            </Button>
-          ) : null}
-        </Space>
-      ),
+      render: (_value: unknown, record: Admin) => {
+        const canEditRecord = canEditAdmin;
+        const canDeleteRecord = canDeleteAdmin && !record.isSuperAdmin;
+        if (!hasAdminMutationPermission || (!canEditRecord && !canDeleteRecord)) {
+          return <span>-</span>;
+        }
+        return (
+          <Space size={6} className="hz-table-action-group">
+            {canEditRecord ? (
+              <Button type="link" size="small" onClick={() => handleEdit(record)}>
+                编辑
+              </Button>
+            ) : null}
+            {canDeleteRecord ? (
+              <Button type="link" size="small" danger onClick={() => requestDelete(record)}>
+                删除
+              </Button>
+            ) : null}
+          </Space>
+        );
+      },
     },
   ];
   const {
@@ -378,9 +448,11 @@ const AdminList: React.FC = () => {
           <Button icon={<ReloadOutlined />} onClick={() => void loadData()}>
             刷新
           </Button>
-          <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
-            添加管理员
-          </Button>
+          {canCreateAdmin ? (
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleAdd}>
+              添加管理员
+            </Button>
+          ) : null}
         </div>
       </ToolbarCard>
 
@@ -441,10 +513,21 @@ const AdminList: React.FC = () => {
             label="角色"
             name="roleIds"
             rules={[{ required: true, message: '请至少选择一个角色' }]}
+            extra="预置岗位角色与高权限角色需独立分配；仅自定义角色允许组合分配。"
           >
-            <Select mode="multiple" placeholder="请选择角色（可多选）" optionFilterProp="label">
-              {roles.map((role) => (
-                <Select.Option key={role.id} value={role.id} label={role.name}>
+            <Select
+              mode="multiple"
+              placeholder="请选择角色（预置岗位角色需单选）"
+              optionFilterProp="label"
+              onChange={handleRoleSelectionChange}
+            >
+              {visibleRoles.map((role) => (
+                <Select.Option
+                  key={role.id}
+                  value={role.id}
+                  label={role.name}
+                  disabled={Boolean(selectedStandaloneRole) && !selectedRoleIds?.includes(role.id)}
+                >
                   <div>
                     <div style={{ fontWeight: 500 }}>{role.name}</div>
                     {role.remark ? <div style={{ fontSize: 12, color: '#999' }}>{role.remark}</div> : null}

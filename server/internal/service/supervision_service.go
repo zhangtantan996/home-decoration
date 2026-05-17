@@ -236,7 +236,7 @@ func (s *SupervisionService) CreateSupervisorPhaseLog(projectID, phaseID, superv
 	if supervisorID == 0 {
 		return nil, errors.New("无效监理ID")
 	}
-	if _, err := s.getProjectPhase(projectID, phaseID); err != nil {
+	if err := s.ensureSupervisorCanCreatePhaseLog(projectID, phaseID); err != nil {
 		return nil, err
 	}
 	if req == nil {
@@ -246,11 +246,95 @@ func (s *SupervisionService) CreateSupervisorPhaseLog(projectID, phaseID, superv
 	return s.projectService.CreateSupervisorWorkLog(projectID, supervisorID, req)
 }
 
+func (s *SupervisionService) ensureSupervisorCanCreatePhaseLog(projectID, phaseID uint64) error {
+	if _, err := s.getProjectPhase(projectID, phaseID); err != nil {
+		return err
+	}
+	phases, err := s.projectService.GetProjectPhases(projectID)
+	if err != nil {
+		return err
+	}
+	currentPhase := pickCurrentProjectPhase(phases)
+	if currentPhase == nil {
+		return errors.New("当前项目暂无可记录巡检的阶段")
+	}
+	if currentPhase.ID != phaseID {
+		return errors.New("只能为当前阶段记录巡检日志")
+	}
+	switch strings.ToLower(strings.TrimSpace(currentPhase.Status)) {
+	case "in_progress", "paused":
+		return nil
+	case "pending":
+		return errors.New("当前阶段尚未开始，不能记录巡检日志")
+	case "completed":
+		return errors.New("当前阶段已完成，不能新增巡检日志")
+	default:
+		return errors.New("当前阶段状态不允许记录巡检日志")
+	}
+}
+
 func (s *SupervisionService) UpdatePhase(projectID, phaseID uint64, req *UpdatePhaseRequest) error {
 	if _, err := s.getProjectPhase(projectID, phaseID); err != nil {
 		return err
 	}
 	return s.projectService.UpdatePhase(phaseID, req)
+}
+
+func (s *SupervisionService) UpdateSupervisorPhase(projectID, phaseID uint64, req *UpdatePhaseRequest) error {
+	if _, err := s.getProjectPhase(projectID, phaseID); err != nil {
+		return err
+	}
+	if req == nil {
+		req = &UpdatePhaseRequest{}
+	}
+	phases, err := s.projectService.GetProjectPhases(projectID)
+	if err != nil {
+		return err
+	}
+	currentPhase := pickCurrentProjectPhase(phases)
+	if currentPhase == nil {
+		return errors.New("当前项目暂无可更新的阶段")
+	}
+	if currentPhase.ID != phaseID {
+		return errors.New("只能更新当前阶段")
+	}
+
+	currentStatus := strings.ToLower(strings.TrimSpace(currentPhase.Status))
+	targetStatus := strings.ToLower(strings.TrimSpace(req.Status))
+	if targetStatus == "" {
+		return errors.New("请选择阶段操作")
+	}
+
+	allowedUpdate := &UpdatePhaseRequest{Status: targetStatus}
+	switch currentStatus {
+	case "pending":
+		if targetStatus != "in_progress" {
+			return errors.New("待开始阶段只能执行开始操作")
+		}
+		if strings.TrimSpace(req.StartDate) == "" {
+			return errors.New("开始阶段时请填写计划开始时间")
+		}
+		allowedUpdate.StartDate = req.StartDate
+		allowedUpdate.EndDate = req.EndDate
+	case "in_progress":
+		switch targetStatus {
+		case "completed":
+			allowedUpdate.EndDate = req.EndDate
+		case "paused":
+		default:
+			return errors.New("进行中阶段只能完成或暂停")
+		}
+	case "paused":
+		if targetStatus != "in_progress" {
+			return errors.New("暂停阶段只能恢复进行")
+		}
+	case "completed":
+		return errors.New("已完成阶段不能由监理再次更新")
+	default:
+		return errors.New("当前阶段状态不允许执行该操作")
+	}
+
+	return s.projectService.UpdatePhase(phaseID, allowedUpdate)
 }
 
 func (s *SupervisionService) UpdatePhaseTask(projectID, phaseID, taskID uint64, req *UpdatePhaseTaskRequest) error {
@@ -293,19 +377,25 @@ func (s *SupervisionService) CreateRiskWarning(projectID uint64, input *CreateSu
 		return nil, errors.New("风险描述不能超过1000字")
 	}
 
+	var phaseID uint64
 	phaseName := ""
 	if input.PhaseID > 0 {
 		phase, err := s.getProjectPhase(projectID, input.PhaseID)
 		if err != nil {
 			return nil, err
 		}
+		phaseID = phase.ID
 		phaseName = resolvePhaseName(phase)
 	} else {
 		phases, err := s.projectService.GetProjectPhases(projectID)
 		if err != nil {
 			return nil, err
 		}
-		phaseName = resolvePhaseName(pickCurrentProjectPhase(phases))
+		phase := pickCurrentProjectPhase(phases)
+		if phase != nil {
+			phaseID = phase.ID
+			phaseName = resolvePhaseName(phase)
+		}
 	}
 
 	if phaseName != "" {
@@ -314,6 +404,7 @@ func (s *SupervisionService) CreateRiskWarning(projectID uint64, input *CreateSu
 
 	warning := &model.RiskWarning{
 		ProjectID:   projectID,
+		PhaseID:     phaseID,
 		ProjectName: project.Name,
 		Type:        warningType,
 		Level:       level,
@@ -391,7 +482,7 @@ func (s *SupervisionService) buildProjectListItem(project *model.Project) (Super
 
 func (s *SupervisionService) getProjectPhase(projectID, phaseID uint64) (*model.ProjectPhase, error) {
 	var phase model.ProjectPhase
-	if err := repository.DB.Where("id = ? AND project_id = ?", phaseID, projectID).First(&phase).Error; err != nil {
+	if err := repository.DB.Where("id = ? AND project_id = ? AND enabled = ?", phaseID, projectID, true).First(&phase).Error; err != nil {
 		return nil, errors.New("施工阶段不存在")
 	}
 	return &phase, nil
@@ -403,6 +494,11 @@ func pickCurrentProjectPhase(phases []model.ProjectPhase) *model.ProjectPhase {
 	}
 	for i := range phases {
 		if strings.EqualFold(phases[i].Status, "in_progress") {
+			return &phases[i]
+		}
+	}
+	for i := range phases {
+		if strings.EqualFold(phases[i].Status, "paused") {
 			return &phases[i]
 		}
 	}

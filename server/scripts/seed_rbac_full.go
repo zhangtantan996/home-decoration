@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/rbacsync"
 	"home-decoration-server/internal/repository"
 	"log"
 
@@ -122,7 +123,6 @@ func main() {
 	fmt.Println("│ risk        │ risk123      │ 风控管理          │")
 	fmt.Println("│ service     │ service123   │ 客服              │")
 	fmt.Println("│ viewer      │ viewer123    │ 只读用户          │")
-	fmt.Println("│ supervisor  │ supervisor123│ 监理专员          │")
 	fmt.Println("└─────────────┴──────────────┴───────────────────┘")
 	fmt.Println("\n🌐 管理后台地址: http://localhost:5175/admin/")
 }
@@ -383,7 +383,6 @@ func createRoles() map[string]*model.SysRole {
 		{Name: "风控管理", Key: "risk", Remark: "负责风险预警、纠纷仲裁", Sort: 40, Status: 1},
 		{Name: "客服", Key: "customer_service", Remark: "处理用户咨询、预约管理", Sort: 50, Status: 1},
 		{Name: "只读用户", Key: "viewer", Remark: "数据分析、报表查看", Sort: 60, Status: 1},
-		{Name: "监理专员", Key: "project_supervisor", Remark: "负责项目阶段推进、施工日志录入与风险上报", Sort: 65, Status: 1},
 		{Name: "系统管理员", Key: "system_admin", Remark: "三员分立保留角色：负责系统配置与账号体系，必须独立分配", Sort: 70, Status: 1},
 		{Name: "安全管理员", Key: "security_admin", Remark: "三员分立保留角色：负责安全策略与安全事件处置，必须独立分配", Sort: 71, Status: 1},
 		{Name: "安全审计员", Key: "security_auditor", Remark: "三员分立保留角色：默认只读审计角色，必须独立分配", Sort: 72, Status: 1},
@@ -402,111 +401,14 @@ func createRoles() map[string]*model.SysRole {
 func assignRolePermissions(roles map[string]*model.SysRole, menus map[string]*model.SysMenu) {
 	assignAllMenusToSuperAdmin(roles["super_admin"].ID)
 
-	assignPermissionsByKeys(roles["product_manager"].ID, []string{
-		"dashboard",
-		"users_root", "users_list", "user_view", "user_export",
-		"providers_root", "provider_designers", "provider_designer_view", "provider_designer_create", "provider_designer_edit", "provider_designer_delete",
-		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit", "provider_company_delete",
-		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit", "provider_foreman_delete",
-		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit", "material_shop_delete",
-		"projects_root", "projects_list", "project_view", "project_edit", "projects_map",
-		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications", "supervisors_assignments",
-		"supervisors_edit", "supervisors_assignment_manage",
-		"quote_erp_root", "project_quote_library", "project_quote_templates", "project_quote_lists", "project_quote_price_books", "project_quote_compare",
-		"orders_root", "order_center", "order_center_view", "proposal_review",
-		"demands_root", "demands_list", "demand_assign",
-		"bookings_root", "bookings_list", "booking_view", "booking_edit",
-		"cases_root", "cases_manage",
-		"logs_root", "logs_list", "log_view", "audit_logs",
-		"reviews_root", "reviews_list", "review_view",
-	}, "产品管理", menus)
-
-	assignPermissionsByKeys(roles["operations"].ID, []string{
-		"dashboard",
-		"users_root", "users_list", "user_view",
-		"providers_root", "provider_designers", "provider_designer_view", "provider_designer_create", "provider_designer_edit",
-		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit",
-		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit",
-		"provider_audit", "provider_audit_view", "provider_audit_approve", "provider_audit_reject",
-		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit",
-		"materials_audit", "material_audit_view", "material_audit_approve", "material_audit_reject",
-		"orders_root",
-		"order_center", "order_center_view", "proposal_review",
-		"demands_root", "demands_list", "demand_review", "demand_assign",
-		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail", "booking_dispute_resolve",
-		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications", "supervisors_assignments",
-		"supervisors_edit", "supervisors_assignment_manage",
-		"cases_root", "cases_manage",
-		"logs_root", "logs_list", "log_view", "audit_logs",
-		"reviews_root", "reviews_list", "review_view", "review_delete", "review_hide",
-	}, "运营管理", menus)
-
-	assignPermissionsByKeys(roles["finance"].ID, []string{
-		"dashboard",
-		"users_root", "users_list", "user_view",
-		"projects_root", "projects_list", "project_view",
-		"orders_root",
-		"order_center", "order_center_view",
-		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_escrow_freeze", "finance_escrow_unfreeze",
-		"finance_transactions", "finance_transaction_view", "finance_transaction_export", "finance_transaction_approve",
-		"finance_payouts", "finance_settlements", "refunds",
-	}, "财务管理", menus)
-
-	assignPermissionsByKeys(roles["risk"].ID, []string{
-		"dashboard",
-		"users_root", "users_list", "user_view",
-		"projects_root", "projects_list", "project_view",
-		"orders_root",
-		"order_center", "order_center_view",
-		"risk_root", "risk_warnings", "risk_warning_view", "risk_warning_handle", "risk_warning_ignore",
-		"risk_arbitration", "risk_arbitration_view", "risk_arbitration_accept", "risk_arbitration_reject", "risk_arbitration_judge",
-		"complaints", "project_audits",
-	}, "风控管理", menus)
-
-	assignPermissionsByKeys(roles["customer_service"].ID, []string{
-		"dashboard",
-		"users_root", "users_list", "user_view", "user_edit",
-		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
-		"orders_root",
-		"order_center", "order_center_view", "proposal_review",
-		"demands_root", "demands_list", "demand_review",
-		"bookings_root", "bookings_list", "booking_view", "booking_create", "booking_edit", "booking_cancel", "bookings_disputed", "booking_dispute_detail",
-		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications",
-		"reviews_root", "reviews_list", "review_view",
-	}, "客服", menus)
-
-	assignPermissionsByKeys(roles["viewer"].ID, []string{
-		"dashboard",
-		"users_root", "users_list", "user_view", "user_export",
-		"providers_root", "provider_designers", "provider_designer_view", "provider_companies", "provider_company_view", "provider_foremen", "provider_foreman_view",
-		"materials_root", "materials_list", "material_shop_view",
-		"projects_root", "projects_list", "project_view", "projects_map",
-		"orders_root",
-		"order_center", "order_center_view",
-		"demands_root", "demands_list",
-		"bookings_root", "bookings_list", "booking_view",
-		"supervisors_root", "supervisors_list", "supervisors_whitelist", "supervisors_applications",
-		"finance_root", "finance_overview", "finance_payment_orders", "finance_escrow", "finance_escrow_view", "finance_transactions", "finance_transaction_view",
-		"finance_payouts", "finance_settlements",
-		"reviews_root", "reviews_list", "review_view",
-		"risk_root", "risk_warnings", "risk_warning_view", "risk_arbitration", "risk_arbitration_view",
-		"logs_root", "logs_list", "log_view", "audit_logs", "settings_root", "settings_outbox_events",
-	}, "只读用户", menus)
-
-	assignPermissionsByKeys(roles["project_supervisor"].ID, []string{
-		"supervision_root", "supervision_projects", "supervision_workspace_edit", "supervision_risk_create",
-	}, "监理专员", menus)
-
-	assignPermissionsByKeys(roles["system_admin"].ID, []string{
-		"dashboard",
-		"providers_root", "provider_designers", "provider_designer_view", "provider_designer_create", "provider_designer_edit",
-		"provider_companies", "provider_company_view", "provider_company_create", "provider_company_edit",
-		"provider_foremen", "provider_foreman_view", "provider_foreman_create", "provider_foreman_edit",
-		"materials_root", "materials_list", "material_shop_view", "material_shop_create", "material_shop_edit",
-		"bookings_root", "bookings_list", "booking_view", "booking_edit",
-		"cases_root", "cases_manage",
-		"logs_root", "logs_list", "log_view", "audit_logs",
-	}, "系统管理员 Ops 工作台", menus)
+	roleTemplates := rbacsync.PresetRoleMenuKeyTemplates()
+	for _, roleKey := range rbacsync.PresetRoleKeys() {
+		role, ok := roles[roleKey]
+		if !ok {
+			log.Fatalf("角色 %s 不存在，无法同步模板权限", roleKey)
+		}
+		assignPermissionsByKeys(role.ID, roleTemplates[roleKey], rbacsync.PresetRoleDisplayName(roleKey), menus)
+	}
 
 	fmt.Println("   ✓ 三员分立保留角色: 安全管理员/安全审计员默认不自动分配菜单，需按制度单独授权")
 }
@@ -547,7 +449,6 @@ func createAdmins() map[string]*model.SysAdmin {
 		{"risk", "risk123", "风控专员", false},
 		{"service", "service123", "客服专员", false},
 		{"viewer", "viewer123", "数据分析师", false},
-		{"supervisor", "supervisor123", "监理专员", false},
 	}
 
 	adminMap := make(map[string]*model.SysAdmin, len(admins))
@@ -577,7 +478,6 @@ func assignAdminRoles(admins map[string]*model.SysAdmin, roles map[string]*model
 		"risk":       "risk",
 		"service":    "customer_service",
 		"viewer":     "viewer",
-		"supervisor": "project_supervisor",
 	}
 
 	for adminKey, roleKey := range assignments {

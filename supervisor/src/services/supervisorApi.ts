@@ -178,6 +178,7 @@ export interface SupervisionProjectWorkspace {
 export interface RiskWarning {
   id: number;
   projectId: number;
+  phaseId?: number;
   type: string;
   level: string;
   description: string;
@@ -314,6 +315,7 @@ export interface ProjectPhaseView {
   id: number;
   projectId: number;
   phaseType: string;
+  seq?: number;
   status: string;
   responsiblePerson: string;
   startDate: string | null;
@@ -327,7 +329,6 @@ export const supervisorPhaseApi = {
     phaseId: number,
     data: {
       status?: string;
-      responsiblePerson?: string;
       startDate?: string;
       endDate?: string;
     },

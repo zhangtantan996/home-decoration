@@ -9,6 +9,7 @@ export interface OpsUser {
 }
 
 export type OpsLoginStage = 'setup_required' | 'otp_required' | 'active';
+type BootstrapStatus = 'idle' | 'loading' | 'ready';
 
 export interface OpsSecurityStatus {
   loginStage: OpsLoginStage;
@@ -22,14 +23,19 @@ export interface OpsSecurityStatus {
 interface OpsSessionPayload {
   token?: string;
   user?: OpsUser | null;
+  permissions?: string[];
   security?: OpsSecurityStatus | null;
 }
 
 interface AuthState {
   token: string;
   user: OpsUser | null;
+  permissions: string[];
   security: OpsSecurityStatus | null;
+  bootstrapStatus: BootstrapStatus;
   setSession: (payload: OpsSessionPayload) => void;
+  setBootstrapStatus: (status: BootstrapStatus) => void;
+  hasPermission: (permission: string) => boolean;
   logout: () => void;
   clearOpsSession: () => void;
 }
@@ -37,6 +43,7 @@ interface AuthState {
 const STORAGE_KEYS = {
   token: 'ops_token',
   user: 'ops_user',
+  permissions: 'ops_permissions',
   security: 'ops_security',
 } as const;
 
@@ -49,8 +56,35 @@ const OPS_ALLOWED_ROLE_KEYS = new Set([
   'super_admin',
 ]);
 
-export const hasOpsAccess = (user: OpsUser | null | undefined) => Boolean(
-  user && (user.isSuperAdmin || user.roles?.some((role) => OPS_ALLOWED_ROLE_KEYS.has(role))),
+const OPS_WORKSPACE_PERMISSIONS = new Set([
+  'dashboard:view',
+  'provider:designer:list',
+  'provider:company:list',
+  'provider:foreman:list',
+  'material:shop:list',
+  'booking:list',
+  'system:case:view',
+  'system:log:list',
+]);
+
+export const hasOpsAccess = (
+  user: OpsUser | null | undefined,
+  permissions: string[] | null | undefined = [],
+) => Boolean(
+  user && (
+    user.isSuperAdmin ||
+    user.roles?.some((role) => OPS_ALLOWED_ROLE_KEYS.has(role)) ||
+    permissions?.includes('*:*:*') ||
+    permissions?.some((permission) => OPS_WORKSPACE_PERMISSIONS.has(permission))
+  ),
+);
+
+export const hasOpsPermission = (
+  user: OpsUser | null | undefined,
+  permissions: string[] | null | undefined,
+  permission: string,
+) => Boolean(
+  user && (user.isSuperAdmin || permissions?.includes('*:*:*') || permissions?.includes(permission)),
 );
 
 const readOpsUser = (): OpsUser | null => {
@@ -58,7 +92,7 @@ const readOpsUser = (): OpsUser | null => {
     const raw = localStorage.getItem(STORAGE_KEYS.user);
     if (!raw) return null;
     const user = JSON.parse(raw) as OpsUser;
-    return hasOpsAccess(user) ? user : null;
+    return user || null;
   } catch {
     return null;
   }
@@ -69,7 +103,7 @@ const readFallbackAdminUser = (): OpsUser | null => {
     const raw = localStorage.getItem('admin_user');
     if (!raw) return null;
     const user = JSON.parse(raw) as OpsUser;
-    return hasOpsAccess(user) ? user : null;
+    return user || null;
   } catch {
     return null;
   }
@@ -85,18 +119,32 @@ const readOpsSecurity = (): OpsSecurityStatus | null => {
   }
 };
 
-const readOpsToken = (user: OpsUser | null): string => {
+const readOpsPermissions = (): string[] => {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.permissions) || localStorage.getItem('admin_permissions');
+    if (!raw) return [];
+    const permissions = JSON.parse(raw) as unknown;
+    return Array.isArray(permissions) ? permissions.filter((item): item is string => typeof item === 'string') : [];
+  } catch {
+    return [];
+  }
+};
+
+const readOpsToken = (user: OpsUser | null, permissions: string[]): string => {
   const opsToken = localStorage.getItem(STORAGE_KEYS.token) || '';
   if (opsToken) return opsToken;
-  if (!hasOpsAccess(user)) return '';
+  if (!hasOpsAccess(user, permissions)) return '';
   return localStorage.getItem('admin_token') || '';
 };
 
-export const useAuthStore = create<AuthState>((set) => ({
+export const useAuthStore = create<AuthState>((set, get) => ({
   token: '',
   user: null,
+  permissions: [],
   security: null,
-  setSession: ({ token, user, security }) => {
+  bootstrapStatus: 'ready',
+  setSession: ({ token, user, permissions, security }) => {
+    const current = get();
     if (typeof token === 'string' && token.length > 0) {
       localStorage.setItem(STORAGE_KEYS.token, token);
     } else {
@@ -107,39 +155,62 @@ export const useAuthStore = create<AuthState>((set) => ({
     } else {
       localStorage.removeItem(STORAGE_KEYS.user);
     }
+    const nextPermissions = permissions ?? current.permissions;
+    if (permissions !== undefined) {
+      localStorage.setItem(STORAGE_KEYS.permissions, JSON.stringify(nextPermissions));
+    }
     if (security) {
       localStorage.setItem(STORAGE_KEYS.security, JSON.stringify(security));
     } else {
       localStorage.removeItem(STORAGE_KEYS.security);
     }
-    set({ token: token || '', user: user || null, security: security || null });
+    set({
+      token: token || '',
+      user: user || null,
+      permissions: nextPermissions,
+      security: security || null,
+      bootstrapStatus: 'ready',
+    });
+  },
+  setBootstrapStatus: (status) => set({ bootstrapStatus: status }),
+  hasPermission: (permission) => {
+    const state = get();
+    return hasOpsPermission(state.user, state.permissions, permission);
   },
   logout: () => {
     localStorage.removeItem(STORAGE_KEYS.token);
     localStorage.removeItem(STORAGE_KEYS.user);
+    localStorage.removeItem(STORAGE_KEYS.permissions);
     localStorage.removeItem(STORAGE_KEYS.security);
-    set({ token: '', user: null, security: null });
+    set({ token: '', user: null, permissions: [], security: null, bootstrapStatus: 'ready' });
   },
   clearOpsSession: () => {
     localStorage.removeItem(STORAGE_KEYS.token);
     localStorage.removeItem(STORAGE_KEYS.user);
+    localStorage.removeItem(STORAGE_KEYS.permissions);
     localStorage.removeItem(STORAGE_KEYS.security);
-    set({ token: '', user: null, security: null });
+    set({ token: '', user: null, permissions: [], security: null, bootstrapStatus: 'ready' });
   },
 }));
 
 const fallbackUser = readFallbackAdminUser();
 const bootUser = readOpsUser() || fallbackUser;
+const bootPermissions = readOpsPermissions();
 const bootSecurity = readOpsSecurity();
+const bootHasAccess = hasOpsAccess(bootUser, bootPermissions);
+const bootToken = readOpsToken(bootUser, bootPermissions);
 
-if (!bootUser) {
+if (!bootUser || !bootHasAccess) {
   localStorage.removeItem(STORAGE_KEYS.token);
   localStorage.removeItem(STORAGE_KEYS.user);
+  localStorage.removeItem(STORAGE_KEYS.permissions);
   localStorage.removeItem(STORAGE_KEYS.security);
 }
 
 useAuthStore.setState({
-  token: readOpsToken(bootUser),
-  user: bootUser,
+  token: bootHasAccess ? bootToken : '',
+  user: bootHasAccess ? bootUser : null,
+  permissions: bootHasAccess ? bootPermissions : [],
   security: bootSecurity,
+  bootstrapStatus: bootHasAccess && bootToken ? 'idle' : 'ready',
 });

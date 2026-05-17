@@ -1,0 +1,1896 @@
+{
+  "schemaVersion": 1,
+  "lastReconcileMigration": "v1.15.6_reconcile_preset_role_permissions.sql",
+  "generatedAtUTC": "2026-05-17T10:04:45Z",
+  "menuCatalogHash": "ffd3b122fc0b8ed844ee7385a36a26e277e0d10f88cc402ea6ef24dc49ea6105",
+  "templateHash": "f2c2acb66de744a00fcd6840b5d71e8dddf62f45b37c5d2256924f494fcf691b",
+  "menuCatalogRows": [
+    "admin_create||system:admin:create",
+    "admin_delete||system:admin:delete",
+    "admin_edit||system:admin:edit",
+    "admins_list|/users/admins|system:admin:list",
+    "audit_logs|/audit-logs|system:log:list",
+    "booking_cancel||booking:cancel",
+    "booking_create||booking:create",
+    "booking_dispute_detail||booking:dispute:detail",
+    "booking_dispute_resolve||booking:dispute:resolve",
+    "booking_edit||booking:edit",
+    "booking_view||booking:view",
+    "bookings_disputed|/bookings/disputed|booking:dispute:list",
+    "bookings_list|/bookings/list|booking:list",
+    "bookings_root|/bookings|booking:list",
+    "case_audit_approve||case:audit:approve",
+    "case_audit_reject||case:audit:reject",
+    "case_audit_view||case:audit:view",
+    "cases_manage|/cases/manage|system:case:view",
+    "cases_root|/cases|system:case:list",
+    "complaints|/complaints|risk:arbitration:list",
+    "dashboard|/dashboard|dashboard:view",
+    "demand_assign||demand:assign",
+    "demand_review||demand:review",
+    "demands_list|/demands/list|demand:list",
+    "demands_root|/demands|demand:center",
+    "dictionary_create||dict:create",
+    "dictionary_delete||dict:delete",
+    "dictionary_update||dict:update",
+    "dictionary_view||dict:view",
+    "dictionary|/system/dictionary|",
+    "finance_escrow_freeze||finance:escrow:freeze",
+    "finance_escrow_unfreeze||finance:escrow:unfreeze",
+    "finance_escrow_view||finance:escrow:view",
+    "finance_escrow|/finance/escrow|finance:escrow:list",
+    "finance_overview|/finance/overview|finance:escrow:list",
+    "finance_payment_orders|/finance/payment-orders|finance:transaction:list",
+    "finance_payouts|/finance/payouts|finance:transaction:list",
+    "finance_root|/finance|",
+    "finance_settlements|/finance/settlements|finance:transaction:list",
+    "finance_transaction_approve||finance:transaction:approve",
+    "finance_transaction_export||finance:transaction:export",
+    "finance_transaction_view||finance:transaction:view",
+    "finance_transactions|/finance/transactions|finance:transaction:list",
+    "log_view||system:log:view",
+    "logs_list|/logs/list|system:log:list",
+    "logs_root|/logs|system:log:list",
+    "material_audit_approve||material:audit:approve",
+    "material_audit_reject||material:audit:reject",
+    "material_audit_view||material:audit:view",
+    "material_shop_create||material:shop:create",
+    "material_shop_delete||material:shop:delete",
+    "material_shop_edit||material:shop:edit",
+    "material_shop_view||material:shop:view",
+    "materials_audit|/materials/audit|material:audit:list",
+    "materials_list|/materials/list|material:shop:list",
+    "materials_root|/materials|",
+    "menu_create||system:menu:create",
+    "menu_delete||system:menu:delete",
+    "menu_edit||system:menu:edit",
+    "menus_list|/permission/menus|system:menu:list",
+    "order_center_view||order:center:view",
+    "order_center|/orders|order:center:list",
+    "orders_root|/order-management|",
+    "permission_root|/permission|",
+    "project_audits|/project-audits|risk:arbitration:list",
+    "project_delete||project:delete",
+    "project_edit||project:edit",
+    "project_quote_compare|/projects/quotes/compare/:id|project:view",
+    "project_quote_library|/projects/quotes/library|project:list",
+    "project_quote_lists|/projects/quotes/lists|project:edit",
+    "project_quote_price_books|/projects/quotes/price-books|provider:list",
+    "project_quote_templates|/projects/quotes/templates|project:list",
+    "project_view||project:view",
+    "projects_list|/projects/list|project:list",
+    "projects_map|/projects/map|project:map",
+    "projects_root|/projects|",
+    "proposal_review||proposal:review",
+    "provider_audit_approve||provider:audit:approve",
+    "provider_audit_reject||provider:audit:reject",
+    "provider_audit_view||provider:audit:view",
+    "provider_audit|/providers/audit|provider:audit:list",
+    "provider_companies|/providers/companies|provider:company:list",
+    "provider_company_create||provider:company:create",
+    "provider_company_delete||provider:company:delete",
+    "provider_company_edit||provider:company:edit",
+    "provider_company_view||provider:company:view",
+    "provider_designer_create||provider:designer:create",
+    "provider_designer_delete||provider:designer:delete",
+    "provider_designer_edit||provider:designer:edit",
+    "provider_designer_view||provider:designer:view",
+    "provider_designers|/providers/designers|provider:designer:list",
+    "provider_foreman_create||provider:foreman:create",
+    "provider_foreman_delete||provider:foreman:delete",
+    "provider_foreman_edit||provider:foreman:edit",
+    "provider_foreman_view||provider:foreman:view",
+    "provider_foremen|/providers/foremen|provider:foreman:list",
+    "providers_root|/providers|",
+    "quote_erp_root|/projects/quotes|",
+    "refunds|/refunds|finance:transaction:list",
+    "review_delete||review:delete",
+    "review_hide||review:hide",
+    "review_view||review:view",
+    "reviews_list|/reviews/list|review:list",
+    "reviews_root|/reviews|review:list",
+    "risk_arbitration_accept||risk:arbitration:accept",
+    "risk_arbitration_judge||risk:arbitration:judge",
+    "risk_arbitration_reject||risk:arbitration:reject",
+    "risk_arbitration_view||risk:arbitration:view",
+    "risk_arbitration|/risk/arbitration|risk:arbitration:list",
+    "risk_root|/risk|",
+    "risk_warning_handle||risk:warning:handle",
+    "risk_warning_ignore||risk:warning:ignore",
+    "risk_warning_view||risk:warning:view",
+    "risk_warnings|/risk/warnings|risk:warning:list",
+    "role_assign||system:role:assign",
+    "role_create||system:role:create",
+    "role_delete||system:role:delete",
+    "role_edit||system:role:edit",
+    "roles_list|/permission/roles|system:role:list",
+    "setting_edit||system:setting:edit",
+    "settings_config|/settings/config|system:setting:list",
+    "settings_outbox_events|/settings/outbox-events|system:log:list",
+    "settings_regions|/settings/regions|",
+    "settings_root|/settings|system:setting:list",
+    "supervision_projects|/supervision/projects|supervision:workspace:view",
+    "supervision_risk_create||supervision:risk:create",
+    "supervision_root|/supervision|",
+    "supervision_workspace_edit||supervision:workspace:edit",
+    "supervisors_applications|/supervisors/applications|supervision:supervisor:list",
+    "supervisors_assignment_manage||supervision:assignment:manage",
+    "supervisors_assignments|/supervisors/assignments|supervision:assignment:manage",
+    "supervisors_edit||supervision:supervisor:edit",
+    "supervisors_list|/supervisors/list|supervision:supervisor:list",
+    "supervisors_root|/supervisors|",
+    "supervisors_whitelist|/supervisors/whitelist|supervision:supervisor:list",
+    "user_delete||system:user:delete",
+    "user_edit||system:user:edit",
+    "user_export||system:user:export",
+    "user_phone_view||system:user:phone:view",
+    "user_view||system:user:view",
+    "users_list|/users/list|system:user:list",
+    "users_root|/users|"
+  ],
+  "templateRows": [
+    "customer_service|path:/bookings",
+    "customer_service|path:/bookings/disputed",
+    "customer_service|path:/bookings/list",
+    "customer_service|path:/dashboard",
+    "customer_service|path:/demands",
+    "customer_service|path:/demands/list",
+    "customer_service|path:/order-management",
+    "customer_service|path:/orders",
+    "customer_service|path:/providers",
+    "customer_service|path:/providers/companies",
+    "customer_service|path:/providers/designers",
+    "customer_service|path:/providers/foremen",
+    "customer_service|path:/reviews",
+    "customer_service|path:/reviews/list",
+    "customer_service|path:/supervisors",
+    "customer_service|path:/supervisors/applications",
+    "customer_service|path:/supervisors/list",
+    "customer_service|path:/supervisors/whitelist",
+    "customer_service|path:/users",
+    "customer_service|path:/users/list",
+    "customer_service|permission:booking:cancel",
+    "customer_service|permission:booking:create",
+    "customer_service|permission:booking:dispute:detail",
+    "customer_service|permission:booking:edit",
+    "customer_service|permission:booking:view",
+    "customer_service|permission:demand:review",
+    "customer_service|permission:order:center:view",
+    "customer_service|permission:proposal:review",
+    "customer_service|permission:provider:company:view",
+    "customer_service|permission:provider:designer:view",
+    "customer_service|permission:provider:foreman:view",
+    "customer_service|permission:review:view",
+    "customer_service|permission:system:user:edit",
+    "customer_service|permission:system:user:view",
+    "finance|path:/dashboard",
+    "finance|path:/finance",
+    "finance|path:/finance/escrow",
+    "finance|path:/finance/overview",
+    "finance|path:/finance/payment-orders",
+    "finance|path:/finance/payouts",
+    "finance|path:/finance/settlements",
+    "finance|path:/finance/transactions",
+    "finance|path:/order-management",
+    "finance|path:/orders",
+    "finance|path:/projects",
+    "finance|path:/projects/list",
+    "finance|path:/refunds",
+    "finance|path:/users",
+    "finance|path:/users/list",
+    "finance|permission:finance:escrow:freeze",
+    "finance|permission:finance:escrow:unfreeze",
+    "finance|permission:finance:escrow:view",
+    "finance|permission:finance:transaction:approve",
+    "finance|permission:finance:transaction:export",
+    "finance|permission:finance:transaction:view",
+    "finance|permission:order:center:view",
+    "finance|permission:project:view",
+    "finance|permission:system:user:view",
+    "operations|path:/audit-logs",
+    "operations|path:/bookings",
+    "operations|path:/bookings/disputed",
+    "operations|path:/bookings/list",
+    "operations|path:/cases",
+    "operations|path:/cases/manage",
+    "operations|path:/dashboard",
+    "operations|path:/demands",
+    "operations|path:/demands/list",
+    "operations|path:/logs",
+    "operations|path:/logs/list",
+    "operations|path:/materials",
+    "operations|path:/materials/audit",
+    "operations|path:/materials/list",
+    "operations|path:/order-management",
+    "operations|path:/orders",
+    "operations|path:/projects",
+    "operations|path:/projects/list",
+    "operations|path:/providers",
+    "operations|path:/providers/audit",
+    "operations|path:/providers/companies",
+    "operations|path:/providers/designers",
+    "operations|path:/providers/foremen",
+    "operations|path:/reviews",
+    "operations|path:/reviews/list",
+    "operations|path:/supervision",
+    "operations|path:/supervision/projects",
+    "operations|path:/supervisors",
+    "operations|path:/supervisors/applications",
+    "operations|path:/supervisors/assignments",
+    "operations|path:/supervisors/list",
+    "operations|path:/supervisors/whitelist",
+    "operations|path:/users",
+    "operations|path:/users/list",
+    "operations|permission:booking:cancel",
+    "operations|permission:booking:create",
+    "operations|permission:booking:dispute:detail",
+    "operations|permission:booking:dispute:resolve",
+    "operations|permission:booking:edit",
+    "operations|permission:booking:view",
+    "operations|permission:demand:assign",
+    "operations|permission:demand:review",
+    "operations|permission:material:audit:approve",
+    "operations|permission:material:audit:reject",
+    "operations|permission:material:audit:view",
+    "operations|permission:material:shop:create",
+    "operations|permission:material:shop:edit",
+    "operations|permission:material:shop:view",
+    "operations|permission:order:center:view",
+    "operations|permission:project:edit",
+    "operations|permission:project:view",
+    "operations|permission:proposal:review",
+    "operations|permission:provider:audit:approve",
+    "operations|permission:provider:audit:reject",
+    "operations|permission:provider:audit:view",
+    "operations|permission:provider:company:create",
+    "operations|permission:provider:company:edit",
+    "operations|permission:provider:company:view",
+    "operations|permission:provider:designer:create",
+    "operations|permission:provider:designer:edit",
+    "operations|permission:provider:designer:view",
+    "operations|permission:provider:foreman:create",
+    "operations|permission:provider:foreman:edit",
+    "operations|permission:provider:foreman:view",
+    "operations|permission:review:delete",
+    "operations|permission:review:hide",
+    "operations|permission:review:view",
+    "operations|permission:supervision:assignment:manage",
+    "operations|permission:supervision:risk:create",
+    "operations|permission:supervision:supervisor:edit",
+    "operations|permission:supervision:workspace:edit",
+    "operations|permission:system:log:view",
+    "operations|permission:system:user:view",
+    "product_manager|path:/audit-logs",
+    "product_manager|path:/bookings",
+    "product_manager|path:/bookings/list",
+    "product_manager|path:/cases",
+    "product_manager|path:/cases/manage",
+    "product_manager|path:/dashboard",
+    "product_manager|path:/demands",
+    "product_manager|path:/demands/list",
+    "product_manager|path:/logs",
+    "product_manager|path:/logs/list",
+    "product_manager|path:/materials",
+    "product_manager|path:/materials/list",
+    "product_manager|path:/order-management",
+    "product_manager|path:/orders",
+    "product_manager|path:/projects",
+    "product_manager|path:/projects/list",
+    "product_manager|path:/projects/map",
+    "product_manager|path:/projects/quotes",
+    "product_manager|path:/projects/quotes/compare/:id",
+    "product_manager|path:/projects/quotes/library",
+    "product_manager|path:/projects/quotes/lists",
+    "product_manager|path:/projects/quotes/price-books",
+    "product_manager|path:/projects/quotes/templates",
+    "product_manager|path:/providers",
+    "product_manager|path:/providers/companies",
+    "product_manager|path:/providers/designers",
+    "product_manager|path:/providers/foremen",
+    "product_manager|path:/reviews",
+    "product_manager|path:/reviews/list",
+    "product_manager|path:/supervision",
+    "product_manager|path:/supervision/projects",
+    "product_manager|path:/supervisors",
+    "product_manager|path:/supervisors/applications",
+    "product_manager|path:/supervisors/assignments",
+    "product_manager|path:/supervisors/list",
+    "product_manager|path:/supervisors/whitelist",
+    "product_manager|path:/users",
+    "product_manager|path:/users/list",
+    "product_manager|permission:booking:edit",
+    "product_manager|permission:booking:view",
+    "product_manager|permission:demand:assign",
+    "product_manager|permission:material:shop:create",
+    "product_manager|permission:material:shop:delete",
+    "product_manager|permission:material:shop:edit",
+    "product_manager|permission:material:shop:view",
+    "product_manager|permission:order:center:view",
+    "product_manager|permission:project:edit",
+    "product_manager|permission:project:view",
+    "product_manager|permission:proposal:review",
+    "product_manager|permission:provider:company:create",
+    "product_manager|permission:provider:company:delete",
+    "product_manager|permission:provider:company:edit",
+    "product_manager|permission:provider:company:view",
+    "product_manager|permission:provider:designer:create",
+    "product_manager|permission:provider:designer:delete",
+    "product_manager|permission:provider:designer:edit",
+    "product_manager|permission:provider:designer:view",
+    "product_manager|permission:provider:foreman:create",
+    "product_manager|permission:provider:foreman:delete",
+    "product_manager|permission:provider:foreman:edit",
+    "product_manager|permission:provider:foreman:view",
+    "product_manager|permission:review:view",
+    "product_manager|permission:supervision:assignment:manage",
+    "product_manager|permission:supervision:risk:create",
+    "product_manager|permission:supervision:supervisor:edit",
+    "product_manager|permission:supervision:workspace:edit",
+    "product_manager|permission:system:log:view",
+    "product_manager|permission:system:user:export",
+    "product_manager|permission:system:user:view",
+    "risk|path:/complaints",
+    "risk|path:/dashboard",
+    "risk|path:/order-management",
+    "risk|path:/orders",
+    "risk|path:/project-audits",
+    "risk|path:/projects",
+    "risk|path:/projects/list",
+    "risk|path:/risk",
+    "risk|path:/risk/arbitration",
+    "risk|path:/risk/warnings",
+    "risk|path:/users",
+    "risk|path:/users/list",
+    "risk|permission:order:center:view",
+    "risk|permission:project:view",
+    "risk|permission:risk:arbitration:accept",
+    "risk|permission:risk:arbitration:judge",
+    "risk|permission:risk:arbitration:reject",
+    "risk|permission:risk:arbitration:view",
+    "risk|permission:risk:warning:handle",
+    "risk|permission:risk:warning:ignore",
+    "risk|permission:risk:warning:view",
+    "risk|permission:system:user:view",
+    "system_admin|path:/audit-logs",
+    "system_admin|path:/bookings",
+    "system_admin|path:/bookings/list",
+    "system_admin|path:/cases",
+    "system_admin|path:/cases/manage",
+    "system_admin|path:/dashboard",
+    "system_admin|path:/logs",
+    "system_admin|path:/logs/list",
+    "system_admin|path:/materials",
+    "system_admin|path:/materials/list",
+    "system_admin|path:/projects",
+    "system_admin|path:/projects/list",
+    "system_admin|path:/providers",
+    "system_admin|path:/providers/companies",
+    "system_admin|path:/providers/designers",
+    "system_admin|path:/providers/foremen",
+    "system_admin|path:/supervision",
+    "system_admin|path:/supervision/projects",
+    "system_admin|path:/supervisors",
+    "system_admin|path:/supervisors/applications",
+    "system_admin|path:/supervisors/assignments",
+    "system_admin|path:/supervisors/list",
+    "system_admin|path:/supervisors/whitelist",
+    "system_admin|permission:booking:edit",
+    "system_admin|permission:booking:view",
+    "system_admin|permission:material:shop:create",
+    "system_admin|permission:material:shop:edit",
+    "system_admin|permission:material:shop:view",
+    "system_admin|permission:project:edit",
+    "system_admin|permission:project:view",
+    "system_admin|permission:provider:company:create",
+    "system_admin|permission:provider:company:edit",
+    "system_admin|permission:provider:company:view",
+    "system_admin|permission:provider:designer:create",
+    "system_admin|permission:provider:designer:edit",
+    "system_admin|permission:provider:designer:view",
+    "system_admin|permission:provider:foreman:create",
+    "system_admin|permission:provider:foreman:edit",
+    "system_admin|permission:provider:foreman:view",
+    "system_admin|permission:supervision:assignment:manage",
+    "system_admin|permission:supervision:risk:create",
+    "system_admin|permission:supervision:workspace:edit",
+    "system_admin|permission:system:log:view",
+    "viewer|path:/audit-logs",
+    "viewer|path:/bookings",
+    "viewer|path:/bookings/list",
+    "viewer|path:/dashboard",
+    "viewer|path:/demands",
+    "viewer|path:/demands/list",
+    "viewer|path:/finance",
+    "viewer|path:/finance/escrow",
+    "viewer|path:/finance/overview",
+    "viewer|path:/finance/payment-orders",
+    "viewer|path:/finance/payouts",
+    "viewer|path:/finance/settlements",
+    "viewer|path:/finance/transactions",
+    "viewer|path:/logs",
+    "viewer|path:/logs/list",
+    "viewer|path:/materials",
+    "viewer|path:/materials/list",
+    "viewer|path:/order-management",
+    "viewer|path:/orders",
+    "viewer|path:/projects",
+    "viewer|path:/projects/list",
+    "viewer|path:/projects/map",
+    "viewer|path:/providers",
+    "viewer|path:/providers/companies",
+    "viewer|path:/providers/designers",
+    "viewer|path:/providers/foremen",
+    "viewer|path:/reviews",
+    "viewer|path:/reviews/list",
+    "viewer|path:/risk",
+    "viewer|path:/risk/arbitration",
+    "viewer|path:/risk/warnings",
+    "viewer|path:/settings",
+    "viewer|path:/settings/outbox-events",
+    "viewer|path:/supervisors",
+    "viewer|path:/supervisors/applications",
+    "viewer|path:/supervisors/list",
+    "viewer|path:/supervisors/whitelist",
+    "viewer|path:/users",
+    "viewer|path:/users/list",
+    "viewer|permission:booking:view",
+    "viewer|permission:finance:escrow:view",
+    "viewer|permission:finance:transaction:view",
+    "viewer|permission:material:shop:view",
+    "viewer|permission:order:center:view",
+    "viewer|permission:project:view",
+    "viewer|permission:provider:company:view",
+    "viewer|permission:provider:designer:view",
+    "viewer|permission:provider:foreman:view",
+    "viewer|permission:review:view",
+    "viewer|permission:risk:arbitration:view",
+    "viewer|permission:risk:warning:view",
+    "viewer|permission:system:log:view",
+    "viewer|permission:system:user:export",
+    "viewer|permission:system:user:view"
+  ],
+  "selectorsByRole": {
+    "customer_service": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/users"
+      },
+      {
+        "path": "/users/list",
+        "permission": "system:user:list"
+      },
+      {
+        "permission": "system:user:view"
+      },
+      {
+        "permission": "system:user:edit"
+      },
+      {
+        "path": "/providers"
+      },
+      {
+        "path": "/providers/designers",
+        "permission": "provider:designer:list"
+      },
+      {
+        "permission": "provider:designer:view"
+      },
+      {
+        "path": "/providers/companies",
+        "permission": "provider:company:list"
+      },
+      {
+        "permission": "provider:company:view"
+      },
+      {
+        "path": "/providers/foremen",
+        "permission": "provider:foreman:list"
+      },
+      {
+        "permission": "provider:foreman:view"
+      },
+      {
+        "path": "/order-management"
+      },
+      {
+        "path": "/orders",
+        "permission": "order:center:list"
+      },
+      {
+        "permission": "order:center:view"
+      },
+      {
+        "permission": "proposal:review"
+      },
+      {
+        "path": "/demands",
+        "permission": "demand:center"
+      },
+      {
+        "path": "/demands/list",
+        "permission": "demand:list"
+      },
+      {
+        "permission": "demand:review"
+      },
+      {
+        "path": "/bookings",
+        "permission": "booking:list"
+      },
+      {
+        "path": "/bookings/list",
+        "permission": "booking:list"
+      },
+      {
+        "permission": "booking:view"
+      },
+      {
+        "permission": "booking:create"
+      },
+      {
+        "permission": "booking:edit"
+      },
+      {
+        "permission": "booking:cancel"
+      },
+      {
+        "path": "/bookings/disputed",
+        "permission": "booking:dispute:list"
+      },
+      {
+        "permission": "booking:dispute:detail"
+      },
+      {
+        "path": "/supervisors"
+      },
+      {
+        "path": "/supervisors/list",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/whitelist",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/applications",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/reviews",
+        "permission": "review:list"
+      },
+      {
+        "path": "/reviews/list",
+        "permission": "review:list"
+      },
+      {
+        "permission": "review:view"
+      }
+    ],
+    "finance": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/users"
+      },
+      {
+        "path": "/users/list",
+        "permission": "system:user:list"
+      },
+      {
+        "permission": "system:user:view"
+      },
+      {
+        "path": "/projects"
+      },
+      {
+        "path": "/projects/list",
+        "permission": "project:list"
+      },
+      {
+        "permission": "project:view"
+      },
+      {
+        "path": "/order-management"
+      },
+      {
+        "path": "/orders",
+        "permission": "order:center:list"
+      },
+      {
+        "permission": "order:center:view"
+      },
+      {
+        "path": "/finance"
+      },
+      {
+        "path": "/finance/overview",
+        "permission": "finance:escrow:list"
+      },
+      {
+        "path": "/finance/payment-orders",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "path": "/finance/escrow",
+        "permission": "finance:escrow:list"
+      },
+      {
+        "permission": "finance:escrow:view"
+      },
+      {
+        "permission": "finance:escrow:freeze"
+      },
+      {
+        "permission": "finance:escrow:unfreeze"
+      },
+      {
+        "path": "/finance/transactions",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "permission": "finance:transaction:view"
+      },
+      {
+        "permission": "finance:transaction:export"
+      },
+      {
+        "permission": "finance:transaction:approve"
+      },
+      {
+        "path": "/finance/payouts",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "path": "/finance/settlements",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "path": "/refunds",
+        "permission": "finance:transaction:list"
+      }
+    ],
+    "operations": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/users"
+      },
+      {
+        "path": "/users/list",
+        "permission": "system:user:list"
+      },
+      {
+        "permission": "system:user:view"
+      },
+      {
+        "path": "/providers"
+      },
+      {
+        "path": "/providers/designers",
+        "permission": "provider:designer:list"
+      },
+      {
+        "permission": "provider:designer:view"
+      },
+      {
+        "permission": "provider:designer:create"
+      },
+      {
+        "permission": "provider:designer:edit"
+      },
+      {
+        "path": "/providers/companies",
+        "permission": "provider:company:list"
+      },
+      {
+        "permission": "provider:company:view"
+      },
+      {
+        "permission": "provider:company:create"
+      },
+      {
+        "permission": "provider:company:edit"
+      },
+      {
+        "path": "/providers/foremen",
+        "permission": "provider:foreman:list"
+      },
+      {
+        "permission": "provider:foreman:view"
+      },
+      {
+        "permission": "provider:foreman:create"
+      },
+      {
+        "permission": "provider:foreman:edit"
+      },
+      {
+        "path": "/providers/audit",
+        "permission": "provider:audit:list"
+      },
+      {
+        "permission": "provider:audit:view"
+      },
+      {
+        "permission": "provider:audit:approve"
+      },
+      {
+        "permission": "provider:audit:reject"
+      },
+      {
+        "path": "/materials"
+      },
+      {
+        "path": "/materials/list",
+        "permission": "material:shop:list"
+      },
+      {
+        "permission": "material:shop:view"
+      },
+      {
+        "permission": "material:shop:create"
+      },
+      {
+        "permission": "material:shop:edit"
+      },
+      {
+        "path": "/materials/audit",
+        "permission": "material:audit:list"
+      },
+      {
+        "permission": "material:audit:view"
+      },
+      {
+        "permission": "material:audit:approve"
+      },
+      {
+        "permission": "material:audit:reject"
+      },
+      {
+        "path": "/projects"
+      },
+      {
+        "path": "/projects/list",
+        "permission": "project:list"
+      },
+      {
+        "permission": "project:view"
+      },
+      {
+        "permission": "project:edit"
+      },
+      {
+        "path": "/supervision"
+      },
+      {
+        "path": "/supervision/projects",
+        "permission": "supervision:workspace:view"
+      },
+      {
+        "permission": "supervision:workspace:edit"
+      },
+      {
+        "permission": "supervision:risk:create"
+      },
+      {
+        "path": "/order-management"
+      },
+      {
+        "path": "/orders",
+        "permission": "order:center:list"
+      },
+      {
+        "permission": "order:center:view"
+      },
+      {
+        "permission": "proposal:review"
+      },
+      {
+        "path": "/demands",
+        "permission": "demand:center"
+      },
+      {
+        "path": "/demands/list",
+        "permission": "demand:list"
+      },
+      {
+        "permission": "demand:review"
+      },
+      {
+        "permission": "demand:assign"
+      },
+      {
+        "path": "/bookings",
+        "permission": "booking:list"
+      },
+      {
+        "path": "/bookings/list",
+        "permission": "booking:list"
+      },
+      {
+        "permission": "booking:view"
+      },
+      {
+        "permission": "booking:create"
+      },
+      {
+        "permission": "booking:edit"
+      },
+      {
+        "permission": "booking:cancel"
+      },
+      {
+        "path": "/bookings/disputed",
+        "permission": "booking:dispute:list"
+      },
+      {
+        "permission": "booking:dispute:detail"
+      },
+      {
+        "permission": "booking:dispute:resolve"
+      },
+      {
+        "path": "/supervisors"
+      },
+      {
+        "path": "/supervisors/list",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/whitelist",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/applications",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/assignments",
+        "permission": "supervision:assignment:manage"
+      },
+      {
+        "permission": "supervision:supervisor:edit"
+      },
+      {
+        "permission": "supervision:assignment:manage"
+      },
+      {
+        "path": "/cases",
+        "permission": "system:case:list"
+      },
+      {
+        "path": "/cases/manage",
+        "permission": "system:case:view"
+      },
+      {
+        "path": "/logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/logs/list",
+        "permission": "system:log:list"
+      },
+      {
+        "permission": "system:log:view"
+      },
+      {
+        "path": "/audit-logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/reviews",
+        "permission": "review:list"
+      },
+      {
+        "path": "/reviews/list",
+        "permission": "review:list"
+      },
+      {
+        "permission": "review:view"
+      },
+      {
+        "permission": "review:delete"
+      },
+      {
+        "permission": "review:hide"
+      }
+    ],
+    "product_manager": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/users"
+      },
+      {
+        "path": "/users/list",
+        "permission": "system:user:list"
+      },
+      {
+        "permission": "system:user:view"
+      },
+      {
+        "permission": "system:user:export"
+      },
+      {
+        "path": "/providers"
+      },
+      {
+        "path": "/providers/designers",
+        "permission": "provider:designer:list"
+      },
+      {
+        "permission": "provider:designer:view"
+      },
+      {
+        "permission": "provider:designer:create"
+      },
+      {
+        "permission": "provider:designer:edit"
+      },
+      {
+        "permission": "provider:designer:delete"
+      },
+      {
+        "path": "/providers/companies",
+        "permission": "provider:company:list"
+      },
+      {
+        "permission": "provider:company:view"
+      },
+      {
+        "permission": "provider:company:create"
+      },
+      {
+        "permission": "provider:company:edit"
+      },
+      {
+        "permission": "provider:company:delete"
+      },
+      {
+        "path": "/providers/foremen",
+        "permission": "provider:foreman:list"
+      },
+      {
+        "permission": "provider:foreman:view"
+      },
+      {
+        "permission": "provider:foreman:create"
+      },
+      {
+        "permission": "provider:foreman:edit"
+      },
+      {
+        "permission": "provider:foreman:delete"
+      },
+      {
+        "path": "/materials"
+      },
+      {
+        "path": "/materials/list",
+        "permission": "material:shop:list"
+      },
+      {
+        "permission": "material:shop:view"
+      },
+      {
+        "permission": "material:shop:create"
+      },
+      {
+        "permission": "material:shop:edit"
+      },
+      {
+        "permission": "material:shop:delete"
+      },
+      {
+        "path": "/projects"
+      },
+      {
+        "path": "/projects/list",
+        "permission": "project:list"
+      },
+      {
+        "permission": "project:view"
+      },
+      {
+        "permission": "project:edit"
+      },
+      {
+        "path": "/projects/map",
+        "permission": "project:map"
+      },
+      {
+        "path": "/supervision"
+      },
+      {
+        "path": "/supervision/projects",
+        "permission": "supervision:workspace:view"
+      },
+      {
+        "permission": "supervision:workspace:edit"
+      },
+      {
+        "permission": "supervision:risk:create"
+      },
+      {
+        "path": "/supervisors"
+      },
+      {
+        "path": "/supervisors/list",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/whitelist",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/applications",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/assignments",
+        "permission": "supervision:assignment:manage"
+      },
+      {
+        "permission": "supervision:supervisor:edit"
+      },
+      {
+        "permission": "supervision:assignment:manage"
+      },
+      {
+        "path": "/projects/quotes"
+      },
+      {
+        "path": "/projects/quotes/library",
+        "permission": "project:list"
+      },
+      {
+        "path": "/projects/quotes/templates",
+        "permission": "project:list"
+      },
+      {
+        "path": "/projects/quotes/lists",
+        "permission": "project:edit"
+      },
+      {
+        "path": "/projects/quotes/price-books",
+        "permission": "provider:list"
+      },
+      {
+        "path": "/projects/quotes/compare/:id",
+        "permission": "project:view"
+      },
+      {
+        "path": "/order-management"
+      },
+      {
+        "path": "/orders",
+        "permission": "order:center:list"
+      },
+      {
+        "permission": "order:center:view"
+      },
+      {
+        "permission": "proposal:review"
+      },
+      {
+        "path": "/demands",
+        "permission": "demand:center"
+      },
+      {
+        "path": "/demands/list",
+        "permission": "demand:list"
+      },
+      {
+        "permission": "demand:assign"
+      },
+      {
+        "path": "/bookings",
+        "permission": "booking:list"
+      },
+      {
+        "path": "/bookings/list",
+        "permission": "booking:list"
+      },
+      {
+        "permission": "booking:view"
+      },
+      {
+        "permission": "booking:edit"
+      },
+      {
+        "path": "/cases",
+        "permission": "system:case:list"
+      },
+      {
+        "path": "/cases/manage",
+        "permission": "system:case:view"
+      },
+      {
+        "path": "/logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/logs/list",
+        "permission": "system:log:list"
+      },
+      {
+        "permission": "system:log:view"
+      },
+      {
+        "path": "/audit-logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/reviews",
+        "permission": "review:list"
+      },
+      {
+        "path": "/reviews/list",
+        "permission": "review:list"
+      },
+      {
+        "permission": "review:view"
+      }
+    ],
+    "risk": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/users"
+      },
+      {
+        "path": "/users/list",
+        "permission": "system:user:list"
+      },
+      {
+        "permission": "system:user:view"
+      },
+      {
+        "path": "/projects"
+      },
+      {
+        "path": "/projects/list",
+        "permission": "project:list"
+      },
+      {
+        "permission": "project:view"
+      },
+      {
+        "path": "/order-management"
+      },
+      {
+        "path": "/orders",
+        "permission": "order:center:list"
+      },
+      {
+        "permission": "order:center:view"
+      },
+      {
+        "path": "/risk"
+      },
+      {
+        "path": "/risk/warnings",
+        "permission": "risk:warning:list"
+      },
+      {
+        "permission": "risk:warning:view"
+      },
+      {
+        "permission": "risk:warning:handle"
+      },
+      {
+        "permission": "risk:warning:ignore"
+      },
+      {
+        "path": "/risk/arbitration",
+        "permission": "risk:arbitration:list"
+      },
+      {
+        "permission": "risk:arbitration:view"
+      },
+      {
+        "permission": "risk:arbitration:accept"
+      },
+      {
+        "permission": "risk:arbitration:reject"
+      },
+      {
+        "permission": "risk:arbitration:judge"
+      },
+      {
+        "path": "/complaints",
+        "permission": "risk:arbitration:list"
+      },
+      {
+        "path": "/project-audits",
+        "permission": "risk:arbitration:list"
+      }
+    ],
+    "system_admin": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/providers"
+      },
+      {
+        "path": "/providers/designers",
+        "permission": "provider:designer:list"
+      },
+      {
+        "permission": "provider:designer:view"
+      },
+      {
+        "permission": "provider:designer:create"
+      },
+      {
+        "permission": "provider:designer:edit"
+      },
+      {
+        "path": "/providers/companies",
+        "permission": "provider:company:list"
+      },
+      {
+        "permission": "provider:company:view"
+      },
+      {
+        "permission": "provider:company:create"
+      },
+      {
+        "permission": "provider:company:edit"
+      },
+      {
+        "path": "/providers/foremen",
+        "permission": "provider:foreman:list"
+      },
+      {
+        "permission": "provider:foreman:view"
+      },
+      {
+        "permission": "provider:foreman:create"
+      },
+      {
+        "permission": "provider:foreman:edit"
+      },
+      {
+        "path": "/materials"
+      },
+      {
+        "path": "/materials/list",
+        "permission": "material:shop:list"
+      },
+      {
+        "permission": "material:shop:view"
+      },
+      {
+        "permission": "material:shop:create"
+      },
+      {
+        "permission": "material:shop:edit"
+      },
+      {
+        "path": "/projects"
+      },
+      {
+        "path": "/projects/list",
+        "permission": "project:list"
+      },
+      {
+        "permission": "project:view"
+      },
+      {
+        "permission": "project:edit"
+      },
+      {
+        "path": "/supervision"
+      },
+      {
+        "path": "/supervision/projects",
+        "permission": "supervision:workspace:view"
+      },
+      {
+        "permission": "supervision:workspace:edit"
+      },
+      {
+        "permission": "supervision:risk:create"
+      },
+      {
+        "path": "/bookings",
+        "permission": "booking:list"
+      },
+      {
+        "path": "/bookings/list",
+        "permission": "booking:list"
+      },
+      {
+        "permission": "booking:view"
+      },
+      {
+        "permission": "booking:edit"
+      },
+      {
+        "path": "/supervisors"
+      },
+      {
+        "path": "/supervisors/list",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/whitelist",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/applications",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/assignments",
+        "permission": "supervision:assignment:manage"
+      },
+      {
+        "permission": "supervision:assignment:manage"
+      },
+      {
+        "path": "/cases",
+        "permission": "system:case:list"
+      },
+      {
+        "path": "/cases/manage",
+        "permission": "system:case:view"
+      },
+      {
+        "path": "/logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/logs/list",
+        "permission": "system:log:list"
+      },
+      {
+        "permission": "system:log:view"
+      },
+      {
+        "path": "/audit-logs",
+        "permission": "system:log:list"
+      }
+    ],
+    "viewer": [
+      {
+        "path": "/dashboard",
+        "permission": "dashboard:view"
+      },
+      {
+        "path": "/users"
+      },
+      {
+        "path": "/users/list",
+        "permission": "system:user:list"
+      },
+      {
+        "permission": "system:user:view"
+      },
+      {
+        "permission": "system:user:export"
+      },
+      {
+        "path": "/providers"
+      },
+      {
+        "path": "/providers/designers",
+        "permission": "provider:designer:list"
+      },
+      {
+        "permission": "provider:designer:view"
+      },
+      {
+        "path": "/providers/companies",
+        "permission": "provider:company:list"
+      },
+      {
+        "permission": "provider:company:view"
+      },
+      {
+        "path": "/providers/foremen",
+        "permission": "provider:foreman:list"
+      },
+      {
+        "permission": "provider:foreman:view"
+      },
+      {
+        "path": "/materials"
+      },
+      {
+        "path": "/materials/list",
+        "permission": "material:shop:list"
+      },
+      {
+        "permission": "material:shop:view"
+      },
+      {
+        "path": "/projects"
+      },
+      {
+        "path": "/projects/list",
+        "permission": "project:list"
+      },
+      {
+        "permission": "project:view"
+      },
+      {
+        "path": "/projects/map",
+        "permission": "project:map"
+      },
+      {
+        "path": "/order-management"
+      },
+      {
+        "path": "/orders",
+        "permission": "order:center:list"
+      },
+      {
+        "permission": "order:center:view"
+      },
+      {
+        "path": "/demands",
+        "permission": "demand:center"
+      },
+      {
+        "path": "/demands/list",
+        "permission": "demand:list"
+      },
+      {
+        "path": "/bookings",
+        "permission": "booking:list"
+      },
+      {
+        "path": "/bookings/list",
+        "permission": "booking:list"
+      },
+      {
+        "permission": "booking:view"
+      },
+      {
+        "path": "/supervisors"
+      },
+      {
+        "path": "/supervisors/list",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/whitelist",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/supervisors/applications",
+        "permission": "supervision:supervisor:list"
+      },
+      {
+        "path": "/finance"
+      },
+      {
+        "path": "/finance/overview",
+        "permission": "finance:escrow:list"
+      },
+      {
+        "path": "/finance/payment-orders",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "path": "/finance/escrow",
+        "permission": "finance:escrow:list"
+      },
+      {
+        "permission": "finance:escrow:view"
+      },
+      {
+        "path": "/finance/transactions",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "permission": "finance:transaction:view"
+      },
+      {
+        "path": "/finance/payouts",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "path": "/finance/settlements",
+        "permission": "finance:transaction:list"
+      },
+      {
+        "path": "/reviews",
+        "permission": "review:list"
+      },
+      {
+        "path": "/reviews/list",
+        "permission": "review:list"
+      },
+      {
+        "permission": "review:view"
+      },
+      {
+        "path": "/risk"
+      },
+      {
+        "path": "/risk/warnings",
+        "permission": "risk:warning:list"
+      },
+      {
+        "permission": "risk:warning:view"
+      },
+      {
+        "path": "/risk/arbitration",
+        "permission": "risk:arbitration:list"
+      },
+      {
+        "permission": "risk:arbitration:view"
+      },
+      {
+        "path": "/logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/logs/list",
+        "permission": "system:log:list"
+      },
+      {
+        "permission": "system:log:view"
+      },
+      {
+        "path": "/audit-logs",
+        "permission": "system:log:list"
+      },
+      {
+        "path": "/settings",
+        "permission": "system:setting:list"
+      },
+      {
+        "path": "/settings/outbox-events",
+        "permission": "system:log:list"
+      }
+    ]
+  },
+  "previousTemplateRows": [
+    "customer_service|path:/bookings",
+    "customer_service|path:/bookings/disputed",
+    "customer_service|path:/bookings/list",
+    "customer_service|path:/dashboard",
+    "customer_service|path:/demands",
+    "customer_service|path:/demands/list",
+    "customer_service|path:/order-management",
+    "customer_service|path:/orders",
+    "customer_service|path:/providers",
+    "customer_service|path:/providers/companies",
+    "customer_service|path:/providers/designers",
+    "customer_service|path:/providers/foremen",
+    "customer_service|path:/reviews",
+    "customer_service|path:/reviews/list",
+    "customer_service|path:/supervisors",
+    "customer_service|path:/supervisors/applications",
+    "customer_service|path:/supervisors/list",
+    "customer_service|path:/supervisors/whitelist",
+    "customer_service|path:/users",
+    "customer_service|path:/users/list",
+    "customer_service|permission:booking:cancel",
+    "customer_service|permission:booking:create",
+    "customer_service|permission:booking:dispute:detail",
+    "customer_service|permission:booking:edit",
+    "customer_service|permission:booking:view",
+    "customer_service|permission:demand:review",
+    "customer_service|permission:order:center:view",
+    "customer_service|permission:proposal:review",
+    "customer_service|permission:provider:company:view",
+    "customer_service|permission:provider:designer:view",
+    "customer_service|permission:provider:foreman:view",
+    "customer_service|permission:review:view",
+    "customer_service|permission:system:user:edit",
+    "customer_service|permission:system:user:view",
+    "finance|path:/dashboard",
+    "finance|path:/finance",
+    "finance|path:/finance/escrow",
+    "finance|path:/finance/overview",
+    "finance|path:/finance/payment-orders",
+    "finance|path:/finance/payouts",
+    "finance|path:/finance/settlements",
+    "finance|path:/finance/transactions",
+    "finance|path:/order-management",
+    "finance|path:/orders",
+    "finance|path:/projects",
+    "finance|path:/projects/list",
+    "finance|path:/refunds",
+    "finance|path:/users",
+    "finance|path:/users/list",
+    "finance|permission:finance:escrow:freeze",
+    "finance|permission:finance:escrow:unfreeze",
+    "finance|permission:finance:escrow:view",
+    "finance|permission:finance:transaction:approve",
+    "finance|permission:finance:transaction:export",
+    "finance|permission:finance:transaction:view",
+    "finance|permission:order:center:view",
+    "finance|permission:project:view",
+    "finance|permission:system:user:view",
+    "operations|path:/audit-logs",
+    "operations|path:/bookings",
+    "operations|path:/bookings/disputed",
+    "operations|path:/bookings/list",
+    "operations|path:/cases",
+    "operations|path:/cases/manage",
+    "operations|path:/dashboard",
+    "operations|path:/demands",
+    "operations|path:/demands/list",
+    "operations|path:/logs",
+    "operations|path:/logs/list",
+    "operations|path:/materials",
+    "operations|path:/materials/audit",
+    "operations|path:/materials/list",
+    "operations|path:/order-management",
+    "operations|path:/orders",
+    "operations|path:/projects",
+    "operations|path:/projects/list",
+    "operations|path:/providers",
+    "operations|path:/providers/audit",
+    "operations|path:/providers/companies",
+    "operations|path:/providers/designers",
+    "operations|path:/providers/foremen",
+    "operations|path:/reviews",
+    "operations|path:/reviews/list",
+    "operations|path:/supervisors",
+    "operations|path:/supervisors/applications",
+    "operations|path:/supervisors/assignments",
+    "operations|path:/supervisors/list",
+    "operations|path:/supervisors/whitelist",
+    "operations|path:/users",
+    "operations|path:/users/list",
+    "operations|permission:booking:cancel",
+    "operations|permission:booking:create",
+    "operations|permission:booking:dispute:detail",
+    "operations|permission:booking:dispute:resolve",
+    "operations|permission:booking:edit",
+    "operations|permission:booking:view",
+    "operations|permission:demand:assign",
+    "operations|permission:demand:review",
+    "operations|permission:material:audit:approve",
+    "operations|permission:material:audit:reject",
+    "operations|permission:material:audit:view",
+    "operations|permission:material:shop:create",
+    "operations|permission:material:shop:edit",
+    "operations|permission:material:shop:view",
+    "operations|permission:order:center:view",
+    "operations|permission:project:edit",
+    "operations|permission:project:view",
+    "operations|permission:proposal:review",
+    "operations|permission:provider:audit:approve",
+    "operations|permission:provider:audit:reject",
+    "operations|permission:provider:audit:view",
+    "operations|permission:provider:company:create",
+    "operations|permission:provider:company:edit",
+    "operations|permission:provider:company:view",
+    "operations|permission:provider:designer:create",
+    "operations|permission:provider:designer:edit",
+    "operations|permission:provider:designer:view",
+    "operations|permission:provider:foreman:create",
+    "operations|permission:provider:foreman:edit",
+    "operations|permission:provider:foreman:view",
+    "operations|permission:review:delete",
+    "operations|permission:review:hide",
+    "operations|permission:review:view",
+    "operations|permission:supervision:assignment:manage",
+    "operations|permission:supervision:supervisor:edit",
+    "operations|permission:system:log:view",
+    "operations|permission:system:user:view",
+    "product_manager|path:/audit-logs",
+    "product_manager|path:/bookings",
+    "product_manager|path:/bookings/list",
+    "product_manager|path:/cases",
+    "product_manager|path:/cases/manage",
+    "product_manager|path:/dashboard",
+    "product_manager|path:/demands",
+    "product_manager|path:/demands/list",
+    "product_manager|path:/logs",
+    "product_manager|path:/logs/list",
+    "product_manager|path:/materials",
+    "product_manager|path:/materials/list",
+    "product_manager|path:/order-management",
+    "product_manager|path:/orders",
+    "product_manager|path:/projects",
+    "product_manager|path:/projects/list",
+    "product_manager|path:/projects/map",
+    "product_manager|path:/projects/quotes",
+    "product_manager|path:/projects/quotes/compare/:id",
+    "product_manager|path:/projects/quotes/library",
+    "product_manager|path:/projects/quotes/lists",
+    "product_manager|path:/projects/quotes/price-books",
+    "product_manager|path:/projects/quotes/templates",
+    "product_manager|path:/providers",
+    "product_manager|path:/providers/companies",
+    "product_manager|path:/providers/designers",
+    "product_manager|path:/providers/foremen",
+    "product_manager|path:/reviews",
+    "product_manager|path:/reviews/list",
+    "product_manager|path:/supervisors",
+    "product_manager|path:/supervisors/applications",
+    "product_manager|path:/supervisors/assignments",
+    "product_manager|path:/supervisors/list",
+    "product_manager|path:/supervisors/whitelist",
+    "product_manager|path:/users",
+    "product_manager|path:/users/list",
+    "product_manager|permission:booking:edit",
+    "product_manager|permission:booking:view",
+    "product_manager|permission:demand:assign",
+    "product_manager|permission:material:shop:create",
+    "product_manager|permission:material:shop:delete",
+    "product_manager|permission:material:shop:edit",
+    "product_manager|permission:material:shop:view",
+    "product_manager|permission:order:center:view",
+    "product_manager|permission:project:edit",
+    "product_manager|permission:project:view",
+    "product_manager|permission:proposal:review",
+    "product_manager|permission:provider:company:create",
+    "product_manager|permission:provider:company:delete",
+    "product_manager|permission:provider:company:edit",
+    "product_manager|permission:provider:company:view",
+    "product_manager|permission:provider:designer:create",
+    "product_manager|permission:provider:designer:delete",
+    "product_manager|permission:provider:designer:edit",
+    "product_manager|permission:provider:designer:view",
+    "product_manager|permission:provider:foreman:create",
+    "product_manager|permission:provider:foreman:delete",
+    "product_manager|permission:provider:foreman:edit",
+    "product_manager|permission:provider:foreman:view",
+    "product_manager|permission:review:view",
+    "product_manager|permission:supervision:assignment:manage",
+    "product_manager|permission:supervision:supervisor:edit",
+    "product_manager|permission:system:log:view",
+    "product_manager|permission:system:user:export",
+    "product_manager|permission:system:user:view",
+    "project_supervisor|path:/supervision",
+    "project_supervisor|path:/supervision/projects",
+    "project_supervisor|permission:supervision:risk:create",
+    "project_supervisor|permission:supervision:workspace:edit",
+    "risk|path:/complaints",
+    "risk|path:/dashboard",
+    "risk|path:/order-management",
+    "risk|path:/orders",
+    "risk|path:/project-audits",
+    "risk|path:/projects",
+    "risk|path:/projects/list",
+    "risk|path:/risk",
+    "risk|path:/risk/arbitration",
+    "risk|path:/risk/warnings",
+    "risk|path:/users",
+    "risk|path:/users/list",
+    "risk|permission:order:center:view",
+    "risk|permission:project:view",
+    "risk|permission:risk:arbitration:accept",
+    "risk|permission:risk:arbitration:judge",
+    "risk|permission:risk:arbitration:reject",
+    "risk|permission:risk:arbitration:view",
+    "risk|permission:risk:warning:handle",
+    "risk|permission:risk:warning:ignore",
+    "risk|permission:risk:warning:view",
+    "risk|permission:system:user:view",
+    "system_admin|path:/audit-logs",
+    "system_admin|path:/bookings",
+    "system_admin|path:/bookings/list",
+    "system_admin|path:/cases",
+    "system_admin|path:/cases/manage",
+    "system_admin|path:/dashboard",
+    "system_admin|path:/logs",
+    "system_admin|path:/logs/list",
+    "system_admin|path:/materials",
+    "system_admin|path:/materials/list",
+    "system_admin|path:/projects",
+    "system_admin|path:/projects/list",
+    "system_admin|path:/providers",
+    "system_admin|path:/providers/companies",
+    "system_admin|path:/providers/designers",
+    "system_admin|path:/providers/foremen",
+    "system_admin|path:/supervisors",
+    "system_admin|path:/supervisors/assignments",
+    "system_admin|permission:booking:edit",
+    "system_admin|permission:booking:view",
+    "system_admin|permission:material:shop:create",
+    "system_admin|permission:material:shop:edit",
+    "system_admin|permission:material:shop:view",
+    "system_admin|permission:project:edit",
+    "system_admin|permission:project:view",
+    "system_admin|permission:provider:company:create",
+    "system_admin|permission:provider:company:edit",
+    "system_admin|permission:provider:company:view",
+    "system_admin|permission:provider:designer:create",
+    "system_admin|permission:provider:designer:edit",
+    "system_admin|permission:provider:designer:view",
+    "system_admin|permission:provider:foreman:create",
+    "system_admin|permission:provider:foreman:edit",
+    "system_admin|permission:provider:foreman:view",
+    "system_admin|permission:supervision:assignment:manage",
+    "system_admin|permission:system:log:view",
+    "viewer|path:/audit-logs",
+    "viewer|path:/bookings",
+    "viewer|path:/bookings/list",
+    "viewer|path:/dashboard",
+    "viewer|path:/demands",
+    "viewer|path:/demands/list",
+    "viewer|path:/finance",
+    "viewer|path:/finance/escrow",
+    "viewer|path:/finance/overview",
+    "viewer|path:/finance/payment-orders",
+    "viewer|path:/finance/payouts",
+    "viewer|path:/finance/settlements",
+    "viewer|path:/finance/transactions",
+    "viewer|path:/logs",
+    "viewer|path:/logs/list",
+    "viewer|path:/materials",
+    "viewer|path:/materials/list",
+    "viewer|path:/order-management",
+    "viewer|path:/orders",
+    "viewer|path:/projects",
+    "viewer|path:/projects/list",
+    "viewer|path:/projects/map",
+    "viewer|path:/providers",
+    "viewer|path:/providers/companies",
+    "viewer|path:/providers/designers",
+    "viewer|path:/providers/foremen",
+    "viewer|path:/reviews",
+    "viewer|path:/reviews/list",
+    "viewer|path:/risk",
+    "viewer|path:/risk/arbitration",
+    "viewer|path:/risk/warnings",
+    "viewer|path:/settings",
+    "viewer|path:/settings/outbox-events",
+    "viewer|path:/supervisors",
+    "viewer|path:/supervisors/applications",
+    "viewer|path:/supervisors/list",
+    "viewer|path:/supervisors/whitelist",
+    "viewer|path:/users",
+    "viewer|path:/users/list",
+    "viewer|permission:booking:view",
+    "viewer|permission:finance:escrow:view",
+    "viewer|permission:finance:transaction:view",
+    "viewer|permission:material:shop:view",
+    "viewer|permission:order:center:view",
+    "viewer|permission:project:view",
+    "viewer|permission:provider:company:view",
+    "viewer|permission:provider:designer:view",
+    "viewer|permission:provider:foreman:view",
+    "viewer|permission:review:view",
+    "viewer|permission:risk:arbitration:view",
+    "viewer|permission:risk:warning:view",
+    "viewer|permission:system:log:view",
+    "viewer|permission:system:user:export",
+    "viewer|permission:system:user:view"
+  ]
+}

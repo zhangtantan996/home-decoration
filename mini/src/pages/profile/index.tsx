@@ -20,6 +20,8 @@ import { resolveProfileAvatarDisplayUrl } from '@/utils/profileAvatar';
 import './index.scss';
 
 const PROFILE_HEADER_EXTRA_BOTTOM = 10;
+const USER_QUOTE_LAST_RESULT_KEY_PREFIX = 'quote-inquiry:last-result:user:v1:';
+const QUOTE_LAST_RESULT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 const GUEST_SHORTCUTS = [
   {
@@ -50,6 +52,34 @@ const buildFallbackNickname = (phone?: string) => {
     return `用户${value.slice(-4)}`;
   }
   return '用户';
+};
+
+const getProfileQuoteLastResult = (userId: number) => {
+  if (!Number.isFinite(userId) || userId <= 0) return null;
+
+  try {
+    const raw = Taro.getStorageSync(`${USER_QUOTE_LAST_RESULT_KEY_PREFIX}${userId}`);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(String(raw)) as {
+      id?: number;
+      accessToken?: string;
+      createdAt?: number;
+    };
+    const id = Number(parsed.id || 0);
+    const createdAt = Number(parsed.createdAt || 0);
+    if (!Number.isFinite(id) || id <= 0) return null;
+    if (!Number.isFinite(createdAt) || createdAt <= 0) return null;
+    if (Date.now() - createdAt > QUOTE_LAST_RESULT_TTL_MS) return null;
+
+    return {
+      id,
+      accessToken: parsed.accessToken ? String(parsed.accessToken) : undefined,
+    };
+  } catch (error) {
+    console.warn('[profile] read quote last result failed', error);
+    return null;
+  }
 };
 
 export default function Profile() {
@@ -172,6 +202,23 @@ export default function Profile() {
     });
   };
 
+  const handleSmartQuote = () => {
+    requireAuth(() => {
+      const userId = Number(useAuthStore.getState().user?.id || 0);
+      const lastResult = getProfileQuoteLastResult(userId);
+
+      if (lastResult) {
+        const query = lastResult.accessToken
+          ? `id=${lastResult.id}&accessToken=${encodeURIComponent(lastResult.accessToken)}`
+          : `id=${lastResult.id}`;
+        Taro.navigateTo({ url: `/pages/quote-inquiry/result/index?${query}` });
+        return;
+      }
+
+      Taro.navigateTo({ url: '/pages/quote-inquiry/create/index' });
+    });
+  };
+
   const handleMessages = () => {
     requireAuth(() => {
       Taro.switchTab({ url: '/pages/messages/index' });
@@ -236,8 +283,8 @@ export default function Profile() {
                 </View>
               </View>
 
-              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleBookings}>
-                我的预约
+              <Button className="profile-page__quote-entry" variant="primary" block onClick={handleSmartQuote}>
+                智能报价
               </Button>
             </View>
           </View>

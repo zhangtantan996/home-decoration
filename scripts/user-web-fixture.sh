@@ -16,6 +16,7 @@ MIGRATIONS=(
   "$ROOT_DIR/server/migrations/v1.9.14_add_claimed_completion_onboarding_columns.sql"
   "$ROOT_DIR/server/migrations/v1.9.15_add_admin_security_columns.sql"
   "$ROOT_DIR/server/migrations/v1.9.16_add_provider_display_name.sql"
+  "$ROOT_DIR/server/migrations/v1.9.21_add_project_phase_enabled.sql"
   "$ROOT_DIR/server/migrations/v1.10.4_add_project_business_closure_fields.sql"
   "$ROOT_DIR/server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
   "$ROOT_DIR/server/migrations/v1.10.8_add_project_risk_and_refund.sql"
