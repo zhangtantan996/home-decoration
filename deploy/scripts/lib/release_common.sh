@@ -172,6 +172,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.9.23_add_project_cover_image.sql"
     "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
     "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
+    "server/migrations/v1.10.9_add_p1_admin_menus.sql"
     "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
     "server/migrations/v1.12.2_reconcile_commerce_runtime_schema.sql"
     "server/migrations/v1.12.3_add_alipay_payment_runtime.sql"
