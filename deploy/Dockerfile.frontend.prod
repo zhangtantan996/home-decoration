@@ -31,8 +31,10 @@ COPY merchant/ ./
 
 ARG VITE_APP_ENV=production
 ARG VITE_API_URL=/api/v1
+ARG VITE_MERCHANT_PORTAL_ENABLED=false
 ENV VITE_APP_ENV=${VITE_APP_ENV}
 ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_MERCHANT_PORTAL_ENABLED=${VITE_MERCHANT_PORTAL_ENABLED}
 ENV NODE_OPTIONS="--max-old-space-size=8192"
 RUN npm run build
 
@@ -52,6 +54,27 @@ ARG VITE_OPS_ROUTER_BASENAME=/ops
 ENV VITE_APP_ENV=${VITE_APP_ENV}
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_ROUTER_BASENAME=${VITE_OPS_ROUTER_BASENAME}
+ENV NODE_OPTIONS="--max-old-space-size=4096"
+RUN npm run build
+
+FROM node:20-alpine AS supervisor-builder
+WORKDIR /app/supervisor
+
+RUN npm config set registry https://registry.npmmirror.com
+
+COPY supervisor/package*.json ./
+RUN npm install --legacy-peer-deps
+
+COPY supervisor/ ./
+
+ARG VITE_APP_ENV=production
+ARG VITE_API_URL=/api/v1
+ARG VITE_SUPERVISOR_ROUTER_BASENAME=/supervisor
+ARG VITE_SUPERVISOR_PORTAL_ENABLED=true
+ENV VITE_APP_ENV=${VITE_APP_ENV}
+ENV VITE_API_URL=${VITE_API_URL}
+ENV VITE_ROUTER_BASENAME=${VITE_SUPERVISOR_ROUTER_BASENAME}
+ENV VITE_SUPERVISOR_PORTAL_ENABLED=${VITE_SUPERVISOR_PORTAL_ENABLED}
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
@@ -88,10 +111,12 @@ ARG VITE_APP_ENV=production
 ARG VITE_API_URL=/api/v1
 ARG VITE_ROUTER_BASENAME=/
 ARG VITE_PUBLIC_SITE_URL=/
+ARG VITE_USER_WEB_ENABLED=false
 ENV VITE_APP_ENV=${VITE_APP_ENV}
 ENV VITE_API_URL=${VITE_API_URL}
 ENV VITE_ROUTER_BASENAME=${VITE_ROUTER_BASENAME}
 ENV VITE_PUBLIC_SITE_URL=${VITE_PUBLIC_SITE_URL}
+ENV VITE_USER_WEB_ENABLED=${VITE_USER_WEB_ENABLED}
 ENV NODE_OPTIONS="--max-old-space-size=4096"
 RUN npm run build
 
@@ -106,6 +131,7 @@ COPY deploy/nginx/admin_allowlist.conf /etc/nginx/admin_allowlist.conf
 COPY --from=admin-builder /app/admin/dist /usr/share/nginx/html/admin
 COPY --from=merchant-builder /app/merchant/dist /usr/share/nginx/html/merchant
 COPY --from=ops-builder /app/ops/dist /usr/share/nginx/html/ops
+COPY --from=supervisor-builder /app/supervisor/dist /usr/share/nginx/html/supervisor
 COPY --from=website-builder /app/website/dist /usr/share/nginx/html/website
 COPY --from=web-builder /app/web/dist /usr/share/nginx/html/web
 

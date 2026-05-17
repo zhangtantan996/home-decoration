@@ -117,6 +117,9 @@ const routes = isMerchantPortalFrontendEnabled() ? [
   },
   { path: '*', element: <Navigate to="/" replace /> },
 ] : [
+  { path: '/legal/onboarding-agreement', element: <OnboardingAgreementPage /> },
+  { path: '/legal/platform-rules', element: <PlatformRulesPage /> },
+  { path: '/legal/privacy-data-processing', element: <PrivacyDataProcessingPage /> },
   { path: '*', element: <MerchantPortalUnavailable /> },
 ];
 

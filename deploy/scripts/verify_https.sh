@@ -69,6 +69,19 @@ check_status() {
   fi
 }
 
+check_body_contains() {
+  local url="$1"
+  local expected="$2"
+  local label="$3"
+  local body
+  body="$("${CURL_BIN}" -k -sS -L --max-time "${TIMEOUT_SECONDS}" "${url}" || true)"
+  if [[ "${body}" == *"${expected}"* ]]; then
+    pass "${label}"
+  else
+    fail "${label} -> body does not contain ${expected}"
+  fi
+}
+
 check_redirect_prefix() {
   local url="$1"
   local expected_prefix="$2"
@@ -117,6 +130,10 @@ check_tls_handshake "${API_HOST}" "API domain TLS handshake"
 
 check_status "https://${ROOT_DOMAIN}/" "200" "Root domain homepage"
 check_status "https://${ROOT_DOMAIN}/api/v1/health" "404" "Root domain blocks API path"
+check_status "https://${ROOT_DOMAIN}/ops/login" "200" "Ops login page"
+check_body_contains "https://${ROOT_DOMAIN}/ops/login" "/ops/assets/" "Ops login is served by ops bundle"
+check_status "https://${ROOT_DOMAIN}/supervisor/login" "200" "Supervisor login page"
+check_body_contains "https://${ROOT_DOMAIN}/supervisor/login" "/supervisor/assets/" "Supervisor login is served by supervisor bundle"
 check_status "https://${ADMIN_HOST}/admin/login" "200" "Admin login page"
 check_status "https://${ADMIN_HOST}/api/v1/health" "404" "Admin domain blocks API path"
 check_status "https://${API_HOST}/api/v1/health" "200" "API health endpoint"
