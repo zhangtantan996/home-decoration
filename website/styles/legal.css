@@ -1,12 +1,15 @@
+@import "./tokens.css";
+
 :root {
-  --legal-bg: #f4f7fb;
-  --legal-surface: #ffffff;
-  --legal-text: #0f172a;
-  --legal-muted: #64748b;
-  --legal-border: #dbe5f0;
-  --legal-accent: #2563eb;
-  --legal-accent-soft: rgba(37, 99, 235, 0.08);
-  --legal-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+  --legal-bg: color-mix(in srgb, var(--bg-base) 4%, white);
+  --legal-surface: white;
+  --legal-text: color-mix(in srgb, var(--bg-base) 92%, white);
+  --legal-muted: color-mix(in srgb, var(--bg-base) 58%, white);
+  --legal-border: color-mix(in srgb, var(--bg-base) 10%, white);
+  --legal-accent: var(--primary);
+  --legal-accent-strong: color-mix(in srgb, var(--primary) 72%, var(--bg-base));
+  --legal-accent-soft: color-mix(in srgb, var(--primary) 10%, transparent);
+  --legal-shadow: 0 18px 40px color-mix(in srgb, var(--bg-base) 8%, transparent);
   --legal-radius: 24px;
 }
 
@@ -18,7 +21,7 @@ html,
 body {
   margin: 0;
   min-height: 100%;
-  background: linear-gradient(180deg, #f8fbff 0%, var(--legal-bg) 100%);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--primary) 3%, white) 0%, var(--legal-bg) 100%);
   color: var(--legal-text);
   font-family: "PingFang SC", "Helvetica Neue", Arial, sans-serif;
 }
@@ -44,7 +47,7 @@ body {
 
 .legal-shell {
   background: var(--legal-surface);
-  border: 1px solid rgba(219, 229, 240, 0.9);
+  border: 1px solid color-mix(in srgb, var(--legal-border) 90%, transparent);
   border-radius: 32px;
   box-shadow: var(--legal-shadow);
   overflow: hidden;
@@ -52,8 +55,8 @@ body {
 
 .legal-header {
   padding: 36px 40px 28px;
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(59, 130, 246, 0.02));
-  border-bottom: 1px solid rgba(219, 229, 240, 0.85);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 9%, white), color-mix(in srgb, var(--secondary) 3%, white));
+  border-bottom: 1px solid color-mix(in srgb, var(--legal-border) 85%, transparent);
 }
 
 .legal-brand {
@@ -120,7 +123,7 @@ body {
 
 .legal-prose p {
   margin-top: 16px;
-  color: #334155;
+  color: var(--legal-muted);
   font-size: 15px;
   line-height: 1.9;
   white-space: pre-wrap;
@@ -129,7 +132,7 @@ body {
 .legal-prose ul {
   margin-top: 14px;
   padding-left: 22px;
-  color: #334155;
+  color: var(--legal-muted);
 }
 
 .legal-prose li {
@@ -143,7 +146,7 @@ body {
   padding: 18px 20px;
   border-radius: var(--legal-radius);
   background: var(--legal-accent-soft);
-  color: #1e3a8a;
+  color: var(--legal-accent-strong);
   font-size: 14px;
   line-height: 1.75;
 }
@@ -164,16 +167,16 @@ body {
   padding: 14px 16px;
   border-radius: 18px;
   border: 1px solid var(--legal-border);
-  background: #fff;
-  color: #0f172a;
+  background: var(--legal-surface);
+  color: var(--legal-text);
   text-decoration: none;
   transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
 }
 
 .legal-link-card:hover {
-  border-color: rgba(37, 99, 235, 0.35);
+  border-color: color-mix(in srgb, var(--primary) 35%, transparent);
   transform: translateY(-1px);
-  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.08);
+  box-shadow: 0 8px 18px color-mix(in srgb, var(--primary) 8%, transparent);
 }
 
 .legal-link-card span {

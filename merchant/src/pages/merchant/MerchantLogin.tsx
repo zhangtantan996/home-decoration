@@ -131,6 +131,24 @@ const MerchantLogin: React.FC = () => {
             .merchant-auth-reset .ant-btn-link {
                 padding-inline: 0;
             }
+            .merchant-login-legal-copy {
+                margin-top: 18px;
+                text-align: center;
+                color: var(--ant-color-text-secondary);
+                font-size: 13px;
+                line-height: 1.8;
+            }
+            .merchant-entry-actions__hint {
+                margin-right: 8px;
+                color: var(--ant-color-text-secondary);
+            }
+            .merchant-entry-actions__link {
+                padding: 0;
+                font-weight: 500;
+            }
+            .merchant-entry-actions__link--muted {
+                color: var(--ant-color-text-secondary);
+            }
             .welcome-fade-in {
                 animation: fadeInUp 0.8s ease-out;
             }
@@ -448,13 +466,7 @@ const MerchantLogin: React.FC = () => {
                             </Button>
                         </Form.Item>
 
-                        <div style={{
-                            marginTop: 18,
-                            textAlign: 'center',
-                            color: '#64748b',
-                            fontSize: 13,
-                            lineHeight: 1.8,
-                        }}>
+                        <div className="merchant-login-legal-copy">
                             登录或入驻即表示你已阅读
                             <Link to={MERCHANT_LEGAL_ROUTES.onboardingAgreement}>《{legalTitles.onboardingAgreement}》</Link>
                             、
@@ -472,11 +484,11 @@ const MerchantLogin: React.FC = () => {
                             background: '#f8fafc',
                             borderRadius: '8px'
                         }}>
-                            <Text style={{ color: '#64748b', marginRight: 8 }}>还没有账号极速入驻？</Text>
+                            <Text className="merchant-entry-actions__hint">还没有账号极速入驻？</Text>
                             <Button
                                 type="link"
                                 onClick={() => navigate('/')}
-                                style={{ padding: 0, fontWeight: 500 }}
+                                className="merchant-entry-actions__link"
                             >
                                 免费入驻
                             </Button>
@@ -484,7 +496,7 @@ const MerchantLogin: React.FC = () => {
                             <Button
                                 type="link"
                                 onClick={() => navigate('/apply-status')}
-                                style={{ padding: 0, color: '#64748b' }}
+                                className="merchant-entry-actions__link merchant-entry-actions__link--muted"
                             >
                                 审核进度查询
                             </Button>

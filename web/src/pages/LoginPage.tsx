@@ -355,9 +355,20 @@ export function LoginPage() {
                 </div>
                 {codeError && <p className={styles.fieldErrorMsg}>{codeError}</p>}
                 {phoneLocked ? (
-                  <button className={styles.secondaryBtn} onClick={handleResetPhoneStage} type="button">
+                  <span
+                    className={styles.secondaryBtn}
+                    onClick={handleResetPhoneStage}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleResetPhoneStage();
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                  >
                     修改手机号
-                  </button>
+                  </span>
                 ) : null}
               </div>
 

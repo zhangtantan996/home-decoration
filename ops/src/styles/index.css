@@ -2094,7 +2094,7 @@ body {
 
 .ops-project-party-inline__cover--provider {
   background: color-mix(in srgb, var(--ant-color-warning) 14%, var(--ant-color-bg-layout));
-  color: #d97706;
+  color: var(--ant-color-warning);
 }
 
 .ops-project-party-inline__cover img {
@@ -2165,7 +2165,7 @@ body {
 
 .ops-project-party-option__cover--provider {
   background: color-mix(in srgb, var(--ant-color-warning) 14%, var(--ant-color-bg-layout));
-  color: #d97706;
+  color: var(--ant-color-warning);
 }
 
 .ops-project-party-option__body {

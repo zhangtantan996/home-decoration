@@ -194,7 +194,7 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                 flex-shrink: 0;
             }
             .legal-paragraph {
-                color: #4a5568;
+                color: var(--ant-color-text-secondary);
                 font-size: 14.5px;
                 line-height: 1.85;
                 margin-bottom: 10px !important;
@@ -207,7 +207,7 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
             .legal-bullet-list {
                 margin: 0;
                 padding-left: 28px;
-                color: #4a5568;
+                color: var(--ant-color-text-secondary);
             }
             .legal-bullet-item {
                 font-size: 14.5px;
