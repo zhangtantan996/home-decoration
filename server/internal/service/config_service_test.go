@@ -170,6 +170,120 @@ func TestFeatureGatesDefaultClosedWhenConfigMissing(t *testing.T) {
 	}
 }
 
+func TestInitDefaultConfigsMigratesLegacyPublicLegalDefaults(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	legacyValues := []model.SystemConfig{
+		{Key: model.ConfigKeyPublicUserAgreement, Value: legacyPublicUserAgreement()},
+		{Key: model.ConfigKeyPublicPrivacyPolicy, Value: legacyPublicPrivacyPolicy()},
+		{Key: model.ConfigKeyPublicPersonalInfoCollectionList, Value: legacyPublicPersonalInfoCollectionList()},
+		{Key: model.ConfigKeyPublicTransactionRules, Value: legacyPublicTransactionRules()},
+		{Key: model.ConfigKeyPublicRefundRules, Value: legacyPublicRefundRules()},
+		{Key: model.ConfigKeyPublicMerchantOnboarding, Value: legacyPublicMerchantOnboardingRules()},
+		{Key: model.ConfigKeyPublicLegalVersion, Value: "v1.0.0-20260430"},
+		{Key: model.ConfigKeyPublicLegalEffectiveDate, Value: "2026-04-30"},
+	}
+	if err := repository.DB.Create(&legacyValues).Error; err != nil {
+		t.Fatalf("seed legacy legal configs: %v", err)
+	}
+
+	if err := svc.InitDefaultConfigs(); err != nil {
+		t.Fatalf("init default configs: %v", err)
+	}
+
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{model.ConfigKeyPublicUserAgreement, defaultPublicUserAgreement()},
+		{model.ConfigKeyPublicPrivacyPolicy, defaultPublicPrivacyPolicy()},
+		{model.ConfigKeyPublicPersonalInfoCollectionList, defaultPublicPersonalInfoCollectionList()},
+		{model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()},
+		{model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()},
+		{model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()},
+		{model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion()},
+		{model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate()},
+	} {
+		var cfg model.SystemConfig
+		if err := repository.DB.Where("key = ?", tc.key).First(&cfg).Error; err != nil {
+			t.Fatalf("load migrated config %s: %v", tc.key, err)
+		}
+		if cfg.Value != tc.want {
+			t.Fatalf("config %s not migrated, got %q want %q", tc.key, cfg.Value, tc.want)
+		}
+	}
+}
+
+func TestInitDefaultConfigsPreservesCustomizedPublicLegalContent(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	customAgreement := "自定义用户协议正文"
+	customVersion := "v9.9.9-custom"
+	customValues := []model.SystemConfig{
+		{Key: model.ConfigKeyPublicUserAgreement, Value: customAgreement},
+		{Key: model.ConfigKeyPublicLegalVersion, Value: customVersion},
+	}
+	if err := repository.DB.Create(&customValues).Error; err != nil {
+		t.Fatalf("seed custom legal configs: %v", err)
+	}
+
+	if err := svc.InitDefaultConfigs(); err != nil {
+		t.Fatalf("init default configs: %v", err)
+	}
+
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{model.ConfigKeyPublicUserAgreement, customAgreement},
+		{model.ConfigKeyPublicLegalVersion, customVersion},
+	} {
+		var cfg model.SystemConfig
+		if err := repository.DB.Where("key = ?", tc.key).First(&cfg).Error; err != nil {
+			t.Fatalf("load customized config %s: %v", tc.key, err)
+		}
+		if cfg.Value != tc.want {
+			t.Fatalf("config %s should preserve custom value, got %q want %q", tc.key, cfg.Value, tc.want)
+		}
+	}
+}
+
+func TestInitDefaultConfigsDoesNotBumpLegalVersionWhenContentCustomized(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	customValues := []model.SystemConfig{
+		{Key: model.ConfigKeyPublicUserAgreement, Value: "自定义用户协议正文"},
+		{Key: model.ConfigKeyPublicLegalVersion, Value: "v1.0.0-20260430"},
+		{Key: model.ConfigKeyPublicLegalEffectiveDate, Value: "2026-04-30"},
+	}
+	if err := repository.DB.Create(&customValues).Error; err != nil {
+		t.Fatalf("seed mixed legal configs: %v", err)
+	}
+
+	if err := svc.InitDefaultConfigs(); err != nil {
+		t.Fatalf("init default configs: %v", err)
+	}
+
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{model.ConfigKeyPublicLegalVersion, "v1.0.0-20260430"},
+		{model.ConfigKeyPublicLegalEffectiveDate, "2026-04-30"},
+	} {
+		var cfg model.SystemConfig
+		if err := repository.DB.Where("key = ?", tc.key).First(&cfg).Error; err != nil {
+			t.Fatalf("load config %s: %v", tc.key, err)
+		}
+		if cfg.Value != tc.want {
+			t.Fatalf("config %s should keep legacy meta when custom content exists, got %q want %q", tc.key, cfg.Value, tc.want)
+		}
+	}
+}
+
 func setupConfigServiceTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
 

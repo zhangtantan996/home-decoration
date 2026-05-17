@@ -740,6 +740,16 @@
   color: #64748b;
 }
 
+.agreementCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.agreementLine {
+  display: block;
+}
+
 .agreement a {
   color: #2563eb;
   font-weight: 600;

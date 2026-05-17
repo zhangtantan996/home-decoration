@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Alert,
   Form,
@@ -20,11 +20,19 @@ import {
   supervisorAuthApi,
   supervisorOnboardingApi,
 } from "../../services/supervisorApi";
+import {
+  fallbackPublicSiteConfig,
+  findLegalDocument,
+  getPublicSiteConfig,
+  type PublicSiteConfig,
+} from "../../services/publicSiteConfig";
+import SupervisorBrand from "../../components/SupervisorBrand";
 import { useSupervisorAuthStore } from "../../stores/supervisorAuthStore";
 import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 import { LOGOUT_REASON_KEY } from "../../constants/authConstants";
+import { useSupervisorDocumentBranding } from "../../utils/branding";
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 const { useBreakpoint } = Grid;
 
 type BlockedState =
@@ -38,11 +46,29 @@ const SupervisorLogin: React.FC = () => {
   const [countdown, setCountdown] = useState(0);
   const [blockedState, setBlockedState] = useState<BlockedState>(null);
   const [kickedReason, setKickedReason] = useState<string | null>(null);
+  const [siteConfig, setSiteConfig] = useState<PublicSiteConfig>(
+    fallbackPublicSiteConfig,
+  );
   const timerRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const screens = useBreakpoint();
   const [form] = Form.useForm();
+  useSupervisorDocumentBranding("禾泽云 · 监理登录");
+  const legalTitles = useMemo(
+    () => ({
+      privacyPolicy: findLegalDocument(siteConfig, "privacy-policy").title,
+      personalInfoCollectionList: findLegalDocument(
+        siteConfig,
+        "personal-info-collection-list",
+      ).title,
+      thirdPartySharing: findLegalDocument(
+        siteConfig,
+        "third-party-sharing",
+      ).title,
+    }),
+    [siteConfig],
+  );
 
   const phoneRules = [
     { required: true, message: "请输入手机号" },
@@ -63,6 +89,22 @@ const SupervisorLogin: React.FC = () => {
     }
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void getPublicSiteConfig()
+      .then((nextConfig) => {
+        if (active) {
+          setSiteConfig(nextConfig);
+        }
+      })
+      .catch(() => {
+        // Keep fallback legal titles; login must remain usable when config API is unavailable.
+      });
+    return () => {
+      active = false;
     };
   }, []);
 
@@ -241,26 +283,37 @@ const SupervisorLogin: React.FC = () => {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: "linear-gradient(135deg, #f0faf0 0%, #e8f5e9 100%)",
     padding: isMobile ? "16px" : "48px",
   };
 
   const cardStyle: React.CSSProperties = {
     width: "100%",
     maxWidth: 420,
-    background: "#fff",
-    borderRadius: 16,
+    background: SUPERVISOR_THEME.surface,
+    borderRadius: SUPERVISOR_THEME.cardRadius,
     padding: isMobile ? "32px 24px" : "48px 40px",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+    boxShadow: SUPERVISOR_THEME.softShadow,
   };
 
   // AUTH-2: 账号被禁用时显示 Result，不再展示登录表单
   if (blockedState?.type === "disabled") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div className="supervisor-login-bg" style={containerStyle}>
+        <div className="supervisor-login-card" style={cardStyle}>
+          <div style={{ marginBottom: 20 }}>
+            <SupervisorBrand
+              centered
+              size="md"
+              title="禾泽云 · 监理端"
+              subtitle="账号状态异常"
+            />
+          </div>
           <Result
-            icon={<StopOutlined style={{ color: "#ff4d4f", fontSize: 48 }} />}
+            icon={
+              <StopOutlined
+                style={{ color: SUPERVISOR_THEME.errorColor, fontSize: 48 }}
+              />
+            }
             title="账号已被禁用"
             subTitle={
               <div>
@@ -280,29 +333,18 @@ const SupervisorLogin: React.FC = () => {
   }
 
   return (
-    <div style={containerStyle}>
-      <div style={cardStyle}>
+    <div className="supervisor-login-bg" style={containerStyle}>
+      <div className="supervisor-login-card" style={cardStyle}>
         <div style={{ textAlign: "center", marginBottom: 40 }}>
-          <div
-            style={{
-              width: 64,
-              height: 64,
-              borderRadius: 16,
-              background: SUPERVISOR_THEME.primaryGradient,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              margin: "0 auto 16px",
-              fontSize: 28,
-              color: "#fff",
-            }}
-          >
-            <SafetyOutlined />
+          <SupervisorBrand
+            centered
+            size="lg"
+            title="禾泽云 · 监理工作台"
+            subtitle="使用已审核开通的监理手机号登录"
+          />
+          <div style={{ marginTop: 14 }}>
+            <Text type="secondary">登录成功后可查看已分配项目与巡检工作台</Text>
           </div>
-          <Title level={3} style={{ marginBottom: 4 }}>
-            监理工作台
-          </Title>
-          <Text type="secondary">使用手机号登录</Text>
         </div>
 
         {/* AUTH-3: 被踢出原因提示 */}
@@ -387,6 +429,23 @@ const SupervisorLogin: React.FC = () => {
             </Button>
           </Form.Item>
         </Form>
+
+        <div style={{ textAlign: "center", marginTop: 16 }}>
+          <Text type="secondary">
+            登录即表示你已阅读
+            <a href="/legal/privacy-policy/" style={{ marginInline: 4 }}>
+              《{legalTitles.privacyPolicy}》
+            </a>
+            、
+            <a href="/legal/personal-info-collection-list/" style={{ marginInline: 4 }}>
+              《{legalTitles.personalInfoCollectionList}》
+            </a>
+            、
+            <a href="/legal/third-party-sharing/" style={{ marginInline: 4 }}>
+              《{legalTitles.thirdPartySharing}》
+            </a>
+          </Text>
+        </div>
 
         <div style={{ textAlign: "center", marginTop: 16 }}>
           <Button type="link" onClick={() => navigate("/apply")}>

@@ -38,6 +38,14 @@
     line-height: 1.72;
   }
 
+  &__meta {
+    display: block;
+    margin-top: 14rpx;
+    color: #94a3b8;
+    font-size: 22rpx;
+    line-height: 1.6;
+  }
+
   &__section {
     padding: 28rpx 30rpx;
     border-radius: 28rpx;
@@ -59,6 +67,34 @@
   &__section-text {
     display: block;
     margin-top: 14rpx;
+    color: #475569;
+    font-size: 27rpx;
+    line-height: 1.82;
+    white-space: pre-wrap;
+  }
+
+  &__list {
+    margin-top: 14rpx;
+  }
+
+  &__list-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12rpx;
+
+    & + & {
+      margin-top: 10rpx;
+    }
+  }
+
+  &__list-dot {
+    color: #2563eb;
+    font-size: 28rpx;
+    line-height: 1.72;
+  }
+
+  &__list-text {
+    flex: 1;
     color: #475569;
     font-size: 27rpx;
     line-height: 1.82;

@@ -134,6 +134,10 @@ export default {
       pages: [
         'user-agreement/index',
         'privacy-policy/index',
+        'personal-info-collection-list/index',
+        'transaction-rules/index',
+        'refund-rules/index',
+        'third-party-sharing/index',
       ],
     },
     {
@@ -229,6 +233,12 @@ export default {
         text: '灵感',
         iconPath: 'assets/tab/inspiration.png',
         selectedIconPath: 'assets/tab/inspiration-active.png',
+      },
+      {
+        pagePath: 'pages/progress/index',
+        text: '进度',
+        iconPath: 'assets/tab/progress.png',
+        selectedIconPath: 'assets/tab/progress-active.png',
       },
       {
         pagePath: 'pages/messages/index',

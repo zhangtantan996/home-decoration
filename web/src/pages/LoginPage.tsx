@@ -4,6 +4,12 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import companyLogo from '../assets/company-logo.png';
 import { useSessionStore } from '../modules/session/sessionStore';
 import { loginByCode, sendLoginCode } from '../services/auth';
+import {
+  fallbackPublicSiteConfig,
+  findLegalDocument,
+  getPublicSiteConfig,
+  type PublicSiteConfig,
+} from '../services/publicSiteConfig';
 import { toSafeUserFacingText } from '../utils/userFacingText';
 import styles from './LoginPage.module.scss';
 
@@ -75,9 +81,16 @@ export function LoginPage() {
   const [countdown, setCountdown] = useState(0);
   const [agreed, setAgreed] = useState(false);
   const [phoneLocked, setPhoneLocked] = useState(false);
+  const [siteConfig, setSiteConfig] = useState<PublicSiteConfig>(fallbackPublicSiteConfig);
   const countdownTimerRef = useRef<number | null>(null);
 
   const safeRedirect = useMemo(() => normalizeRedirectPath(searchParams.get('redirect')), [searchParams]);
+  const legalTitles = useMemo(() => ({
+    userAgreement: findLegalDocument(siteConfig, 'user-agreement').title,
+    privacyPolicy: findLegalDocument(siteConfig, 'privacy-policy').title,
+    personalInfoCollectionList: findLegalDocument(siteConfig, 'personal-info-collection-list').title,
+    thirdPartySharing: findLegalDocument(siteConfig, 'third-party-sharing').title,
+  }), [siteConfig]);
   const phoneError = phone.length > 0 && !phonePattern.test(phone) ? '请输入 11 位手机号' : '';
   const codeError = code.length > 0 && !codePattern.test(code) ? '请输入 6 位数字验证码' : '';
   const canSend = phonePattern.test(phone) && !sending && countdown === 0;
@@ -109,6 +122,22 @@ export function LoginPage() {
       }
     }
   ), []);
+
+  useEffect(() => {
+    let active = true;
+    void getPublicSiteConfig()
+      .then((nextConfig) => {
+        if (active) {
+          setSiteConfig(nextConfig);
+        }
+      })
+      .catch(() => {
+        // Keep fallback legal titles; login must remain usable when config API is unavailable.
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const handlePhoneChange = (value: string) => {
     if (phoneLocked) {
@@ -344,11 +373,19 @@ export function LoginPage() {
 
               <label className={styles.agreement}>
                 <input checked={agreed} onChange={(event) => setAgreed(event.target.checked)} type="checkbox" />
-                <span>
-                  登录即表示同意
-                  <Link to="/legal/user-agreement">《用户协议》</Link>
-                  和
-                  <Link to="/legal/privacy-policy">《隐私政策》</Link>
+                <span className={styles.agreementCopy}>
+                  <span className={styles.agreementLine}>
+                    登录即表示同意
+                    <Link to="/legal/user-agreement">《{legalTitles.userAgreement}》</Link>
+                    、
+                    <Link to="/legal/privacy-policy">《{legalTitles.privacyPolicy}》</Link>
+                  </span>
+                  <span className={styles.agreementLine}>
+                    并已阅读
+                    <Link to="/legal/personal-info-collection-list">《{legalTitles.personalInfoCollectionList}》</Link>
+                    、
+                    <Link to="/legal/third-party-sharing">《{legalTitles.thirdPartySharing}》</Link>
+                  </span>
                 </span>
               </label>
             </form>

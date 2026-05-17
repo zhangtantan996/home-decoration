@@ -72,9 +72,13 @@ const PUBLIC_COMPLIANCE_CONFIG_KEYS = {
   privacyEmail: "public.privacy_email",
   userAgreement: "public.user_agreement",
   privacyPolicy: "public.privacy_policy",
+  personalInfoCollectionList: "public.personal_info_collection_list",
   transactionRules: "public.transaction_rules",
   refundRules: "public.refund_rules",
   merchantOnboardingRules: "public.merchant_onboarding",
+  merchantOnboardingAgreement: "public.merchant_onboarding_agreement",
+  platformRules: "public.platform_rules",
+  privacyDataProcessing: "public.privacy_data_processing",
   thirdPartySharing: "public.third_party_sharing",
   legalVersion: "public.legal_version",
   legalEffectiveDate: "public.legal_effective_date",
@@ -82,6 +86,7 @@ const PUBLIC_COMPLIANCE_CONFIG_KEYS = {
 
 const LEGAL_DOCUMENT_CONFIGS = [
   {
+    category: "公开侧",
     title: "用户服务协议",
     slug: "user-agreement",
     formName: "userAgreement",
@@ -89,6 +94,7 @@ const LEGAL_DOCUMENT_CONFIGS = [
     description: "账号注册、预约报价、交易确认、退款售后和平台边界。",
   },
   {
+    category: "公开侧",
     title: "隐私政策",
     slug: "privacy-policy",
     formName: "privacyPolicy",
@@ -96,6 +102,15 @@ const LEGAL_DOCUMENT_CONFIGS = [
     description: "个人信息收集、使用、保存、共享和用户权利。",
   },
   {
+    category: "公开侧",
+    title: "个人信息收集清单",
+    slug: "personal-info-collection-list",
+    formName: "personalInfoCollectionList",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.personalInfoCollectionList,
+    description: "按字段说明手机号、地址、房屋信息、支付和沟通记录等收集目的与必要性。",
+  },
+  {
+    category: "公开侧",
     title: "交易规则",
     slug: "transaction-rules",
     formName: "transactionRules",
@@ -103,6 +118,7 @@ const LEGAL_DOCUMENT_CONFIGS = [
     description: "平台撮合、交易流程管理、履约协同和线下合同关系。",
   },
   {
+    category: "公开侧",
     title: "退款与售后规则",
     slug: "refund-rules",
     formName: "refundRules",
@@ -110,6 +126,7 @@ const LEGAL_DOCUMENT_CONFIGS = [
     description: "退款条件、处理时限、争议材料和平台介入条件。",
   },
   {
+    category: "公开侧",
     title: "商家入驻规则",
     slug: "merchant-rules",
     formName: "merchantOnboardingRules",
@@ -117,6 +134,31 @@ const LEGAL_DOCUMENT_CONFIGS = [
     description: "设计师、工长、装修公司、主材商准入与清退规则。",
   },
   {
+    category: "商家侧",
+    title: "商家入驻协议",
+    slug: "merchant-onboarding-agreement",
+    formName: "merchantOnboardingAgreement",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingAgreement,
+    description: "商家登录/入驻时勾选的协议正文，说明准入、账号安全、服务责任和争议解决。",
+  },
+  {
+    category: "商家侧",
+    title: "商家平台规则",
+    slug: "platform-rules",
+    formName: "platformRules",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.platformRules,
+    description: "商家经营、内容发布、交易履约、投诉处理和违规约束。",
+  },
+  {
+    category: "商家侧",
+    title: "商家隐私与数据处理条款",
+    slug: "privacy-data-processing",
+    formName: "privacyDataProcessing",
+    configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyDataProcessing,
+    description: "商家入驻和商家中心使用过程中的数据处理规则。",
+  },
+  {
+    category: "公开侧",
     title: "第三方信息共享清单",
     slug: "third-party-sharing",
     formName: "thirdPartySharing",
@@ -142,9 +184,13 @@ interface ComplianceFormValues {
   privacyEmail?: string;
   userAgreement?: string;
   privacyPolicy?: string;
+  personalInfoCollectionList?: string;
   transactionRules?: string;
   refundRules?: string;
   merchantOnboardingRules?: string;
+  merchantOnboardingAgreement?: string;
+  platformRules?: string;
+  privacyDataProcessing?: string;
   thirdPartySharing?: string;
   legalVersion?: string;
   legalEffectiveDate?: string;
@@ -871,9 +917,9 @@ const SystemSettings: React.FC = () => {
   );
 
   const legalVersionPreview =
-    readComplianceValue("legalVersion") || "v1.0.0-20260430";
+    readComplianceValue("legalVersion") || "v1.2.0-20260514";
   const legalEffectiveDatePreview =
-    readComplianceValue("legalEffectiveDate") || "2026-04-30";
+    readComplianceValue("legalEffectiveDate") || "2026-05-14";
   const customerPhonePreview =
     readComplianceValue("customerPhone") || "17764774797";
   const customerEmailPreview = readComplianceValue("customerEmail");
@@ -990,6 +1036,10 @@ const SystemSettings: React.FC = () => {
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement] || "",
         privacyPolicy:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy] || "",
+        personalInfoCollectionList:
+          bizConfigMap[
+            PUBLIC_COMPLIANCE_CONFIG_KEYS.personalInfoCollectionList
+          ] || "",
         transactionRules:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules] || "",
         refundRules:
@@ -997,14 +1047,22 @@ const SystemSettings: React.FC = () => {
         merchantOnboardingRules:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules] ||
           "",
+        merchantOnboardingAgreement:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingAgreement] ||
+          "",
+        platformRules:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.platformRules] || "",
+        privacyDataProcessing:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyDataProcessing] ||
+          "",
         thirdPartySharing:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing] || "",
         legalVersion:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion] ||
-          "v1.0.0-20260430",
+          "v1.2.0-20260514",
         legalEffectiveDate:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate] ||
-          "2026-04-30",
+          "2026-05-14",
       });
       bizForm.setFieldsValue({
         surveyDepositDefault: Number(
@@ -1270,6 +1328,9 @@ const SystemSettings: React.FC = () => {
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy]: String(
         normalizeLegalText(readValue("privacyPolicy")),
       ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.personalInfoCollectionList]: String(
+        normalizeLegalText(readValue("personalInfoCollectionList")),
+      ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules]: String(
         normalizeLegalText(readValue("transactionRules")),
       ),
@@ -1278,6 +1339,15 @@ const SystemSettings: React.FC = () => {
       ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules]: String(
         normalizeLegalText(readValue("merchantOnboardingRules")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingAgreement]: String(
+        normalizeLegalText(readValue("merchantOnboardingAgreement")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.platformRules]: String(
+        normalizeLegalText(readValue("platformRules")),
+      ),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyDataProcessing]: String(
+        normalizeLegalText(readValue("privacyDataProcessing")),
       ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing]: String(
         normalizeLegalText(readValue("thirdPartySharing")),
@@ -2196,6 +2266,12 @@ const SystemSettings: React.FC = () => {
               >
                 正文通过独立文档维护，前台按公开法务页展示。暂不使用 Word/PDF 上传作为主内容，避免移动端阅读、搜索和版本对比困难。
               </Typography.Text>
+              <Typography.Text
+                type="secondary"
+                className="system-settings-block-hint"
+              >
+                当前分为公开侧 7 份文档和商家侧 3 份协议。不是重复文档，而是展示对象不同。
+              </Typography.Text>
               <Row gutter={16}>
                 <Col span={12}>
                   <Form.Item
@@ -2226,11 +2302,26 @@ const SystemSettings: React.FC = () => {
                     dataIndex: "title",
                     render: (_: unknown, row) => (
                       <Space direction="vertical" size={2}>
-                        <Typography.Text strong>{row.title}</Typography.Text>
+                        <Space size={8}>
+                          <Typography.Text strong>{row.title}</Typography.Text>
+                          <Tag color={row.category === "商家侧" ? "purple" : "blue"}>
+                            {row.category}
+                          </Tag>
+                        </Space>
                         <Typography.Text type="secondary">
                           {row.description}
                         </Typography.Text>
                       </Space>
+                    ),
+                  },
+                  {
+                    title: "适用端",
+                    dataIndex: "category",
+                    width: 110,
+                    render: (category: string) => (
+                      <Tag color={category === "商家侧" ? "purple" : "blue"}>
+                        {category}
+                      </Tag>
                     ),
                   },
                   {

@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { ArrowLeftOutlined, CalendarOutlined, FileTextOutlined, TagOutlined } from '@ant-design/icons';
 import { Button, Layout, Typography } from 'antd';
 import { useNavigate } from 'react-router-dom';
@@ -6,25 +6,92 @@ import { useNavigate } from 'react-router-dom';
 const { Content } = Layout;
 const { Title, Paragraph, Text } = Typography;
 
-export interface LegalSection {
-    title: string;
-    paragraphs: string[];
-}
-
 interface LegalDocumentLayoutProps {
     title: string;
     version: string;
     effectiveDate: string;
-    sections: LegalSection[];
+    content: string;
+    brandName?: string;
+    companyName?: string;
+    customerPhone?: string;
 }
+
+interface ParsedSection {
+    title: string;
+    paragraphs: string[];
+    bullets: string[];
+}
+
+const parseSections = (content: string): ParsedSection[] => {
+    const blocks = String(content || '')
+        .split(/\n{2,}/)
+        .map((block) => block.trim())
+        .filter(Boolean);
+
+    const sections: ParsedSection[] = [];
+    let current: ParsedSection | null = null;
+
+    blocks.forEach((block, index) => {
+        const lines = block.split(/\n/).map((line) => line.trim()).filter(Boolean);
+        if (lines.length === 0) {
+            return;
+        }
+        const [firstLine, ...restLines] = lines;
+        if (firstLine.startsWith('## ')) {
+            current = {
+                title: firstLine.slice(3),
+                paragraphs: [],
+                bullets: [],
+            };
+            sections.push(current);
+            return;
+        }
+        if (lines.every((line) => line.startsWith('- '))) {
+            if (!current) {
+                current = {
+                    title: index === 0 ? '协议正文' : `说明 ${index + 1}`,
+                    paragraphs: [],
+                    bullets: [],
+                };
+                sections.push(current);
+            }
+            current.bullets.push(...lines.map((line) => line.slice(2)));
+            return;
+        }
+        if (!current) {
+            current = {
+                title: index === 0 ? '协议正文' : `说明 ${index + 1}`,
+                paragraphs: [],
+                bullets: [],
+            };
+            sections.push(current);
+        }
+        if (firstLine.startsWith('### ')) {
+            current.paragraphs.push(firstLine.slice(4));
+            if (restLines.length > 0) {
+                current.paragraphs.push(restLines.join('\n'));
+            }
+            return;
+        }
+        current.paragraphs.push(block);
+    });
+
+    return sections.length > 0
+        ? sections
+        : [{ title: '协议正文', paragraphs: [String(content || '').trim()], bullets: [] }];
+};
 
 const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
     title,
     version,
     effectiveDate,
-    sections,
+    content,
+    brandName = '禾泽云',
+    companyName = '陕西禾泽云创科技有限公司',
+    customerPhone = '17764774797',
 }) => {
     const navigate = useNavigate();
+    const sections = useMemo(() => parseSections(content), [content]);
 
     useEffect(() => {
         const style = document.createElement('style');
@@ -132,9 +199,20 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                 line-height: 1.85;
                 margin-bottom: 10px !important;
                 padding-left: 8px;
+                white-space: pre-wrap;
             }
             .legal-paragraph:last-child {
                 margin-bottom: 0 !important;
+            }
+            .legal-bullet-list {
+                margin: 0;
+                padding-left: 28px;
+                color: #4a5568;
+            }
+            .legal-bullet-item {
+                font-size: 14.5px;
+                line-height: 1.85;
+                margin-bottom: 8px;
             }
             .legal-toc-card {
                 background: rgba(240, 245, 255, 0.8);
@@ -197,7 +275,6 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                     zIndex: 1,
                 }}
             >
-                {/* Back Button */}
                 <Button
                     type="link"
                     icon={<ArrowLeftOutlined />}
@@ -215,7 +292,6 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                     返回上一页
                 </Button>
 
-                {/* Header Card */}
                 <div className="legal-header-card">
                     <div style={{ position: 'relative', zIndex: 1 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
@@ -230,7 +306,7 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                             </div>
                             <div>
                                 <div style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, letterSpacing: 1, marginBottom: 4 }}>
-                                    禾泽云家装平台 · 法律文件
+                                    {brandName} · 商家法务文件
                                 </div>
                                 <Title level={2} style={{ color: '#fff', margin: 0, fontSize: 26, fontWeight: 700 }}>
                                     {title}
@@ -254,7 +330,6 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                     </div>
                 </div>
 
-                {/* Table of Contents */}
                 {sections.length > 3 && (
                     <div className="legal-toc-card">
                         <Text strong style={{ fontSize: 13, color: '#1890ff', display: 'block', marginBottom: 12, letterSpacing: 0.5 }}>
@@ -262,7 +337,7 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                         </Text>
                         {sections.map((section, idx) => (
                             <div
-                                key={idx}
+                                key={section.title}
                                 className="legal-toc-item"
                                 onClick={() => scrollToSection(idx)}
                             >
@@ -273,7 +348,6 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                     </div>
                 )}
 
-                {/* Sections */}
                 {sections.map((section, idx) => (
                     <div id={`section-${idx}`} key={section.title} className="legal-section-card">
                         <div className="legal-section-title">
@@ -288,10 +362,18 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                                 {paragraph}
                             </Paragraph>
                         ))}
+                        {section.bullets.length > 0 ? (
+                            <ul className="legal-bullet-list">
+                                {section.bullets.map((bullet, bulletIdx) => (
+                                    <li key={`${section.title}-bullet-${bulletIdx}`} className="legal-bullet-item">
+                                        {bullet}
+                                    </li>
+                                ))}
+                            </ul>
+                        ) : null}
                     </div>
                 ))}
 
-                {/* Footer */}
                 <div style={{
                     marginTop: 32,
                     padding: '20px 28px',
@@ -301,7 +383,7 @@ const LegalDocumentLayout: React.FC<LegalDocumentLayoutProps> = ({
                     textAlign: 'center',
                 }}>
                     <Text style={{ color: '#94a3b8', fontSize: 13 }}>
-                        © {new Date().getFullYear()} 禾泽云信息技术有限公司 · 保留一切权利
+                        © {new Date().getFullYear()} {companyName} · 客服电话：{customerPhone}
                     </Text>
                 </div>
             </Content>

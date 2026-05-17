@@ -1,11 +1,18 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Form, Input, Button, message, Layout, Typography, Divider, Grid } from 'antd';
 import { PhoneOutlined, SafetyOutlined, ArrowRightOutlined } from '@ant-design/icons';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import axios from 'axios';
 import { MerchantApiError, merchantAuthApi, type MerchantLoginGuideData, type MerchantLoginNextAction } from '../../services/merchantApi';
+import {
+    fallbackPublicSiteConfig,
+    findLegalDocument,
+    getPublicSiteConfig,
+    type PublicSiteConfig,
+} from '../../services/publicSiteConfig';
 import { useMerchantAuthStore } from '../../stores/merchantAuthStore';
 import merchantAppIcon from '../../assets/branding/company-logo.png';
+import { MERCHANT_LEGAL_ROUTES } from '../../constants/merchantLegal';
 import { MERCHANT_THEME } from '../../constants/merchantTheme';
 import { readSafeErrorMessage } from '../../utils/userFacingText';
 
@@ -33,12 +40,18 @@ const MerchantLogin: React.FC = () => {
     const [sendingCode, setSendingCode] = useState(false);
     const [countdown, setCountdown] = useState(0);
     const [phoneLocked, setPhoneLocked] = useState(false);
+    const [siteConfig, setSiteConfig] = useState<PublicSiteConfig>(fallbackPublicSiteConfig);
     const timerRef = useRef<number | null>(null);
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const screens = useBreakpoint();
     const [form] = Form.useForm();
     const requestedPath = normalizeRedirectPath(searchParams.get('redirect'));
+    const legalTitles = useMemo(() => ({
+        onboardingAgreement: findLegalDocument(siteConfig, 'merchant-onboarding-agreement').title,
+        platformRules: findLegalDocument(siteConfig, 'platform-rules').title,
+        privacyDataProcessing: findLegalDocument(siteConfig, 'privacy-data-processing').title,
+    }), [siteConfig]);
 
     // 手机号校验规则
     const phoneRules = [
@@ -65,6 +78,22 @@ const MerchantLogin: React.FC = () => {
         const value = e.target.value.replace(/\D/g, '').slice(0, 6);
         form.setFieldsValue({ code: value });
     };
+
+    useEffect(() => {
+        let active = true;
+        void getPublicSiteConfig()
+            .then((nextConfig) => {
+                if (active) {
+                    setSiteConfig(nextConfig);
+                }
+            })
+            .catch(() => {
+                // Keep fallback legal titles; login must remain usable when config API is unavailable.
+            });
+        return () => {
+            active = false;
+        };
+    }, []);
 
     useEffect(() => {
         // Init inject style for animated elements and custom ant overrides
@@ -418,6 +447,21 @@ const MerchantLogin: React.FC = () => {
                                 立即登录
                             </Button>
                         </Form.Item>
+
+                        <div style={{
+                            marginTop: 18,
+                            textAlign: 'center',
+                            color: '#64748b',
+                            fontSize: 13,
+                            lineHeight: 1.8,
+                        }}>
+                            登录或入驻即表示你已阅读
+                            <Link to={MERCHANT_LEGAL_ROUTES.onboardingAgreement}>《{legalTitles.onboardingAgreement}》</Link>
+                            、
+                            <Link to={MERCHANT_LEGAL_ROUTES.platformRules}>《{legalTitles.platformRules}》</Link>
+                            、
+                            <Link to={MERCHANT_LEGAL_ROUTES.privacyDataProcessing}>《{legalTitles.privacyDataProcessing}》</Link>
+                        </div>
 
                         <div style={{
                             display: 'flex',
