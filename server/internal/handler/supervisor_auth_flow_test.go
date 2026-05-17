@@ -474,6 +474,71 @@ func TestAdminCreateSupervisorAssignmentReactivatesRemovedAssignment(t *testing.
 	}
 }
 
+func TestAdminSupervisorAssignmentWritesAuditOnAssignAndRemove(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	setupSupervisorFlowTestDB(t)
+	if err := repository.DB.AutoMigrate(&model.Project{}); err != nil {
+		t.Fatalf("migrate project: %v", err)
+	}
+
+	account := model.SupervisorAccount{Phone: "13800139106", Status: 1}
+	if err := repository.DB.Create(&account).Error; err != nil {
+		t.Fatalf("seed account: %v", err)
+	}
+	profile := model.SupervisorProfile{UserID: 2006, SupervisorAccountID: &account.ID, Phone: account.Phone, RealName: "审计监理", Status: 1, Verified: true}
+	if err := repository.DB.Create(&profile).Error; err != nil {
+		t.Fatalf("seed profile: %v", err)
+	}
+	project := model.Project{Name: "审计测试项目", Status: 1}
+	if err := repository.DB.Create(&project).Error; err != nil {
+		t.Fatalf("seed project: %v", err)
+	}
+
+	assignRec := httptest.NewRecorder()
+	assignCtx, _ := gin.CreateTestContext(assignRec)
+	assignCtx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/admin/supervisor-assignments", bytes.NewBufferString(fmt.Sprintf(`{"projectId":%d,"supervisorId":%d}`, project.ID, profile.ID)))
+	assignCtx.Request.Header.Set("Content-Type", "application/json")
+	assignCtx.Set("adminId", uint64(99))
+	assignCtx.Set("admin_reason", "分配监理")
+
+	AdminCreateSupervisorAssignment(assignCtx)
+
+	if decodeSupervisorEnvelope(t, assignRec).Code != 0 {
+		t.Fatalf("assign should succeed, body=%s", assignRec.Body.String())
+	}
+
+	var assignment model.ProjectSupervisorAssignment
+	if err := repository.DB.Where("project_id = ? AND supervisor_id = ?", project.ID, profile.ID).First(&assignment).Error; err != nil {
+		t.Fatalf("load assignment: %v", err)
+	}
+	var assignAudit model.AuditLog
+	if err := repository.DB.Where("operation_type = ? AND resource_type = ? AND resource_id = ?", "assign_supervisor", "project_supervisor_assignment", assignment.ID).
+		Order("id DESC").
+		First(&assignAudit).Error; err != nil {
+		t.Fatalf("expected assign audit: %v", err)
+	}
+
+	deleteRec := httptest.NewRecorder()
+	deleteCtx, _ := gin.CreateTestContext(deleteRec)
+	deleteCtx.Request = httptest.NewRequest(http.MethodDelete, fmt.Sprintf("/api/v1/admin/supervisor-assignments/%d", assignment.ID), nil)
+	deleteCtx.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", assignment.ID)}}
+	deleteCtx.Set("adminId", uint64(99))
+	deleteCtx.Set("admin_reason", "移除监理")
+
+	AdminDeleteSupervisorAssignment(deleteCtx)
+
+	if decodeSupervisorEnvelope(t, deleteRec).Code != 0 {
+		t.Fatalf("delete should succeed, body=%s", deleteRec.Body.String())
+	}
+
+	var removeAudit model.AuditLog
+	if err := repository.DB.Where("operation_type = ? AND resource_type = ? AND resource_id = ?", "remove_supervisor", "project_supervisor_assignment", assignment.ID).
+		Order("id DESC").
+		First(&removeAudit).Error; err != nil {
+		t.Fatalf("expected remove audit: %v", err)
+	}
+}
+
 func TestLegacyAdminSupervisorStatusUpdatesLinkedAccount(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	setupSupervisorFlowTestDB(t)

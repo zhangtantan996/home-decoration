@@ -26,8 +26,37 @@ type AdminLoginRequest struct {
 	OTPCode  string `json:"otpCode"`
 }
 
+const opsWorkspaceAccessDeniedMessage = "该账号无 Ops 工作台访问权限，请使用管理后台对应模块"
+
+var opsWorkspaceRoleKeys = map[string]struct{}{
+	"operations":      {},
+	"product_manager": {},
+	"system_admin":    {},
+	"super_admin":     {},
+}
+
+var opsWorkspacePermissions = map[string]struct{}{
+	"dashboard:view":         {},
+	"provider:designer:list": {},
+	"provider:company:list":  {},
+	"provider:foreman:list":  {},
+	"material:shop:list":     {},
+	"booking:list":           {},
+	"system:case:view":       {},
+	"system:log:list":        {},
+}
+
 // AdminLogin 管理员登录
 func AdminLogin(c *gin.Context) {
+	adminLogin(c, false)
+}
+
+// AdminOpsLogin Ops 工作台登录
+func AdminOpsLogin(c *gin.Context) {
+	adminLogin(c, true)
+}
+
+func adminLogin(c *gin.Context, opsOnly bool) {
 	var req AdminLoginRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
@@ -85,6 +114,14 @@ func AdminLogin(c *gin.Context) {
 		increaseAdminLoginFail(failKey, securitySvc.LoginLockDuration())
 		auditAdminSecurityEvent(admin.ID, "login_failed", "sys_admin", admin.ID, "invalid_password", getAdminClientIP(c), c.Request.UserAgent(), nil)
 		response.Unauthorized(c, "用户名或密码错误")
+		return
+	}
+
+	if opsOnly && !adminHasOpsWorkspaceAccess(&admin) {
+		auditAdminSecurityEvent(admin.ID, "login_blocked", "sys_admin", admin.ID, "ops_forbidden_role", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
+			"roles": getRoleKeys(activeAdminRoles(admin.Roles)),
+		})
+		response.Forbidden(c, opsWorkspaceAccessDeniedMessage)
 		return
 	}
 
@@ -718,12 +755,41 @@ func getRoleKeys(roles []model.SysRole) []string {
 	return keys
 }
 
+func adminHasOpsWorkspaceAccess(admin *model.SysAdmin) bool {
+	if admin == nil {
+		return false
+	}
+	if admin.IsSuperAdmin {
+		return true
+	}
+	for _, role := range activeAdminRoles(admin.Roles) {
+		if _, ok := opsWorkspaceRoleKeys[strings.TrimSpace(role.Key)]; ok {
+			return true
+		}
+	}
+	if repository.DB == nil {
+		return false
+	}
+	for _, permission := range getAdminPermissions(admin) {
+		if permission == "*:*:*" {
+			return true
+		}
+		if _, ok := opsWorkspacePermissions[strings.TrimSpace(permission)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
 // ==================== 角色管理 ====================
 
 // AdminListRoles 获取角色列表
 func AdminListRoles(c *gin.Context) {
 	var roles []model.SysRole
-	repository.DB.Order("sort ASC, id ASC").Find(&roles)
+	repository.DB.
+		Where("key <> ?", service.DeprecatedRoleProjectSupervisor).
+		Order("sort ASC, id ASC").
+		Find(&roles)
 	response.Success(c, gin.H{"list": roles})
 }
 
@@ -733,6 +799,15 @@ func AdminCreateRole(c *gin.Context) {
 	var role model.SysRole
 	if err := c.ShouldBindJSON(&role); err != nil {
 		response.BadRequest(c, "参数错误")
+		return
+	}
+	role.Key = strings.TrimSpace(role.Key)
+	if err := service.ValidateDeprecatedAdminRoleMutation(role.Key); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := service.ValidateProtectedRoleSourceMutationForOperator(adminID, role.Key); err != nil {
+		respondAdminRBACMutationError(c, err, "无权调整高权限保留角色")
 		return
 	}
 
@@ -771,34 +846,55 @@ func AdminUpdateRole(c *gin.Context) {
 		return
 	}
 
-	// ✅ 使用结构体，只允许更新指定字段
+	// PATCH 语义：只更新请求中显式传入的字段，避免 Go 零值误写禁用状态。
 	var req struct {
-		Name   string `json:"name"`
-		Key    string `json:"key"`
-		Sort   int    `json:"sort"`
-		Status int8   `json:"status"`
-		Remark string `json:"remark"`
+		Name   *string `json:"name"`
+		Key    *string `json:"key"`
+		Sort   *int    `json:"sort"`
+		Status *int8   `json:"status"`
+		Remark *string `json:"remark"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-	if service.IsReservedSeparationRoleKey(role.Key) && req.Key != "" && req.Key != role.Key {
-		response.BadRequest(c, "三员分立保留角色不允许修改标识")
-		return
-	}
-	if !service.IsReservedSeparationRoleKey(role.Key) && service.IsReservedSeparationRoleKey(req.Key) {
-		response.BadRequest(c, "不能把普通角色修改为三员分立保留角色")
-		return
-	}
 	existingRole := role
+	nextRoleKey := role.Key
+	if req.Key != nil {
+		nextRoleKey = strings.TrimSpace(*req.Key)
+	}
+	if err := service.ValidateDeprecatedAdminRoleMutation(role.Key, nextRoleKey); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := service.ValidateProtectedRoleSourceMutationForOperator(adminID, role.Key, nextRoleKey); err != nil {
+		respondAdminRBACMutationError(c, err, "无权调整高权限保留角色")
+		return
+	}
 
-	// ✅ 显式更新字段
-	role.Name = req.Name
-	role.Key = req.Key
-	role.Sort = req.Sort
-	role.Status = req.Status
-	role.Remark = req.Remark
+	if req.Key != nil {
+		if service.IsReservedSeparationRoleKey(role.Key) && nextRoleKey != "" && nextRoleKey != role.Key {
+			response.BadRequest(c, "三员分立保留角色不允许修改标识")
+			return
+		}
+		if !service.IsReservedSeparationRoleKey(role.Key) && service.IsReservedSeparationRoleKey(nextRoleKey) {
+			response.BadRequest(c, "不能把普通角色修改为三员分立保留角色")
+			return
+		}
+		role.Key = nextRoleKey
+	}
+	if req.Name != nil {
+		role.Name = strings.TrimSpace(*req.Name)
+	}
+	if req.Sort != nil {
+		role.Sort = *req.Sort
+	}
+	if req.Status != nil {
+		role.Status = *req.Status
+	}
+	if req.Remark != nil {
+		role.Remark = strings.TrimSpace(*req.Remark)
+	}
 
 	beforeState := map[string]interface{}{
 		"role": snapshotSysRoleForAudit(existingRole),
@@ -815,7 +911,7 @@ func AdminUpdateRole(c *gin.Context) {
 			OperationType: "update_role",
 			ResourceType:  "sys_role",
 			ResourceID:    role.ID,
-			Reason:        readAdminReason(c, req.Remark, "更新角色"),
+			Reason:        readAdminReason(c, role.Remark, "更新角色"),
 			Result:        "success",
 			BeforeState:   beforeState,
 			AfterState: map[string]interface{}{
@@ -839,6 +935,14 @@ func AdminDeleteRole(c *gin.Context) {
 	var role model.SysRole
 	if err := repository.DB.First(&role, roleID).Error; err != nil {
 		response.NotFound(c, "角色不存在")
+		return
+	}
+	if err := service.ValidateDeprecatedAdminRoleMutation(role.Key); err != nil {
+		response.NotFound(c, "角色不存在")
+		return
+	}
+	if err := service.ValidateProtectedRoleSourceMutationForOperator(adminID, role.Key); err != nil {
+		respondAdminRBACMutationError(c, err, "无权调整高权限保留角色")
 		return
 	}
 	if service.IsReservedSeparationRoleKey(role.Key) {
@@ -898,7 +1002,17 @@ func AdminDeleteRole(c *gin.Context) {
 
 // AdminGetRoleMenus 获取角色已分配的菜单权限
 func AdminGetRoleMenus(c *gin.Context) {
-	roleID := c.Param("id")
+	roleID := parseUint64(c.Param("id"))
+
+	var role model.SysRole
+	if err := repository.DB.First(&role, roleID).Error; err != nil {
+		response.NotFound(c, "角色不存在")
+		return
+	}
+	if err := service.ValidateDeprecatedAdminRoleMutation(role.Key); err != nil {
+		response.NotFound(c, "角色不存在")
+		return
+	}
 
 	var roleMenus []model.SysRoleMenu
 	repository.DB.Where("role_id = ?", roleID).Find(&roleMenus)
@@ -923,10 +1037,12 @@ func AdminAssignRoleMenus(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
-	if _, role, err := service.ValidateRoleMenuAssignment(roleID, req.MenuIDs); err != nil {
+	role, menus, err := service.ValidateRoleMenuAssignmentForOperator(adminID, roleID, req.MenuIDs)
+	if err != nil {
 		respondAdminRBACMutationError(c, err, "角色权限分配不合法")
 		return
-	} else if role == nil {
+	}
+	if role == nil {
 		response.NotFound(c, "角色不存在")
 		return
 	}
@@ -943,10 +1059,10 @@ func AdminAssignRoleMenus(c *gin.Context) {
 	tx.Where("role_id = ?", roleID).Delete(&model.SysRoleMenu{})
 
 	// 创建新关联
-	for _, menuID := range req.MenuIDs {
+	for _, menu := range menus {
 		if err := tx.Create(&model.SysRoleMenu{
 			RoleID: roleID,
-			MenuID: menuID,
+			MenuID: menu.ID,
 		}).Error; err != nil {
 			tx.Rollback()
 			response.ServerError(c, "分配菜单失败")

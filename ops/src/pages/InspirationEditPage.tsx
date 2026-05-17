@@ -1,6 +1,6 @@
 import { ArrowLeftOutlined, SaveOutlined } from '@ant-design/icons';
 import { Button, Card, Form, Input, InputNumber, Select, Space, Switch, Typography } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MediaGalleryInput from '../components/MediaGalleryInput';
 import MediaPathInput from '../components/MediaPathInput';
@@ -38,6 +38,47 @@ const providerServiceArea = (record: ProviderItem) => {
   return record.serviceArea;
 };
 
+type ProviderSelectOption = {
+  value: string;
+  label: ReactNode;
+  title: string;
+  meta: string;
+  coverText?: string;
+  previewUrl?: string;
+};
+
+const renderProviderInlineLabel = (option: { title: string; meta: string; coverText?: string; previewUrl?: string }) => (
+  <div className="ops-project-party-inline">
+    <div className="ops-project-party-inline__cover ops-project-party-inline__cover--provider">
+      {option.previewUrl ? (
+        <img src={option.previewUrl} alt={option.title} />
+      ) : (
+        <span>{String(option.coverText || '商').slice(0, 1)}</span>
+      )}
+    </div>
+    <div className="ops-project-party-inline__body">
+      <strong>{option.title}</strong>
+      <span>{option.meta}</span>
+    </div>
+  </div>
+);
+
+const renderProviderOptionCard = (option: { title: string; meta: string; coverText?: string; previewUrl?: string }) => (
+  <div className="ops-project-party-option">
+    <div className="ops-project-party-option__cover ops-project-party-option__cover--provider">
+      {option.previewUrl ? (
+        <img src={option.previewUrl} alt={option.title} />
+      ) : (
+        <span>{String(option.coverText || '商').slice(0, 1)}</span>
+      )}
+    </div>
+    <div className="ops-project-party-option__body">
+      <strong>{option.title}</strong>
+      <span>{option.meta}</span>
+    </div>
+  </div>
+);
+
 const InspirationEditPage = () => {
   const { id, caseId, providerId: fixedProviderId, kind: fixedProviderKind } = useParams();
   const navigate = useNavigate();
@@ -45,6 +86,7 @@ const InspirationEditPage = () => {
   const [form] = Form.useForm();
   const [record, setRecord] = useState<CaseItem | null>(null);
   const [providers, setProviders] = useState<ProviderItem[]>([]);
+  const [providerSearchKeyword, setProviderSearchKeyword] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const currentId = id || caseId || 'new';
@@ -128,20 +170,39 @@ const InspirationEditPage = () => {
     void load();
   }, [backTo, currentId, fixedProviderId, form, isNew, navigate, searchParams]);
 
-  const providerOptions = [
+  const providerOptions: ProviderSelectOption[] = [
     {
       value: OFFICIAL_PROVIDER_VALUE,
-      label: '官方',
-      typeLabel: '平台内容',
-      serviceArea: '不关联具体服务商',
+      title: '官方',
+      meta: '平台内容 · 不关联具体服务商',
+      coverText: '官',
+      label: renderProviderInlineLabel({ title: '官方', meta: '平台内容 · 不关联具体服务商', coverText: '官' }),
     },
-    ...providers.map((item) => ({
-      value: String(item.id),
-      label: providerDisplayName(item),
-      typeLabel: providerTypeLabel(item.type),
-      serviceArea: providerServiceArea(item),
-    })),
+    ...providers.map((item) => {
+      const title = providerDisplayName(item);
+      const meta = `${providerTypeLabel(item.type)} · ${providerServiceArea(item)}`;
+      const previewUrl = getAssetPreviewUrl(item.avatar || item.coverImage);
+      return {
+        value: String(item.id),
+        title,
+        meta,
+        coverText: providerTypeLabel(item.type).slice(0, 1),
+        previewUrl,
+        label: renderProviderInlineLabel({ title, meta, coverText: providerTypeLabel(item.type).slice(0, 1), previewUrl }),
+      };
+    }),
   ];
+  const selectedProviderOption = useMemo(() => {
+    const currentValue = selectedProviderValue === undefined || selectedProviderValue === null || selectedProviderValue === ''
+      ? null
+      : String(selectedProviderValue);
+    if (!currentValue) return null;
+    return providerOptions.find((item) => item.value === currentValue) || null;
+  }, [providerOptions, selectedProviderValue]);
+
+  const resetProviderSearch = () => {
+    setProviderSearchKeyword('');
+  };
 
   const save = async () => {
     const values = await form.validateFields();
@@ -228,49 +289,40 @@ const InspirationEditPage = () => {
               </Form.Item>
               <Form.Item name="providerId" label="关联服务商">
                 <Select
-                  showSearch
+                  showSearch={!selectedProviderOption}
                   disabled={isSupplyScoped}
                   allowClear={!isSupplyScoped}
+                  searchValue={selectedProviderOption ? '' : providerSearchKeyword}
                   placeholder={isSupplyScoped ? '当前服务商已固定' : '选择关联服务商，不选则为官方'}
-                  optionFilterProp="label"
-                  options={providerOptions}
-                  optionRender={(option) => (
-                    <div className="ops-provider-option">
-                      <strong>{option.data.label}</strong>
-                      <span>{option.data.typeLabel} · {option.data.serviceArea}</span>
-                    </div>
-                  )}
+                  filterOption={false}
+                  optionLabelProp="label"
+                  suffixIcon={null}
+                  popupClassName="ops-project-party-dropdown"
+                  className={`ops-project-party-select${selectedProviderOption ? ' ops-project-party-select--filled' : ''}`}
+                  open={isSupplyScoped || selectedProviderOption ? false : Boolean(providerSearchKeyword)}
+                  onSearch={(value) => setProviderSearchKeyword(String(value || '').trim())}
+                  onBlur={resetProviderSearch}
+                  onChange={() => {
+                    setProviderSearchKeyword('');
+                  }}
+                  onClear={resetProviderSearch}
+                  options={selectedProviderOption
+                    ? [selectedProviderOption]
+                    : providerSearchKeyword
+                      ? providerOptions.filter((option) => {
+                          if (option.value === OFFICIAL_PROVIDER_VALUE) return false;
+                          const keyword = providerSearchKeyword.toLowerCase();
+                          return `${option.title} ${option.meta}`.toLowerCase().includes(keyword);
+                        })
+                      : []}
+                  optionRender={(option) => renderProviderOptionCard({
+                    title: option.data.title,
+                    meta: option.data.meta,
+                    coverText: option.data.coverText,
+                    previewUrl: option.data.previewUrl,
+                  })}
+                  notFoundContent={providerSearchKeyword ? '暂无匹配服务商' : null}
                 />
-              </Form.Item>
-              <Form.Item noStyle shouldUpdate={(prev, current) => prev.providerId !== current.providerId}>
-                {({ getFieldValue }) => {
-                  const selectedProviderValue = String(getFieldValue('providerId') || OFFICIAL_PROVIDER_VALUE);
-                  if (selectedProviderValue === OFFICIAL_PROVIDER_VALUE) {
-                    return (
-                      <div className="ops-provider-linked-card">
-                        <div className="ops-primary-cell__cover"><span>官</span></div>
-                        <div>
-                          <strong>官方</strong>
-                          <span>平台内容 · 不关联具体服务商</span>
-                        </div>
-                      </div>
-                    );
-                  }
-                  const selected = providers.find((item) => String(item.id) === selectedProviderValue);
-                  if (!selected) return null;
-                  const cover = getAssetPreviewUrl(selected.avatar || selected.coverImage);
-                  return (
-                    <div className="ops-provider-linked-card">
-                      <div className="ops-primary-cell__cover">
-                        {cover ? <img src={cover} alt={providerDisplayName(selected)} /> : <span>{providerTypeLabel(selected.type).slice(0, 1)}</span>}
-                      </div>
-                      <div>
-                        <strong>{providerDisplayName(selected)}</strong>
-                        <span>{providerTypeLabel(selected.type)} · {providerServiceArea(selected)}</span>
-                      </div>
-                    </div>
-                  );
-                }}
               </Form.Item>
               <Form.Item name="showInInspiration" label="展示到灵感中心" valuePropName="checked"><Switch /></Form.Item>
             </Card>

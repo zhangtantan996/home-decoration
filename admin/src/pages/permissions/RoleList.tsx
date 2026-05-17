@@ -9,6 +9,7 @@ import {
     Input,
     InputNumber,
     Modal,
+    Select,
     Space,
     Spin,
     Table,
@@ -75,6 +76,8 @@ interface ApiEnvelope<T> {
 }
 
 type PillTone = 'accent' | 'success' | 'warning' | 'muted' | 'danger';
+
+const HIDDEN_ROLE_KEYS = new Set(['project_supervisor']);
 
 const RESERVED_ROLE_META: Record<string, { label: string; tone: PillTone; description: string }> = {
     system_admin: {
@@ -186,7 +189,7 @@ const RoleList: React.FC = () => {
         try {
             const res = await adminRoleApi.list() as unknown as ApiEnvelope<{ list: Role[] }>;
             if (res.code === 0) {
-                setRoles(res.data.list || []);
+                setRoles((res.data.list || []).filter((role) => !HIDDEN_ROLE_KEYS.has(role.key)));
             }
         } catch (error) {
             console.error(error);
@@ -206,7 +209,7 @@ const RoleList: React.FC = () => {
         }
         setEditingRole(null);
         form.resetFields();
-        form.setFieldsValue({ sort: 0 });
+        form.setFieldsValue({ sort: 0, status: 1 });
         setModalVisible(true);
     }, [canCreateRole, form]);
 
@@ -220,6 +223,7 @@ const RoleList: React.FC = () => {
             key: record.key,
             remark: record.remark,
             sort: record.sort,
+            status: record.status,
         });
         setModalVisible(true);
     }, [canEditRole, form]);
@@ -662,6 +666,19 @@ const RoleList: React.FC = () => {
                         rules={[{ required: true, message: '请输入排序' }]}
                     >
                         <InputNumber min={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item
+                        label="状态"
+                        name="status"
+                        initialValue={1}
+                        rules={[{ required: true, message: '请选择角色状态' }]}
+                    >
+                        <Select
+                            options={[
+                                { label: '启用', value: 1 },
+                                { label: '禁用', value: 0 },
+                            ]}
+                        />
                     </Form.Item>
                     <Form.Item
                         label="操作原因"

@@ -18,21 +18,21 @@ type Base struct {
 // User 用户
 type User struct {
 	Base
-	PublicID          string     `json:"publicId" gorm:"size:36;uniqueIndex"`
-	Phone             string     `json:"phone" gorm:"uniqueIndex;size:20"`
-	Nickname          string     `json:"nickname" gorm:"size:50"`
-	Avatar            string     `json:"avatar" gorm:"size:500"`
-	Birthday          *time.Time `json:"birthday" gorm:"type:date"`
-	Bio               string     `json:"bio" gorm:"type:text"`
-	Password          string     `json:"-" gorm:"size:255"` // 密码，不返回给前端
-	UserType             int8       `json:"userType"`                                  // 1业主 2服务商 3工人 4管理员
+	PublicID            string     `json:"publicId" gorm:"size:36;uniqueIndex"`
+	Phone               string     `json:"phone" gorm:"uniqueIndex;size:20"`
+	Nickname            string     `json:"nickname" gorm:"size:50"`
+	Avatar              string     `json:"avatar" gorm:"size:500"`
+	Birthday            *time.Time `json:"birthday" gorm:"type:date"`
+	Bio                 string     `json:"bio" gorm:"type:text"`
+	Password            string     `json:"-" gorm:"size:255"`                                  // 密码，不返回给前端
+	UserType            int8       `json:"userType"`                                           // 1业主 2服务商 3工人 4管理员
 	DefaultIdentityType string     `json:"defaultIdentityType" gorm:"size:32;default:'owner'"` // 默认身份类型(反范式冗余)
-	Status            int8       `json:"status" gorm:"default:1"`
-	LastLoginAt       *time.Time `json:"-"`
-	LastLoginIP       string     `json:"-" gorm:"size:50"`
-	LoginFailedCount  int        `json:"-" gorm:"default:0"` // 登录失败次数
-	LockedUntil       *time.Time `json:"-"`                  // 锁定到期时间
-	LastFailedLoginAt *time.Time `json:"-"`                  // 最后失败登录时间
+	Status              int8       `json:"status" gorm:"default:1"`
+	LastLoginAt         *time.Time `json:"-"`
+	LastLoginIP         string     `json:"-" gorm:"size:50"`
+	LoginFailedCount    int        `json:"-" gorm:"default:0"` // 登录失败次数
+	LockedUntil         *time.Time `json:"-"`                  // 锁定到期时间
+	LastFailedLoginAt   *time.Time `json:"-"`                  // 最后失败登录时间
 }
 
 // GeneratePublicID 生成对外公开的用户标识
@@ -206,6 +206,7 @@ type Project struct {
 	LongitudeEncrypted string  `json:"-" gorm:"column:longitude_encrypted;type:text"`
 	Area               float64 `json:"area"`   // 面积
 	Budget             float64 `json:"budget"` // 预算
+	CoverImage         string  `json:"coverImage" gorm:"size:500"`
 	Status             int8    `json:"status" gorm:"default:0"`
 	CurrentPhase       string  `json:"currentPhase" gorm:"size:50"`
 	BusinessStatus     string  `json:"businessStatus" gorm:"size:40;default:'draft';index"`
@@ -364,6 +365,7 @@ type ProjectPhase struct {
 	PhaseType         string      `json:"phaseType" gorm:"size:20"`              // preparation, demolition, electrical, masonry, painting, installation, inspection
 	Seq               int         `json:"seq"`                                   // 阶段顺序 1-7
 	Status            string      `json:"status" gorm:"size:20;default:pending"` // pending, in_progress, completed
+	Enabled           bool        `json:"enabled" gorm:"default:true"`           // false=项目级裁剪后前台不展示
 	ResponsiblePerson string      `json:"responsiblePerson" gorm:"size:50"`
 	StartDate         *time.Time  `json:"startDate" gorm:"type:date"`
 	EndDate           *time.Time  `json:"endDate" gorm:"type:date"`

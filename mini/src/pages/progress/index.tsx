@@ -23,10 +23,12 @@ import { setCustomTabBarHidden, syncCurrentTabBar } from '@/utils/customTabBar';
 import { showErrorToast } from '@/utils/error';
 import { getMiniNavMetrics } from '@/utils/navLayout';
 import { getServerDateParts } from '@/utils/serverTime';
+import { colors } from '@/theme/tokens';
 import {
   buildMilestoneViewModels,
   buildPendingQuoteViewModel,
   buildProgressHeroViewModel,
+  buildProgressLogImageGallery,
   buildProgressPhaseSections,
   type MilestoneViewModel,
   type PendingQuoteViewModel,
@@ -39,6 +41,9 @@ import {
 import './index.scss';
 
 const PROGRESS_SELECTED_PROJECT_KEY = 'progress:selected-project-id';
+type LogImageOverflowMode = 'inline' | 'sheet';
+
+const getLogImageOverflowMode = (): LogImageOverflowMode => 'inline';
 
 const toneClassMap: Record<string, string> = {
   default: 'is-default',
@@ -77,7 +82,7 @@ const ProgressHeader = ({
         >
           <Text className="progress-page__header-side-text">切换项目</Text>
           <View className={`progress-page__header-side-arrow ${switchFeedbackActive ? 'is-feedback' : ''}`}>
-            <Icon name="arrow-down" size={18} color="#111827" />
+            <Icon name="arrow-down" size={18} color={colors.gray900} />
           </View>
         </View>
         <Text className="progress-page__header-title">项目进度</Text>
@@ -164,8 +169,24 @@ const ProgressHeroCard = ({ hero }: { hero: ProgressHeroViewModel }) => (
     <View className="progress-page__hero-copy">
       <Text className="progress-page__hero-title">{hero.title}</Text>
       <View className="progress-page__hero-address-row">
-        <Icon name="location-pin" size={18} color="#C4C7CC" />
+        <Icon name="location-pin" size={18} color={colors.gray300} />
         <Text className="progress-page__hero-address">{hero.address}</Text>
+      </View>
+      <View className="progress-page__hero-schedule-row">
+        <Icon name="history" size={16} color={colors.gray300} />
+        <Text className="progress-page__hero-schedule">{hero.scheduleRangeText}</Text>
+        <Text className="progress-page__hero-schedule-dot">·</Text>
+        <Text className="progress-page__hero-schedule-duration">{hero.scheduleDurationText}</Text>
+      </View>
+      <View className={`progress-page__hero-supervisor-row ${hero.supervisorAssigned ? '' : 'is-empty'}`}>
+        <View className="progress-page__hero-supervisor-label">
+          <Icon name="identity" size={16} color={colors.gray300} />
+          <Text className="progress-page__hero-supervisor-label-text">项目监理</Text>
+        </View>
+        <View className="progress-page__hero-supervisor-copy">
+          <Text className="progress-page__hero-supervisor-name">{hero.supervisorName}</Text>
+          <Text className="progress-page__hero-supervisor-meta">{hero.supervisorMeta}</Text>
+        </View>
       </View>
     </View>
   </View>
@@ -252,91 +273,179 @@ const MilestoneStrip = ({
 const PhaseLog = ({
   item,
   isLast,
+  imageOverflowMode,
+  imagesExpanded,
+  onToggleImages,
+  onOpenImageSheet,
   onPreview,
 }: {
   item: ProjectLogViewModel;
   isLast: boolean;
+  imageOverflowMode: LogImageOverflowMode;
+  imagesExpanded: boolean;
+  onToggleImages: (logId: string) => void;
+  onOpenImageSheet: (log: ProjectLogViewModel) => void;
   onPreview: (current: string, urls: string[]) => void;
-}) => (
-  <View className="progress-page__phase-log-item">
-    <View className="progress-page__phase-log-axis">
-      {!isLast ? <View className="progress-page__phase-log-line" /> : null}
-      <View className="progress-page__phase-log-dot" />
-    </View>
+}) => {
+  const imageGallery = buildProgressLogImageGallery(item.images, imageOverflowMode === 'inline' && imagesExpanded);
+  const canCollapseImages = imageOverflowMode === 'inline' && imagesExpanded && imageGallery.totalCount > 4;
 
-    <View className="progress-page__phase-log-main">
-      <Text className="progress-page__phase-log-time">{formatCompactDateTime(item.timeLabel)}</Text>
-      <Text className="progress-page__phase-log-title">{item.title}</Text>
-      {item.description ? <Text className="progress-page__phase-log-description">{item.description}</Text> : null}
-      {item.images.length > 0 ? (
-        <ScrollView scrollX className="progress-page__phase-log-gallery" showScrollbar={false}>
-          <View className="progress-page__phase-log-gallery-track">
-            {item.images.slice(0, 3).map((image, index) => (
-              <View
-                key={`${item.id}-${image}-${index}`}
-                className="progress-page__phase-log-thumb"
-                onClick={() => onPreview(image, item.images)}
-              >
-                <Image className="progress-page__phase-log-thumb-image" src={image} mode="aspectFill" lazyLoad />
-              </View>
-            ))}
-            <View className="progress-page__phase-log-gallery-tail" />
+  return (
+    <View className="progress-page__phase-log-item">
+      <View className="progress-page__phase-log-axis">
+        {!isLast ? <View className="progress-page__phase-log-line" /> : null}
+        <View className="progress-page__phase-log-dot" />
+      </View>
+
+      <View className="progress-page__phase-log-main">
+        <Text className="progress-page__phase-log-time">{formatCompactDateTime(item.timeLabel)}</Text>
+        <Text className="progress-page__phase-log-title">{item.title}</Text>
+        {item.description ? <Text className="progress-page__phase-log-description">{item.description}</Text> : null}
+        {imageGallery.totalCount > 0 ? (
+          <View
+            className={[
+              'progress-page__phase-log-gallery',
+              imageGallery.shouldUseGrid ? 'is-grid' : 'is-row',
+              imageOverflowMode === 'inline' && imagesExpanded ? 'is-expanded' : '',
+            ].filter(Boolean).join(' ')}
+          >
+            {imageGallery.visibleImages.map((image, index) => {
+              const showMoreBadge = imageGallery.hiddenCount > 0 && index === imageGallery.visibleImages.length - 1;
+
+              return (
+                <View
+                  key={`${item.id}-${image}-${index}`}
+                  className="progress-page__phase-log-thumb"
+                  onClick={() => {
+                    if (!showMoreBadge) {
+                      onPreview(image, item.images);
+                      return;
+                    }
+                    if (imageOverflowMode === 'sheet') {
+                      onOpenImageSheet(item);
+                      return;
+                    }
+                    onToggleImages(item.id);
+                  }}
+                >
+                  <Image className="progress-page__phase-log-thumb-image" src={image} mode="aspectFill" lazyLoad />
+                  {showMoreBadge ? (
+                    <View className="progress-page__phase-log-thumb-more">
+                      <Text className="progress-page__phase-log-thumb-more-text">+{imageGallery.hiddenCount}</Text>
+                    </View>
+                  ) : null}
+                </View>
+              );
+            })}
           </View>
-        </ScrollView>
-      ) : null}
+        ) : null}
+        {canCollapseImages ? (
+          <View className="progress-page__phase-log-image-collapse" onClick={() => onToggleImages(item.id)}>
+            <Text className="progress-page__phase-log-image-collapse-text">收起图片</Text>
+          </View>
+        ) : null}
+      </View>
     </View>
-  </View>
-);
+  );
+};
 
 const PhaseCard = ({
   item,
   focused,
+  isActivePhase,
+  logsExpanded,
+  imageOverflowMode,
+  expandedLogImageIds,
+  onToggleLogs,
+  onToggleLogImages,
+  onOpenImageSheet,
   onPreview,
 }: {
   item: ProgressPhaseSectionViewModel;
   focused?: boolean;
+  isActivePhase: boolean;
+  logsExpanded: boolean;
+  imageOverflowMode: LogImageOverflowMode;
+  expandedLogImageIds: string[];
+  onToggleLogs: (phaseId: string) => void;
+  onToggleLogImages: (logId: string) => void;
+  onOpenImageSheet: (log: ProjectLogViewModel) => void;
   onPreview: (current: string, urls: string[]) => void;
-}) => (
-  <View id={item.id} className={`progress-page__phase-card ${focused ? 'is-focused' : ''}`}>
-    <View className="progress-page__phase-head">
-      <View className="progress-page__phase-copy">
-        <Text className="progress-page__phase-title">{item.name}</Text>
-        <View className="progress-page__phase-date-row">
-          <Icon name="history" size={16} color="#C4C7CC" />
-          <Text className="progress-page__phase-date">{item.dateText.replace(' - ', ' ~ ').replace('时间待更新', '--')}</Text>
+}) => {
+  const hasLogs = item.logs.length > 0;
+  const visibleLogCount = Math.min(item.defaultVisibleLogCount, item.logs.length);
+  const shouldShowLogList = hasLogs && (logsExpanded || isActivePhase);
+  const visibleLogs = logsExpanded ? item.logs : item.logs.slice(0, visibleLogCount);
+  const canToggleLogs = hasLogs && (logsExpanded || item.totalLogCount > visibleLogCount || !isActivePhase);
+  const latestLogTime = item.logs[0]?.timeLabel ? formatCompactDateTime(item.logs[0].timeLabel) : '';
+
+  return (
+    <View id={item.id} className={`progress-page__phase-card ${focused ? 'is-focused' : ''}`}>
+      <View className="progress-page__phase-head">
+        <View className="progress-page__phase-copy">
+          <Text className="progress-page__phase-title">{item.name}</Text>
+          <View className="progress-page__phase-date-row">
+            <Icon name="history" size={16} color={colors.gray300} />
+            <Text className="progress-page__phase-date">{item.dateText.replace(' - ', ' ~ ').replace('时间待更新', '--')}</Text>
+          </View>
+        </View>
+        <View className={`progress-page__phase-status ${toneClassMap[item.tone] || ''}`}>
+          <Text className={`progress-page__phase-status-text ${toneClassMap[item.tone] || ''}`}>{item.statusLabel}</Text>
         </View>
       </View>
-      <View className={`progress-page__phase-status ${toneClassMap[item.tone] || ''}`}>
-        <Text className={`progress-page__phase-status-text ${toneClassMap[item.tone] || ''}`}>{item.statusLabel}</Text>
-      </View>
-    </View>
 
-    {item.tasks.length > 0 ? (
-      <View className="progress-page__task-panel">
-        {item.tasks.map((task) => (
-          <View key={task.id} className="progress-page__task-item">
-            <View className={`progress-page__task-dot ${task.isCompleted ? 'is-done' : ''}`}>
-              {task.isCompleted ? <View className="progress-page__task-dot-inner" /> : null}
-            </View>
-            <Text className={`progress-page__task-text ${task.isCompleted ? 'is-done' : ''}`}>{task.name}</Text>
+      {hasLogs && !shouldShowLogList ? (
+        <View className="progress-page__phase-log-summary" onClick={() => onToggleLogs(item.id)}>
+          <View className="progress-page__phase-log-summary-copy">
+            <Text className="progress-page__phase-log-summary-title">施工记录</Text>
+            <Text className="progress-page__phase-log-summary-subtitle">
+              共 {item.totalLogCount} 条{latestLogTime ? `，最新 ${latestLogTime}` : ''}
+            </Text>
           </View>
-        ))}
-      </View>
-    ) : null}
+          <View className="progress-page__phase-log-summary-action">
+            <Text className="progress-page__phase-log-summary-action-text">展开</Text>
+            <Icon name="arrow-down" size={18} color={colors.secondary} />
+          </View>
+        </View>
+      ) : null}
 
-    {item.logs.length > 0 ? (
-      <View className="progress-page__phase-log-block">
-        {item.logs.map((log) => (
-          <PhaseLog key={log.id} item={log} isLast={log.id === item.logs[item.logs.length - 1]?.id} onPreview={onPreview} />
-        ))}
-      </View>
-    ) : item.emptyText ? (
-      <View className="progress-page__phase-empty">
-        <Text className="progress-page__phase-empty-text">{item.emptyText}</Text>
-      </View>
-    ) : null}
-  </View>
-);
+      {shouldShowLogList ? (
+        <View className="progress-page__phase-log-block">
+          <View className="progress-page__phase-log-header">
+            <Text className="progress-page__phase-log-header-title">{logsExpanded ? '全部记录' : '最新记录'}</Text>
+            <Text className="progress-page__phase-log-header-count">共 {item.totalLogCount} 条</Text>
+          </View>
+          {visibleLogs.map((log) => (
+            <PhaseLog
+              key={log.id}
+              item={log}
+              isLast={log.id === visibleLogs[visibleLogs.length - 1]?.id}
+              imageOverflowMode={imageOverflowMode}
+              imagesExpanded={expandedLogImageIds.includes(log.id)}
+              onToggleImages={onToggleLogImages}
+              onOpenImageSheet={onOpenImageSheet}
+              onPreview={onPreview}
+            />
+          ))}
+          {canToggleLogs ? (
+            <View className="progress-page__phase-log-toggle" onClick={() => onToggleLogs(item.id)}>
+              <Text className="progress-page__phase-log-toggle-text">
+                {logsExpanded ? '收起记录' : `查看全部 ${item.totalLogCount} 条记录`}
+              </Text>
+              <View className={`progress-page__phase-log-toggle-icon ${logsExpanded ? 'is-expanded' : ''}`}>
+                <Icon name="arrow-down" size={18} color={colors.secondary} />
+              </View>
+            </View>
+          ) : null}
+        </View>
+      ) : !hasLogs && item.emptyText ? (
+        <View className="progress-page__phase-empty">
+          <Text className="progress-page__phase-empty-text">{item.emptyText}</Text>
+        </View>
+      ) : null}
+    </View>
+  );
+};
 
 const ProjectSelectorSheet = ({
   visible,
@@ -384,6 +493,51 @@ const ProjectSelectorSheet = ({
             );
           })}
         </View>
+      </View>
+    </>
+  );
+};
+
+const LogImageSheet = ({
+  log,
+  onClose,
+  onPreview,
+}: {
+  log: ProjectLogViewModel | null;
+  onClose: () => void;
+  onPreview: (current: string, urls: string[]) => void;
+}) => {
+  if (!log) {
+    return null;
+  }
+
+  return (
+    <>
+      <View className="progress-page__sheet-mask" onClick={onClose} />
+      <View className="progress-page__image-sheet">
+        <View className="progress-page__sheet-handle" />
+        <View className="progress-page__image-sheet-head">
+          <View className="progress-page__image-sheet-copy">
+            <Text className="progress-page__image-sheet-title">{log.title || '施工图片'}</Text>
+            <Text className="progress-page__image-sheet-subtitle">共 {log.images.length} 张，点击图片查看大图</Text>
+          </View>
+          <View className="progress-page__image-sheet-close" onClick={onClose}>
+            <Text className="progress-page__image-sheet-close-text">关闭</Text>
+          </View>
+        </View>
+        <ScrollView scrollY className="progress-page__image-sheet-scroll" showScrollbar={false}>
+          <View className="progress-page__image-sheet-grid">
+            {log.images.map((image, index) => (
+              <View
+                key={`${log.id}-sheet-${image}-${index}`}
+                className="progress-page__image-sheet-thumb"
+                onClick={() => onPreview(image, log.images)}
+              >
+                <Image className="progress-page__image-sheet-thumb-image" src={image} mode="aspectFill" lazyLoad />
+              </View>
+            ))}
+          </View>
+        </ScrollView>
       </View>
     </>
   );
@@ -439,6 +593,9 @@ export default function Progress() {
   const [switchFeedbackActive, setSwitchFeedbackActive] = useState(false);
   const [activeMilestoneId, setActiveMilestoneId] = useState('');
   const [focusedPhaseId, setFocusedPhaseId] = useState('');
+  const [expandedPhaseLogIds, setExpandedPhaseLogIds] = useState<string[]>([]);
+  const [expandedLogImageIds, setExpandedLogImageIds] = useState<string[]>([]);
+  const [imageSheetLog, setImageSheetLog] = useState<ProjectLogViewModel | null>(null);
 
   const headerInsetStyle = useMemo(
     () => ({
@@ -450,6 +607,7 @@ export default function Progress() {
   );
   const headerMainStyle = useMemo(() => ({ height: `${navMetrics.menuHeight}px` }), [navMetrics.menuHeight]);
   const headerPlaceholderStyle = useMemo(() => ({ height: `${navMetrics.contentTop}px` }), [navMetrics.contentTop]);
+  const logImageOverflowMode = useMemo(() => getLogImageOverflowMode(), []);
 
   useEffect(() => {
     selectedProjectIdRef.current = selectedProjectId;
@@ -466,12 +624,12 @@ export default function Progress() {
   }, []);
 
   useEffect(() => {
-    setCustomTabBarHidden(selectorVisible);
+    setCustomTabBarHidden(selectorVisible || Boolean(imageSheetLog));
 
     return () => {
       setCustomTabBarHidden(false);
     };
-  }, [selectorVisible]);
+  }, [imageSheetLog, selectorVisible]);
 
   useDidShow(() => {
     syncCurrentTabBar('/pages/progress/index');
@@ -573,6 +731,10 @@ export default function Progress() {
   );
   const milestoneItems = useMemo(() => buildMilestoneViewModels([], phases), [phases]);
   const phaseSections = useMemo(() => buildProgressPhaseSections(phases, logs), [phases, logs]);
+  const activePhaseSectionId = useMemo(
+    () => phaseSections.find((item) => item.tone === 'active')?.id || phaseSections[0]?.id || '',
+    [phaseSections],
+  );
   const pendingQuote = useMemo(
     () => (pendingQuoteTask ? buildPendingQuoteViewModel(pendingQuoteTask) : null),
     [pendingQuoteTask],
@@ -640,6 +802,28 @@ export default function Progress() {
       offsetTop: -(navMetrics.contentTop + 18),
     });
   }, [navMetrics.contentTop, phaseSections]);
+
+  const handleTogglePhaseLogs = useCallback((phaseId: string) => {
+    setExpandedPhaseLogIds((current) => (
+      current.includes(phaseId)
+        ? current.filter((item) => item !== phaseId)
+        : [...current, phaseId]
+    ));
+  }, []);
+
+  const handleToggleLogImages = useCallback((logId: string) => {
+    setExpandedLogImageIds((current) => (
+      current.includes(logId)
+        ? current.filter((item) => item !== logId)
+        : [...current, logId]
+    ));
+  }, []);
+
+  useEffect(() => {
+    setExpandedPhaseLogIds([]);
+    setExpandedLogImageIds([]);
+    setImageSheetLog(null);
+  }, [selectedProjectId]);
 
   if (!auth.token) {
     return <View className="progress-page" />;
@@ -710,7 +894,19 @@ export default function Progress() {
             {phaseSections.length > 0 ? (
               <View className="progress-page__phase-list">
                 {phaseSections.map((item) => (
-                  <PhaseCard key={item.id} item={item} focused={focusedPhaseId === item.id} onPreview={handlePreview} />
+                  <PhaseCard
+                    key={item.id}
+                    item={item}
+                    focused={focusedPhaseId === item.id}
+                    isActivePhase={item.id === activePhaseSectionId}
+                    logsExpanded={expandedPhaseLogIds.includes(item.id)}
+                    imageOverflowMode={logImageOverflowMode}
+                    expandedLogImageIds={expandedLogImageIds}
+                    onToggleLogs={handleTogglePhaseLogs}
+                    onToggleLogImages={handleToggleLogImages}
+                    onOpenImageSheet={setImageSheetLog}
+                    onPreview={handlePreview}
+                  />
                 ))}
               </View>
             ) : (
@@ -731,6 +927,7 @@ export default function Progress() {
         onClose={() => setSelectorVisible(false)}
         onSelect={handleProjectChange}
       />
+      <LogImageSheet log={imageSheetLog} onClose={() => setImageSheetLog(null)} onPreview={handlePreview} />
     </View>
   );
 }

@@ -67,7 +67,7 @@ const QuoteTaskDetailPage: React.FC = () => {
       setSubmitting(true);
       const result = await confirmQuoteTaskSubmission(detail.submissionId);
       Taro.showToast({ title: result.message || '已确认施工报价', icon: 'success' });
-      Taro.navigateTo({ url: '/pages/progress/index' });
+      Taro.switchTab({ url: '/pages/progress/index' });
     } catch (error) {
       showErrorToast(error, '确认失败');
     } finally {

@@ -130,6 +130,29 @@ func respondDomainMutationError(c *gin.Context, err error, fallback string) {
 	}
 }
 
+func isSchemaUpgradeErrorMessage(message string) bool {
+	normalized := strings.TrimSpace(strings.ToLower(message))
+	if normalized == "" {
+		return false
+	}
+	return strings.Contains(normalized, "sqlstate") ||
+		strings.Contains(normalized, "undefinedcolumn") ||
+		strings.Contains(normalized, "does not exist") ||
+		(strings.Contains(normalized, "column") && strings.Contains(normalized, "does not exist")) ||
+		(strings.Contains(normalized, "relation") && strings.Contains(normalized, "does not exist"))
+}
+
+func respondSchemaAwareDomainMutationError(c *gin.Context, err error, fallback string, schemaFallback string) {
+	if err == nil {
+		return
+	}
+	if isSchemaUpgradeErrorMessage(err.Error()) {
+		response.ServerError(c, schemaFallback)
+		return
+	}
+	respondDomainMutationError(c, err, fallback)
+}
+
 func respondRealNameRequired(c *gin.Context) {
 	c.JSON(http.StatusForbidden, response.Response{
 		Code:    http.StatusForbidden,
@@ -163,6 +186,8 @@ func respondAdminRBACMutationError(c *gin.Context, err error, fallback string) {
 	switch {
 	case strings.Contains(message, "不存在"), strings.Contains(message, "未找到"):
 		response.NotFound(c, message)
+	case strings.Contains(message, "无权"):
+		response.Forbidden(c, message)
 	case strings.Contains(message, "必须独立分配"),
 		strings.Contains(message, "不能同时分配"),
 		strings.Contains(message, "已禁用"),

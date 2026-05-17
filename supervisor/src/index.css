@@ -1,9 +1,25 @@
 :root {
+  color: #172033;
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue",
     Arial, sans-serif;
   line-height: 1.5;
   font-weight: 400;
+  background: #f5f7fb;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  --supervisor-page-bg: #f5f7fb;
+  --supervisor-surface: #fefefe;
+  --supervisor-surface-muted: #f8fafd;
+  --supervisor-border: #e6eaf2;
+  --supervisor-text: #172033;
+  --supervisor-text-secondary: #667085;
+  --supervisor-primary: #2f80ed;
+  --supervisor-primary-soft: #dbeafe;
+  --supervisor-shadow: 0 18px 42px rgba(23, 32, 51, 0.08),
+    0 2px 8px rgba(23, 32, 51, 0.04);
+  --supervisor-shadow-subtle: 0 8px 24px rgba(23, 32, 51, 0.06);
+  --supervisor-radius-card: 18px;
 }
 
 html,
@@ -21,9 +37,108 @@ body,
 body {
   min-height: 100vh;
   overflow-x: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(47, 128, 237, 0.08), transparent 34rem),
+    linear-gradient(180deg, #fbfcff 0%, var(--supervisor-page-bg) 45%);
 }
 
 #root {
   width: 100%;
   min-height: 100vh;
+}
+
+.supervisor-shell {
+  min-height: 100vh;
+  background: transparent;
+}
+
+.supervisor-page {
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 16px 24px;
+}
+
+.supervisor-panel {
+  border: 1px solid var(--supervisor-border) !important;
+  border-radius: var(--supervisor-radius-card) !important;
+  background: rgba(254, 254, 254, 0.94) !important;
+  box-shadow: var(--supervisor-shadow-subtle) !important;
+}
+
+.supervisor-lift-card {
+  border: 1px solid var(--supervisor-border) !important;
+  border-radius: var(--supervisor-radius-card) !important;
+  background: rgba(254, 254, 254, 0.96) !important;
+  box-shadow: var(--supervisor-shadow-subtle) !important;
+  transition:
+    transform 180ms ease-out,
+    box-shadow 180ms ease-out,
+    border-color 180ms ease-out;
+}
+
+.supervisor-lift-card:hover {
+  border-color: rgba(47, 128, 237, 0.24) !important;
+  box-shadow: var(--supervisor-shadow) !important;
+  transform: translateY(-2px);
+}
+
+.supervisor-muted-section {
+  background: var(--supervisor-surface-muted);
+  border-top: 1px solid var(--supervisor-border);
+}
+
+.supervisor-sidebar .ant-layout-sider-children {
+  display: flex;
+  flex-direction: column;
+}
+
+.supervisor-sidebar-menu.ant-menu {
+  padding: 10px;
+  background: transparent;
+}
+
+.supervisor-sidebar-menu .ant-menu-item {
+  height: 42px;
+  line-height: 42px;
+  margin: 4px 0;
+}
+
+.supervisor-mobile-tab {
+  padding-bottom: max(8px, env(safe-area-inset-bottom));
+  box-shadow: 0 -10px 30px rgba(23, 32, 51, 0.08);
+}
+
+.supervisor-mobile-tab-item {
+  min-width: 64px;
+  border-radius: 14px;
+  transition:
+    color 160ms ease-out,
+    background 160ms ease-out;
+}
+
+.supervisor-mobile-tab-item-active {
+  background: var(--supervisor-primary-soft);
+}
+
+.supervisor-login-bg {
+  background:
+    radial-gradient(circle at 20% 14%, rgba(47, 128, 237, 0.12), transparent 28rem),
+    radial-gradient(circle at 82% 22%, rgba(52, 199, 89, 0.12), transparent 26rem),
+    linear-gradient(180deg, #fbfcff 0%, #f3f6fb 100%);
+}
+
+.supervisor-login-card {
+  border: 1px solid var(--supervisor-border);
+  box-shadow: var(--supervisor-shadow);
+}
+
+@media (max-width: 767px) {
+  .supervisor-page {
+    padding: 0 12px 20px;
+  }
+
+  .supervisor-lift-card:hover {
+    transform: none;
+  }
 }

@@ -70,6 +70,7 @@ func (MaterialShopAudit) TableName() string {
 type RiskWarning struct {
 	Base
 	ProjectID    uint64     `json:"projectId" gorm:"index"`
+	PhaseID      uint64     `json:"phaseId" gorm:"index"` // 关联的项目阶段ID
 	ProjectName  string     `json:"projectName" gorm:"size:100"`
 	Type         string     `json:"type" gorm:"size:50"`  // 风险类型：delay, quality, payment, dispute
 	Level        string     `json:"level" gorm:"size:20"` // 风险等级：low, medium, high, critical

@@ -1,4 +1,4 @@
-import { AppstoreOutlined, DownOutlined, FileTextOutlined, HomeFilled, LogoutOutlined, ScheduleOutlined, UnorderedListOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DownOutlined, FileTextOutlined, HomeFilled, LogoutOutlined, ProjectOutlined, ScheduleOutlined, UnorderedListOutlined } from '@ant-design/icons';
 import { Avatar, Dropdown, Layout, Menu, Typography } from 'antd';
 import { useState } from 'react';
 import { Outlet, useLocation, useNavigate } from 'react-router-dom';
@@ -7,13 +7,15 @@ import { useAuthStore } from '../stores/authStore';
 
 const { Header, Content, Sider } = Layout;
 
-const items = [
+const baseItems = [
   { key: '/dashboard', icon: <HomeFilled />, label: '工作台首页' },
   { key: '/supply', icon: <AppstoreOutlined />, label: '商家信息' },
   { key: '/inspirations', icon: <FileTextOutlined />, label: '灵感编辑' },
   { key: '/bookings', icon: <ScheduleOutlined />, label: '预约记录' },
   { key: '/audit-logs', icon: <UnorderedListOutlined />, label: '操作记录' },
 ];
+
+const projectsItem = { key: '/projects', icon: <ProjectOutlined />, label: '项目管理' };
 
 const MenuToggleIcon = ({ collapsed }: { collapsed: boolean }) => (
   <svg className="ops-shell__collapse-svg" viewBox="0 0 24 24" aria-hidden="true">
@@ -32,8 +34,10 @@ const OpsLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const user = useAuthStore((state) => state.user);
+  const canAccessProjects = useAuthStore((state) => state.hasPermission('project:list'));
   const logout = useAuthStore((state) => state.logout);
   const [menuCollapsed, setMenuCollapsed] = useState(false);
+  const items = canAccessProjects ? [...baseItems, projectsItem] : baseItems;
   const accountMenuItems = [
     {
       key: 'logout',

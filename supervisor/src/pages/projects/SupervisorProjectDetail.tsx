@@ -16,14 +16,15 @@ import {
   Select,
   DatePicker,
   Tabs,
-  Drawer,
   Row,
   Col,
   Badge,
+  Tooltip,
   Image,
   theme,
   Divider,
   Upload,
+  Radio,
 } from "antd";
 import {
   ArrowLeftOutlined,
@@ -32,7 +33,6 @@ import {
   WarningOutlined,
   EditOutlined,
   SafetyCertificateOutlined,
-  UserOutlined,
   HomeOutlined,
   ClockCircleOutlined,
   CheckCircleOutlined,
@@ -41,6 +41,7 @@ import {
 } from "@ant-design/icons";
 import { useNavigate, useParams } from "react-router-dom";
 import dayjs from "dayjs";
+import type { Dayjs } from "dayjs";
 import type { RcFile, UploadFile, UploadProps } from "antd/es/upload/interface";
 import {
   supervisorProjectApi,
@@ -53,14 +54,76 @@ import {
 } from "../../services/supervisorApi";
 import { dicts } from "../../utils/dict";
 import { toAbsoluteAssetUrl } from "../../utils/env";
+import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
+const MAX_LOG_PHOTOS = 9;
+type PhaseAction = "start" | "complete" | "pause" | "resume";
+
+const phaseActionMeta: Record<
+  PhaseAction,
+  { label: string; targetStatus: "in_progress" | "completed" | "paused" }
+> = {
+  start: { label: "开始阶段", targetStatus: "in_progress" },
+  complete: { label: "完成阶段", targetStatus: "completed" },
+  pause: { label: "暂停阶段", targetStatus: "paused" },
+  resume: { label: "恢复进行", targetStatus: "in_progress" },
+};
 
 const iosCardStyle: React.CSSProperties = {
-  borderRadius: 20,
-  boxShadow: "0 8px 30px rgba(0,0,0,0.04)",
-  border: "none",
+  borderRadius: SUPERVISOR_THEME.cardRadius,
+  boxShadow: SUPERVISOR_THEME.subtleShadow,
+  border: `1px solid ${SUPERVISOR_THEME.borderColor}`,
+};
+
+const getPhaseActions = (status: string): PhaseAction[] => {
+  switch (status) {
+    case "pending":
+      return ["start"];
+    case "in_progress":
+      return ["complete", "pause"];
+    case "paused":
+      return ["resume"];
+    default:
+      return [];
+  }
+};
+
+const toValidDay = (value?: string | null): Dayjs | null => {
+  if (!value) return null;
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.startOf("day") : null;
+};
+
+const latestDay = (...days: Array<Dayjs | null | undefined>): Dayjs | null => {
+  return days.reduce<Dayjs | null>((latest, day) => {
+    if (!day) return latest;
+    return !latest || day.isAfter(latest) ? day : latest;
+  }, null);
+};
+
+const findCurrentPhaseCandidate = (
+  list: ProjectPhaseView[],
+  currentPhaseLabel?: string,
+): ProjectPhaseView | null => {
+  const normalizedLabel = String(currentPhaseLabel || "").trim();
+  if (normalizedLabel) {
+    const matched = list.find(
+      (phase) =>
+        phase.phaseType === normalizedLabel ||
+        phase.name === normalizedLabel ||
+        dicts.phaseType(phase.phaseType) === normalizedLabel,
+    );
+    if (matched) return matched;
+  }
+  return (
+    list.find((phase) => phase.status === "in_progress") ??
+    list.find((phase) => phase.status === "paused") ??
+    list.find((phase) => phase.status === "pending") ??
+    list[list.length - 1] ??
+    null
+  );
 };
 
 // ─── main component ──────────────────────────────────────────────────────────
@@ -87,9 +150,12 @@ const SupervisorProjectDetail: React.FC = () => {
   const [logImageList, setLogImageList] = useState<UploadFile[]>([]);
   const [logForm] = Form.useForm();
 
-  const [phaseDrawerOpen, setPhaseDrawerOpen] = useState(false);
+  const [phaseActionModalOpen, setPhaseActionModalOpen] = useState(false);
   const [phaseSubmitting, setPhaseSubmitting] = useState(false);
   const [phaseForm] = Form.useForm();
+  const selectedPhaseAction = Form.useWatch("action", phaseForm) as
+    | PhaseAction
+    | undefined;
 
   const [riskModalOpen, setRiskModalOpen] = useState(false);
   const [riskSubmitting, setRiskSubmitting] = useState(false);
@@ -108,16 +174,19 @@ const SupervisorProjectDetail: React.FC = () => {
   }, [projectId]);
 
   const loadLogs = useCallback(() => {
-    if (!projectId) return;
+    if (!projectId || !activePhaseId) {
+      setLogs([]);
+      return;
+    }
     setLogsLoading(true);
     supervisorLogApi
-      .list(projectId, { pageSize: 50 })
+      .list(projectId, { pageSize: 50, phaseId: activePhaseId })
       .then((res) => {
         if (res.list) setLogs(res.list);
       })
       .catch(() => {})
       .finally(() => setLogsLoading(false));
-  }, [projectId]);
+  }, [projectId, activePhaseId]);
 
   const loadPhases = useCallback(() => {
     if (!projectId) return;
@@ -128,8 +197,7 @@ const SupervisorProjectDetail: React.FC = () => {
         const list = res.phases ?? [];
         setPhases(list);
         if (list.length > 0 && !activePhaseId) {
-          const inProgress = list.find((p) => p.status === "in_progress");
-          setActivePhaseId((inProgress ?? list[0]).id);
+          setActivePhaseId(findCurrentPhaseCandidate(list)?.id ?? list[0].id);
         }
       })
       .catch(() => {})
@@ -138,52 +206,194 @@ const SupervisorProjectDetail: React.FC = () => {
 
   useEffect(() => {
     loadWorkspace();
-    loadLogs();
     loadPhases();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId]);
 
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
+
   // ── Handlers ────────────────────────────────────────────────────────────
 
   const openLogModal = () => {
+    if (!currentManagedPhase) {
+      message.warning("当前项目暂无可记录巡检的阶段");
+      return;
+    }
+    if (!isViewingManagedPhase) {
+      message.warning("请切回当前项目阶段后记录巡检");
+      return;
+    }
+    if (!currentPhaseAllowsLog) {
+      message.warning(currentPhaseLogBlockReason || "当前阶段不能记录巡检日志");
+      return;
+    }
     setLogImageList([]);
     logForm.resetFields();
-    if (activePhaseId) logForm.setFieldValue("phaseId", activePhaseId);
     logForm.setFieldValue("photos", []);
     setLogModalOpen(true);
   };
 
   const activePhase = phases.find((p) => p.id === activePhaseId) ?? null;
+  const workspaceCurrentPhase = String(workspace?.currentPhase || "").trim();
+  const currentManagedPhase = findCurrentPhaseCandidate(
+    phases,
+    workspaceCurrentPhase,
+  );
+  const orderedPhases = [...phases].sort((a, b) => {
+    const seqA = typeof a.seq === "number" ? a.seq : Number.MAX_SAFE_INTEGER;
+    const seqB = typeof b.seq === "number" ? b.seq : Number.MAX_SAFE_INTEGER;
+    return seqA - seqB || a.id - b.id;
+  });
+  const currentManagedPhaseIndex = currentManagedPhase
+    ? orderedPhases.findIndex((phase) => phase.id === currentManagedPhase.id)
+    : -1;
+  const previousManagedPhase =
+    currentManagedPhaseIndex > 0 ? orderedPhases[currentManagedPhaseIndex - 1] : null;
+  const nextManagedPhase =
+    currentManagedPhaseIndex >= 0 &&
+    currentManagedPhaseIndex < orderedPhases.length - 1
+      ? orderedPhases[currentManagedPhaseIndex + 1]
+      : null;
+  const previousPhaseEndDay = toValidDay(previousManagedPhase?.endDate);
+  const nextPhaseStartDay = toValidDay(nextManagedPhase?.startDate);
+  const isViewingManagedPhase = Boolean(
+    activePhase && currentManagedPhase && activePhase.id === currentManagedPhase.id,
+  );
+  const currentManagedPhaseStatus = String(
+    currentManagedPhase?.status || "",
+  ).toLowerCase();
+  const allowedPhaseActions = getPhaseActions(currentManagedPhaseStatus);
+  const selectedPhaseActionMeta = selectedPhaseAction
+    ? phaseActionMeta[selectedPhaseAction]
+    : null;
+  const currentPhaseAllowsLog =
+    currentManagedPhaseStatus === "in_progress" ||
+    currentManagedPhaseStatus === "paused";
+  const currentPhaseLogBlockReason = !currentManagedPhase
+    ? "当前项目暂无可记录巡检的阶段"
+    : !isViewingManagedPhase
+      ? "仅当前项目阶段可记录巡检"
+      : currentManagedPhaseStatus === "pending"
+        ? "当前阶段尚未开始，不能记录巡检日志"
+        : currentManagedPhaseStatus === "completed"
+          ? "当前阶段已完成，不能新增巡检日志"
+          : currentPhaseAllowsLog
+            ? ""
+            : "当前阶段状态不允许记录巡检日志";
+  const canCreateCurrentPhaseLog =
+    Boolean(currentManagedPhase) && isViewingManagedPhase && currentPhaseAllowsLog;
+  const projectKickoffDay = toValidDay(workspace?.plannedStartDate);
+  const phaseStartLowerBound =
+    projectKickoffDay && previousPhaseEndDay
+      ? projectKickoffDay.isAfter(previousPhaseEndDay)
+        ? projectKickoffDay
+        : previousPhaseEndDay
+      : projectKickoffDay || previousPhaseEndDay;
 
-  const openPhaseDrawer = () => {
-    if (!activePhase) return;
+  const resolvePhaseResponsible = (
+    phase: Pick<ProjectPhaseView, "responsiblePerson"> | null,
+  ) => {
+    const direct = String(phase?.responsiblePerson || "").trim();
+    if (direct) return direct;
+    const fallback = String(workspace?.currentResponsible || "").trim();
+    if (fallback && fallback !== "暂无") return fallback;
+    return "当前监理";
+  };
+
+  const shouldDisablePhaseStartDate = (current: Dayjs) => {
+    if (!phaseStartLowerBound) return false;
+    return current.startOf("day").isBefore(phaseStartLowerBound);
+  };
+
+  const shouldDisablePhaseEndDate = (current: Dayjs) => {
+    const startDate = phaseForm.getFieldValue("startDate");
+    const currentDay = current.startOf("day");
+    const effectiveStartDate = dayjs.isDayjs(startDate)
+      ? startDate.startOf("day")
+      : toValidDay(currentManagedPhase?.startDate) || phaseStartLowerBound;
+    if (effectiveStartDate && currentDay.isBefore(effectiveStartDate)) {
+      return true;
+    }
+    return false;
+  };
+
+  const getDefaultPhaseStartDate = () =>
+    latestDay(
+      toValidDay(currentManagedPhase?.startDate),
+      dayjs().startOf("day"),
+      phaseStartLowerBound,
+    ) || dayjs().startOf("day");
+
+  const getDefaultPhaseEndDate = (startDate?: Dayjs | null) => {
+    const defaultEndDate =
+      latestDay(
+        toValidDay(currentManagedPhase?.endDate),
+        dayjs().startOf("day"),
+        startDate,
+      ) || dayjs().startOf("day");
+    return defaultEndDate;
+  };
+
+  const openPhaseActionModal = () => {
+    if (!currentManagedPhase) return;
+    const defaultAction = allowedPhaseActions[0];
+    if (!defaultAction) {
+      message.info("当前阶段暂无可执行操作");
+      return;
+    }
+    const defaultStartDate = getDefaultPhaseStartDate();
     phaseForm.setFieldsValue({
-      status: activePhase.status,
-      responsiblePerson: activePhase.responsiblePerson,
-      startDate: activePhase.startDate ? dayjs(activePhase.startDate) : null,
-      endDate: activePhase.endDate ? dayjs(activePhase.endDate) : null,
+      action: defaultAction,
+      startDate: defaultAction === "start" ? defaultStartDate : null,
+      endDate: ["start", "complete"].includes(defaultAction)
+        ? getDefaultPhaseEndDate(defaultStartDate)
+        : null,
     });
-    setPhaseDrawerOpen(true);
+    setPhaseActionModalOpen(true);
   };
 
   const handleSavePhase = async () => {
-    if (!activePhaseId) return;
+    if (!currentManagedPhase) return;
     try {
       const values = await phaseForm.validateFields();
-      setPhaseSubmitting(true);
-      await supervisorPhaseApi.update(projectId, activePhaseId, {
-        status: values.status,
-        responsiblePerson: values.responsiblePerson,
-        startDate: values.startDate
+      const action = values.action as PhaseAction | undefined;
+      if (!action || !phaseActionMeta[action]) {
+        message.warning("请选择阶段操作");
+        return;
+      }
+      const payload: {
+        status: string;
+        startDate?: string;
+        endDate?: string;
+      } = {
+        status: phaseActionMeta[action].targetStatus,
+      };
+      if (action === "start") {
+        payload.startDate = values.startDate
           ? dayjs(values.startDate).format("YYYY-MM-DD")
-          : undefined,
-        endDate: values.endDate
+          : undefined;
+        payload.endDate = values.endDate
           ? dayjs(values.endDate).format("YYYY-MM-DD")
-          : undefined,
-      });
-      message.success("阶段信息已更新");
-      setPhaseDrawerOpen(false);
+          : undefined;
+      }
+      if (action === "complete") {
+        payload.endDate = values.endDate
+          ? dayjs(values.endDate).format("YYYY-MM-DD")
+          : undefined;
+      }
+      setPhaseSubmitting(true);
+      await supervisorPhaseApi.update(projectId, currentManagedPhase.id, payload);
+      message.success(`${phaseActionMeta[action].label}已提交`);
+      setPhaseActionModalOpen(false);
+      setActivePhaseId(
+        action === "complete"
+          ? nextManagedPhase?.id || currentManagedPhase.id
+          : currentManagedPhase.id,
+      );
       loadPhases();
+      loadWorkspace();
     } catch (err: unknown) {
       const msg = (err as any)?.response?.data?.message;
       if (msg) message.error(msg);
@@ -196,6 +406,13 @@ const SupervisorProjectDetail: React.FC = () => {
     setLogModalOpen(false);
     setLogImageList([]);
     logForm.resetFields();
+  };
+
+  const syncLogImageList = (nextList: UploadFile[]) => {
+    const limitedList = nextList.slice(0, MAX_LOG_PHOTOS);
+    setLogImageList(limitedList);
+    logForm.setFieldValue("photos", limitedList);
+    void logForm.validateFields(["photos"]).catch(() => {});
   };
 
   const uploadLogImage = async (
@@ -219,7 +436,16 @@ const SupervisorProjectDetail: React.FC = () => {
         thumbUrl: uploaded.url,
         response: uploaded,
       };
-      setLogImageList((prev) => [...prev, nextFile]);
+      setLogImageList((prev) => {
+        if (prev.length >= MAX_LOG_PHOTOS) {
+          message.warning(`最多上传${MAX_LOG_PHOTOS}张现场照片`);
+          return prev;
+        }
+        const nextList = [...prev, nextFile].slice(0, MAX_LOG_PHOTOS);
+        logForm.setFieldValue("photos", nextList);
+        void logForm.validateFields(["photos"]).catch(() => {});
+        return nextList;
+      });
       onSuccess?.(uploaded);
     } catch (error) {
       onError?.(error as Error);
@@ -228,10 +454,14 @@ const SupervisorProjectDetail: React.FC = () => {
   };
 
   const handleLogImageRemove = (file: UploadFile) => {
-    setLogImageList((prev) => prev.filter((item) => item.uid !== file.uid));
+    syncLogImageList(logImageList.filter((item) => item.uid !== file.uid));
   };
 
   const beforeLogImageUpload = (file: RcFile) => {
+    if (logImageList.length >= MAX_LOG_PHOTOS) {
+      message.warning(`最多上传${MAX_LOG_PHOTOS}张现场照片`);
+      return Upload.LIST_IGNORE;
+    }
     const fileType = String(file.type || "").toLowerCase();
     const allowed = ["image/jpeg", "image/png", "image/gif", "image/webp"];
     if (!allowed.includes(fileType)) {
@@ -242,6 +472,18 @@ const SupervisorProjectDetail: React.FC = () => {
   };
 
   const handleCreateLog = async () => {
+    if (!currentManagedPhase) {
+      message.warning("当前项目暂无可记录巡检的阶段");
+      return;
+    }
+    if (!isViewingManagedPhase) {
+      message.warning("请切回当前项目阶段后记录巡检");
+      return;
+    }
+    if (!currentPhaseAllowsLog) {
+      message.warning(currentPhaseLogBlockReason || "当前阶段不能记录巡检日志");
+      return;
+    }
     try {
       const values = await logForm.validateFields();
       setLogSubmitting(true);
@@ -254,7 +496,7 @@ const SupervisorProjectDetail: React.FC = () => {
           ).trim(),
         )
         .filter(Boolean);
-      await supervisorLogApi.create(projectId, Number(values.phaseId), {
+      await supervisorLogApi.create(projectId, currentManagedPhase.id, {
         title: values.title,
         description: values.description,
         photos: JSON.stringify(photoPaths),
@@ -325,8 +567,13 @@ const SupervisorProjectDetail: React.FC = () => {
     return (
       <div style={{ maxWidth: 1200, margin: "0 auto", paddingBottom: 24 }}>
         <Card
+          className="supervisor-panel"
           bordered={false}
-          style={{ borderRadius: 16, textAlign: "center", padding: "60px 0" }}
+          style={{
+            borderRadius: SUPERVISOR_THEME.cardRadius,
+            textAlign: "center",
+            padding: "60px 0",
+          }}
         >
           <Empty description="项目不存在或无权访问" />
         </Card>
@@ -339,14 +586,7 @@ const SupervisorProjectDetail: React.FC = () => {
   // ── render ──────────────────────────────────────────────────────────────
 
   return (
-    <div
-      style={{
-        maxWidth: 1200,
-        margin: "0 auto",
-        paddingBottom: 24,
-        padding: "0 16px",
-      }}
-    >
+    <div className="supervisor-page">
       {/* 顶部操作栏 */}
       <div
         style={{
@@ -372,7 +612,6 @@ const SupervisorProjectDetail: React.FC = () => {
             riskForm.resetFields();
             setRiskModalOpen(true);
           }}
-          shape="round"
         >
           上报风险预警
         </Button>
@@ -380,6 +619,7 @@ const SupervisorProjectDetail: React.FC = () => {
 
       {/* 核心看板 - Header */}
       <Card
+        className="supervisor-panel"
         bordered={false}
         style={cardStyle}
         styles={{ body: { padding: 0 } }}
@@ -448,9 +688,9 @@ const SupervisorProjectDetail: React.FC = () => {
         <div
           style={{
             padding: "24px 32px",
-            backgroundColor: "#fafafa",
-            borderBottomLeftRadius: 16,
-            borderBottomRightRadius: 16,
+            backgroundColor: SUPERVISOR_THEME.surfaceMuted,
+            borderBottomLeftRadius: SUPERVISOR_THEME.cardRadius,
+            borderBottomRightRadius: SUPERVISOR_THEME.cardRadius,
           }}
         >
           <Row gutter={[32, 24]}>
@@ -512,8 +752,13 @@ const SupervisorProjectDetail: React.FC = () => {
       {/* 风险预警面板 (仅有风险时显示) */}
       {workspace.unhandledRiskCount > 0 && (
         <Card
+          className="supervisor-panel"
           bordered={false}
-          style={{ ...cardStyle, borderLeft: `4px solid ${token.colorError}` }}
+          style={{
+            ...cardStyle,
+            borderColor: "rgba(255, 59, 48, 0.22)",
+            background: "rgba(255, 59, 48, 0.04)",
+          }}
         >
           <Title
             level={5}
@@ -569,21 +814,29 @@ const SupervisorProjectDetail: React.FC = () => {
         {/* 左侧：施工阶段 & 控制台 */}
         <Col xs={24} lg={14}>
           <Card
+            className="supervisor-panel"
             title={<span style={{ fontWeight: 600 }}>阶段管控台</span>}
             bordered={false}
             style={cardStyle}
             extra={
-              activePhase && (
-                <Button
-                  size="small"
-                  type="primary"
-                  ghost
-                  icon={<EditOutlined />}
-                  onClick={openPhaseDrawer}
-                  shape="round"
-                >
-                  更新当前阶段
-                </Button>
+              currentManagedPhase && (
+                <Space size={10} wrap>
+                  <Text type="secondary" style={{ fontSize: 12 }}>
+                    当前项目阶段：
+                    {currentManagedPhase.name ||
+                      dicts.phaseType(currentManagedPhase.phaseType)}
+                  </Text>
+                  <Button
+                    size="small"
+                    type="primary"
+                    ghost
+                    icon={<EditOutlined />}
+                    onClick={openPhaseActionModal}
+                    shape="round"
+                  >
+                    更新当前阶段
+                  </Button>
+                </Space>
               )
             }
           >
@@ -601,7 +854,10 @@ const SupervisorProjectDetail: React.FC = () => {
                   key: String(phase.id),
                   label: (
                     <Badge
-                      dot={phase.status === "in_progress"}
+                      dot={
+                        phase.status === "in_progress" ||
+                        phase.status === "paused"
+                      }
                       color={
                         dicts.phaseColor(phase.status) === "processing"
                           ? token.colorPrimary
@@ -634,7 +890,7 @@ const SupervisorProjectDetail: React.FC = () => {
                         <Descriptions.Item
                           label={<Text type="secondary">指派责任人</Text>}
                         >
-                          {phase.responsiblePerson || "-"}
+                          {resolvePhaseResponsible(phase)}
                         </Descriptions.Item>
                         <Descriptions.Item
                           label={<Text type="secondary">计划开始时间</Text>}
@@ -674,18 +930,29 @@ const SupervisorProjectDetail: React.FC = () => {
         {/* 右侧：施工日志追踪 */}
         <Col xs={24} lg={10}>
           <Card
-            title={<span style={{ fontWeight: 600 }}>现场巡检日志</span>}
+            className="supervisor-panel"
+            title={
+              <span style={{ fontWeight: 600 }}>
+                现场巡检日志
+                {activePhase
+                  ? ` · ${activePhase.name || dicts.phaseType(activePhase.phaseType)}`
+                  : ""}
+              </span>
+            }
             bordered={false}
             style={{ ...cardStyle, height: "100%" }}
             extra={
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                onClick={openLogModal}
-                shape="round"
-              >
-                记录巡检
-              </Button>
+              <Tooltip title={currentPhaseLogBlockReason}>
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  onClick={openLogModal}
+                  shape="round"
+                  disabled={!canCreateCurrentPhaseLog}
+                >
+                  记录巡检
+                </Button>
+              </Tooltip>
             }
           >
             {logsLoading ? (
@@ -694,7 +961,7 @@ const SupervisorProjectDetail: React.FC = () => {
               </div>
             ) : logs.length === 0 ? (
               <Empty
-                description={<Text type="secondary">暂无巡检记录</Text>}
+                description={<Text type="secondary">当前阶段暂无巡检记录</Text>}
                 style={{ padding: "40px 0" }}
               />
             ) : (
@@ -714,8 +981,8 @@ const SupervisorProjectDetail: React.FC = () => {
                       size="small"
                       style={{
                         borderRadius: 12,
-                        border: `1px solid ${token.colorSplit}40`,
-                        boxShadow: "0 2px 8px rgba(0,0,0,0.02)",
+                        border: `1px solid ${SUPERVISOR_THEME.borderColor}`,
+                        boxShadow: "none",
                       }}
                     >
                       <div
@@ -799,19 +1066,12 @@ const SupervisorProjectDetail: React.FC = () => {
         destroyOnClose
       >
         <Form form={logForm} layout="vertical" style={{ marginTop: 24 }}>
-          <Form.Item
-            name="phaseId"
-            label="关联当前阶段"
-            rules={[{ required: true, message: "请选择施工阶段" }]}
-          >
-            <Select
-              placeholder="选择所属阶段"
-              size="large"
-              options={phases.map((p) => ({
-                label: p.name || p.phaseType,
-                value: p.id,
-              }))}
-            />
+          <Form.Item label="当前阶段">
+            <Tag color={dicts.phaseColor(currentManagedPhase?.status || "pending")}>
+              {currentManagedPhase?.name ||
+                dicts.phaseType(currentManagedPhase?.phaseType || "") ||
+                "未选择阶段"}
+            </Tag>
           </Form.Item>
           <Form.Item
             name="title"
@@ -862,7 +1122,9 @@ const SupervisorProjectDetail: React.FC = () => {
           >
             <Upload
               listType="picture-card"
-              maxCount={9}
+              multiple
+              accept="image/jpeg,image/png,image/gif,image/webp"
+              maxCount={MAX_LOG_PHOTOS}
               fileList={logImageList}
               customRequest={handleLogImageUpload}
               onRemove={handleLogImageRemove}
@@ -885,63 +1147,161 @@ const SupervisorProjectDetail: React.FC = () => {
         </Form>
       </Modal>
 
-      {/* ── Drawer: 编辑阶段 ── */}
-      <Drawer
+      {/* ── Modal: 当前阶段动作 ── */}
+      <Modal
         title={
           <span style={{ fontWeight: 600 }}>
-            阶段管控：{activePhase?.name || activePhase?.phaseType || ""}
+            更新当前阶段：
+            {currentManagedPhase?.name || currentManagedPhase?.phaseType || ""}
           </span>
         }
-        open={phaseDrawerOpen}
-        onClose={() => setPhaseDrawerOpen(false)}
-        width={400}
-        footer={
-          <div style={{ display: "flex", justifyContent: "flex-end", gap: 12 }}>
-            <Button onClick={() => setPhaseDrawerOpen(false)} shape="round">
-              取消
-            </Button>
-            <Button
-              type="primary"
-              loading={phaseSubmitting}
-              onClick={handleSavePhase}
-              shape="round"
-            >
-              保存更新
-            </Button>
-          </div>
-        }
+        open={phaseActionModalOpen}
+        onCancel={() => setPhaseActionModalOpen(false)}
+        onOk={handleSavePhase}
+        confirmLoading={phaseSubmitting}
+        okText={selectedPhaseActionMeta?.label || "确认更新"}
+        cancelText="取消"
+        okButtonProps={{ shape: "round", disabled: allowedPhaseActions.length === 0 }}
+        cancelButtonProps={{ shape: "round" }}
+        width={460}
+        destroyOnClose
       >
-        <Form form={phaseForm} layout="vertical" size="large">
-          <Form.Item name="status" label="阶段状态">
-            <Select
-              options={[
-                { label: "待开始", value: "pending" },
-                { label: "进行中", value: "in_progress" },
-                { label: "已完成", value: "completed" },
-                { label: "暂停", value: "paused" },
+        <Form form={phaseForm} layout="vertical" size="large" style={{ marginTop: 20 }}>
+          <Form.Item label="当前状态">
+            <Tag
+              color={dicts.phaseColor(currentManagedPhase?.status || "pending")}
+              style={{ borderRadius: 12, padding: "2px 12px" }}
+            >
+              {dicts.phaseStatus(currentManagedPhase?.status || "pending")}
+            </Tag>
+          </Form.Item>
+          <Form.Item
+            name="action"
+            label="阶段动作"
+            rules={[{ required: true, message: "请选择阶段操作" }]}
+          >
+            <Radio.Group
+              optionType="button"
+              buttonStyle="solid"
+              options={allowedPhaseActions.map((action) => ({
+                label: phaseActionMeta[action].label,
+                value: action,
+              }))}
+              onChange={(event) => {
+                const action = event.target.value as PhaseAction;
+                const defaultStartDate = getDefaultPhaseStartDate();
+                phaseForm.setFieldsValue({
+                  startDate: action === "start" ? defaultStartDate : null,
+                  endDate: ["start", "complete"].includes(action)
+                    ? getDefaultPhaseEndDate(defaultStartDate)
+                    : null,
+                });
+              }}
+            />
+          </Form.Item>
+          {selectedPhaseAction === "start" ? (
+            <Form.Item
+              name="startDate"
+              label="计划开始时间"
+              rules={[
+                { required: true, message: "请选择计划开始时间" },
+                {
+                  validator(_, value) {
+                    if (!value || !phaseStartLowerBound) {
+                      return Promise.resolve();
+                    }
+                    if (value.startOf("day").isBefore(phaseStartLowerBound)) {
+                      const lowerBoundLabel =
+                        previousPhaseEndDay &&
+                        phaseStartLowerBound.isSame(previousPhaseEndDay, "day")
+                          ? `上一阶段计划完成时间（${previousPhaseEndDay.format("YYYY-MM-DD")}）`
+                          : `项目开工时间（${phaseStartLowerBound.format("YYYY-MM-DD")}）`;
+                      return Promise.reject(
+                        new Error(`计划开始时间不能早于${lowerBoundLabel}`),
+                      );
+                    }
+                    return Promise.resolve();
+                  },
+                },
               ]}
-            />
-          </Form.Item>
-          <Form.Item name="responsiblePerson" label="责任人">
-            <Input
-              placeholder="输入项目负责人姓名"
-              prefix={<UserOutlined style={{ color: "#bfbfbf" }} />}
-            />
-          </Form.Item>
-          <Form.Item name="startDate" label="计划开始时间">
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
-          <Form.Item name="endDate" label="计划完成时间">
-            <DatePicker style={{ width: "100%" }} />
-          </Form.Item>
+            >
+              <DatePicker
+                style={{ width: "100%" }}
+                disabledDate={shouldDisablePhaseStartDate}
+              />
+            </Form.Item>
+          ) : null}
+          {selectedPhaseAction === "start" || selectedPhaseAction === "complete" ? (
+            <Form.Item
+              name="endDate"
+              label="计划完成时间"
+              dependencies={["startDate", "action"]}
+              rules={[
+                { required: true, message: "请选择计划完成时间" },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (!value) {
+                      return Promise.resolve();
+                    }
+                    const startDate = getFieldValue("startDate");
+                    const effectiveStartDate = dayjs.isDayjs(startDate)
+                      ? startDate.startOf("day")
+                      : toValidDay(currentManagedPhase?.startDate) ||
+                        phaseStartLowerBound;
+                    if (
+                      effectiveStartDate &&
+                      value.startOf("day").isBefore(effectiveStartDate)
+                    ) {
+                      return Promise.reject(
+                        new Error("计划完成时间不能早于计划开始时间"),
+                      );
+                    }
+                    return Promise.resolve();
+                  },
+                }),
+              ]}
+            >
+              <DatePicker
+                style={{ width: "100%" }}
+                disabledDate={shouldDisablePhaseEndDate}
+              />
+            </Form.Item>
+          ) : null}
+          {projectKickoffDay ? (
+            <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+              项目开工时间：{projectKickoffDay.format("YYYY-MM-DD")}
+            </Text>
+          ) : null}
+          {previousPhaseEndDay ? (
+            <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+              上一阶段计划完成时间：{previousPhaseEndDay.format("YYYY-MM-DD")}
+            </Text>
+          ) : null}
+          {nextPhaseStartDay ? (
+            <Text type="secondary" style={{ display: "block", marginBottom: 8 }}>
+              下一阶段计划开始时间：{nextPhaseStartDay.format("YYYY-MM-DD")}；如当前阶段延期，后续未开始阶段将自动顺延
+            </Text>
+          ) : null}
+          <Divider style={{ margin: "12px 0 16px" }} />
+          <Text type="secondary">责任人</Text>
+          <div style={{ marginTop: 6, fontWeight: 500 }}>
+            {resolvePhaseResponsible(currentManagedPhase)}
+          </div>
+          <Text
+            type="secondary"
+            style={{ display: "block", marginTop: 12, fontSize: 12 }}
+          >
+            监理仅更新当前阶段动作；阶段结构、责任归属和跨阶段批量顺延由运营/管理员处理。
+          </Text>
         </Form>
-      </Drawer>
+      </Modal>
 
       {/* ── Modal: 上报风险 ── */}
       <Modal
         title={
           <>
-            <WarningOutlined style={{ color: "#ff4d4f" }} /> 上报异常/风险
+            <WarningOutlined style={{ color: SUPERVISOR_THEME.errorColor }} />{" "}
+            上报异常/风险
           </>
         }
         open={riskModalOpen}

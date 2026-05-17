@@ -15,6 +15,7 @@ import {
 import { MobileOutlined, LogoutOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import api from "../../services/api";
+import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 
 const { Text } = Typography;
 
@@ -95,15 +96,16 @@ const SupervisorSessions: React.FC = () => {
   const inactiveSessions = sessions.filter((s) => !s.active);
 
   return (
-    <div>
+    <div className="supervisor-page">
       <Card
+        className="supervisor-panel"
         title={
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <MobileOutlined />
             <span>登录设备管理</span>
             <Badge
               count={activeSessions.length}
-              style={{ backgroundColor: "#52c41a" }}
+              style={{ backgroundColor: SUPERVISOR_THEME.successColor }}
             />
           </div>
         }
@@ -159,7 +161,10 @@ const SupervisorSessions: React.FC = () => {
                       <List.Item.Meta
                         avatar={
                           <MobileOutlined
-                            style={{ fontSize: 20, color: "#52c41a" }}
+                            style={{
+                              fontSize: 20,
+                              color: SUPERVISOR_THEME.successColor,
+                            }}
                           />
                         }
                         title={
@@ -221,7 +226,10 @@ const SupervisorSessions: React.FC = () => {
                       <List.Item.Meta
                         avatar={
                           <MobileOutlined
-                            style={{ fontSize: 20, color: "#d9d9d9" }}
+                            style={{
+                              fontSize: 20,
+                              color: SUPERVISOR_THEME.textMuted,
+                            }}
                           />
                         }
                         title={

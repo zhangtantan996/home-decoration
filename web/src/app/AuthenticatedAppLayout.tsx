@@ -132,7 +132,11 @@ export function AuthenticatedAppLayout() {
           <div className={styles.footerLinks}>
             <Link to="/legal/user-agreement">用户协议</Link>
             <Link to="/legal/privacy-policy">隐私政策</Link>
-            <Link to="/me/settings">账户设置</Link>
+            <Link to="/legal/personal-info-collection-list">个人信息收集清单</Link>
+            <Link to="/legal/transaction-rules">交易规则</Link>
+            <Link to="/legal/refund-rules">退款售后</Link>
+            <Link to="/legal/merchant-rules">商家入驻规则</Link>
+            <Link to="/legal/third-party-sharing">第三方共享清单</Link>
           </div>
         </div>
       </footer>

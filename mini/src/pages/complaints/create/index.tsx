@@ -128,7 +128,7 @@ const ComplaintCreatePage: React.FC = () => {
           description="请从项目详情发起投诉"
           action={{
             text: '去项目进度',
-            onClick: () => void Taro.navigateTo({ url: '/pages/progress/index' }),
+            onClick: () => void Taro.switchTab({ url: '/pages/progress/index' }),
           }}
         />
       </View>

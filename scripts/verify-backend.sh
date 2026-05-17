@@ -19,5 +19,6 @@ export JWT_SECRET="${JWT_SECRET:-test_verify_backend_jwt_secret_2026}"
 
 node ./scripts/testing/run_command_suite.mjs \
   --suite verify-backend \
+  --step "rbac-guard::cd server && go run ./scripts/rbac_guard.go" \
   --step "go-vet::cd server && go vet ./..." \
   --step "go-test::cd server && go test ./..."

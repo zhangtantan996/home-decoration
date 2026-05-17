@@ -187,12 +187,17 @@ export interface ProjectDTO {
   id: number;
   name: string;
   address: string;
+  coverImage?: string;
   area?: number;
   budget?: number;
   status?: number;
   businessStage?: string;
   flowSummary?: string;
   availableActions?: string[];
+  entryStartDate?: string;
+  entryEndDate?: string;
+  startDate?: string;
+  expectedEnd?: string;
   createdAt?: string;
 }
 
@@ -209,6 +214,14 @@ export interface ProjectRiskSummaryDTO {
   escrowFrozen?: boolean;
   escrowStatus?: number;
   frozenAmount?: number;
+}
+
+export interface ProjectCurrentSupervisorDTO {
+  assignmentId?: number;
+  supervisorId?: number;
+  name?: string;
+  phone?: string;
+  assignedAt?: string;
 }
 
 export interface ProjectPhaseTaskDTO {
@@ -286,6 +299,7 @@ export interface BridgeConversionSummaryDTO {
 
 export interface ProjectDetailDTO extends ProjectDTO {
   selectedQuoteTaskId?: number;
+  currentSupervisor?: ProjectCurrentSupervisorDTO | null;
   bridgeConversionSummary?: BridgeConversionSummaryDTO;
   closureSummary?: {
     completionStatus?: string;

@@ -80,6 +80,17 @@ func (s *SupervisorScopedService) GetProjectLogs(supervisorID, projectID, phaseI
 	if err := s.VerifyAssignment(supervisorID, projectID); err != nil {
 		return nil, 0, err
 	}
+	if phaseID == 0 {
+		phases, err := s.supervision.projectService.GetProjectPhases(projectID)
+		if err != nil {
+			return nil, 0, err
+		}
+		currentPhase := pickCurrentProjectPhase(phases)
+		if currentPhase == nil {
+			return []model.WorkLog{}, 0, nil
+		}
+		phaseID = currentPhase.ID
+	}
 	return s.supervision.GetProjectLogs(projectID, phaseID, page, pageSize)
 }
 
@@ -96,7 +107,13 @@ func (s *SupervisorScopedService) UpdatePhase(supervisorID, projectID, phaseID u
 	if err := s.VerifyAssignment(supervisorID, projectID); err != nil {
 		return err
 	}
-	return s.supervision.UpdatePhase(projectID, phaseID, req)
+	allowedUpdate := &UpdatePhaseRequest{}
+	if req != nil {
+		allowedUpdate.Status = req.Status
+		allowedUpdate.StartDate = req.StartDate
+		allowedUpdate.EndDate = req.EndDate
+	}
+	return s.supervision.UpdateSupervisorPhase(projectID, phaseID, allowedUpdate)
 }
 
 // UpdatePhaseTask 更新阶段任务（需验证分配）

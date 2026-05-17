@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -17,13 +19,23 @@ import (
 
 type ProjectService struct{}
 
+const (
+	projectNameMaxLength    = 80
+	projectAddressMaxLength = 200
+	projectAreaMax          = 100000
+	projectBudgetMax        = 100000000
+)
+
 // CreateProjectRequest 创建项目请求
 type CreateProjectRequest struct {
 	ProposalID     uint64 `json:"proposalId"` // 可选，从方案创建
 	MaterialMethod string `json:"materialMethod"`
 	CrewID         uint64 `json:"crewId"`
+	CoverImage     string `json:"coverImage"`
 	EntryStartDate string `json:"entryStartDate"` // YYYY-MM-DD
 	EntryEndDate   string `json:"entryEndDate"`   // YYYY-MM-DD
+	// EnabledPhaseTypes 是 SOP 建项时启用的项目阶段骨架；为空时使用完整标准阶段。
+	EnabledPhaseTypes []string `json:"enabledPhaseTypes"`
 
 	// 原有字段（如不从方案创建，则必填）
 	OwnerID     uint64  `json:"ownerId"`
@@ -38,55 +50,79 @@ type CreateProjectRequest struct {
 	ExpectedEnd string  `json:"expectedEnd"`
 }
 
+type UpdateProjectBasicsRequest struct {
+	OwnerID        uint64  `json:"ownerId"`
+	ProviderID     uint64  `json:"providerId"`
+	Name           string  `json:"name"`
+	Address        string  `json:"address"`
+	CoverImage     string  `json:"coverImage"`
+	Area           float64 `json:"area"`
+	Budget         float64 `json:"budget"`
+	MaterialMethod string  `json:"materialMethod"`
+	EntryStartDate string  `json:"entryStartDate"`
+	EntryEndDate   string  `json:"entryEndDate"`
+	// nil 表示不调整阶段裁剪；非 nil 表示按传入阶段集合保存。
+	EnabledPhaseTypes []string `json:"enabledPhaseTypes"`
+}
+
 // ProjectDetail 项目详情响应
 type ProjectDetail struct {
 	model.Project
-	OwnerName                      string                   `json:"ownerName"`
-	ProviderName                   string                   `json:"providerName"`
-	ProviderAvatar                 string                   `json:"providerAvatar"`
-	ProviderPhone                  string                   `json:"providerPhone"`
-	ProviderType                   int8                     `json:"providerType"`
-	DesignerName                   string                   `json:"designerName"`
-	DesignerAvatar                 string                   `json:"designerAvatar"`
-	DesignerPhone                  string                   `json:"designerPhone"`
-	RiskSummary                    *ProjectRiskSummary      `json:"riskSummary,omitempty"`
-	Phases                         []ProjectPhaseView       `json:"phases,omitempty"`
-	Milestones                     []model.Milestone        `json:"milestones"`
-	RecentLogs                     []model.WorkLog          `json:"recentLogs"`
-	EscrowBalance                  float64                  `json:"escrowBalance"`
-	BusinessStage                  string                   `json:"businessStage"`
-	FlowSummary                    string                   `json:"flowSummary"`
-	AvailableActions               []string                 `json:"availableActions"`
-	BaselineStatus                 string                   `json:"baselineStatus"`
-	BaselineSubmittedAt            *time.Time               `json:"baselineSubmittedAt,omitempty"`
-	ConstructionSubjectType        string                   `json:"constructionSubjectType"`
-	ConstructionSubjectID          uint64                   `json:"constructionSubjectId,omitempty"`
-	ConstructionSubjectDisplayName string                   `json:"constructionSubjectDisplayName,omitempty"`
-	KickoffStatus                  string                   `json:"kickoffStatus"`
-	PlannedStartDate               *time.Time               `json:"plannedStartDate,omitempty"`
-	SupervisorSummary              *BridgeSupervisorSummary `json:"supervisorSummary,omitempty"`
-	BridgeConversionSummary        *BridgeConversionSummary `json:"bridgeConversionSummary,omitempty"`
-	ClosureSummary                 *ProjectClosureSummary   `json:"closureSummary,omitempty"`
-	QuoteTruthSummary              *QuoteTruthSummary       `json:"quoteTruthSummary,omitempty"`
-	CommercialExplanation          *CommercialExplanation   `json:"commercialExplanation,omitempty"`
-	SubmissionHealth               *SubmissionHealthSummary `json:"submissionHealth,omitempty"`
-	ChangeOrderSummary             *ChangeOrderSummary      `json:"changeOrderSummary,omitempty"`
-	SettlementSummary              *SettlementSummary       `json:"settlementSummary,omitempty"`
-	PayoutSummary                  *PayoutSummary           `json:"payoutSummary,omitempty"`
-	FinancialClosureStatus         string                   `json:"financialClosureStatus,omitempty"`
-	NextPendingAction              string                   `json:"nextPendingAction,omitempty"`
-	SelectedQuoteTaskID            uint64                   `json:"selectedQuoteTaskId"`
-	SelectedForemanProviderID      uint64                   `json:"selectedForemanProviderId"`
-	SelectedQuoteSubmissionID      uint64                   `json:"selectedQuoteSubmissionId"`
-	InspirationCaseDraftID         uint64                   `json:"inspirationCaseDraftId"`
-	CompletedPhotos                []string                 `json:"completedPhotos"`
-	CompletionNotes                string                   `json:"completionNotes"`
-	CompletionSubmittedAt          *time.Time               `json:"completionSubmittedAt,omitempty"`
-	CompletionRejectionReason      string                   `json:"completionRejectionReason,omitempty"`
-	CompletionRejectedAt           *time.Time               `json:"completionRejectedAt,omitempty"`
-	PaymentPlans                   []model.PaymentPlan      `json:"paymentPlans,omitempty"`
-	NextPayablePlan                *model.PaymentPlan       `json:"nextPayablePlan,omitempty"`
-	ChangeOrders                   []ChangeOrderView        `json:"changeOrders,omitempty"`
+	OwnerName                      string                    `json:"ownerName"`
+	ProviderName                   string                    `json:"providerName"`
+	ProviderAvatar                 string                    `json:"providerAvatar"`
+	ProviderPhone                  string                    `json:"providerPhone"`
+	ProviderType                   int8                      `json:"providerType"`
+	DesignerName                   string                    `json:"designerName"`
+	DesignerAvatar                 string                    `json:"designerAvatar"`
+	DesignerPhone                  string                    `json:"designerPhone"`
+	RiskSummary                    *ProjectRiskSummary       `json:"riskSummary,omitempty"`
+	Phases                         []ProjectPhaseView        `json:"phases,omitempty"`
+	Milestones                     []model.Milestone         `json:"milestones"`
+	RecentLogs                     []model.WorkLog           `json:"recentLogs"`
+	EscrowBalance                  float64                   `json:"escrowBalance"`
+	BusinessStage                  string                    `json:"businessStage"`
+	FlowSummary                    string                    `json:"flowSummary"`
+	AvailableActions               []string                  `json:"availableActions"`
+	BaselineStatus                 string                    `json:"baselineStatus"`
+	BaselineSubmittedAt            *time.Time                `json:"baselineSubmittedAt,omitempty"`
+	ConstructionSubjectType        string                    `json:"constructionSubjectType"`
+	ConstructionSubjectID          uint64                    `json:"constructionSubjectId,omitempty"`
+	ConstructionSubjectDisplayName string                    `json:"constructionSubjectDisplayName,omitempty"`
+	KickoffStatus                  string                    `json:"kickoffStatus"`
+	PlannedStartDate               *time.Time                `json:"plannedStartDate,omitempty"`
+	SupervisorSummary              *BridgeSupervisorSummary  `json:"supervisorSummary,omitempty"`
+	CurrentSupervisor              *ProjectSupervisorSummary `json:"currentSupervisor,omitempty"`
+	BridgeConversionSummary        *BridgeConversionSummary  `json:"bridgeConversionSummary,omitempty"`
+	ClosureSummary                 *ProjectClosureSummary    `json:"closureSummary,omitempty"`
+	QuoteTruthSummary              *QuoteTruthSummary        `json:"quoteTruthSummary,omitempty"`
+	CommercialExplanation          *CommercialExplanation    `json:"commercialExplanation,omitempty"`
+	SubmissionHealth               *SubmissionHealthSummary  `json:"submissionHealth,omitempty"`
+	ChangeOrderSummary             *ChangeOrderSummary       `json:"changeOrderSummary,omitempty"`
+	SettlementSummary              *SettlementSummary        `json:"settlementSummary,omitempty"`
+	PayoutSummary                  *PayoutSummary            `json:"payoutSummary,omitempty"`
+	FinancialClosureStatus         string                    `json:"financialClosureStatus,omitempty"`
+	NextPendingAction              string                    `json:"nextPendingAction,omitempty"`
+	SelectedQuoteTaskID            uint64                    `json:"selectedQuoteTaskId"`
+	SelectedForemanProviderID      uint64                    `json:"selectedForemanProviderId"`
+	SelectedQuoteSubmissionID      uint64                    `json:"selectedQuoteSubmissionId"`
+	InspirationCaseDraftID         uint64                    `json:"inspirationCaseDraftId"`
+	CompletedPhotos                []string                  `json:"completedPhotos"`
+	CompletionNotes                string                    `json:"completionNotes"`
+	CompletionSubmittedAt          *time.Time                `json:"completionSubmittedAt,omitempty"`
+	CompletionRejectionReason      string                    `json:"completionRejectionReason,omitempty"`
+	CompletionRejectedAt           *time.Time                `json:"completionRejectedAt,omitempty"`
+	PaymentPlans                   []model.PaymentPlan       `json:"paymentPlans,omitempty"`
+	NextPayablePlan                *model.PaymentPlan        `json:"nextPayablePlan,omitempty"`
+	ChangeOrders                   []ChangeOrderView         `json:"changeOrders,omitempty"`
+}
+
+type ProjectSupervisorSummary struct {
+	AssignmentID uint64     `json:"assignmentId"`
+	SupervisorID uint64     `json:"supervisorId"`
+	Name         string     `json:"name"`
+	Phone        string     `json:"phone,omitempty"`
+	AssignedAt   *time.Time `json:"assignedAt,omitempty"`
 }
 
 type ProjectRiskSummary struct {
@@ -177,6 +213,24 @@ var projectPhaseNameMap = map[string]string{
 	"inspection":   "竣工验收",
 }
 
+var defaultProjectPhaseSpecs = []model.ProjectPhase{
+	{PhaseType: "preparation", Seq: 1, Status: "pending", EstimatedDays: 4},
+	{PhaseType: "demolition", Seq: 2, Status: "pending", EstimatedDays: 7},
+	{PhaseType: "electrical", Seq: 3, Status: "pending", EstimatedDays: 10},
+	{PhaseType: "masonry", Seq: 4, Status: "pending", EstimatedDays: 15},
+	{PhaseType: "painting", Seq: 5, Status: "pending", EstimatedDays: 10},
+	{PhaseType: "installation", Seq: 6, Status: "pending", EstimatedDays: 7},
+	{PhaseType: "inspection", Seq: 7, Status: "pending", EstimatedDays: 3},
+}
+
+var executionProjectPhaseTypes = map[string]bool{
+	"demolition":   true,
+	"electrical":   true,
+	"masonry":      true,
+	"painting":     true,
+	"installation": true,
+}
+
 func GetProjectPhaseDisplayName(phaseType string) string {
 	normalized := strings.TrimSpace(strings.ToLower(phaseType))
 	if name, ok := projectPhaseNameMap[normalized]; ok {
@@ -197,6 +251,140 @@ func buildProjectPhaseViews(phases []model.ProjectPhase) []ProjectPhaseView {
 		})
 	}
 	return result
+}
+
+func hasMoreThanTwoDecimals(value float64) bool {
+	return math.Abs(value-math.Round(value*100)/100) > 1e-9
+}
+
+func validateProjectBasicsInput(ownerID, providerID uint64, name, address string, area, budget float64, entryStartDate, entryEndDate string) error {
+	if ownerID == 0 {
+		return errors.New("业主不能为空")
+	}
+	if providerID == 0 {
+		return errors.New("服务商不能为空")
+	}
+
+	trimmedName := strings.TrimSpace(name)
+	if trimmedName == "" {
+		return errors.New("项目名称不能为空")
+	}
+	if utf8.RuneCountInString(trimmedName) > projectNameMaxLength {
+		return fmt.Errorf("项目名称不能超过%d个字", projectNameMaxLength)
+	}
+
+	trimmedAddress := strings.TrimSpace(address)
+	if trimmedAddress == "" {
+		return errors.New("施工地址不能为空")
+	}
+	if utf8.RuneCountInString(trimmedAddress) > projectAddressMaxLength {
+		return fmt.Errorf("施工地址不能超过%d个字", projectAddressMaxLength)
+	}
+
+	if area <= 0 {
+		return errors.New("面积必须大于0")
+	}
+	if area > projectAreaMax {
+		return fmt.Errorf("面积不能超过%d㎡", projectAreaMax)
+	}
+	if hasMoreThanTwoDecimals(area) {
+		return errors.New("面积最多保留两位小数")
+	}
+
+	if budget < 0 {
+		return errors.New("预算不能小于0")
+	}
+	if budget > projectBudgetMax {
+		return fmt.Errorf("预算不能超过%d元", projectBudgetMax)
+	}
+	if hasMoreThanTwoDecimals(budget) {
+		return errors.New("预算最多保留两位小数")
+	}
+
+	startDate, err := parseProjectDatePointer(entryStartDate)
+	if err != nil {
+		return errors.New("进场开始日期格式错误")
+	}
+	endDate, err := parseProjectDatePointer(entryEndDate)
+	if err != nil {
+		return errors.New("进场结束日期格式错误")
+	}
+	if startDate != nil && endDate != nil && endDate.Before(*startDate) {
+		return errors.New("进场结束日期不能早于进场开始日期")
+	}
+
+	return nil
+}
+
+func normalizeEnabledProjectPhaseTypes(raw []string) (map[string]bool, error) {
+	if raw == nil {
+		enabled := make(map[string]bool, len(defaultProjectPhaseSpecs))
+		for _, phase := range defaultProjectPhaseSpecs {
+			enabled[phase.PhaseType] = true
+		}
+		return enabled, nil
+	}
+
+	known := make(map[string]bool, len(defaultProjectPhaseSpecs))
+	for _, phase := range defaultProjectPhaseSpecs {
+		known[phase.PhaseType] = true
+	}
+	enabled := make(map[string]bool, len(raw))
+	for _, item := range raw {
+		phaseType := strings.TrimSpace(strings.ToLower(item))
+		if phaseType == "" {
+			continue
+		}
+		if !known[phaseType] {
+			return nil, fmt.Errorf("不支持的施工阶段：%s", item)
+		}
+		enabled[phaseType] = true
+	}
+	if !enabled["preparation"] || !enabled["inspection"] {
+		return nil, errors.New("开工准备和竣工验收阶段必须保留")
+	}
+	hasExecutionPhase := false
+	for phaseType := range executionProjectPhaseTypes {
+		if enabled[phaseType] {
+			hasExecutionPhase = true
+			break
+		}
+	}
+	if !hasExecutionPhase {
+		return nil, errors.New("至少保留一个施工执行阶段")
+	}
+	return enabled, nil
+}
+
+func isProjectPhaseStructureLockedTx(tx *gorm.DB, project *model.Project) (bool, error) {
+	if project == nil {
+		return false, errors.New("项目不存在")
+	}
+	if project.StartDate != nil {
+		return true, nil
+	}
+	var count int64
+	if err := tx.Model(&model.ProjectPhase{}).
+		Where("project_id = ? AND enabled = ? AND status <> ?", project.ID, true, "pending").
+		Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (s *ProjectService) applyProjectPhaseSelectionTx(tx *gorm.DB, projectID uint64, enabledTypes []string) error {
+	enabled, err := normalizeEnabledProjectPhaseTypes(enabledTypes)
+	if err != nil {
+		return err
+	}
+	for _, phaseSpec := range defaultProjectPhaseSpecs {
+		if err := tx.Model(&model.ProjectPhase{}).
+			Where("project_id = ? AND phase_type = ?", projectID, phaseSpec.PhaseType).
+			Update("enabled", enabled[phaseSpec.PhaseType]).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // CreateProject 创建项目
@@ -235,8 +423,9 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 		CurrentPhase:            "准备阶段",
 		BusinessStatus:          model.ProjectBusinessStatusDraft,
 		MaterialMethod:          req.MaterialMethod,
+		CoverImage:              normalizeStoredAsset(strings.TrimSpace(req.CoverImage)),
 		CrewID:                  req.CrewID,
-		ConstructionPaymentMode: (&ConfigService{}).GetConstructionPaymentMode(),
+		ConstructionPaymentMode: (&ConfigService{}).GetConstructionPaymentModeTx(tx),
 	}
 
 	// 如果是从方案创建
@@ -280,17 +469,20 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 
 	} else {
 		// 手动创建逻辑（保持原有）
-		if req.Name == "" || req.Address == "" {
-			return nil, errors.New("项目名称和地址不能为空")
-		}
-
 		project.ProviderID = req.ProviderID
-		project.Name = req.Name
-		project.Address = req.Address
+		project.Name = strings.TrimSpace(req.Name)
+		project.Address = strings.TrimSpace(req.Address)
 		project.Latitude = req.Latitude
 		project.Longitude = req.Longitude
 		project.Area = req.Area
 		project.Budget = req.Budget
+		project.CoverImage = normalizeStoredAsset(strings.TrimSpace(req.CoverImage))
+		if t, err := time.Parse("2006-01-02", req.EntryStartDate); err == nil {
+			project.EntryStartDate = &t
+		}
+		if t, err := time.Parse("2006-01-02", req.EntryEndDate); err == nil {
+			project.EntryEndDate = &t
+		}
 
 		if t, err := time.Parse("2006-01-02", req.StartDate); err == nil {
 			project.StartDate = &t
@@ -300,6 +492,14 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 		}
 	}
 
+	if err := validateProjectBasicsInput(project.OwnerID, project.ProviderID, project.Name, project.Address, project.Area, project.Budget, req.EntryStartDate, req.EntryEndDate); err != nil {
+		return nil, err
+	}
+
+	var owner model.User
+	if err := tx.Select("id").First(&owner, project.OwnerID).Error; err != nil {
+		return nil, errors.New("业主不存在")
+	}
 	// 验证服务商
 	var provider model.Provider
 	if err := tx.First(&provider, project.ProviderID).Error; err != nil {
@@ -328,6 +528,11 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 	if err := s.InitProjectPhases(tx, project.ID); err != nil {
 		return nil, err
 	}
+	if req.EnabledPhaseTypes != nil {
+		if err := s.applyProjectPhaseSelectionTx(tx, project.ID, req.EnabledPhaseTypes); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.InitProjectMilestones(tx, project.ID, project.Budget); err != nil {
 		return nil, err
 	}
@@ -337,6 +542,99 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 	project.Longitude = plainLongitude
 
 	return project, nil
+}
+
+func (s *ProjectService) UpdateProjectBasics(projectID uint64, req *UpdateProjectBasicsRequest) (*model.Project, error) {
+	if projectID == 0 {
+		return nil, errors.New("项目不存在")
+	}
+	if req == nil {
+		return nil, errors.New("参数不能为空")
+	}
+	if err := validateProjectBasicsInput(req.OwnerID, req.ProviderID, req.Name, req.Address, req.Area, req.Budget, req.EntryStartDate, req.EntryEndDate); err != nil {
+		return nil, err
+	}
+
+	var updated *model.Project
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		project, err := s.getProjectForUpdate(tx, projectID)
+		if err != nil {
+			return err
+		}
+
+		var owner model.User
+		if err := tx.Select("id").First(&owner, req.OwnerID).Error; err != nil {
+			return errors.New("业主不存在")
+		}
+		var provider model.Provider
+		if err := tx.Select("id").First(&provider, req.ProviderID).Error; err != nil {
+			return errors.New("服务商不存在")
+		}
+
+		project.OwnerID = req.OwnerID
+		project.ProviderID = req.ProviderID
+		project.Name = strings.TrimSpace(req.Name)
+		project.Address = strings.TrimSpace(req.Address)
+		project.CoverImage = normalizeStoredAsset(strings.TrimSpace(req.CoverImage))
+		project.Area = req.Area
+		project.Budget = req.Budget
+		if strings.TrimSpace(req.MaterialMethod) != "" {
+			project.MaterialMethod = strings.TrimSpace(req.MaterialMethod)
+		}
+		entryStartDate, err := parseProjectDatePointer(req.EntryStartDate)
+		if err != nil {
+			return err
+		}
+		entryEndDate, err := parseProjectDatePointer(req.EntryEndDate)
+		if err != nil {
+			return err
+		}
+		project.EntryStartDate = entryStartDate
+		project.EntryEndDate = entryEndDate
+
+		plainAddress := project.Address
+		plainLatitude := project.Latitude
+		plainLongitude := project.Longitude
+		if err := encryptProjectSensitiveFields(project); err != nil {
+			return err
+		}
+		if err := tx.Save(project).Error; err != nil {
+			return err
+		}
+		if req.EnabledPhaseTypes != nil {
+			locked, err := isProjectPhaseStructureLockedTx(tx, project)
+			if err != nil {
+				return err
+			}
+			if locked {
+				return errors.New("项目开工后不可调整阶段结构")
+			}
+			if err := s.applyProjectPhaseSelectionTx(tx, project.ID, req.EnabledPhaseTypes); err != nil {
+				return err
+			}
+		}
+		project.Address = plainAddress
+		project.Latitude = plainLatitude
+		project.Longitude = plainLongitude
+		updated = project
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+func parseProjectDatePointer(raw string) (*time.Time, error) {
+	text := strings.TrimSpace(raw)
+	if text == "" {
+		return nil, nil
+	}
+	parsed, err := time.Parse("2006-01-02", text)
+	if err != nil {
+		return nil, errors.New("日期格式错误")
+	}
+	return &parsed, nil
 }
 
 // ListProjects 获取项目列表
@@ -503,6 +801,7 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 	completedPhotos = imgutil.GetFullImageURLs(completedPhotos)
 	riskSummary := s.buildProjectRiskSummary(project)
 	bridgeSummary := BuildBridgeReadModelByProject(project)
+	currentSupervisor := s.loadCurrentSupervisorSummary(project.ID)
 	conversionSummary := BuildBridgeConversionSummaryByProject(project)
 	closureSummary := BuildProjectClosureSummary(project)
 	runtimeSummary, err := loadProjectQuoteRuntimeSummaryWithDB(repository.DB, project)
@@ -536,6 +835,7 @@ func (s *ProjectService) GetProjectDetail(id uint64) (*ProjectDetail, error) {
 		KickoffStatus:                  bridgeSummary.KickoffStatus,
 		PlannedStartDate:               bridgeSummary.PlannedStartDate,
 		SupervisorSummary:              bridgeSummary.SupervisorSummary,
+		CurrentSupervisor:              currentSupervisor,
 		BridgeConversionSummary:        conversionSummary,
 		ClosureSummary:                 closureSummary,
 		QuoteTruthSummary:              runtimeSummary.QuoteTruthSummary,
@@ -596,6 +896,49 @@ func loadProjectParticipantProfile(db *gorm.DB, providerID uint64) projectPartic
 		Phone:        providerUser.Phone,
 		ProviderType: provider.ProviderType,
 	}
+}
+
+func (s *ProjectService) loadCurrentSupervisorSummary(projectID uint64) *ProjectSupervisorSummary {
+	if projectID == 0 {
+		return nil
+	}
+
+	var assignment model.ProjectSupervisorAssignment
+	if err := repository.DB.
+		Where("project_id = ? AND status = 1", projectID).
+		Order("assigned_at DESC, id DESC").
+		First(&assignment).Error; err != nil {
+		return nil
+	}
+
+	var profile model.SupervisorProfile
+	if err := repository.DB.
+		Select("id", "real_name", "phone").
+		First(&profile, assignment.SupervisorID).Error; err != nil {
+		profile.ID = assignment.SupervisorID
+	}
+
+	assignedAt := assignment.AssignedAt
+	name := strings.TrimSpace(profile.RealName)
+	if name == "" {
+		name = "已分配监理"
+	}
+
+	return &ProjectSupervisorSummary{
+		AssignmentID: assignment.ID,
+		SupervisorID: assignment.SupervisorID,
+		Name:         name,
+		Phone:        maskProjectSupervisorPhone(profile.Phone),
+		AssignedAt:   &assignedAt,
+	}
+}
+
+func maskProjectSupervisorPhone(phone string) string {
+	trimmed := strings.TrimSpace(phone)
+	if len(trimmed) < 7 {
+		return ""
+	}
+	return trimmed[:3] + "****" + trimmed[len(trimmed)-4:]
 }
 
 func resolveProjectDesignerProviderID(db *gorm.DB, project *model.Project) uint64 {
@@ -843,7 +1186,7 @@ func (s *ProjectService) createWorkLog(projectID, workerID, adminID uint64, req 
 		return nil, errors.New("请选择所属施工阶段")
 	}
 	var phase model.ProjectPhase
-	if err := repository.DB.Where("id = ? AND project_id = ?", phaseID, projectID).First(&phase).Error; err != nil {
+	if err := repository.DB.Where("id = ? AND project_id = ? AND enabled = ?", phaseID, projectID, true).First(&phase).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("施工阶段不存在")
 		}
@@ -941,7 +1284,7 @@ func (s *ProjectService) GetProjectLogsForProvider(projectID, providerID uint64,
 // GetProjectPhases 获取项目所有阶段（含子任务）
 func (s *ProjectService) GetProjectPhases(projectID uint64) ([]model.ProjectPhase, error) {
 	var phases []model.ProjectPhase
-	err := repository.DB.Where("project_id = ?", projectID).
+	err := repository.DB.Where("project_id = ? AND enabled = ?", projectID, true).
 		Preload("Tasks").
 		Order("seq ASC").
 		Find(&phases).Error
@@ -2545,18 +2888,58 @@ type UpdatePhaseRequest struct {
 	EstimatedDays     int    `json:"estimatedDays"`
 }
 
+func normalizeProjectDay(t time.Time) time.Time {
+	y, m, d := t.Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, t.Location())
+}
+
+func resolveProjectKickoffDate(project *model.Project) *time.Time {
+	if project == nil {
+		return nil
+	}
+	if project.StartDate != nil {
+		day := normalizeProjectDay(*project.StartDate)
+		return &day
+	}
+	if project.StartedAt != nil {
+		day := normalizeProjectDay(*project.StartedAt)
+		return &day
+	}
+	if project.EntryStartDate != nil {
+		day := normalizeProjectDay(*project.EntryStartDate)
+		return &day
+	}
+	return nil
+}
+
 // UpdatePhase 更新阶段状态
 func (s *ProjectService) UpdatePhase(phaseID uint64, req *UpdatePhaseRequest) error {
+	if req == nil {
+		req = &UpdatePhaseRequest{}
+	}
 	var phase model.ProjectPhase
-	if err := repository.DB.First(&phase, phaseID).Error; err != nil {
+	if err := repository.DB.Where("id = ? AND enabled = ?", phaseID, true).First(&phase).Error; err != nil {
 		return errors.New("阶段不存在")
 	}
 
 	updates := map[string]interface{}{}
+	nextStartDate := phase.StartDate
+	nextEndDate := phase.EndDate
 
 	if req.Status != "" {
 		if req.Status != "pending" && req.Status != "in_progress" && req.Status != "completed" && req.Status != "paused" {
 			return errors.New("无效的阶段状态")
+		}
+		if req.Status == "completed" && phase.Status != "completed" {
+			var logCount int64
+			if err := repository.DB.Model(&model.WorkLog{}).
+				Where("project_id = ? AND phase_id = ?", phase.ProjectID, phase.ID).
+				Count(&logCount).Error; err != nil {
+				return err
+			}
+			if logCount == 0 {
+				return errors.New("阶段完成前至少需要一条巡检日志")
+			}
 		}
 		updates["status"] = req.Status
 	}
@@ -2567,20 +2950,129 @@ func (s *ProjectService) UpdatePhase(phaseID uint64, req *UpdatePhaseRequest) er
 		updates["responsible_person"] = req.ResponsiblePerson
 	}
 	if req.StartDate != "" {
-		if t, err := time.Parse("2006-01-02", req.StartDate); err == nil {
-			updates["start_date"] = t
+		startDateText := strings.TrimSpace(req.StartDate)
+		startDate, err := time.Parse("2006-01-02", startDateText)
+		if err != nil {
+			return errors.New("计划开始时间格式错误，应为YYYY-MM-DD")
 		}
+		normalizedStart := normalizeProjectDay(startDate)
+		nextStartDate = &normalizedStart
+		updates["start_date"] = normalizedStart
 	}
 	if req.EndDate != "" {
-		if t, err := time.Parse("2006-01-02", req.EndDate); err == nil {
-			updates["end_date"] = t
+		endDateText := strings.TrimSpace(req.EndDate)
+		endDate, err := time.Parse("2006-01-02", endDateText)
+		if err != nil {
+			return errors.New("计划完成时间格式错误，应为YYYY-MM-DD")
 		}
+		normalizedEnd := normalizeProjectDay(endDate)
+		nextEndDate = &normalizedEnd
+		updates["end_date"] = normalizedEnd
 	}
 	if req.EstimatedDays > 0 {
 		updates["estimated_days"] = req.EstimatedDays
 	}
 
-	return repository.DB.Model(&phase).Updates(updates).Error
+	if req.StartDate != "" {
+		var project model.Project
+		if err := repository.DB.Select("id", "start_date", "started_at", "entry_start_date").
+			First(&project, phase.ProjectID).Error; err != nil {
+			return errors.New("项目不存在")
+		}
+		kickoffDate := resolveProjectKickoffDate(&project)
+		if kickoffDate != nil && nextStartDate != nil && nextStartDate.Before(*kickoffDate) {
+			return errors.New("阶段计划开始时间不能早于项目开工日期")
+		}
+	}
+
+	if nextStartDate != nil && nextEndDate != nil && nextEndDate.Before(*nextStartDate) {
+		return errors.New("计划完成时间不能早于计划开始时间")
+	}
+
+	if nextStartDate != nil {
+		var previousPhase model.ProjectPhase
+		err := repository.DB.
+			Where("project_id = ? AND enabled = ? AND seq < ?", phase.ProjectID, true, phase.Seq).
+			Order("seq DESC").
+			First(&previousPhase).Error
+		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+		if err == nil && previousPhase.EndDate != nil {
+			previousEndDate := normalizeProjectDay(*previousPhase.EndDate)
+			if nextStartDate.Before(previousEndDate) {
+				return errors.New("阶段计划开始时间不能早于上一阶段计划完成时间")
+			}
+		}
+	}
+
+	return repository.DB.Transaction(func(tx *gorm.DB) error {
+		if len(updates) > 0 {
+			if err := tx.Model(&phase).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		if nextEndDate != nil {
+			return s.shiftFuturePendingPhaseSchedule(tx, phase, *nextEndDate)
+		}
+		return nil
+	})
+}
+
+func (s *ProjectService) shiftFuturePendingPhaseSchedule(tx *gorm.DB, phase model.ProjectPhase, endDate time.Time) error {
+	var futurePhases []model.ProjectPhase
+	if err := tx.
+		Where("project_id = ? AND enabled = ? AND seq > ?", phase.ProjectID, true, phase.Seq).
+		Order("seq ASC").
+		Find(&futurePhases).Error; err != nil {
+		return err
+	}
+	if len(futurePhases) == 0 {
+		return nil
+	}
+
+	normalizedEndDate := normalizeProjectDay(endDate)
+	shiftDays := 0
+	for _, futurePhase := range futurePhases {
+		if futurePhase.StartDate == nil {
+			continue
+		}
+		futureStartDate := normalizeProjectDay(*futurePhase.StartDate)
+		if futureStartDate.Before(normalizedEndDate) {
+			if !strings.EqualFold(strings.TrimSpace(futurePhase.Status), "pending") {
+				return errors.New("后续阶段已开始，不能自动顺延")
+			}
+			shiftDays = int(normalizedEndDate.Sub(futureStartDate).Hours() / 24)
+		}
+		break
+	}
+	if shiftDays <= 0 {
+		return nil
+	}
+
+	for _, futurePhase := range futurePhases {
+		if !strings.EqualFold(strings.TrimSpace(futurePhase.Status), "pending") {
+			return errors.New("后续阶段已开始，不能自动顺延")
+		}
+		phaseUpdates := map[string]interface{}{}
+		if futurePhase.StartDate != nil {
+			shiftedStartDate := normalizeProjectDay(futurePhase.StartDate.AddDate(0, 0, shiftDays))
+			phaseUpdates["start_date"] = shiftedStartDate
+		}
+		if futurePhase.EndDate != nil {
+			shiftedEndDate := normalizeProjectDay(futurePhase.EndDate.AddDate(0, 0, shiftDays))
+			phaseUpdates["end_date"] = shiftedEndDate
+		}
+		if len(phaseUpdates) == 0 {
+			continue
+		}
+		if err := tx.Model(&model.ProjectPhase{}).
+			Where("id = ?", futurePhase.ID).
+			Updates(phaseUpdates).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // UpdatePhaseTaskRequest 更新子任务请求
@@ -2611,14 +3103,11 @@ func (s *ProjectService) UpdatePhaseTask(taskID uint64, req *UpdatePhaseTaskRequ
 
 // InitProjectPhases 创建项目时初始化默认阶段
 func (s *ProjectService) InitProjectPhases(tx *gorm.DB, projectID uint64) error {
-	defaultPhases := []model.ProjectPhase{
-		{ProjectID: projectID, PhaseType: "preparation", Seq: 1, Status: "pending", EstimatedDays: 4},
-		{ProjectID: projectID, PhaseType: "demolition", Seq: 2, Status: "pending", EstimatedDays: 7},
-		{ProjectID: projectID, PhaseType: "electrical", Seq: 3, Status: "pending", EstimatedDays: 10},
-		{ProjectID: projectID, PhaseType: "masonry", Seq: 4, Status: "pending", EstimatedDays: 15},
-		{ProjectID: projectID, PhaseType: "painting", Seq: 5, Status: "pending", EstimatedDays: 10},
-		{ProjectID: projectID, PhaseType: "installation", Seq: 6, Status: "pending", EstimatedDays: 7},
-		{ProjectID: projectID, PhaseType: "inspection", Seq: 7, Status: "pending", EstimatedDays: 3},
+	defaultPhases := make([]model.ProjectPhase, len(defaultProjectPhaseSpecs))
+	for i, spec := range defaultProjectPhaseSpecs {
+		defaultPhases[i] = spec
+		defaultPhases[i].ProjectID = projectID
+		defaultPhases[i].Enabled = true
 	}
 
 	for i := range defaultPhases {

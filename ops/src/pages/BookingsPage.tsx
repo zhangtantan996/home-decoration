@@ -1,7 +1,9 @@
 import { CalendarOutlined, CheckCircleOutlined, ClockCircleOutlined, PhoneOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Card, Descriptions, Drawer, Empty, Form, Input, Pagination, Select, Space, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { getBooking, listBookings, showApiError, updateBookingStatus, type BookingItem } from '../services/api';
+import { useAuthStore } from '../stores/authStore';
 
 const statusText = (status?: number) => {
   switch (status) {
@@ -54,6 +56,8 @@ const PAGE_SIZE = 8;
 const MAX_NOTE_LENGTH = 500;
 
 const BookingsPage = () => {
+  const navigate = useNavigate();
+  const canCreateProject = useAuthStore((state) => state.hasPermission('project:edit'));
   const [loading, setLoading] = useState(false);
   const [items, setItems] = useState<BookingItem[]>([]);
   const [keyword, setKeyword] = useState('');
@@ -185,7 +189,10 @@ const BookingsPage = () => {
                   <Typography.Text type="secondary">{formatTime(row.createdAt)}</Typography.Text>
                   <span className={`ops-booking-status ${statusClass(row.status)}`}>{statusText(row.status)}</span>
                 </Space>
-                <Button type="link" onClick={() => void openDetail(row)}>查看详情 / 写备注</Button>
+                <Space size={0}>
+                  <Button type="link" onClick={() => void openDetail(row)}>查看详情 / 写备注</Button>
+                  {canCreateProject ? <Button type="link" onClick={() => navigate(`/projects?mode=create&bookingId=${row.id}`)}>转为项目</Button> : null}
+                </Space>
               </div>
               <div className="ops-booking-card__body">
                 <div>
@@ -227,7 +234,12 @@ const BookingsPage = () => {
         onClose={() => setDetailOpen(false)}
         width={560}
         loading={detailLoading}
-        extra={<Button type="primary" onClick={() => void saveDetail()}>保存跟进</Button>}
+        extra={(
+          <Space>
+            {detail && canCreateProject ? <Button onClick={() => navigate(`/projects?mode=create&bookingId=${detail.id}`)}>转为项目</Button> : null}
+            <Button type="primary" onClick={() => void saveDetail()}>保存跟进</Button>
+          </Space>
+        )}
       >
         {detail ? (
           <>

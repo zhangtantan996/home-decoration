@@ -700,6 +700,13 @@ func AdminCreateSupervisorAssignment(c *gin.Context) {
 			return
 		}
 		assignedAt := time.Now()
+		beforeState := map[string]interface{}{
+			"projectId":    existing.ProjectID,
+			"supervisorId": existing.SupervisorID,
+			"status":       existing.Status,
+			"assignedBy":   existing.AssignedBy,
+			"assignedAt":   existing.AssignedAt,
+		}
 		if err := repository.DB.Model(&existing).Updates(map[string]interface{}{
 			"status":      int8(1),
 			"assigned_by": c.GetUint64("adminId"),
@@ -711,6 +718,25 @@ func AdminCreateSupervisorAssignment(c *gin.Context) {
 		existing.Status = 1
 		existing.AssignedBy = c.GetUint64("adminId")
 		existing.AssignedAt = assignedAt
+		_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    c.GetUint64("adminId"),
+			OperationType: "assign_supervisor",
+			ResourceType:  "project_supervisor_assignment",
+			ResourceID:    existing.ID,
+			Reason:        readAdminReason(c, "分配监理"),
+			Result:        "success",
+			BeforeState:   beforeState,
+			AfterState: map[string]interface{}{
+				"projectId":    existing.ProjectID,
+				"supervisorId": existing.SupervisorID,
+				"status":       existing.Status,
+				"assignedBy":   existing.AssignedBy,
+				"assignedAt":   existing.AssignedAt,
+			},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
 		response.Success(c, existing)
 		return
 	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -729,6 +755,24 @@ func AdminCreateSupervisorAssignment(c *gin.Context) {
 		response.ServerError(c, "分配失败")
 		return
 	}
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    c.GetUint64("adminId"),
+		OperationType: "assign_supervisor",
+		ResourceType:  "project_supervisor_assignment",
+		ResourceID:    assignment.ID,
+		Reason:        readAdminReason(c, "分配监理"),
+		Result:        "success",
+		AfterState: map[string]interface{}{
+			"projectId":    assignment.ProjectID,
+			"supervisorId": assignment.SupervisorID,
+			"status":       assignment.Status,
+			"assignedBy":   assignment.AssignedBy,
+			"assignedAt":   assignment.AssignedAt,
+		},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
 
 	response.Success(c, assignment)
 }
@@ -741,7 +785,23 @@ func AdminDeleteSupervisorAssignment(c *gin.Context) {
 		return
 	}
 
-	result := repository.DB.Model(&model.ProjectSupervisorAssignment{}).Where("id = ?", id).Update("status", 0)
+	var assignment model.ProjectSupervisorAssignment
+	if err := repository.DB.First(&assignment, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			response.NotFound(c, "分配记录不存在")
+			return
+		}
+		response.ServerError(c, "移除失败")
+		return
+	}
+	beforeState := map[string]interface{}{
+		"projectId":    assignment.ProjectID,
+		"supervisorId": assignment.SupervisorID,
+		"status":       assignment.Status,
+		"assignedBy":   assignment.AssignedBy,
+		"assignedAt":   assignment.AssignedAt,
+	}
+	result := repository.DB.Model(&assignment).Update("status", 0)
 	if result.Error != nil {
 		response.ServerError(c, "移除失败")
 		return
@@ -750,6 +810,26 @@ func AdminDeleteSupervisorAssignment(c *gin.Context) {
 		response.NotFound(c, "分配记录不存在")
 		return
 	}
+	assignment.Status = 0
+	_ = (&service.AuditLogService{}).CreateBusinessRecord(&service.CreateAuditRecordInput{
+		OperatorType:  "admin",
+		OperatorID:    c.GetUint64("adminId"),
+		OperationType: "remove_supervisor",
+		ResourceType:  "project_supervisor_assignment",
+		ResourceID:    assignment.ID,
+		Reason:        readAdminReason(c, "移除监理"),
+		Result:        "success",
+		BeforeState:   beforeState,
+		AfterState: map[string]interface{}{
+			"projectId":    assignment.ProjectID,
+			"supervisorId": assignment.SupervisorID,
+			"status":       assignment.Status,
+			"assignedBy":   assignment.AssignedBy,
+			"assignedAt":   assignment.AssignedAt,
+		},
+		ClientIP:  c.ClientIP(),
+		UserAgent: c.Request.UserAgent(),
+	})
 
 	response.Success(c, nil)
 }

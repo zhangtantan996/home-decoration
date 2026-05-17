@@ -167,6 +167,9 @@ release_apply_known_migrations() {
     "server/migrations/v1.9.18_add_user_real_name_verification_fields.sql"
     "server/migrations/v1.9.19_add_enterprise_license_verification_fields.sql"
     "server/migrations/v1.9.20_add_region_service_enabled_and_backfill.sql"
+    "server/migrations/v1.9.21_add_project_phase_enabled.sql"
+    "server/migrations/v1.9.22_add_risk_warning_phase_id.sql"
+    "server/migrations/v1.9.23_add_project_cover_image.sql"
     "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
     "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
     "server/migrations/v1.11.0_add_p2_finance_and_audit_log_support.sql"
@@ -202,6 +205,10 @@ release_apply_known_migrations() {
     "server/migrations/v1.15.2_add_ops_light_booking_feature_gates.sql"
     "server/migrations/v1.15.3_disable_mini_comments_feature_gate.sql"
     "server/migrations/v1.15.4_grant_ops_workspace_role_permissions.sql"
+    "server/migrations/v1.15.5_grant_ops_project_assignment_permissions.sql"
+    "server/migrations/v1.15.6_reconcile_preset_role_permissions.sql"
+    "server/migrations/v1.15.7_grant_ops_supervisor_list_permissions.sql"
+    "server/migrations/v1.15.8_rehome_project_supervisor_role.sql"
   )
   local migration_file
   local latest_known_migration

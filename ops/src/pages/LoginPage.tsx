@@ -25,6 +25,8 @@ const stripSensitiveWhitespace = (value?: string) => (
   typeof value === 'string' ? value.replace(/\s+/g, '') : value
 );
 
+const OPS_WARNING_MESSAGE_KEY = 'ops-access-denied';
+
 const LoginPage = () => {
   const { message } = App.useApp();
   const [form] = Form.useForm<LoginForm>();
@@ -39,8 +41,18 @@ const LoginPage = () => {
       const adminToken = localStorage.getItem('admin_token');
       if (!rawUser || !adminToken) return;
       const user = JSON.parse(rawUser) as OpsUser;
-      if (!hasOpsAccess(user)) {
-        message.warning(OPS_ACCESS_DENIED_MESSAGE, 4);
+      const rawPermissions = localStorage.getItem('admin_permissions');
+      const parsedPermissions = rawPermissions ? JSON.parse(rawPermissions) : [];
+      const permissions = Array.isArray(parsedPermissions)
+        ? parsedPermissions.filter((item): item is string => typeof item === 'string')
+        : [];
+      if (!hasOpsAccess(user, permissions)) {
+        message.open({
+          key: OPS_WARNING_MESSAGE_KEY,
+          type: 'warning',
+          content: OPS_ACCESS_DENIED_MESSAGE,
+          duration: 4,
+        });
       }
     } catch {
       // noop

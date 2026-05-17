@@ -57,6 +57,9 @@ jobs:
     - name: Install dependencies
       run: go mod download
 
+    - name: RBAC guard
+      run: go run ./scripts/rbac_guard.go
+
     - name: Run vet & lint
       run: |
         go vet ./...

@@ -301,23 +301,22 @@ const SupervisorApply: React.FC = () => {
     display: "flex",
     alignItems: "center",
     justifyContent: "center",
-    background: `linear-gradient(135deg, #f0faf0 0%, #e8f5e9 100%)`,
     padding: isMobile ? "16px" : "48px",
   };
   const cardStyle: React.CSSProperties = {
     width: "100%",
     maxWidth: 480,
-    background: "#fff",
-    borderRadius: 16,
+    background: SUPERVISOR_THEME.surface,
+    borderRadius: SUPERVISOR_THEME.cardRadius,
     padding: isMobile ? "32px 24px" : "48px 40px",
-    boxShadow: "0 8px 32px rgba(0,0,0,0.08)",
+    boxShadow: SUPERVISOR_THEME.softShadow,
   };
 
   // --- 已有状态的页面 ---
   if (existingStatus === "pending") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div className="supervisor-login-bg" style={containerStyle}>
+        <div className="supervisor-login-card" style={cardStyle}>
           <Result
             icon={
               <LoadingOutlined
@@ -356,8 +355,8 @@ const SupervisorApply: React.FC = () => {
 
   if (existingStatus === "approved") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div className="supervisor-login-bg" style={containerStyle}>
+        <div className="supervisor-login-card" style={cardStyle}>
           <Result
             status="success"
             title="申请已通过"
@@ -383,8 +382,8 @@ const SupervisorApply: React.FC = () => {
 
   if (existingStatus === "rejected") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div className="supervisor-login-bg" style={containerStyle}>
+        <div className="supervisor-login-card" style={cardStyle}>
           <Result
             status="error"
             title="申请未通过"
@@ -392,7 +391,12 @@ const SupervisorApply: React.FC = () => {
               <div>
                 <Text>您的监理入驻申请未通过审核。</Text>
                 {rejectReason && (
-                  <div style={{ marginTop: 8, color: "#ff4d4f" }}>
+                  <div
+                    style={{
+                      marginTop: 8,
+                      color: SUPERVISOR_THEME.errorColor,
+                    }}
+                  >
                     原因：{rejectReason}
                   </div>
                 )}
@@ -428,8 +432,8 @@ const SupervisorApply: React.FC = () => {
   // --- 已提交的确认页面 ---
   if (pageState === "submitted") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div className="supervisor-login-bg" style={containerStyle}>
+        <div className="supervisor-login-card" style={cardStyle}>
           <Result
             status="success"
             title="申请已提交"
@@ -471,21 +475,21 @@ const SupervisorApply: React.FC = () => {
   // --- 第一步：白名单校验 ---
   if (pageState === "check_whitelist") {
     return (
-      <div style={containerStyle}>
-        <div style={cardStyle}>
+      <div className="supervisor-login-bg" style={containerStyle}>
+        <div className="supervisor-login-card" style={cardStyle}>
           <div style={{ textAlign: "center", marginBottom: 32 }}>
             <div
               style={{
                 width: 64,
                 height: 64,
-                borderRadius: 16,
+                borderRadius: SUPERVISOR_THEME.sectionRadius,
                 background: SUPERVISOR_THEME.primaryGradient,
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "center",
                 margin: "0 auto 16px",
                 fontSize: 28,
-                color: "#fff",
+                color: SUPERVISOR_THEME.surface,
               }}
             >
               <SafetyOutlined />
@@ -549,8 +553,8 @@ const SupervisorApply: React.FC = () => {
 
   // --- 第二步：填写资料表单 ---
   return (
-    <div style={containerStyle}>
-      <div style={cardStyle}>
+    <div className="supervisor-login-bg" style={containerStyle}>
+      <div className="supervisor-login-card" style={cardStyle}>
         <div style={{ textAlign: "center", marginBottom: 24 }}>
           <Title level={3} style={{ marginBottom: 4 }}>
             填写入驻资料

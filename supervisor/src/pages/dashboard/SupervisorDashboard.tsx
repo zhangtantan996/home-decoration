@@ -22,22 +22,16 @@ import { useNavigate } from "react-router-dom";
 import { useSupervisorAuthStore } from "../../stores/supervisorAuthStore";
 import { useDashboardStore } from "../../stores/dashboardStore";
 import { dicts } from "../../utils/dict";
+import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 
 const { Title, Text } = Typography;
 
 const iosCardStyle: React.CSSProperties = {
-  borderRadius: 20,
-  boxShadow: "0 8px 30px rgba(0,0,0,0.04)",
-  border: "none",
-  transition: "all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1)",
+  borderRadius: SUPERVISOR_THEME.cardRadius,
+  boxShadow: SUPERVISOR_THEME.subtleShadow,
+  border: `1px solid ${SUPERVISOR_THEME.borderColor}`,
+  transition: "all 180ms ease-out",
 };
-
-const iosHoverStyle = `
-    .ios-hover-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 14px 40px rgba(0,0,0,0.08) !important;
-    }
-`;
 
 const SupervisorDashboard: React.FC = () => {
   const { totalProjects, recentProjects, loading, fetch } = useDashboardStore();
@@ -75,16 +69,7 @@ const SupervisorDashboard: React.FC = () => {
   ).length;
 
   return (
-    <div
-      style={{
-        maxWidth: 1200,
-        margin: "0 auto",
-        paddingBottom: 24,
-        padding: "0 16px",
-      }}
-    >
-      <style>{iosHoverStyle}</style>
-
+    <div className="supervisor-page">
       {/* Header Section */}
       <div style={{ marginBottom: 32, padding: "0 8px" }}>
         <Title
@@ -93,7 +78,6 @@ const SupervisorDashboard: React.FC = () => {
             fontWeight: 600,
             color: token.colorTextHeading,
             marginBottom: 8,
-            letterSpacing: "-0.5px",
           }}
         >
           欢迎回来，{supervisor?.realName || "监理工程师"}
@@ -107,7 +91,7 @@ const SupervisorDashboard: React.FC = () => {
       <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
         <Col xs={24} sm={8}>
           <Card
-            className="ios-hover-card"
+            className="supervisor-lift-card"
             style={{ ...iosCardStyle, padding: "8px 4px" }}
             styles={{ body: { padding: "20px 24px" } }}
           >
@@ -133,7 +117,7 @@ const SupervisorDashboard: React.FC = () => {
         </Col>
         <Col xs={24} sm={8}>
           <Card
-            className="ios-hover-card"
+            className="supervisor-lift-card"
             style={{ ...iosCardStyle, padding: "8px 4px" }}
             styles={{ body: { padding: "20px 24px" } }}
           >
@@ -168,7 +152,7 @@ const SupervisorDashboard: React.FC = () => {
         </Col>
         <Col xs={24} sm={8}>
           <Card
-            className="ios-hover-card"
+            className="supervisor-lift-card"
             style={{ ...iosCardStyle, padding: "8px 4px" }}
             styles={{ body: { padding: "20px 24px" } }}
           >
@@ -224,6 +208,7 @@ const SupervisorDashboard: React.FC = () => {
 
       {recentProjects.length === 0 ? (
         <Card
+          className="supervisor-panel"
           style={{ ...iosCardStyle, textAlign: "center", padding: "60px 0" }}
         >
           <Empty
@@ -239,7 +224,7 @@ const SupervisorDashboard: React.FC = () => {
           {recentProjects.map((item) => (
             <Col xs={24} lg={12} key={item.id}>
               <Card
-                className="ios-hover-card"
+                className="supervisor-lift-card"
                 onClick={() => navigate(`/projects/${item.id}`)}
                 style={{
                   ...iosCardStyle,
@@ -305,7 +290,7 @@ const SupervisorDashboard: React.FC = () => {
                 <div
                   style={{
                     padding: "20px 28px",
-                    backgroundColor: "rgba(0,0,0,0.015)",
+                    backgroundColor: SUPERVISOR_THEME.surfaceMuted,
                     display: "flex",
                     gap: 24,
                   }}
