@@ -609,6 +609,8 @@ func TestProjectServiceUpdateProjectRejectsPhaseSelectionAfterStart(t *testing.T
 		ProviderID:        provider.ID,
 		Name:              "已开工项目",
 		Address:           "已开工地址",
+		Area:              100,
+		Budget:            200000,
 		MaterialMethod:    "platform",
 		EnabledPhaseTypes: []string{"preparation", "electrical", "inspection"},
 	})

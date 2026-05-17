@@ -2,6 +2,7 @@ package handler
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -16,7 +17,7 @@ import (
 
 func setupAdminAuthRBACTestDB(t *testing.T) *gorm.DB {
 	t.Helper()
-	db, err := gorm.Open(gormsqlite.Open("file:admin_auth_rbac?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(gormsqlite.Open(fmt.Sprintf("file:admin_auth_rbac_%p?mode=memory&cache=shared", t)), &gorm.Config{})
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
@@ -30,7 +31,13 @@ func setupAdminAuthRBACTestDB(t *testing.T) *gorm.DB {
 	}
 	previousDB := repository.DB
 	repository.DB = db
-	t.Cleanup(func() { repository.DB = previousDB })
+	t.Cleanup(func() {
+		repository.DB = previousDB
+		sqlDB, err := db.DB()
+		if err == nil {
+			_ = sqlDB.Close()
+		}
+	})
 	return db
 }
 
