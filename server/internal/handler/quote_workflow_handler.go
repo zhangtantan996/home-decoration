@@ -378,7 +378,7 @@ func UserRejectQuoteSubmission(c *gin.Context) {
 }
 
 func UserPrintQuoteSubmission(c *gin.Context) {
-	html, err := quoteService.BuildSubmissionPrintHTML(parseUint(c.Param("id")))
+	html, err := quoteService.BuildSubmissionPrintHTMLForOwner(parseUint(c.Param("id")), getCurrentUserID(c))
 	if err != nil {
 		respondScopedAccessError(c, err, "生成报价打印页失败")
 		return

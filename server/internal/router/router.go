@@ -708,7 +708,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/bookings/:id", bookingListPerm, handler.AdminGetBooking)
 			admin.PATCH("/bookings/:id/status", bookingEditPerm, handler.AdminUpdateBookingStatus)
 			admin.GET("/bookings/refundable", financeTransactionApprovePerm, handler.AdminGetRefundableBookings)
-			admin.POST("/bookings/:bookingId/refund", financeTransactionApprovePerm, handler.AdminRefundIntentFee)
+			admin.POST("/bookings/:bookingId/refund", financeTransactionApprovePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminRefundIntentFee)
 
 			// 评价管理
 			admin.GET("/reviews", reviewListPerm, handler.AdminListReviews)
@@ -831,7 +831,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 出款报表管理
 			admin.GET("/payout/list", financeTransactionListPerm, handler.AdminPayoutList)
 			admin.GET("/payout/:id", financeTransactionViewPerm, handler.AdminPayoutDetail)
-			admin.POST("/payout/:id/retry", financeTransactionApprovePerm, middleware.RequireAdminReauth(), handler.AdminPayoutRetry)
+			admin.POST("/payout/:id/retry", financeTransactionApprovePerm, middleware.RequireAdminReason("reason", "remark"), middleware.RequireAdminReauth(), handler.AdminPayoutRetry)
 
 			// 操作日志
 			admin.GET("/logs", logListPerm, handler.AdminListLogs)

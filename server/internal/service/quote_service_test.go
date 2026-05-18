@@ -1519,12 +1519,17 @@ func TestGenerateDrafts_AndUserConfirmFlow(t *testing.T) {
 		t.Fatalf("unexpected confirmed task status: %s", confirmedTask.Status)
 	}
 
-	html, err := svc.BuildSubmissionPrintHTML(submission.ID)
+	html, err := svc.BuildSubmissionPrintHTMLForOwner(submission.ID, owner.ID)
 	if err != nil {
 		t.Fatalf("build submission print html: %v", err)
 	}
 	if html == "" || !strings.Contains(html, "报价任务生成") {
 		t.Fatalf("unexpected print html: %s", html)
+	}
+
+	_, err = svc.BuildSubmissionPrintHTMLForOwner(submission.ID, owner.ID+1)
+	if err == nil || err.Error() != "无权查看此报价" {
+		t.Fatalf("expected foreign owner to be rejected, got %v", err)
 	}
 }
 

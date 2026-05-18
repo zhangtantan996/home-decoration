@@ -3019,6 +3019,27 @@ func (s *ProjectService) UpdatePhase(phaseID uint64, req *UpdatePhaseRequest) er
 	})
 }
 
+// UpdatePhaseForOwner updates a project phase from the user-facing surface.
+func (s *ProjectService) UpdatePhaseForOwner(phaseID, ownerID uint64, req *UpdatePhaseRequest) error {
+	if ownerID == 0 {
+		return errors.New("无权操作此阶段")
+	}
+	var phase model.ProjectPhase
+	if err := repository.DB.Select("id", "project_id").
+		Where("id = ? AND enabled = ?", phaseID, true).
+		First(&phase).Error; err != nil {
+		return errors.New("阶段不存在")
+	}
+	var project model.Project
+	if err := repository.DB.Select("id", "owner_id").First(&project, phase.ProjectID).Error; err != nil {
+		return errors.New("项目不存在")
+	}
+	if project.OwnerID != ownerID {
+		return errors.New("无权操作此阶段")
+	}
+	return s.UpdatePhase(phaseID, req)
+}
+
 func (s *ProjectService) shiftFuturePendingPhaseSchedule(tx *gorm.DB, phase model.ProjectPhase, endDate time.Time) error {
 	var futurePhases []model.ProjectPhase
 	if err := tx.
@@ -3099,6 +3120,31 @@ func (s *ProjectService) UpdatePhaseTask(taskID uint64, req *UpdatePhaseTaskRequ
 	}
 
 	return repository.DB.Model(&task).Updates(updates).Error
+}
+
+// UpdatePhaseTaskForOwner updates a phase task from the user-facing surface.
+func (s *ProjectService) UpdatePhaseTaskForOwner(taskID, ownerID uint64, req *UpdatePhaseTaskRequest) error {
+	if ownerID == 0 {
+		return errors.New("无权操作此任务")
+	}
+	var task model.PhaseTask
+	if err := repository.DB.Select("id", "phase_id").First(&task, taskID).Error; err != nil {
+		return errors.New("任务不存在")
+	}
+	var phase model.ProjectPhase
+	if err := repository.DB.Select("id", "project_id").
+		Where("id = ? AND enabled = ?", task.PhaseID, true).
+		First(&phase).Error; err != nil {
+		return errors.New("阶段不存在")
+	}
+	var project model.Project
+	if err := repository.DB.Select("id", "owner_id").First(&project, phase.ProjectID).Error; err != nil {
+		return errors.New("项目不存在")
+	}
+	if project.OwnerID != ownerID {
+		return errors.New("无权操作此任务")
+	}
+	return s.UpdatePhaseTask(taskID, req)
 }
 
 // InitProjectPhases 创建项目时初始化默认阶段

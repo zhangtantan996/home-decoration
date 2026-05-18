@@ -42,7 +42,7 @@ func SubmitProposal(c *gin.Context) {
 func GetProposal(c *gin.Context) {
 	proposalID := parseUint64(c.Param("id"))
 
-	proposal, err := proposalService.GetProposal(proposalID)
+	proposal, err := proposalService.GetProposalForOwner(proposalID, getCurrentUserID(c))
 	if err != nil {
 		respondScopedAccessError(c, err, "获取方案失败")
 		return
@@ -152,7 +152,7 @@ func RejectProposal(c *gin.Context) {
 func GetProposalVersionHistory(c *gin.Context) {
 	bookingID := parseUint64(c.Param("bookingId"))
 
-	proposals, err := proposalService.GetProposalVersionHistory(bookingID)
+	proposals, err := proposalService.GetProposalVersionHistoryForOwner(bookingID, getCurrentUserID(c))
 	if err != nil {
 		respondScopedAccessError(c, err, "获取方案历史失败")
 		return

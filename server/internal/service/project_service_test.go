@@ -377,6 +377,52 @@ func TestProjectServiceUpdatePhaseRequiresLogBeforeCompleted(t *testing.T) {
 	}
 }
 
+func TestProjectServiceUpdatePhaseForOwnerRejectsForeignOwner(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	project := model.Project{Base: model.Base{ID: 533}, OwnerID: 101, ProviderID: 2, Name: "归属校验项目", Address: "归属校验地址"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 534}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "pending", Enabled: true}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhaseForOwner(phase.ID, 202, &UpdatePhaseRequest{Status: "in_progress"})
+	if err == nil || err.Error() != "无权操作此阶段" {
+		t.Fatalf("expected owner check to reject foreign user, got %v", err)
+	}
+	if err := (&ProjectService{}).UpdatePhaseForOwner(phase.ID, project.OwnerID, &UpdatePhaseRequest{Status: "in_progress"}); err != nil {
+		t.Fatalf("expected owner to update phase: %v", err)
+	}
+}
+
+func TestProjectServiceUpdatePhaseTaskForOwnerRejectsForeignOwner(t *testing.T) {
+	db := setupProjectServiceTestDB(t)
+
+	project := model.Project{Base: model.Base{ID: 535}, OwnerID: 301, ProviderID: 2, Name: "任务归属校验项目", Address: "任务归属校验地址"}
+	if err := db.Create(&project).Error; err != nil {
+		t.Fatalf("create project: %v", err)
+	}
+	phase := model.ProjectPhase{Base: model.Base{ID: 536}, ProjectID: project.ID, PhaseType: "preparation", Seq: 1, Status: "pending", Enabled: true}
+	if err := db.Create(&phase).Error; err != nil {
+		t.Fatalf("create phase: %v", err)
+	}
+	task := model.PhaseTask{Base: model.Base{ID: 537}, PhaseID: phase.ID, Name: "现场交接确认"}
+	if err := db.Create(&task).Error; err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	err := (&ProjectService{}).UpdatePhaseTaskForOwner(task.ID, 302, &UpdatePhaseTaskRequest{IsCompleted: true})
+	if err == nil || err.Error() != "无权操作此任务" {
+		t.Fatalf("expected owner check to reject foreign user, got %v", err)
+	}
+	if err := (&ProjectService{}).UpdatePhaseTaskForOwner(task.ID, project.OwnerID, &UpdatePhaseTaskRequest{IsCompleted: true}); err != nil {
+		t.Fatalf("expected owner to update task: %v", err)
+	}
+}
+
 func TestProjectServiceUpdatePhaseRejectsStartDateBeforeProjectKickoff(t *testing.T) {
 	db := setupProjectServiceTestDB(t)
 

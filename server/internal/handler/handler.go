@@ -1147,8 +1147,8 @@ func UpdatePhase(c *gin.Context) {
 		return
 	}
 
-	if err := projectService.UpdatePhase(phaseId, &req); err != nil {
-		response.ServerError(c, err.Error())
+	if err := projectService.UpdatePhaseForOwner(phaseId, getCurrentUserID(c), &req); err != nil {
+		respondScopedAccessError(c, err, "更新阶段失败")
 		return
 	}
 
@@ -1169,8 +1169,8 @@ func UpdatePhaseTask(c *gin.Context) {
 		return
 	}
 
-	if err := projectService.UpdatePhaseTask(taskId, &req); err != nil {
-		response.ServerError(c, err.Error())
+	if err := projectService.UpdatePhaseTaskForOwner(taskId, getCurrentUserID(c), &req); err != nil {
+		respondScopedAccessError(c, err, "更新任务失败")
 		return
 	}
 

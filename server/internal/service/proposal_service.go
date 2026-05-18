@@ -273,6 +273,17 @@ func (s *ProposalService) GetProposal(proposalID uint64) (*model.Proposal, error
 	return &proposal, nil
 }
 
+func (s *ProposalService) GetProposalForOwner(proposalID, userID uint64) (*model.Proposal, error) {
+	proposal, err := s.GetProposal(proposalID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.ensureProposalOwner(proposal, userID); err != nil {
+		return nil, err
+	}
+	return proposal, nil
+}
+
 // GetProposalByBooking 根据预约获取方案
 func (s *ProposalService) GetProposalByBooking(bookingID uint64) (*model.Proposal, error) {
 	var proposal model.Proposal
@@ -572,6 +583,44 @@ func (s *ProposalService) GetProposalVersionHistory(bookingID uint64) ([]model.P
 		hydrateProposalAssets(&proposals[index])
 	}
 	return proposals, nil
+}
+
+func (s *ProposalService) GetProposalVersionHistoryForOwner(bookingID, userID uint64) ([]model.Proposal, error) {
+	if userID == 0 {
+		return nil, errors.New("无权查看此方案")
+	}
+	var booking model.Booking
+	if err := repository.DB.Select("id", "user_id").First(&booking, bookingID).Error; err != nil {
+		return nil, errors.New("预约记录不存在")
+	}
+	if booking.UserID != userID {
+		return nil, errors.New("无权查看此方案")
+	}
+	return s.GetProposalVersionHistory(bookingID)
+}
+
+func (s *ProposalService) ensureProposalOwner(proposal *model.Proposal, userID uint64) error {
+	if proposal == nil || userID == 0 {
+		return errors.New("无权查看此方案")
+	}
+	if proposal.SourceType == model.ProposalSourceDemand {
+		var demand model.Demand
+		if err := repository.DB.Select("id", "user_id").First(&demand, proposal.DemandID).Error; err != nil {
+			return errors.New("关联需求不存在")
+		}
+		if demand.UserID != userID {
+			return errors.New("无权查看此方案")
+		}
+		return nil
+	}
+	var booking model.Booking
+	if err := repository.DB.Select("id", "user_id").First(&booking, proposal.BookingID).Error; err != nil {
+		return errors.New("预约记录不存在")
+	}
+	if booking.UserID != userID {
+		return errors.New("无权查看此方案")
+	}
+	return nil
 }
 
 // GetRejectionInfo 获取方案拒绝信息（供商家查看）
