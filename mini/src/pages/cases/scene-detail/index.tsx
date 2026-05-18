@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
+import MiniPageNav from '@/components/MiniPageNav';
 import { Skeleton } from '@/components/Skeleton';
 import { Tag } from '@/components/Tag';
 import { getProviderSceneDetail, type ProviderSceneDetail } from '@/services/providers';
@@ -133,9 +134,15 @@ const SceneDetailPage: React.FC = () => {
   }
 
   const detailTags = [detail.year ? `${detail.year}` : '', detail.createdAt || ''].filter(Boolean);
+  const navRightSlot = (
+    <TaroButton className="case-detail-page__nav-button case-detail-page__nav-button--share" openType="share">
+      <Icon name="share" size={24} color="#ffffff" />
+    </TaroButton>
+  );
 
   return (
     <View className="case-detail-page">
+      <MiniPageNav title="" onBack={back} variant="overlay" rightSlot={navRightSlot} />
       <View className="case-detail-page__hero">
         {coverImage ? (
           <Image className="case-detail-page__hero-image" src={coverImage} mode="aspectFill" lazyLoad onClick={() => previewImage(coverImage)} />
@@ -143,14 +150,6 @@ const SceneDetailPage: React.FC = () => {
           <View className="case-detail-page__hero-placeholder" />
         )}
         <View className="case-detail-page__hero-mask" />
-        <View className="case-detail-page__nav" style={{ paddingTop: `${(Taro.getSystemInfoSync().statusBarHeight || 24) + 12}px` }}>
-          <View className="case-detail-page__nav-button" onClick={back}>
-            <Icon name="arrow-left" size={26} color="#ffffff" />
-          </View>
-          <TaroButton className="case-detail-page__nav-button" openType="share">
-            <Icon name="share" size={24} color="#ffffff" />
-          </TaroButton>
-        </View>
       </View>
 
       <View className="case-detail-page__content">

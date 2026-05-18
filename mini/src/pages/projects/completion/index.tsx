@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactGrid } from '@/components/NotificationFactGrid';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
@@ -119,12 +121,21 @@ const ProjectCompletionPage: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback(
+      projectId > 0 ? `/pages/projects/detail/index?id=${projectId}` : '/pages/progress/index',
+    );
+  };
+
   if (loading) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={220} />
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="完工审批" onBack={handleBack} placeholder />
+        <View className="p-md">
+          <Skeleton height={180} className="mb-md" />
+          <Skeleton height={180} className="mb-md" />
+          <Skeleton height={220} />
+        </View>
       </View>
     );
   }
@@ -132,6 +143,7 @@ const ProjectCompletionPage: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+        <MiniPageNav title="完工审批" onBack={handleBack} placeholder />
         <Empty
           description="当前项目暂无完工审批记录"
           action={{
@@ -152,6 +164,7 @@ const ProjectCompletionPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <MiniPageNav title="完工审批" onBack={handleBack} placeholder />
       <ScrollView scrollY className="h-full">
         <Card className="notification-surface-card" extra={<Tag variant={canReview ? 'warning' : 'default'}>{canReview ? '待验收' : '已归档'}</Tag>}>
           <View style={{ display: 'flex', flexDirection: 'column', gap: '20rpx' }}>

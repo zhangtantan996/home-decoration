@@ -10,6 +10,7 @@ import {
   type PublicLegalDocument,
   type PublicSiteConfig,
 } from '@/services/publicSiteConfig';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import './common.scss';
 
@@ -138,7 +139,7 @@ export default function LegalDocumentPage({ slug, pageTitle, eyebrow, descriptio
 
   return (
     <View className="mini-legal">
-      <MiniPageNav title={pageTitle} onBack={() => Taro.navigateBack()} placeholder />
+      <MiniPageNav title={pageTitle} onBack={() => navigateBackWithFallback('/pages/home/index')} placeholder />
 
       <View className="mini-legal__content">
         <View className="mini-legal__hero">

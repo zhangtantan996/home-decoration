@@ -1,4 +1,4 @@
 export default definePageConfig({
   navigationStyle: 'custom',
-  navigationBarTitleText: '设计费报价',
+  navigationBarTitleText: '项目合同',
 });

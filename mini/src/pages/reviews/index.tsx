@@ -4,7 +4,7 @@ import Taro, { useLoad } from '@tarojs/taro';
 
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
-import MiniPageNav, { MINI_PAGE_NAV_EXTRA_BOTTOM } from '@/components/MiniPageNav';
+import MiniPageNav, { MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM } from '@/components/MiniPageNav';
 import PageStateCard from '@/components/PageStateCard';
 import { Skeleton } from '@/components/Skeleton';
 import useSlowLoadingHint from '@/hooks/useSlowLoadingHint';
@@ -100,7 +100,7 @@ const ReviewsPage: React.FC = () => {
   const [activeFilter, setActiveFilter] = useState<FilterKey>('all');
 
   const filterBarStyle = useMemo(
-    () => ({ top: `${navMetrics.menuBottom + MINI_PAGE_NAV_EXTRA_BOTTOM}px` }),
+    () => ({ top: `${navMetrics.menuBottom + MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM}px` }),
     [navMetrics.menuBottom],
   );
 

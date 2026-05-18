@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { View } from '@tarojs/components';
 import Taro, { useReachBottom } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
@@ -164,9 +166,14 @@ const DemandListPage: React.FC = () => {
     Taro.navigateTo({ url: `/pages/demands/detail/index?id=${id}` });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
+        <MiniPageNav title="我的需求" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看我的需求"
@@ -179,6 +186,7 @@ const DemandListPage: React.FC = () => {
   if (loading && list.length === 0) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+        <MiniPageNav title="我的需求" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View style={sectionStyle}>
           <View style={toolbarStyle}>
@@ -195,6 +203,7 @@ const DemandListPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+      <MiniPageNav title="我的需求" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <View style={sectionStyle}>

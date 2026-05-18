@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
@@ -99,9 +101,14 @@ const QuoteTaskDetailPage: React.FC = () => {
     } as any);
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/progress/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell>
+        <MiniPageNav title="施工报价" onBack={handleBack} placeholder />
         <View className="notification-surface-state-card">登录后查看施工报价</View>
       </NotificationSurfaceShell>
     );
@@ -109,10 +116,13 @@ const QuoteTaskDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="施工报价" onBack={handleBack} placeholder />
+        <View className="p-md">
         <Skeleton height={220} className="mb-md" />
         <Skeleton height={220} className="mb-md" />
         <Skeleton height={120} />
+        </View>
       </View>
     );
   }
@@ -120,6 +130,7 @@ const QuoteTaskDetailPage: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell>
+        <MiniPageNav title="施工报价" onBack={handleBack} placeholder />
         <View className="notification-surface-state-card">未找到施工报价任务</View>
       </NotificationSurfaceShell>
     );
@@ -127,6 +138,7 @@ const QuoteTaskDetailPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="quote-task-detail-page" style={pageBottomStyle}>
+      <MiniPageNav title="施工报价" onBack={handleBack} placeholder />
       <ScrollView scrollY className="h-full">
         <View className="notification-surface-shell__body">
           <NotificationSurfaceHero

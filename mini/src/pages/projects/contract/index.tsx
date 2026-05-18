@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
@@ -163,12 +165,21 @@ const ProjectContractPage: React.FC = () => {
     });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback(
+      projectId > 0 ? `/pages/projects/detail/index?id=${projectId}` : '/pages/progress/index',
+    );
+  };
+
   if (loading) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={220} className="mb-md" />
-        <Skeleton height={180} />
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="项目合同" onBack={handleBack} placeholder />
+        <View className="p-md">
+          <Skeleton height={180} className="mb-md" />
+          <Skeleton height={220} className="mb-md" />
+          <Skeleton height={180} />
+        </View>
       </View>
     );
   }
@@ -176,6 +187,7 @@ const ProjectContractPage: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="项目合同" onBack={handleBack} placeholder />
         <Empty description="当前项目暂无待确认合同" />
       </NotificationSurfaceShell>
     );
@@ -189,6 +201,7 @@ const ProjectContractPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <MiniPageNav title="项目合同" onBack={handleBack} placeholder />
       <ScrollView scrollY className="h-full">
         <View className="notification-surface-shell__body">
           <NotificationSurfaceHero

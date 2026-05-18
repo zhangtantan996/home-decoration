@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Image, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
@@ -87,9 +89,14 @@ const AfterSalesDetailPage: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/after-sales/list/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="售后详情" onBack={handleBack} placeholder />
         <Empty
           description="登录后查看售后详情"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/after-sales/list/index') }}
@@ -100,10 +107,13 @@ const AfterSalesDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md">
-        <Skeleton height={170} className="mb-md" />
-        <Skeleton height={180} className="mb-md" />
-        <Skeleton height={220} />
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="售后详情" onBack={handleBack} placeholder />
+        <View className="p-md">
+          <Skeleton height={170} className="mb-md" />
+          <Skeleton height={180} className="mb-md" />
+          <Skeleton height={220} />
+        </View>
       </View>
     );
   }
@@ -111,6 +121,7 @@ const AfterSalesDetailPage: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="售后详情" onBack={handleBack} placeholder />
         <Empty description="未找到售后详情" />
       </NotificationSurfaceShell>
     );
@@ -122,6 +133,7 @@ const AfterSalesDetailPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="after-sales-detail-page" style={pageBottomStyle}>
+      <MiniPageNav title="售后详情" onBack={handleBack} placeholder />
       <View className="notification-surface-shell__body">
         <NotificationSurfaceHero
           eyebrow="售后详情"

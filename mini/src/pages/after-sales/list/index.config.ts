@@ -1,4 +1,5 @@
 export default {
+  navigationStyle: 'custom',
   navigationBarTitleText: '售后 / 争议',
   backgroundColor: '#F8F9FA',
 };

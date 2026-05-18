@@ -2,12 +2,14 @@ import { Text, View } from '@tarojs/components';
 import React, { useMemo } from 'react';
 
 import { getMiniNavMetrics } from '@/utils/navLayout';
+import { colors } from '@/theme/tokens';
 
 import { Icon } from './Icon';
 import './MiniPageNav.scss';
 
 type MiniPageNavVariant = 'solid' | 'overlay';
 export const MINI_PAGE_NAV_EXTRA_BOTTOM = 10;
+export const MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM = 18;
 
 interface MiniPageNavProps {
   title: string;
@@ -33,12 +35,20 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const navProgress = variant === 'overlay' ? clamp(progress, 0, 1) : 1;
   const sideInset = Math.max(navMetrics.menuWidth + navMetrics.menuRightInset + 8, 72);
+  const extraBottom = useMemo(() => {
+    if (variant !== 'overlay') {
+      return MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM;
+    }
+
+    return MINI_PAGE_NAV_EXTRA_BOTTOM
+      + (MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM - MINI_PAGE_NAV_EXTRA_BOTTOM) * navProgress;
+  }, [navProgress, variant]);
 
   const navStyle = useMemo(() => {
     if (variant === 'overlay') {
       return {
         paddingTop: `${navMetrics.menuTop}px`,
-        paddingBottom: `${MINI_PAGE_NAV_EXTRA_BOTTOM}px`,
+        paddingBottom: `${extraBottom}px`,
         minHeight: `${navMetrics.menuBottom}px`,
         backgroundColor: `rgba(255,255,255,${0.96 * navProgress})`,
         borderBottom: navProgress > 0 ? `1rpx solid rgba(229,231,235,${navProgress})` : '1rpx solid transparent',
@@ -47,24 +57,13 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
 
     return {
       paddingTop: `${navMetrics.menuTop}px`,
-      paddingBottom: `${MINI_PAGE_NAV_EXTRA_BOTTOM}px`,
+      paddingBottom: `${extraBottom}px`,
       minHeight: `${navMetrics.menuBottom}px`,
       background: '#ffffff',
       borderBottom: '1rpx solid #e5e7eb',
     };
-  }, [navMetrics.menuBottom, navMetrics.menuTop, navProgress, variant]);
+  }, [extraBottom, navMetrics.menuBottom, navMetrics.menuTop, navProgress, variant]);
 
-  const backButtonStyle = useMemo(() => {
-    if (variant === 'overlay') {
-      return {
-        backgroundColor: 'rgba(0,0,0,0.1)',
-      };
-    }
-
-    return {
-      backgroundColor: '#f5f5f5',
-    };
-  }, [variant]);
   const titleStyle = useMemo(
     () => ({
       opacity: navProgress,
@@ -92,8 +91,8 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
     [navMetrics.menuHeight],
   );
   const placeholderStyle = useMemo(
-    () => ({ height: `${navMetrics.menuBottom + MINI_PAGE_NAV_EXTRA_BOTTOM}px` }),
-    [navMetrics.menuBottom],
+    () => ({ height: `${navMetrics.menuBottom + extraBottom}px` }),
+    [extraBottom, navMetrics.menuBottom],
   );
   const lightIconStyle = useMemo(
     () => ({
@@ -107,6 +106,18 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
     }),
     [navProgress, variant],
   );
+  const darkSurfaceStyle = useMemo(
+    () => ({
+      opacity: variant === 'overlay' ? 1 - navProgress : 0,
+    }),
+    [navProgress, variant],
+  );
+  const lightSurfaceStyle = useMemo(
+    () => ({
+      opacity: variant === 'overlay' ? navProgress : 1,
+    }),
+    [navProgress, variant],
+  );
 
   return (
     <>
@@ -114,22 +125,19 @@ export const MiniPageNav: React.FC<MiniPageNavProps> = ({
         <View className="mini-page-nav__main" style={headerMainStyle}>
           <View
             className={`mini-page-nav__back-button ${showBack ? '' : 'is-hidden'}`}
-            style={backButtonStyle}
             onClick={showBack ? onBack : undefined}
             hoverClass={showBack ? 'mini-page-nav__back-button--pressed' : 'none'}
           >
-            {variant === 'overlay' ? (
-              <View className="mini-page-nav__icon-stack">
-                <View className="mini-page-nav__icon-layer" style={lightIconStyle}>
-                  <Icon name="arrow-left" size={48} color="#FFFFFF" />
-                </View>
-                <View className="mini-page-nav__icon-layer" style={darkIconStyle}>
-                  <Icon name="arrow-left" size={48} color="#111111" />
-                </View>
+            <View className="mini-page-nav__back-surface mini-page-nav__back-surface--dark" style={darkSurfaceStyle} />
+            <View className="mini-page-nav__back-surface mini-page-nav__back-surface--light" style={lightSurfaceStyle} />
+            <View className="mini-page-nav__icon-stack">
+              <View className="mini-page-nav__icon-layer" style={lightIconStyle}>
+                <Icon name="arrow-left" size={48} color={colors.white} />
               </View>
-            ) : (
-              <Icon name="arrow-left" size={48} color="#111111" />
-            )}
+              <View className="mini-page-nav__icon-layer" style={darkIconStyle}>
+                <Icon name="arrow-left" size={48} color={colors.primary} />
+              </View>
+            </View>
           </View>
           <View className="mini-page-nav__title-slot" style={titleSlotStyle}>
             <Text className="mini-page-nav__title" style={titleStyle} numberOfLines={1}>

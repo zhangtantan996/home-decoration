@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties }
 
 import { Icon } from '@/components/Icon';
 import { colors } from '@/theme/tokens';
-import MiniPageNav, { MINI_PAGE_NAV_EXTRA_BOTTOM } from '@/components/MiniPageNav';
+import MiniPageNav, { MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM } from '@/components/MiniPageNav';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
 import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
@@ -242,7 +242,7 @@ export default function NotificationsPage() {
   }, []);
 
   const filterTop = useMemo(
-    () => navMetrics.menuBottom + MINI_PAGE_NAV_EXTRA_BOTTOM,
+    () => navMetrics.menuBottom + MINI_PAGE_NAV_SOLID_EXTRA_BOTTOM,
     [navMetrics.menuBottom],
   );
   const filterShellStyle = useMemo(

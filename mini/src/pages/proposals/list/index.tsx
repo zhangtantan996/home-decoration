@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { View } from '@tarojs/components';
 import Taro, { useReachBottom } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
@@ -148,8 +150,13 @@ const ProposalList: React.FC = () => {
     });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+      <MiniPageNav title="我的方案" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       {!auth.token ? (
         <Empty

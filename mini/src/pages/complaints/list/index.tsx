@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
 import { View } from '@tarojs/components';
+import Taro from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
@@ -67,9 +70,14 @@ const ComplaintListPage: React.FC = () => {
     void runReload();
   }, [auth.token, runReload]);
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="complaints-list-page" contentClassName="complaints-list-page__content complaints-list-page__content--center" {...bindPullToRefresh}>
+        <MiniPageNav title="我的投诉" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看投诉记录"
@@ -82,6 +90,7 @@ const ComplaintListPage: React.FC = () => {
   if (loading && list.length === 0) {
     return (
       <NotificationSurfaceShell className="complaints-list-page" contentClassName="complaints-list-page__content" {...bindPullToRefresh}>
+        <MiniPageNav title="我的投诉" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="complaints-list-page__section">
           <View className="complaints-list-page__toolbar">
@@ -96,6 +105,7 @@ const ComplaintListPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="complaints-list-page" contentClassName="complaints-list-page__content" {...bindPullToRefresh}>
+      <MiniPageNav title="我的投诉" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <View className="complaints-list-page__section">

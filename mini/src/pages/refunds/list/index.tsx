@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ScrollView, View } from '@tarojs/components';
 import Taro, { useDidShow, useLoad, useReachBottom } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
@@ -131,9 +133,14 @@ const RefundListPage: React.FC = () => {
     syncCurrentTabBar();
   });
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="refunds-list-page" contentClassName="refunds-list-page__content" {...bindPullToRefresh}>
+        <MiniPageNav title="退款记录" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="登录后查看退款记录" action={{ text: '去登录', onClick: () => Taro.switchTab({ url: '/pages/profile/index' }) }} />
       </NotificationSurfaceShell>
@@ -142,6 +149,7 @@ const RefundListPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="refunds-list-page" contentClassName="refunds-list-page__content" {...bindPullToRefresh}>
+      <MiniPageNav title="退款记录" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <ScrollView scrollX showScrollbar={false} className="refunds-list-page__filters-scroll">
