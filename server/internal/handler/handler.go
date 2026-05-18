@@ -414,6 +414,22 @@ func SendCode(c *gin.Context) {
 		response.BadRequest(c, "请从商家登录页获取验证码")
 		return
 	}
+	if purpose == service.SMSPurposeDeleteAccount {
+		userID := getCurrentUserID(c)
+		if userID == 0 {
+			response.Unauthorized(c, "请先登录")
+			return
+		}
+		user, err := userService.GetUserByID(userID)
+		if err != nil {
+			response.NotFound(c, "用户不存在")
+			return
+		}
+		if strings.TrimSpace(user.Phone) != strings.TrimSpace(req.Phone) {
+			response.BadRequest(c, "请使用当前账号绑定手机号")
+			return
+		}
+	}
 
 	// 获取客户端IP
 	clientIP := c.ClientIP()

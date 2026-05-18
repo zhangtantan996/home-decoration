@@ -137,7 +137,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		{
 			auth.POST("/register", middleware.LoginRateLimit(), handler.Register)
 			auth.POST("/login", middleware.LoginRateLimit(), handler.Login)
-			auth.POST("/send-code", middleware.LoginRateLimit(), handler.SendCode)
+			auth.POST("/send-code", middleware.LoginRateLimit(), middleware.OptionalJWT(cfg.JWT.Secret), handler.SendCode)
 			auth.POST("/wechat/mini/login", middleware.LoginRateLimit(), handler.WechatMiniLogin)
 			auth.POST("/wechat/mini/bind-phone", middleware.LoginRateLimit(), handler.WechatMiniBindPhone)
 			auth.GET("/wechat/h5/authorize", middleware.LoginRateLimit(), handler.WechatH5Authorize)
