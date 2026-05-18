@@ -1,0 +1,88 @@
+@import "../../theme/tokens";
+
+.about-page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx calc(48rpx + env(safe-area-inset-bottom));
+  box-sizing: border-box;
+  background: $color-bg-page;
+
+  &__hero {
+    padding: 18rpx 8rpx 28rpx;
+  }
+
+  &__eyebrow {
+    display: block;
+    color: $color-info;
+    font-size: 24rpx;
+    font-weight: 700;
+    line-height: 1.4;
+  }
+
+  &__title {
+    display: block;
+    margin-top: 12rpx;
+    color: $color-primary;
+    font-size: 40rpx;
+    font-weight: 800;
+    line-height: 1.22;
+  }
+
+  &__subtitle {
+    display: block;
+    margin-top: 14rpx;
+    color: $color-secondary;
+    font-size: 26rpx;
+    line-height: 1.75;
+  }
+
+  &__content {
+    display: flex;
+    flex-direction: column;
+    gap: 20rpx;
+  }
+
+  &__card {
+    margin-bottom: 0;
+    padding: 28rpx;
+    border-radius: 28rpx;
+    box-shadow: $shadow-sm;
+  }
+
+  &__paragraph {
+    color: $color-secondary;
+    font-size: 26rpx;
+    line-height: 1.8;
+  }
+
+  &__list {
+    display: flex;
+    flex-direction: column;
+    gap: 14rpx;
+  }
+
+  &__list-item {
+    display: block;
+    color: $color-secondary;
+    font-size: 26rpx;
+    line-height: 1.65;
+  }
+
+  &__meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24rpx;
+  }
+
+  &__meta-label,
+  &__meta-value {
+    color: $color-secondary;
+    font-size: 26rpx;
+    line-height: 1.5;
+  }
+
+  &__meta-value {
+    color: $color-primary;
+    font-weight: 700;
+  }
+}

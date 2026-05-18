@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"home-decoration-server/internal/model"
@@ -20,7 +21,7 @@ func setupUserSettingsHandlerDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite db: %v", err)
 	}
-	if err := db.AutoMigrate(&model.UserSettings{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.UserSettings{}); err != nil {
 		t.Fatalf("auto migrate user settings: %v", err)
 	}
 	oldDB := repository.DB
@@ -29,6 +30,50 @@ func setupUserSettingsHandlerDB(t *testing.T) *gorm.DB {
 		repository.DB = oldDB
 	})
 	return db
+}
+
+func TestDeleteAccountRejectsNonSixDigitCode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupUserSettingsHandlerDB(t)
+	t.Setenv("SMS_FIXED_CODE_MODE", "true")
+	t.Setenv("SMS_FIXED_CODE", "654321")
+
+	user := model.User{
+		Phone:    "13800138000",
+		Nickname: "delete-code-test",
+		UserType: 1,
+		Status:   1,
+	}
+	if err := db.Create(&user).Error; err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/user/delete-account",
+		bytes.NewReader([]byte(`{"code":"123"}`)),
+	)
+	c.Request.Header.Set("Content-Type", "application/json")
+	c.Set("userId", user.ID)
+
+	DeleteAccount(c)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "请输入6位验证码") {
+		t.Fatalf("expected six-digit validation message, got body=%s", recorder.Body.String())
+	}
+
+	var updated model.User
+	if err := db.First(&updated, user.ID).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if updated.Status != 1 {
+		t.Fatalf("expected user status unchanged, got %d", updated.Status)
+	}
 }
 
 func TestUpdateUserSettingsMapsCamelCasePayload(t *testing.T) {

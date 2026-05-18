@@ -270,8 +270,11 @@ func TestEvaluateMaterialShopPublicVisibility(t *testing.T) {
 		PlatformDisplayEnabled: true,
 		MerchantDisplayEnabled: true,
 	}, 0)
-	if !unsettledLead.PublicVisible || len(unsettledLead.Blockers) != 0 {
-		t.Fatalf("expected unsettled material shop lead visible, got %+v", unsettledLead)
+	if unsettledLead.PublicVisible {
+		t.Fatalf("expected unsettled material shop lead hidden, got %+v", unsettledLead)
+	}
+	if !hasBlockerCode(unsettledLead.Blockers, "shop_unsettled") {
+		t.Fatalf("expected shop_unsettled blocker, got %+v", unsettledLead.Blockers)
 	}
 
 	hidden := EvaluateMaterialShopPublicVisibility(&model.MaterialShop{
@@ -344,11 +347,6 @@ func TestApplyPublicMaterialShopFilterExcludesDisabledAccount(t *testing.T) {
 	if err := repository.DB.Create(&shops).Error; err != nil {
 		t.Fatalf("create material shops: %v", err)
 	}
-	if err := repository.DB.Model(&model.MaterialShop{}).
-		Where("id IN ?", []uint64{shops[0].ID, shops[1].ID}).
-		Update("is_settled", false).Error; err != nil {
-		t.Fatalf("mark material shop unsettled: %v", err)
-	}
 	var visible []model.MaterialShop
 	if err := ApplyPublicMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).Find(&visible).Error; err != nil {
 		t.Fatalf("apply material shop filter: %v", err)
@@ -358,7 +356,7 @@ func TestApplyPublicMaterialShopFilterExcludesDisabledAccount(t *testing.T) {
 	}
 }
 
-func TestApplyPublicMaterialShopFilterIncludesUnsettledLeads(t *testing.T) {
+func TestApplyPublicMaterialShopFilterExcludesUnsettledLeads(t *testing.T) {
 	setupPublicVisibilitySchema(t)
 
 	activeStatus := int8(1)
@@ -384,8 +382,8 @@ func TestApplyPublicMaterialShopFilterIncludesUnsettledLeads(t *testing.T) {
 	if err := ApplyPublicMaterialShopFilter(repository.DB.Model(&model.MaterialShop{})).Order("id ASC").Find(&visible).Error; err != nil {
 		t.Fatalf("apply material shop filter: %v", err)
 	}
-	if len(visible) != 1 || visible[0].IsSettled {
-		t.Fatalf("expected only active unsettled material lead visible, got %+v", visible)
+	if len(visible) != 0 {
+		t.Fatalf("expected unsettled and unverified material shops excluded, got %+v", visible)
 	}
 }
 

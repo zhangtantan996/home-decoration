@@ -2,75 +2,467 @@
 @import '../index.scss';
 
 .real-name-page {
-  &__status-card {
-    margin: 0 24rpx 20rpx;
-    padding: 28rpx 28rpx 26rpx;
-    border: 1rpx solid $color-border-soft;
-    border-radius: 28rpx;
-    background: $color-bg-card;
-    box-shadow: $shadow-sm;
+  min-height: 100vh;
+  background: linear-gradient(180deg, $color-bg-page-top 0%, $color-bg-page-bottom 100%);
+
+  .settings-layout__body--nav {
+    gap: $spacing-block-y;
+    padding: 28rpx $spacing-page-x calc(148rpx + env(safe-area-inset-bottom));
   }
 
-  &__status-label,
-  &__verified-line,
-  &__notice,
-  &__reason {
-    display: block;
-    color: $color-secondary;
+  .settings-layout__footer--inline {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 12;
+    box-sizing: border-box;
+    margin-top: 0;
+    padding: 20rpx $spacing-page-x calc(20rpx + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent 0%, $color-bg-page-bottom 54%);
+  }
+
+  &__status-card,
+  &__form-card {
+    position: relative;
+    overflow: hidden;
+    border: 1rpx solid $color-line-soft;
+    border-radius: $radius-card;
+    background: $color-surface-card;
+    box-shadow: $shadow-card;
+  }
+
+  &__status-card {
+    display: flex;
+    gap: 28rpx;
+    min-height: 220rpx;
+    padding: 34rpx 32rpx;
+    box-sizing: border-box;
+  }
+
+  &__status-card--verified {
+    .real-name-page__status-pill,
+    .real-name-page__status-visual {
+      background: $color-success-soft;
+    }
+
+    .real-name-page__status-pill-text,
+    .real-name-page__status-label,
+    .real-name-page__shield {
+      color: $color-success-main;
+      border-color: $color-success-main;
+    }
+
+    .real-name-page__status-watermark {
+      border-color: $color-success-soft;
+    }
+  }
+
+  &__status-card--failed {
+    .real-name-page__status-pill {
+      background: $color-border-soft;
+    }
+
+    .real-name-page__status-pill-text {
+      color: $color-error;
+    }
+
+    .real-name-page__shield {
+      border-color: $color-error;
+    }
+  }
+
+  &__status-card--pending {
+    .real-name-page__status-pill {
+      background: $color-border-soft;
+    }
+
+    .real-name-page__status-pill-text,
+    .real-name-page__status-label {
+      color: $color-info;
+    }
+  }
+
+  &__status-visual {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 108rpx;
+    width: 108rpx;
+    height: 108rpx;
+    margin-top: 26rpx;
+    border-radius: $radius-pill;
+    background: $color-brand-soft;
+  }
+
+  &__shield {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 58rpx;
+    height: 66rpx;
+    border: 4rpx solid $color-brand-main;
+    border-radius: 24rpx 24rpx 30rpx 30rpx;
+    color: $color-brand-main;
+    box-sizing: border-box;
+  }
+
+  &__shield-person {
+    display: flex;
+    align-items: center;
+    flex-direction: column;
+    gap: 6rpx;
+  }
+
+  &__shield-person-head {
+    width: 18rpx;
+    height: 18rpx;
+    border-radius: $radius-pill;
+    background: currentColor;
+  }
+
+  &__shield-person-body {
+    width: 34rpx;
+    height: 18rpx;
+    border-radius: 18rpx 18rpx 8rpx 8rpx;
+    background: currentColor;
+  }
+
+  &__shield-check {
+    width: 24rpx;
+    height: 40rpx;
+    margin-top: -8rpx;
+    border-right: 6rpx solid currentColor;
+    border-bottom: 6rpx solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  &__status-main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__status-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20rpx;
+  }
+
+  &__status-label {
+    color: $color-text-secondary;
+    font-size: $font-body;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__status-pill {
+    display: flex;
+    align-items: center;
+    min-height: 52rpx;
+    padding: 0 22rpx;
+    border-radius: $radius-pill;
+    background: $color-brand-soft;
+  }
+
+  &__status-pill-text {
+    color: $color-brand-main;
     font-size: 24rpx;
-    line-height: 1.5;
+    font-weight: 700;
+    line-height: 1;
   }
 
   &__status-value {
     display: block;
-    margin-top: 8rpx;
-    color: $color-primary;
-    font-size: 44rpx;
+    margin-top: 22rpx;
+    color: $color-text-primary;
+    font-size: $font-status-title;
     font-weight: 700;
-    line-height: 1.2;
+    line-height: 1.08;
   }
 
-  &__verified-lines {
+  &__status-copy,
+  &__reason {
+    display: block;
     margin-top: 18rpx;
+    color: $color-text-secondary;
+    font-size: $font-body;
+    line-height: 1.65;
   }
 
   &__reason {
-    margin-top: 16rpx;
-    color: $color-warning;
+    color: $color-error;
   }
 
-  &__form {
-    padding: 2rpx 0;
+  &__status-watermark {
+    position: absolute;
+    right: -70rpx;
+    bottom: -86rpx;
+    width: 220rpx;
+    height: 220rpx;
+    border: 18rpx solid $color-brand-soft;
+    border-radius: $radius-pill;
+    opacity: 0.76;
+  }
+
+  &__form-card {
+    padding: 38rpx 32rpx 34rpx;
+  }
+
+  &__form-card--verified {
+    padding-bottom: 24rpx;
+  }
+
+  &__form-header {
+    margin-bottom: 34rpx;
+  }
+
+  &__section-title {
+    display: block;
+    color: $color-text-primary;
+    font-size: $font-section-title;
+    font-weight: 700;
+    line-height: 1.25;
+  }
+
+  &__section-copy {
+    display: block;
+    margin-top: 14rpx;
+    color: $color-text-secondary;
+    font-size: $font-body;
+    line-height: 1.55;
   }
 
   &__field {
-    padding: 24rpx 0;
-  }
-
-  &__field + &__field {
-    border-top: 1rpx solid $color-border-soft;
+    padding: 0;
   }
 
   &__label {
     display: block;
-    margin-bottom: 14rpx;
-    color: $color-gray-700;
-    font-size: 24rpx;
+    margin-bottom: 18rpx;
+    color: $color-text-primary;
+    font-size: $font-label;
+    font-weight: 600;
+    line-height: 1.4;
+  }
+
+  &__input-shell {
+    display: flex;
+    align-items: center;
+    gap: 18rpx;
+    min-height: 104rpx;
+    padding: 0 24rpx;
+    border: 2rpx solid $color-line-soft;
+    border-radius: $radius-input;
+    background: $color-white;
+    box-sizing: border-box;
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+
+  &__input-shell--focused {
+    border-color: $color-brand-main;
+    box-shadow: $shadow-focus;
+  }
+
+  &__input-shell--error {
+    border-color: $color-error;
   }
 
   &__input {
+    flex: 1;
+    min-width: 0;
     margin-bottom: 0;
+
+    .input-wrapper__field {
+      height: 100rpx;
+      min-height: 100rpx;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: $color-text-primary;
+      font-size: $font-body;
+    }
   }
 
-  &__notice {
-    padding-top: 12rpx;
+  &__field-icon {
+    position: relative;
+    flex-shrink: 0;
+    width: 42rpx;
+    height: 42rpx;
+    color: $color-text-tertiary;
+  }
+
+  &__field-icon-head {
+    position: absolute;
+    top: 4rpx;
+    left: 13rpx;
+    width: 16rpx;
+    height: 16rpx;
+    border: 4rpx solid currentColor;
+    border-radius: $radius-pill;
+    box-sizing: border-box;
+  }
+
+  &__field-icon-body {
+    position: absolute;
+    left: 7rpx;
+    bottom: 5rpx;
+    width: 28rpx;
+    height: 18rpx;
+    border: 4rpx solid currentColor;
+    border-top-left-radius: 18rpx;
+    border-top-right-radius: 18rpx;
+    border-bottom: none;
+    box-sizing: border-box;
+  }
+
+  &__field-icon--id {
+    border: 4rpx solid currentColor;
+    border-radius: 8rpx;
+    box-sizing: border-box;
+  }
+
+  &__field-icon-line {
+    position: absolute;
+    left: 15rpx;
+    right: 7rpx;
+    height: 4rpx;
+    border-radius: $radius-pill;
+    background: currentColor;
+  }
+
+  &__field-icon-line--short {
+    top: 13rpx;
+  }
+
+  &__field-icon-line:not(.real-name-page__field-icon-line--short) {
+    top: 25rpx;
+  }
+
+  &__divider {
+    height: 1rpx;
+    margin: 32rpx 0;
+    background: $color-line-soft;
   }
 
   &__field-error {
     display: block;
     margin-top: 10rpx;
-    color: $color-warning;
+    color: $color-error;
     font-size: 22rpx;
     line-height: 1.4;
+  }
+
+  &__info-list {
+    display: flex;
+    flex-direction: column;
+  }
+
+  &__info-row {
+    display: flex;
+    align-items: center;
+    gap: 24rpx;
+    min-height: 132rpx;
+    padding: 10rpx 0;
+    border-bottom: 1rpx solid $color-line-soft;
+    box-sizing: border-box;
+  }
+
+  &__info-row:last-child {
+    border-bottom: none;
+  }
+
+  &__info-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 88rpx;
+    width: 88rpx;
+    height: 88rpx;
+    border-radius: $radius-pill;
+    background: $color-success-soft;
+
+    .real-name-page__field-icon {
+      color: $color-success-main;
+    }
+  }
+
+  &__info-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__info-label {
+    display: block;
+    color: $color-text-secondary;
+    font-size: $font-body;
+    line-height: 1.4;
+  }
+
+  &__info-value {
+    display: block;
+    margin-top: 10rpx;
+    color: $color-text-primary;
+    font-size: 36rpx;
+    font-weight: 600;
+    line-height: 1.25;
+    word-break: break-all;
+  }
+
+  &__privacy-note {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12rpx;
+    padding: 12rpx 0;
+  }
+
+  &__privacy-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36rpx;
+    height: 36rpx;
+    border: 3rpx solid $color-text-tertiary;
+    border-radius: 12rpx 12rpx 16rpx 16rpx;
+    color: $color-text-tertiary;
+    box-sizing: border-box;
+  }
+
+  &__privacy-check {
+    width: 12rpx;
+    height: 20rpx;
+    margin-top: -4rpx;
+    border-right: 4rpx solid currentColor;
+    border-bottom: 4rpx solid currentColor;
+    transform: rotate(45deg);
+  }
+
+  &__privacy-text {
+    color: $color-text-tertiary;
+    font-size: $font-body;
+    line-height: 1.4;
+  }
+
+  &__footer-button {
+    height: 96rpx;
+    border-radius: $radius-pill;
+    background: $color-brand-main;
+    border-color: $color-brand-main;
+    color: $color-white;
+  }
+
+  &__footer-button.btn--disabled {
+    background: $color-button-disabled;
+    border-color: $color-button-disabled;
+    color: $color-white;
+  }
+
+  &__footer-button--verified {
+    background: $color-success-main;
+    border-color: $color-success-main;
   }
 }

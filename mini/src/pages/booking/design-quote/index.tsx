@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
@@ -158,9 +160,16 @@ const BookingDesignQuotePage: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback(
+      bookingId > 0 ? `/pages/booking/detail/index?id=${bookingId}` : '/pages/booking/list/index',
+    );
+  };
+
   if (loading) {
     return (
       <View className="design-quote-page">
+        <MiniPageNav title="设计费报价" onBack={handleBack} placeholder />
         <Skeleton height={220} className="design-quote-page__section" />
         <Skeleton height={220} className="design-quote-page__section" />
         <Skeleton height={180} className="design-quote-page__section" />
@@ -171,6 +180,7 @@ const BookingDesignQuotePage: React.FC = () => {
   if (!quote) {
     return (
       <NotificationSurfaceShell className="design-quote-page" style={pageBottomStyle}>
+        <MiniPageNav title="设计费报价" onBack={handleBack} placeholder />
         <View className="notification-surface-state-card">
           <Empty
             description="当前预约暂无设计费报价"
@@ -195,6 +205,7 @@ const BookingDesignQuotePage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="design-quote-page" style={pageBottomStyle}>
+      <MiniPageNav title="设计费报价" onBack={handleBack} placeholder />
       <View className="notification-surface-shell__body">
         <NotificationSurfaceHero
           eyebrow="设计费报价"

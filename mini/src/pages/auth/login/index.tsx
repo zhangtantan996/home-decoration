@@ -1,17 +1,11 @@
 import Taro, { useDidShow } from '@tarojs/taro';
 import { Text, View } from '@tarojs/components';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useState } from 'react';
 
 import { Button } from '@/components/Button';
 import MiniPageNav from '@/components/MiniPageNav';
 import { bindPhone, loginWithWxCode } from '@/services/auth';
 import { getWechatH5AuthorizeUrl } from '@/services/auth_h5';
-import {
-  fallbackPublicSiteConfig,
-  findLegalDocument,
-  getPublicSiteConfig,
-  type PublicSiteConfig,
-} from '@/services/publicSiteConfig';
 import { useAuthStore } from '@/store/auth';
 import { getAuthAgreementAccepted, setAuthAgreementAccepted } from '@/utils/authAgreement';
 import { navigateAfterAuthSuccess, setPendingAuthReturnUrl } from '@/utils/authRedirect';
@@ -27,17 +21,20 @@ type PendingAgreementAction = 'quick-login' | null;
 type AgreementCopyVariant = 'agreement' | 'dialog';
 type AgreementTitles = Record<AgreementDocType, string>;
 
+const AGREEMENT_DISPLAY_TITLES: AgreementTitles = {
+  terms: '用户协议',
+  privacy: '隐私政策',
+};
+
 const AGREEMENT_PAGE_MAP: Record<AgreementDocType, string> = {
   terms: '/pages/legal/user-agreement/index',
   privacy: '/pages/legal/privacy-policy/index',
 };
 
 const AgreementCopy = ({
-  legalTitles,
   onOpenAgreement,
   variant,
 }: {
-  legalTitles: AgreementTitles;
   onOpenAgreement: (type: AgreementDocType) => void;
   variant: AgreementCopyVariant;
 }) => {
@@ -55,7 +52,7 @@ const AgreementCopy = ({
           onClick={() => onOpenAgreement('terms')}
           hoverClass={`${linkClassName}--pressed`}
         >
-          <Text className={linkClassName}>《{legalTitles.terms}》</Text>
+          <Text className={linkClassName}>《{AGREEMENT_DISPLAY_TITLES.terms}》</Text>
         </View>
         <Text className={textClassName}>、</Text>
         <View
@@ -63,7 +60,7 @@ const AgreementCopy = ({
           onClick={() => onOpenAgreement('privacy')}
           hoverClass={`${linkClassName}--pressed`}
         >
-          <Text className={linkClassName}>《{legalTitles.privacy}》</Text>
+          <Text className={linkClassName}>《{AGREEMENT_DISPLAY_TITLES.privacy}》</Text>
         </View>
       </View>
       <Text className={sublineClassName}>{AGREEMENT_SUBLINE}</Text>
@@ -82,15 +79,10 @@ export default function LoginPage() {
   const [agreementDialogVisible, setAgreementDialogVisible] = useState(false);
   const [agreementDialogAuthorizing, setAgreementDialogAuthorizing] = useState(false);
   const [pendingAgreementAction, setPendingAgreementAction] = useState<PendingAgreementAction>(null);
-  const [siteConfig, setSiteConfig] = useState<PublicSiteConfig>(fallbackPublicSiteConfig);
 
   const primaryLabel = isH5 ? '微信快捷登录' : '手机号快捷登录';
   const primaryOpenType = isWeapp && agreed && !submitting ? 'getPhoneNumber' : undefined;
   const dialogConfirmOpenType = isWeapp && pendingAgreementAction === 'quick-login' ? 'getPhoneNumber' : undefined;
-  const legalTitles = useMemo<AgreementTitles>(() => ({
-    terms: findLegalDocument(siteConfig, 'user-agreement').title,
-    privacy: findLegalDocument(siteConfig, 'privacy-policy').title,
-  }), [siteConfig]);
   const smsLoginUrl = returnUrl
     ? `/pages/auth/sms-login/index?returnUrl=${encodeURIComponent(returnUrl)}`
     : '/pages/auth/sms-login/index';
@@ -98,22 +90,6 @@ export default function LoginPage() {
   useDidShow(() => {
     setAgreed(getAuthAgreementAccepted());
   });
-
-  useEffect(() => {
-    let active = true;
-    void getPublicSiteConfig()
-      .then((nextConfig) => {
-        if (active) {
-          setSiteConfig(nextConfig);
-        }
-      })
-      .catch(() => {
-        // Keep fallback legal titles; login must remain usable when config API is unavailable.
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   const openAgreementDialog = (action: PendingAgreementAction) => {
     setAgreementTouched(true);
@@ -303,7 +279,7 @@ export default function LoginPage() {
             </View>
           </View>
           <View className="mini-login__agreement-copy">
-            <AgreementCopy legalTitles={legalTitles} variant="agreement" onOpenAgreement={handleOpenAgreement} />
+            <AgreementCopy variant="agreement" onOpenAgreement={handleOpenAgreement} />
           </View>
         </View>
       </View>
@@ -316,7 +292,7 @@ export default function LoginPage() {
           <View className="mini-login__dialog" onClick={(event) => event.stopPropagation()}>
             <Text className="mini-login__dialog-title">登录前请先阅读并同意</Text>
             <View className="mini-login__dialog-copy">
-              <AgreementCopy legalTitles={legalTitles} variant="dialog" onOpenAgreement={handleOpenAgreement} />
+              <AgreementCopy variant="dialog" onOpenAgreement={handleOpenAgreement} />
             </View>
             <View className="mini-login__dialog-actions">
               <View className="mini-login__dialog-button mini-login__dialog-button--ghost" onClick={closeAgreementDialog}>

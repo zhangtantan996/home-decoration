@@ -74,7 +74,7 @@ func TestGetProposalRefreshesPendingOrderStatus(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	db := setupSQLiteDB(t)
-	if err := db.AutoMigrate(&model.Proposal{}, &model.Order{}, &model.PaymentPlan{}, &model.PaymentOrder{}, &model.OutboxEvent{}, &model.SystemConfig{}); err != nil {
+	if err := db.AutoMigrate(&model.Booking{}, &model.Proposal{}, &model.Provider{}, &model.Order{}, &model.PaymentPlan{}, &model.PaymentOrder{}, &model.OutboxEvent{}, &model.BusinessFlow{}, &model.QuoteList{}, &model.SystemConfig{}); err != nil {
 		t.Fatalf("auto migrate: %v", err)
 	}
 
@@ -89,13 +89,19 @@ func TestGetProposalRefreshesPendingOrderStatus(t *testing.T) {
 	})
 	configSvc.ClearCache()
 
+	booking := model.Booking{
+		Base:   model.Base{ID: 1000},
+		UserID: 7,
+	}
 	proposal := model.Proposal{
-		Base:    model.Base{ID: 1001},
-		Summary: "支付对账方案",
-		Status:  model.ProposalStatusConfirmed,
+		Base:      model.Base{ID: 1001},
+		BookingID: booking.ID,
+		Summary:   "支付对账方案",
+		Status:    model.ProposalStatusConfirmed,
 	}
 	order := model.Order{
 		Base:        model.Base{ID: 1002},
+		BookingID:   booking.ID,
 		ProposalID:  proposal.ID,
 		OrderType:   model.OrderTypeDesign,
 		Status:      model.OrderStatusPending,
@@ -117,7 +123,7 @@ func TestGetProposalRefreshesPendingOrderStatus(t *testing.T) {
 		ReturnContext: "{}",
 	}
 
-	for _, value := range []any{&proposal, &order, &payment} {
+	for _, value := range []any{&booking, &proposal, &order, &payment} {
 		if err := db.Create(value).Error; err != nil {
 			t.Fatalf("seed fixture: %v", err)
 		}
@@ -126,6 +132,7 @@ func TestGetProposalRefreshesPendingOrderStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Params = gin.Params{{Key: "id", Value: "1001"}}
+	c.Set("userId", uint64(7))
 	c.Request = httptest.NewRequest(http.MethodGet, "/api/v1/proposals/1001", nil)
 
 	GetProposal(c)

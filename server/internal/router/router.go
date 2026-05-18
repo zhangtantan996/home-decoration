@@ -137,7 +137,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 		{
 			auth.POST("/register", middleware.LoginRateLimit(), handler.Register)
 			auth.POST("/login", middleware.LoginRateLimit(), handler.Login)
-			auth.POST("/send-code", middleware.LoginRateLimit(), handler.SendCode)
+			auth.POST("/send-code", middleware.LoginRateLimit(), middleware.OptionalJWT(cfg.JWT.Secret), handler.SendCode)
 			auth.POST("/wechat/mini/login", middleware.LoginRateLimit(), handler.WechatMiniLogin)
 			auth.POST("/wechat/mini/bind-phone", middleware.LoginRateLimit(), handler.WechatMiniBindPhone)
 			auth.GET("/wechat/h5/authorize", middleware.LoginRateLimit(), handler.WechatH5Authorize)
@@ -708,7 +708,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/bookings/:id", bookingListPerm, handler.AdminGetBooking)
 			admin.PATCH("/bookings/:id/status", bookingEditPerm, handler.AdminUpdateBookingStatus)
 			admin.GET("/bookings/refundable", financeTransactionApprovePerm, handler.AdminGetRefundableBookings)
-			admin.POST("/bookings/:bookingId/refund", financeTransactionApprovePerm, handler.AdminRefundIntentFee)
+			admin.POST("/bookings/:bookingId/refund", financeTransactionApprovePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminRefundIntentFee)
 
 			// 评价管理
 			admin.GET("/reviews", reviewListPerm, handler.AdminListReviews)
@@ -831,7 +831,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// 出款报表管理
 			admin.GET("/payout/list", financeTransactionListPerm, handler.AdminPayoutList)
 			admin.GET("/payout/:id", financeTransactionViewPerm, handler.AdminPayoutDetail)
-			admin.POST("/payout/:id/retry", financeTransactionApprovePerm, middleware.RequireAdminReauth(), handler.AdminPayoutRetry)
+			admin.POST("/payout/:id/retry", financeTransactionApprovePerm, middleware.RequireAdminReason("reason", "remark"), middleware.RequireAdminReauth(), handler.AdminPayoutRetry)
 
 			// 操作日志
 			admin.GET("/logs", logListPerm, handler.AdminListLogs)

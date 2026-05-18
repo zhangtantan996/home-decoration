@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
@@ -68,12 +70,21 @@ const BookingSiteSurveyPage: React.FC = () => {
     void fetchDetail();
   }, [fetchDetail]);
 
+  const handleBack = () => {
+    navigateBackWithFallback(
+      bookingId > 0 ? `/pages/booking/detail/index?id=${bookingId}` : '/pages/booking/list/index',
+    );
+  };
+
   if (loading) {
     return (
-      <View className="p-md bg-gray-50 min-h-screen">
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="量房资料" onBack={handleBack} placeholder />
+        <View className="p-md">
         <Skeleton height={220} className="mb-md" />
         <Skeleton height={220} className="mb-md" />
         <Skeleton height={180} />
+        </View>
       </View>
     );
   }
@@ -81,6 +92,7 @@ const BookingSiteSurveyPage: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell className="p-md bg-gray-50 min-h-screen" style={pageBottomStyle}>
+        <MiniPageNav title="量房资料" onBack={handleBack} placeholder />
         <View className="notification-surface-state-card">
           <Empty
             description="当前预约还没有量房资料"
@@ -100,6 +112,7 @@ const BookingSiteSurveyPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <MiniPageNav title="量房资料" onBack={handleBack} placeholder />
       <ScrollView scrollY className="h-full">
         <View className="notification-surface-shell__body">
           <NotificationSurfaceHero

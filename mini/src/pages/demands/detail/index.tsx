@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactGrid } from '@/components/NotificationFactGrid';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
@@ -133,9 +135,14 @@ const DemandDetailPage: React.FC = () => {
     }
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="需求详情" onBack={handleBack} placeholder />
         <Empty
           description="登录后查看需求详情"
           action={{ text: '去登录', onClick: () => void openAuthLoginPage('/pages/demands/list/index') }}
@@ -146,10 +153,13 @@ const DemandDetailPage: React.FC = () => {
 
   if (loading) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md">
-        <Skeleton height={170} className="mb-md" />
-        <Skeleton height={190} className="mb-md" />
-        <Skeleton height={240} />
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="需求详情" onBack={handleBack} placeholder />
+        <View className="p-md">
+          <Skeleton height={170} className="mb-md" />
+          <Skeleton height={190} className="mb-md" />
+          <Skeleton height={240} />
+        </View>
       </View>
     );
   }
@@ -157,6 +167,7 @@ const DemandDetailPage: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="需求详情" onBack={handleBack} placeholder />
         <Empty description="未找到需求详情" />
       </NotificationSurfaceShell>
     );
@@ -167,6 +178,7 @@ const DemandDetailPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <MiniPageNav title="需求详情" onBack={handleBack} placeholder />
       <Card className="notification-surface-card" extra={<Tag variant={statusMeta.variant}>{statusMeta.label}</Tag>}>
         <View style={{ display: 'flex', flexDirection: 'column', gap: '20rpx' }}>
           <View>

@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationInboxCell } from '@/components/NotificationInboxCell';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
@@ -132,6 +134,10 @@ const BookingListPage: React.FC = () => {
     Taro.navigateTo({ url: `/pages/booking/detail/index?id=${bookingId}` });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   const handlePrimaryAction = async (booking: BookingItem) => {
     if (booking.statusGroup === 'pending_payment') {
       try {
@@ -149,6 +155,7 @@ const BookingListPage: React.FC = () => {
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
+        <MiniPageNav title="我的预约" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看预约列表"
@@ -161,6 +168,7 @@ const BookingListPage: React.FC = () => {
   if (loading && bookings.length === 0) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+        <MiniPageNav title="我的预约" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View style={sectionStyle}>
           <Skeleton height={148} />
@@ -174,6 +182,7 @@ const BookingListPage: React.FC = () => {
   if (bookings.length === 0) {
     return (
       <NotificationSurfaceShell className="page bg-gray-50 min-h-screen flex items-center justify-center" {...bindPullToRefresh}>
+        <MiniPageNav title="我的预约" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty description="暂无预约记录" />
       </NotificationSurfaceShell>
@@ -182,6 +191,7 @@ const BookingListPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+      <MiniPageNav title="我的预约" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <View style={sectionStyle}>
         {pendingCount > 0 ? (

@@ -1,4 +1,4 @@
 export default definePageConfig({
   navigationStyle: 'custom',
-  navigationBarTitleText: '关于我们',
+  navigationBarTitleText: '项目合同',
 });

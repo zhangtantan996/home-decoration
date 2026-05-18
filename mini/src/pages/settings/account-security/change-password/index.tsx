@@ -6,6 +6,7 @@ import { Button } from '@/components/Button';
 import SettingsLayout, { SettingsGroup } from '@/components/settings/SettingsLayout';
 import { changePassword } from '@/services/userSettings';
 import { showErrorToast } from '@/utils/error';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import '../index.scss';
 
@@ -39,7 +40,7 @@ export default function ChangePasswordPage() {
       await changePassword({ oldPassword: oldPassword.trim(), newPassword: nextPassword });
       Taro.showToast({ title: '密码已更新', icon: 'success' });
       setTimeout(() => {
-        Taro.navigateBack();
+        navigateBackWithFallback('/pages/settings/account-security/index');
       }, 420);
     } catch (error) {
       showErrorToast(error, '密码修改失败');

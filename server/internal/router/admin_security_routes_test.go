@@ -374,6 +374,50 @@ func TestAdminSecuritySessionRevokeRequiresReasonAndReauth(t *testing.T) {
 	}
 }
 
+func TestAdminPayoutRetryRequiresReasonBeforeReauth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	if err := repository.DB.Create(&model.SysMenu{ID: 7101, Title: "出款审批", Type: 3, Permission: "finance:transaction:approve", Status: 1}).Error; err != nil {
+		t.Fatalf("seed finance approve permission: %v", err)
+	}
+	role := model.SysRole{ID: 7102, Name: "财务审批", Key: "finance_approve", Status: 1}
+	if err := repository.DB.Create(&role).Error; err != nil {
+		t.Fatalf("seed finance role: %v", err)
+	}
+	if err := repository.DB.Create(&model.SysRoleMenu{RoleID: role.ID, MenuID: 7101}).Error; err != nil {
+		t.Fatalf("seed role menu: %v", err)
+	}
+	if err := repository.DB.Create(&model.SysAdminRole{AdminID: 1, RoleID: role.ID}).Error; err != nil {
+		t.Fatalf("seed admin role: %v", err)
+	}
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    false,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "active",
+		"sid":         "admin-payout-test-session",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/payout/1/retry", strings.NewReader(`{}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected reason guard http 400, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "请填写操作原因") {
+		t.Fatalf("expected missing reason response, got %s", rec.Body.String())
+	}
+}
+
 func TestBuildAllowedOriginsRejectsWildcardInRelease(t *testing.T) {
 	origins := buildAllowedOrigins("release", "*,https://admin.example.com")
 	if len(origins) != 1 || origins[0] != "https://admin.example.com" {

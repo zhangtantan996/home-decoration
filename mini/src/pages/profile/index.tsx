@@ -219,9 +219,9 @@ export default function Profile() {
     });
   };
 
-  const handleMessages = () => {
+  const handleProfileInfo = () => {
     requireAuth(() => {
-      Taro.switchTab({ url: '/pages/messages/index' });
+      Taro.navigateTo({ url: '/pages/profile/edit/index' });
     });
   };
 
@@ -235,6 +235,10 @@ export default function Profile() {
 
   const handleAbout = () => {
     Taro.navigateTo({ url: '/pages/about/index' });
+  };
+
+  const handleSupport = () => {
+    Taro.navigateTo({ url: '/pages/support/index' });
   };
 
   const handleEditProfile = () => {
@@ -290,37 +294,16 @@ export default function Profile() {
           </View>
 
           <View className="profile-page__content">
-            <Card className="profile-page__card" title="基础服务">
-              <ListItem
-                title="我的预约"
-                arrow
-                icon={<Icon name="orders" size={28} color="#71717A" />}
-                onClick={handleBookings}
-              />
-              <ListItem
-                title="我的通知"
-                arrow
-                icon={<Icon name="notification" size={28} color="#71717A" />}
-                onClick={handleMessages}
-              />
-              <ListItem
-                title="意见反馈"
-                arrow
-                icon={<Icon name="support" size={28} color="#71717A" />}
-                onClick={handleFeedback}
-              />
-              <ListItem
-                title="账号与资料"
-                arrow
-                icon={<Icon name="settings" size={28} color="#71717A" />}
-                onClick={handleSettings}
-              />
-              <ListItem
-                title="关于我们"
-                arrow
-                icon={<Icon name="about" size={28} color="#71717A" />}
-                onClick={handleAbout}
-              />
+            <Card className="profile-page__card" title="常用入口">
+              <ListItem title="我的预约" arrow onClick={handleBookings} />
+              <ListItem title="个人资料" arrow onClick={handleProfileInfo} />
+              <ListItem title="设置" arrow onClick={handleSettings} />
+            </Card>
+
+            <Card className="profile-page__card" title="帮助与支持">
+              <ListItem title="意见反馈" arrow onClick={handleFeedback} />
+              <ListItem title="关于我们" arrow onClick={handleAbout} />
+              <ListItem title="联系客服" arrow onClick={handleSupport} />
             </Card>
           </View>
         </>
@@ -351,18 +334,9 @@ export default function Profile() {
           </View>
 
           <Card className="profile-page__card profile-page__card--guest-services" title="平台服务">
-            <ListItem
-              title="意见反馈"
-              arrow
-              icon={<Icon name="support" size={28} color="#71717A" />}
-              onClick={handleFeedback}
-            />
-            <ListItem
-              title="关于我们"
-              arrow
-              icon={<Icon name="about" size={28} color="#71717A" />}
-              onClick={handleAbout}
-            />
+            <ListItem title="意见反馈" arrow onClick={handleFeedback} />
+            <ListItem title="关于我们" arrow onClick={handleAbout} />
+            <ListItem title="联系客服" arrow onClick={handleSupport} />
           </Card>
         </View>
       )}

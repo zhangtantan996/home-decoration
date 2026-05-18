@@ -2298,6 +2298,24 @@ func (s *QuoteService) BuildSubmissionPrintHTML(submissionID uint64) (string, er
 	return builder.String(), nil
 }
 
+func (s *QuoteService) BuildSubmissionPrintHTMLForOwner(submissionID, userID uint64) (string, error) {
+	if userID == 0 {
+		return "", errors.New("无权查看此报价")
+	}
+	var submission model.QuoteSubmission
+	if err := repository.DB.Select("id", "quote_list_id").First(&submission, submissionID).Error; err != nil {
+		return "", errors.New("报价版本不存在")
+	}
+	var quoteList model.QuoteList
+	if err := repository.DB.Select("id", "owner_user_id").First(&quoteList, submission.QuoteListID).Error; err != nil {
+		return "", errors.New("报价任务不存在")
+	}
+	if quoteList.OwnerUserID != userID {
+		return "", errors.New("无权查看此报价")
+	}
+	return s.BuildSubmissionPrintHTML(submissionID)
+}
+
 func (s *QuoteService) getPrerequisiteSnapshot(quoteList *model.QuoteList) (QuoteTaskPrerequisiteSnapshot, error) {
 	if strings.TrimSpace(quoteList.PrerequisiteSnapshotJSON) == "" {
 		return QuoteTaskPrerequisiteSnapshot{}, nil

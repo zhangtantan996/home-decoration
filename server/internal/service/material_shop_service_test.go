@@ -251,7 +251,7 @@ func TestMaterialShopServiceDetailReturnsPublicProductsAndUsesProductCoverFallba
 	}
 }
 
-func TestMaterialShopServiceListShowsUnsettledLeadShopsAsReference(t *testing.T) {
+func TestMaterialShopServiceListHidesUnsettledLeadShops(t *testing.T) {
 	db := setupMaterialShopServiceDB(t)
 	service := &MaterialShopService{}
 
@@ -275,21 +275,16 @@ func TestMaterialShopServiceListShowsUnsettledLeadShopsAsReference(t *testing.T)
 	if err != nil {
 		t.Fatalf("list material shops: %v", err)
 	}
-	if total != 2 || len(list) != 2 {
-		t.Fatalf("expected settled shop and unsettled lead to remain visible, total=%d len=%d", total, len(list))
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("expected only settled shop visible, total=%d len=%d list=%v", total, len(list), list)
 	}
-	if !containsMaterialShopName(list, "未入驻线索门店") {
-		t.Fatalf("expected unsettled lead to be visible, got=%v", list)
+	if containsMaterialShopName(list, "未入驻线索门店") {
+		t.Fatalf("expected unsettled lead to stay hidden, got=%v", list)
+	}
+	if !containsMaterialShopName(list, "正式入驻门店") {
+		t.Fatalf("expected settled shop to stay visible, got=%v", list)
 	}
 	for _, item := range list {
-		if item.Name == "未入驻线索门店" {
-			if item.IsVerified {
-				t.Fatalf("unsettled lead must not be exposed as verified: %+v", item)
-			}
-			if item.IsSettled {
-				t.Fatalf("unsettled lead must keep isSettled=false: %+v", item)
-			}
-		}
 		if item.Description != "" {
 			t.Fatalf("expected public list description to be blank, got=%q", item.Description)
 		}

@@ -1,9 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
@@ -158,9 +160,14 @@ const ProposalDetail: React.FC = () => {
     } as any);
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/proposals/list/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell>
+        <MiniPageNav title="方案详情" onBack={handleBack} placeholder />
         <View className="notification-surface-state-card">登录后查看方案详情</View>
       </NotificationSurfaceShell>
     );
@@ -169,6 +176,7 @@ const ProposalDetail: React.FC = () => {
   if (loading) {
     return (
       <View className="proposal-detail-page">
+        <MiniPageNav title="方案详情" onBack={handleBack} placeholder />
         <Skeleton height={300} className="proposal-detail-page__section" />
         <Skeleton height={200} className="proposal-detail-page__section" />
         <Skeleton height={100} className="proposal-detail-page__section" />
@@ -179,6 +187,7 @@ const ProposalDetail: React.FC = () => {
   if (!detail) {
     return (
       <NotificationSurfaceShell>
+        <MiniPageNav title="方案详情" onBack={handleBack} placeholder />
         <View className="notification-surface-state-card">未找到方案</View>
       </NotificationSurfaceShell>
     );
@@ -197,6 +206,7 @@ const ProposalDetail: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="proposal-detail-page" style={pageBottomStyle}>
+      <MiniPageNav title="方案详情" onBack={handleBack} placeholder />
       <View className="notification-surface-shell__body">
         <NotificationSurfaceHero
           eyebrow="方案详情"

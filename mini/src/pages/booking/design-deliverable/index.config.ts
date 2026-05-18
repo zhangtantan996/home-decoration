@@ -1,4 +1,4 @@
 export default definePageConfig({
   navigationStyle: 'custom',
-  navigationBarTitleText: '关于我们',
+  navigationBarTitleText: '设计交付',
 });

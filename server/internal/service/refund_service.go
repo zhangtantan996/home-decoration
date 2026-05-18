@@ -26,6 +26,18 @@ const (
 
 // RefundIntentFee 退还量房费（兼容旧命名）
 func (s *RefundService) RefundIntentFee(bookingID uint64, scenario RefundScenario, additionalReason string) error {
+	return s.refundIntentFee(bookingID, scenario, additionalReason, 0)
+}
+
+// RefundIntentFeeByAdmin records the approving admin for manual refund audit trails.
+func (s *RefundService) RefundIntentFeeByAdmin(bookingID, adminID uint64, scenario RefundScenario, additionalReason string) error {
+	if adminID == 0 {
+		return errors.New("管理员身份无效")
+	}
+	return s.refundIntentFee(bookingID, scenario, additionalReason, adminID)
+}
+
+func (s *RefundService) refundIntentFee(bookingID uint64, scenario RefundScenario, additionalReason string, adminID uint64) error {
 	var booking model.Booking
 	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
 		return errors.New("预约记录不存在")
@@ -83,7 +95,7 @@ func (s *RefundService) RefundIntentFee(bookingID uint64, scenario RefundScenari
 		if approvedAmount <= 0 {
 			approvedAmount = booking.IntentFee
 		}
-		view, approveErr := refundApplicationService.ApproveApplication(application.ID, 0, &ReviewRefundApplicationInput{
+		view, approveErr := refundApplicationService.ApproveApplication(application.ID, adminID, &ReviewRefundApplicationInput{
 			ApprovedAmount: approvedAmount,
 			AdminNotes:     refundReason,
 		})

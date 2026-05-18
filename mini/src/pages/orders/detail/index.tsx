@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useDidShow, useRouter } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
@@ -215,6 +217,10 @@ const OrderDetail: React.FC = () => {
     void Taro.redirectTo({ url: surveyDepositRedirectUrl });
   }, [surveyDepositRedirectUrl]);
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/orders/list/index');
+  };
+
   const entryPaymentSource = useMemo(
     () => (resolvedEntryKey
       ? {
@@ -320,6 +326,7 @@ const OrderDetail: React.FC = () => {
   if (!auth.token) {
     return (
       <View className="page order-detail-page" {...bindPullToRefresh}>
+        <MiniPageNav title="订单详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <NotificationSurfaceShell>
           <Empty
@@ -334,6 +341,7 @@ const OrderDetail: React.FC = () => {
   if (loading) {
     return (
       <View className="page order-detail-page" {...bindPullToRefresh}>
+        <MiniPageNav title="订单详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="order-detail-page__loading">
           <Skeleton height={220} className="order-detail-page__section" />
@@ -347,6 +355,7 @@ const OrderDetail: React.FC = () => {
   if (!detail) {
     return (
       <View className="page order-detail-page" {...bindPullToRefresh}>
+        <MiniPageNav title="订单详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <NotificationSurfaceShell>
           <Empty description="订单不存在" />
@@ -424,6 +433,7 @@ const OrderDetail: React.FC = () => {
       style={showActionBar ? pageBottomStyle : undefined}
       {...bindPullToRefresh}
     >
+      <MiniPageNav title="订单详情" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <NotificationSurfaceShell className="order-detail-page__shell">
         <ScrollView scrollY className="h-full">

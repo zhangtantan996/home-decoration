@@ -94,6 +94,7 @@ func AdminPayoutDetail(c *gin.Context) {
 func AdminPayoutRetry(c *gin.Context) {
 	payoutID := parseUint64(c.Param("id"))
 	adminID := c.GetUint64("admin_id")
+	reason := c.GetString("admin_reason")
 
 	// 查询出款单
 	var payout model.PayoutOrder
@@ -135,6 +136,7 @@ func AdminPayoutRetry(c *gin.Context) {
 		OperationType: "retry_payout",
 		ResourceType:  "payout_order",
 		ResourceID:    payoutID,
+		Reason:        reason,
 		Result:        "success",
 		Metadata: map[string]interface{}{
 			"payoutId":   payoutID,

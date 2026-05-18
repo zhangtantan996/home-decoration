@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 import { Tabs, Button as NutButton } from '@nutui/nutui-react-taro';
 import { Success } from '@nutui/icons-react-taro';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
@@ -211,9 +213,14 @@ const ProjectDetailPage: React.FC = () => {
     });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/progress/index');
+  };
+
   if (!auth.token) {
     return (
       <View className="project-detail-page project-detail-page--state" {...bindPullToRefresh}>
+        <MiniPageNav title="项目详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <NotificationSurfaceShell>
           <View className="notification-surface-state-card">
@@ -230,6 +237,7 @@ const ProjectDetailPage: React.FC = () => {
   if (ownerScopeDisabled) {
     return (
       <View className="project-detail-page project-detail-page--state" {...bindPullToRefresh}>
+        <MiniPageNav title="项目详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <NotificationSurfaceShell>
           <View className="notification-surface-state-card">
@@ -243,6 +251,7 @@ const ProjectDetailPage: React.FC = () => {
   if (loading) {
     return (
       <View className="project-detail-page" {...bindPullToRefresh}>
+        <MiniPageNav title="项目详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="p-md bg-gray-50 min-h-screen">
           <Skeleton height={200} className="mb-md" />
@@ -255,6 +264,7 @@ const ProjectDetailPage: React.FC = () => {
   if (!detail) {
     return (
       <View className="project-detail-page project-detail-page--state" {...bindPullToRefresh}>
+        <MiniPageNav title="项目详情" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <NotificationSurfaceShell>
           <View className="notification-surface-state-card">
@@ -288,6 +298,7 @@ const ProjectDetailPage: React.FC = () => {
 
   return (
     <View className="page bg-gray-50 min-h-screen" {...bindPullToRefresh}>
+      <MiniPageNav title="项目详情" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
       <NotificationSurfaceShell>
         <ScrollView scrollY className="h-full">

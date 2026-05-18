@@ -4,7 +4,7 @@ import React, { useMemo, useState } from 'react';
 
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
-import SettingsLayout, { SettingsGroup } from '@/components/settings/SettingsLayout';
+import SettingsLayout from '@/components/settings/SettingsLayout';
 import {
   getUserVerification,
   submitUserVerification,
@@ -52,6 +52,19 @@ const isValidIDCardInput = (value: string) => {
   return checkMap[sum % 11] === id[17];
 };
 
+const resolveStatusTone = (status?: string) => {
+  if (status === 'verified') {
+    return 'verified';
+  }
+  if (status === 'failed') {
+    return 'failed';
+  }
+  if (status === 'pending') {
+    return 'pending';
+  }
+  return 'unverified';
+};
+
 const resolveStatusText = (status?: string) => {
   switch (status) {
     case 'verified':
@@ -65,9 +78,47 @@ const resolveStatusText = (status?: string) => {
   }
 };
 
+const resolveStatusCopy = (status?: string) => {
+  switch (status) {
+    case 'verified':
+      return '身份信息已完成核验，可安全进行后续支付与签约流程。';
+    case 'failed':
+      return '认证信息未通过，请核对姓名和身份证号后重新提交。';
+    case 'pending':
+      return '认证信息正在核验中，请稍后查看结果。';
+    default:
+      return '支付前需完成实名认证，仅用于必要身份核验。';
+  }
+};
+
+const resolveStatusTitle = (status?: string) => {
+  if (status === 'verified') {
+    return '认证成功';
+  }
+  if (status === 'pending') {
+    return '核验中';
+  }
+  if (status === 'failed') {
+    return '认证未通过';
+  }
+  return '未认证';
+};
+
+const formatMaskedIDCard = (last4?: string) => {
+  if (!last4) {
+    return '已脱敏';
+  }
+  return `**************${last4}`;
+};
+
 const navigateAfterVerified = (returnUrl: string) => {
   if (!returnUrl) {
-    Taro.navigateBack();
+    const pages = Taro.getCurrentPages();
+    if (pages.length > 1) {
+      Taro.navigateBack();
+      return;
+    }
+    Taro.switchTab({ url: '/pages/profile/index' });
     return;
   }
   const target = returnUrl.startsWith('/') ? returnUrl : `/${returnUrl}`;
@@ -79,6 +130,57 @@ const navigateAfterVerified = (returnUrl: string) => {
   void Taro.redirectTo({ url: target });
 };
 
+function StatusVisual({ tone }: { tone: string }) {
+  const isVerified = tone === 'verified';
+
+  return (
+    <View className={`real-name-page__status-visual real-name-page__status-visual--${tone}`}>
+      <View className="real-name-page__shield">
+        {isVerified ? (
+          <View className="real-name-page__shield-check" />
+        ) : (
+          <View className="real-name-page__shield-person">
+            <View className="real-name-page__shield-person-head" />
+            <View className="real-name-page__shield-person-body" />
+          </View>
+        )}
+      </View>
+    </View>
+  );
+}
+
+function FieldIcon({ type }: { type: 'name' | 'id' }) {
+  return (
+    <View className={`real-name-page__field-icon real-name-page__field-icon--${type}`}>
+      {type === 'name' ? (
+        <>
+          <View className="real-name-page__field-icon-head" />
+          <View className="real-name-page__field-icon-body" />
+        </>
+      ) : (
+        <>
+          <View className="real-name-page__field-icon-line real-name-page__field-icon-line--short" />
+          <View className="real-name-page__field-icon-line" />
+        </>
+      )}
+    </View>
+  );
+}
+
+function VerifiedInfoRow({ type, label, value }: { type: 'name' | 'id'; label: string; value: string }) {
+  return (
+    <View className="real-name-page__info-row">
+      <View className="real-name-page__info-icon">
+        <FieldIcon type={type} />
+      </View>
+      <View className="real-name-page__info-content">
+        <Text className="real-name-page__info-label">{label}</Text>
+        <Text className="real-name-page__info-value">{value}</Text>
+      </View>
+    </View>
+  );
+}
+
 export default function AccountVerificationPage() {
   const router = useRouter();
   const returnUrl = useMemo(() => decodeReturnUrl(router.params?.returnUrl), [router.params?.returnUrl]);
@@ -87,6 +189,21 @@ export default function AccountVerificationPage() {
   const [idCard, setIdCard] = useState('');
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [focusedField, setFocusedField] = useState<'realName' | 'idCard' | null>(null);
+  const isVerified = verification?.status === 'verified';
+  const statusTone = resolveStatusTone(verification?.status);
+  const realNameInvalid = Boolean(realName.trim() && !isValidRealNameInput(realName));
+  const idCardInvalid = Boolean(idCard && !isValidIDCardInput(idCard));
+  const realNameShellClass = [
+    'real-name-page__input-shell',
+    focusedField === 'realName' ? 'real-name-page__input-shell--focused' : '',
+    realNameInvalid ? 'real-name-page__input-shell--error' : '',
+  ].filter(Boolean).join(' ');
+  const idCardShellClass = [
+    'real-name-page__input-shell',
+    focusedField === 'idCard' ? 'real-name-page__input-shell--focused' : '',
+    idCardInvalid ? 'real-name-page__input-shell--error' : '',
+  ].filter(Boolean).join(' ');
 
   const disabled = useMemo(() => {
     return submitting || !isValidRealNameInput(realName) || !isValidIDCardInput(idCard);
@@ -126,7 +243,6 @@ export default function AccountVerificationPage() {
       setVerification(result);
       if (result.status === 'verified') {
         Taro.showToast({ title: '认证完成', icon: 'success' });
-        setTimeout(() => navigateAfterVerified(returnUrl), 480);
         return;
       }
       Taro.showToast({ title: result.rejectReason || '认证未通过', icon: 'none' });
@@ -142,60 +258,113 @@ export default function AccountVerificationPage() {
       title="实名认证"
       className="real-name-page"
       footer={
-        verification?.status === 'verified' ? (
-          <Button block onClick={() => navigateAfterVerified(returnUrl)}>返回继续</Button>
+        isVerified ? (
+          <Button
+            block
+            className="real-name-page__footer-button real-name-page__footer-button--verified"
+            onClick={() => navigateAfterVerified(returnUrl)}
+          >
+            我知道了
+          </Button>
         ) : (
-          <Button block disabled={disabled} loading={submitting} onClick={handleSubmit}>提交认证</Button>
+          <Button
+            block
+            className="real-name-page__footer-button"
+            disabled={disabled}
+            loading={submitting}
+            onClick={handleSubmit}
+          >
+            {submitting ? '认证中...' : '提交认证'}
+          </Button>
         )
       }
     >
-      <View className="real-name-page__status-card">
-        <Text className="real-name-page__status-label">当前状态</Text>
-        <Text className="real-name-page__status-value">{loading ? '加载中' : resolveStatusText(verification?.status)}</Text>
-        {verification?.status === 'verified' ? (
-          <View className="real-name-page__verified-lines">
-            <Text className="real-name-page__verified-line">姓名：{verification.realNameMasked || '已脱敏'}</Text>
-            <Text className="real-name-page__verified-line">身份证尾号：{verification.idCardLast4 || '已脱敏'}</Text>
+      <View className={`real-name-page__status-card real-name-page__status-card--${statusTone}`}>
+        <StatusVisual tone={statusTone} />
+        <View className="real-name-page__status-main">
+          <View className="real-name-page__status-top">
+            <Text className="real-name-page__status-label">实名认证</Text>
+            <View className="real-name-page__status-pill">
+              <Text className="real-name-page__status-pill-text">
+                {loading ? '加载中' : resolveStatusText(verification?.status)}
+              </Text>
+            </View>
           </View>
-        ) : null}
-        {verification?.status === 'failed' && verification.rejectReason ? (
-          <Text className="real-name-page__reason">{verification.rejectReason}</Text>
-        ) : null}
+          <Text className="real-name-page__status-value">
+            {loading ? '正在读取' : resolveStatusTitle(verification?.status)}
+          </Text>
+          <Text className="real-name-page__status-copy">{resolveStatusCopy(verification?.status)}</Text>
+          {verification?.status === 'failed' && verification.rejectReason ? (
+            <Text className="real-name-page__reason">{verification.rejectReason}</Text>
+          ) : null}
+        </View>
+        <View className="real-name-page__status-watermark" />
       </View>
 
-      {verification?.status !== 'verified' ? (
-        <SettingsGroup title="认证信息">
-          <View className="real-name-page__form">
-            <View className="real-name-page__field">
-              <Text className="real-name-page__label">真实姓名</Text>
+      {isVerified ? (
+        <>
+          <View className="real-name-page__form-card real-name-page__form-card--verified">
+            <View className="real-name-page__form-header">
+              <Text className="real-name-page__section-title">认证信息</Text>
+              <Text className="real-name-page__section-copy">以下为您已认证的身份信息</Text>
+            </View>
+            <View className="real-name-page__info-list">
+              <VerifiedInfoRow type="name" label="真实姓名" value={verification?.realNameMasked || '已脱敏'} />
+              <VerifiedInfoRow type="id" label="身份证号" value={formatMaskedIDCard(verification?.idCardLast4)} />
+            </View>
+          </View>
+          <View className="real-name-page__privacy-note">
+            <View className="real-name-page__privacy-icon">
+              <View className="real-name-page__privacy-check" />
+            </View>
+            <Text className="real-name-page__privacy-text">我们将严格保护您的身份信息安全</Text>
+          </View>
+        </>
+      ) : (
+        <View className="real-name-page__form-card">
+          <View className="real-name-page__form-header">
+            <Text className="real-name-page__section-title">填写本人信息</Text>
+            <Text className="real-name-page__section-copy">请填写与身份证一致的信息，页面不会展示完整证件号。</Text>
+          </View>
+          <View className="real-name-page__field">
+            <Text className="real-name-page__label">真实姓名</Text>
+            <View className={realNameShellClass}>
+              <FieldIcon type="name" />
               <Input
                 className="real-name-page__input"
                 maxLength={20}
                 placeholder="请输入本人姓名"
                 value={realName}
+                onBlur={() => setFocusedField(null)}
                 onChange={setRealName}
+                onFocus={() => setFocusedField('realName')}
               />
-              {realName.trim() && !isValidRealNameInput(realName) ? (
-                <Text className="real-name-page__field-error">姓名需为2-20位中文，可包含间隔点</Text>
-              ) : null}
             </View>
-            <View className="real-name-page__field">
-              <Text className="real-name-page__label">身份证号</Text>
+            {realNameInvalid ? (
+              <Text className="real-name-page__field-error">姓名需为2-20位中文，可包含间隔点</Text>
+            ) : null}
+          </View>
+          <View className="real-name-page__divider" />
+          <View className="real-name-page__field">
+            <Text className="real-name-page__label">身份证号</Text>
+            <View className={idCardShellClass}>
+              <FieldIcon type="id" />
               <Input
                 className="real-name-page__input"
                 maxLength={18}
                 placeholder="请输入18位身份证号"
                 value={idCard}
+                onBlur={() => setFocusedField(null)}
                 onChange={(value) => setIdCard(normalizeIDCardInput(value))}
+                onFocus={() => setFocusedField('idCard')}
               />
-              {idCard && !isValidIDCardInput(idCard) ? (
-                <Text className="real-name-page__field-error">请填写正确的18位身份证号</Text>
-              ) : null}
             </View>
-            <Text className="real-name-page__notice">仅用于支付前实名核验，页面不会展示完整证件号。</Text>
+            {idCardInvalid ? (
+              <Text className="real-name-page__field-error">请填写正确的18位身份证号</Text>
+            ) : null}
           </View>
-        </SettingsGroup>
-      ) : null}
+        </View>
+      )}
     </SettingsLayout>
   );
 }

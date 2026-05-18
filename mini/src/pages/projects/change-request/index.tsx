@@ -1,10 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro, { useLoad } from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationActionBar } from '@/components/NotificationActionBar';
 import { NotificationFactRows } from '@/components/NotificationFactRows';
 import { NotificationSurfaceHero } from '@/components/NotificationSurfaceHero';
@@ -128,17 +130,27 @@ const ProjectChangeRequestPage: React.FC = () => {
     });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback(
+      projectId > 0 ? `/pages/projects/detail/index?id=${projectId}` : '/pages/progress/index',
+    );
+  };
+
   if (loading) {
     return (
-      <View className="page bg-gray-50 min-h-screen p-md">
-        <Skeleton height={120} className="mb-md" />
-        <Skeleton height={220} />
+      <View className="page bg-gray-50 min-h-screen">
+        <MiniPageNav title="工程变更" onBack={handleBack} placeholder />
+        <View className="p-md">
+          <Skeleton height={120} className="mb-md" />
+          <Skeleton height={220} />
+        </View>
       </View>
     );
   }
 
   return (
     <NotificationSurfaceShell className="page bg-gray-50 min-h-screen" style={pageBottomStyle}>
+      <MiniPageNav title="工程变更" onBack={handleBack} placeholder />
       <ScrollView scrollY className="h-full">
         <View className="notification-surface-shell__body">
           <NotificationSurfaceHero

@@ -3249,6 +3249,10 @@ func AdminSetMaterialShopAvailability(c *gin.Context) {
 // AdminRefundIntentFee 管理员手动退款意向金
 func AdminRefundIntentFee(c *gin.Context) {
 	bookingID := parseUint64(c.Param("bookingId"))
+	adminID := c.GetUint64("admin_id")
+	if adminID == 0 {
+		adminID = c.GetUint64("adminId")
+	}
 
 	var input struct {
 		Reason string `json:"reason" binding:"required"`
@@ -3260,7 +3264,7 @@ func AdminRefundIntentFee(c *gin.Context) {
 
 	// 调用退款服务
 	refundSvc := &service.RefundService{}
-	if err := refundSvc.RefundIntentFee(bookingID, service.RefundScenarioAdminManual, input.Reason); err != nil {
+	if err := refundSvc.RefundIntentFeeByAdmin(bookingID, adminID, service.RefundScenarioAdminManual, input.Reason); err != nil {
 		if strings.Contains(err.Error(), "退款处理中") {
 			response.Success(c, gin.H{
 				"message": err.Error(),

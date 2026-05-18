@@ -44,6 +44,18 @@ func normalizeUserSettingsUpdates(updates map[string]interface{}) map[string]int
 	return normalized
 }
 
+func isSixDigitSecurityCode(code string) bool {
+	if len(code) != 6 {
+		return false
+	}
+	for _, char := range code {
+		if char < '0' || char > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 // ========== 修改密码 ==========
 
 // ChangePassword 修改登录密码
@@ -105,6 +117,10 @@ func ChangePhone(c *gin.Context) {
 		response.BadRequest(c, "验证码不能包含空格")
 		return
 	}
+	if !isSixDigitSecurityCode(req.Code) {
+		response.BadRequest(c, "请输入6位验证码")
+		return
+	}
 
 	// 验证短信验证码
 	if err := service.VerifySMSCode(req.NewPhone, service.SMSPurposeChangePhone, req.Code); err != nil {
@@ -139,6 +155,10 @@ func DeleteAccount(c *gin.Context) {
 	}
 	if service.ContainsWhitespace(req.Code) {
 		response.BadRequest(c, "验证码不能包含空格")
+		return
+	}
+	if !isSixDigitSecurityCode(req.Code) {
+		response.BadRequest(c, "请输入6位验证码")
 		return
 	}
 

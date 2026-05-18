@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ScrollView, Text, View } from '@tarojs/components';
 import Taro from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import { Empty } from '@/components/Empty';
+import MiniPageNav from '@/components/MiniPageNav';
 import { NotificationSurfaceShell } from '@/components/NotificationSurfaceShell';
 import { PullToRefreshNotice } from '@/components/PullToRefreshNotice';
 import { Skeleton } from '@/components/Skeleton';
@@ -72,9 +74,14 @@ const AfterSalesListPage: React.FC = () => {
     Taro.navigateTo({ url: `/pages/after-sales/detail/index?id=${id}` });
   };
 
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   if (!auth.token) {
     return (
       <NotificationSurfaceShell className="after-sales-list-page" contentClassName="after-sales-list-page__content after-sales-list-page__content--center" {...bindPullToRefresh}>
+        <MiniPageNav title="售后 / 争议" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <Empty
           description="登录后查看售后记录"
@@ -87,6 +94,7 @@ const AfterSalesListPage: React.FC = () => {
   if (loading && list.length === 0) {
     return (
       <NotificationSurfaceShell className="after-sales-list-page" contentClassName="after-sales-list-page__content" {...bindPullToRefresh}>
+        <MiniPageNav title="售后 / 争议" onBack={handleBack} placeholder />
         <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
         <View className="after-sales-list-page__section">
           <View className="after-sales-list-page__summary">
@@ -103,6 +111,7 @@ const AfterSalesListPage: React.FC = () => {
 
   return (
     <NotificationSurfaceShell className="after-sales-list-page" contentClassName="after-sales-list-page__content" {...bindPullToRefresh}>
+      <MiniPageNav title="售后 / 争议" onBack={handleBack} placeholder />
       <PullToRefreshNotice status={refreshStatus} height={drawerHeight} progress={drawerProgress} />
 
       <View className="after-sales-list-page__section">

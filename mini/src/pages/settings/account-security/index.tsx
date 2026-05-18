@@ -1,5 +1,5 @@
 import Taro, { useDidShow } from '@tarojs/taro';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useMemo, useState } from 'react';
 
 import SettingsLayout, { SettingsGroup, SettingsRow } from '@/components/settings/SettingsLayout';
 import { useResolvedUserPhone } from '@/hooks/useResolvedUserPhone';
@@ -28,27 +28,17 @@ export default function AccountSecurityPage() {
     void Taro.navigateTo({ url });
   };
 
-  useEffect(() => {
-    let mounted = true;
-    getUserVerification()
-      .then((result) => {
-        if (mounted) {
-          setVerification(result);
-        }
-      })
-      .catch(() => {
-        if (mounted) {
-          setVerification(null);
-        }
-      });
-    return () => {
-      mounted = false;
-    };
-  }, []);
+  const loadVerification = async () => {
+    try {
+      const result = await getUserVerification();
+      setVerification(result);
+    } catch (_error) {
+      setVerification(null);
+    }
+  };
+
   useDidShow(() => {
-    void getUserVerification()
-      .then(setVerification)
-      .catch(() => setVerification(null));
+    void loadVerification();
   });
 
   return (
@@ -66,10 +56,6 @@ export default function AccountSecurityPage() {
       </SettingsGroup>
 
       <SettingsGroup title="安全管理">
-        <SettingsRow
-          label="登录设备管理"
-          onClick={() => openPage('/pages/settings/devices/index')}
-        />
         <SettingsRow
           label="实名认证"
           value={verificationLabel}

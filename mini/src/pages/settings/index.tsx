@@ -93,21 +93,13 @@ export default function SettingsPage() {
       }
     >
       <SettingsGroup title="账号与安全">
-        <SettingsRow label="个人资料" onClick={() => void openPage('/pages/profile/edit/index')} />
         <SettingsRow label="账号安全" value={phoneLabel} onClick={() => void openPage('/pages/settings/account-security/index')} />
-        <SettingsRow label="登录设备" onClick={() => void openPage('/pages/settings/devices/index')} />
       </SettingsGroup>
 
       <SettingsGroup title="偏好设置">
         <SettingsRow label="通知提醒" onClick={() => void openPage('/pages/settings/notification/index')} />
         <SettingsRow label="隐私设置" onClick={() => void openPage('/pages/settings/privacy/index')} />
         <SettingsRow label="通用设置" onClick={() => void openPage('/pages/settings/general/index')} />
-      </SettingsGroup>
-
-      <SettingsGroup title="帮助与支持">
-        <SettingsRow label="意见反馈" onClick={() => void openPage('/pages/settings/feedback/index')} />
-        <SettingsRow label="关于我们" onClick={() => void openPage('/pages/about/index')} />
-        <SettingsRow label="联系客服" onClick={() => void openPage('/pages/support/index')} />
       </SettingsGroup>
     </SettingsLayout>
   );

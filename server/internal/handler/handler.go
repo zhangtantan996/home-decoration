@@ -414,6 +414,22 @@ func SendCode(c *gin.Context) {
 		response.BadRequest(c, "请从商家登录页获取验证码")
 		return
 	}
+	if purpose == service.SMSPurposeDeleteAccount {
+		userID := getCurrentUserID(c)
+		if userID == 0 {
+			response.Unauthorized(c, "请先登录")
+			return
+		}
+		user, err := userService.GetUserByID(userID)
+		if err != nil {
+			response.NotFound(c, "用户不存在")
+			return
+		}
+		if strings.TrimSpace(user.Phone) != strings.TrimSpace(req.Phone) {
+			response.BadRequest(c, "请使用当前账号绑定手机号")
+			return
+		}
+	}
 
 	// 获取客户端IP
 	clientIP := c.ClientIP()
@@ -1147,8 +1163,8 @@ func UpdatePhase(c *gin.Context) {
 		return
 	}
 
-	if err := projectService.UpdatePhase(phaseId, &req); err != nil {
-		response.ServerError(c, err.Error())
+	if err := projectService.UpdatePhaseForOwner(phaseId, getCurrentUserID(c), &req); err != nil {
+		respondScopedAccessError(c, err, "更新阶段失败")
 		return
 	}
 
@@ -1169,8 +1185,8 @@ func UpdatePhaseTask(c *gin.Context) {
 		return
 	}
 
-	if err := projectService.UpdatePhaseTask(taskId, &req); err != nil {
-		response.ServerError(c, err.Error())
+	if err := projectService.UpdatePhaseTaskForOwner(taskId, getCurrentUserID(c), &req); err != nil {
+		respondScopedAccessError(c, err, "更新任务失败")
 		return
 	}
 
