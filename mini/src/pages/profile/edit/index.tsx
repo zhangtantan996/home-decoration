@@ -11,6 +11,7 @@ import { getUserProfile, updateUserProfile, type UpdateProfileDTO } from '@/serv
 import { uploadFile } from '@/services/uploads';
 import { useAuthStore } from '@/store/auth';
 import { isUserCancelError, showErrorToast } from '@/utils/error';
+import { navigateBackWithFallback } from '@/utils/navigation';
 import { resolveProfileAvatarDisplayUrl } from '@/utils/profileAvatar';
 
 import './index.scss';
@@ -144,7 +145,7 @@ export default function ProfileEdit() {
 
       Taro.showToast({ title: '保存成功', icon: 'success' });
       setTimeout(() => {
-        Taro.navigateBack();
+        navigateBackWithFallback('/pages/profile/index');
       }, 500);
     } catch (error) {
       if (mountedRef.current) {
@@ -161,6 +162,8 @@ export default function ProfileEdit() {
     <SettingsLayout
       title="个人资料"
       className="profile-edit-page"
+      showNav
+      requireAuth
       footer={
         <Button block loading={loading} onClick={handleSubmit}>
           保存资料

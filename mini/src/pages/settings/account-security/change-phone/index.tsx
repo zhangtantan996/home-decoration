@@ -9,9 +9,10 @@ import { useResolvedUserPhone } from '@/hooks/useResolvedUserPhone';
 import { changePhone, sendSecurityCode } from '@/services/userSettings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
+import { navigateBackWithFallback } from '@/utils/navigation';
 
 import '../index.scss';
-import { isValidChineseMainlandPhone, maskPhone } from '../shared';
+import { isValidChineseMainlandPhone, isValidSecurityCode, maskPhone } from '../shared';
 
 export default function ChangePhonePage() {
   const auth = useAuthStore();
@@ -85,6 +86,10 @@ export default function ChangePhonePage() {
   };
 
   const handleSubmit = async () => {
+    if (submitting) {
+      return;
+    }
+
     const trimmedPhone = newPhone.trim();
     const trimmedCode = code.trim();
 
@@ -92,8 +97,8 @@ export default function ChangePhonePage() {
       Taro.showToast({ title: '请输入正确手机号', icon: 'none' });
       return;
     }
-    if (!trimmedCode) {
-      Taro.showToast({ title: '请输入验证码', icon: 'none' });
+    if (!isValidSecurityCode(trimmedCode)) {
+      Taro.showToast({ title: '请输入6位验证码', icon: 'none' });
       return;
     }
     if (trimmedPhone === String(currentPhone || '').trim()) {
@@ -116,7 +121,7 @@ export default function ChangePhonePage() {
       }
       Taro.showToast({ title: '手机号已更新', icon: 'success' });
       setTimeout(() => {
-        Taro.navigateBack();
+        navigateBackWithFallback('/pages/settings/account-security/index');
       }, 420);
     } catch (error) {
       if (mountedRef.current) {

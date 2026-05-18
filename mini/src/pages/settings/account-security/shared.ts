@@ -11,3 +11,7 @@ export const maskPhone = (phone?: string) => {
 export const isValidChineseMainlandPhone = (phone?: string) => {
   return SECURITY_PHONE_REGEXP.test(String(phone || '').trim());
 };
+
+export const isValidSecurityCode = (code?: string) => {
+  return /^\d{6}$/.test(String(code || '').trim());
+};

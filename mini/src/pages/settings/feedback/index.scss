@@ -1,116 +1,99 @@
 @import "../../../theme/tokens";
 
 .feedback-page {
-  .settings-layout__footer {
-    margin-top: 28rpx;
-  }
-}
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% 0, $color-white 0%, $color-bg-page-top 34%, $color-bg-page-bottom 100%);
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", sans-serif;
 
-.feedback-page {
+  .mini-page-nav {
+    background: $color-surface-nav !important;
+    border-bottom: 1rpx solid $color-surface-border !important;
+    backdrop-filter: blur(22rpx);
+  }
+
+  .mini-page-nav__title {
+    font-size: 40rpx;
+    font-weight: 600;
+  }
+
+  .settings-layout__body--nav {
+    gap: 24rpx;
+    padding: 28rpx 36rpx calc(144rpx + env(safe-area-inset-bottom));
+  }
+
+  .settings-layout__footer--inline {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 12;
+    box-sizing: border-box;
+    margin-top: 0;
+    padding: 18rpx 36rpx calc(18rpx + env(safe-area-inset-bottom));
+    background: linear-gradient(180deg, transparent 0%, $color-bg-page-bottom 54%);
+  }
+
+  &__card {
+    position: relative;
+    padding: 28rpx 26rpx 30rpx;
+    border: 1rpx solid $color-surface-border;
+    border-radius: $radius-card;
+    background: $color-surface-card;
+    box-shadow: $shadow-card;
+    box-sizing: border-box;
+  }
+
+  &__card-title {
+    display: block;
+    color: $color-text-primary;
+    font-size: 40rpx;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
   &__types {
     display: flex;
     flex-wrap: wrap;
     gap: 16rpx;
-    padding: 24rpx;
+    margin-top: 22rpx;
   }
 
   &__type-pill {
-    min-width: calc((100% - 32rpx) / 3);
-    height: 68rpx;
-    padding: 0 24rpx;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 999rpx;
-    background: #f8fafc;
-    border: 1rpx solid rgba(148, 163, 184, 0.12);
+    width: calc((100% - 32rpx) / 3);
+    min-height: 72rpx;
+    padding: 0 18rpx;
+    border: 1rpx solid $color-line-soft;
+    border-radius: $radius-pill;
+    background: $color-white;
+    color: $color-text-secondary;
     box-sizing: border-box;
+    transition: background 0.18s, border-color 0.18s, transform 0.18s;
+  }
 
-    &--active {
-      background: #eff6ff;
-      border-color: rgba(37, 99, 235, 0.18);
-    }
+  &__type-pill--pressed {
+    transform: translateY(2rpx);
+  }
+
+  &__type-pill--active {
+    border-color: $color-accent-blue;
+    background: $color-accent-blue-soft;
+    color: $color-accent-blue;
+    box-shadow: inset 0 1rpx 0 $color-surface-border;
   }
 
   &__type-text {
-    color: #475569;
+    color: currentColor;
     font-size: 24rpx;
     font-weight: 600;
     line-height: 1;
-
-    &--active {
-      color: #2563eb;
-    }
+    white-space: nowrap;
   }
 
-  &__form {
-    padding: 24rpx;
-  }
-
-  &__field + &__field {
-    margin-top: 28rpx;
-  }
-
-  &__field--gallery {
-    padding-top: 24rpx;
-    border-top: 1rpx solid rgba(148, 163, 184, 0.12);
-  }
-
-  &__label-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12rpx;
-    margin-bottom: 12rpx;
-  }
-
-  &__label {
-    display: block;
-    color: #111827;
-    font-size: 24rpx;
-    font-weight: 600;
-    line-height: 1.4;
-  }
-
-  &__contact-input {
-    margin-top: 12rpx;
-    margin-bottom: 0;
-
-    .input-wrapper__field {
-      margin-top: 0;
-      height: 92rpx;
-      padding: 0 24rpx;
-    }
-
-    .input-wrapper__label {
-      display: none;
-    }
-  }
-
-  &__textarea {
-    width: 100%;
-    box-sizing: border-box;
-    border-radius: 24rpx;
-    background: #f8fafc;
-    border: 1rpx solid rgba(148, 163, 184, 0.14);
-    color: #111827;
-    font-size: 28rpx;
-    padding: 24rpx;
-    min-height: 192rpx;
-    line-height: 1.6;
-  }
-
-  .input-wrapper__field {
-    height: 92rpx;
-    padding: 0 24rpx;
-  }
-
-  &__counter {
-    color: $color-secondary;
-    font-size: 22rpx;
-    line-height: 1.4;
-  }
-
+  &__label-row,
   &__gallery-head {
     display: flex;
     align-items: center;
@@ -118,26 +101,115 @@
     gap: 16rpx;
   }
 
+  &__label-row {
+    margin-top: 24rpx;
+    margin-bottom: 14rpx;
+  }
+
+  &__label {
+    color: $color-text-primary;
+    font-size: 28rpx;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  &__counter,
   &__gallery-copy {
-    color: $color-secondary;
+    flex-shrink: 0;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.4;
+  }
+
+  &__counter--near-limit {
+    color: $color-warning;
+  }
+
+  &__textarea {
+    width: 100%;
+    min-height: 248rpx;
+    padding: 24rpx;
+    border: 1rpx solid $color-line-soft;
+    border-radius: $radius-input;
+    background: $color-surface-input;
+    color: $color-text-primary;
+    font-size: 26rpx;
+    line-height: 1.6;
+    box-sizing: border-box;
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+
+  &__textarea--focused,
+  &__contact-shell--focused {
+    border-color: $color-accent-blue;
+    box-shadow: $shadow-focus;
+  }
+
+  &__textarea--error,
+  &__contact-shell--error {
+    border-color: $color-error;
+  }
+
+  &__placeholder {
+    color: $color-text-tertiary;
+  }
+
+  &__contact-shell {
+    margin-top: 14rpx;
+    border: 1rpx solid $color-line-soft;
+    border-radius: $radius-input;
+    background: $color-surface-input;
+    transition: border-color 0.18s, box-shadow 0.18s;
+  }
+
+  &__contact-input {
+    margin-bottom: 0;
+
+    .input-wrapper__label {
+      display: none;
+    }
+
+    .input-wrapper__field {
+      height: 92rpx;
+      padding: 0 24rpx;
+      border: none;
+      background: transparent;
+      color: $color-text-primary;
+      font-size: 26rpx;
+    }
+  }
+
+  .text-placeholder {
+    color: $color-text-tertiary;
+  }
+
+  &__error {
+    display: block;
+    margin-top: 10rpx;
+    color: $color-error;
     font-size: 22rpx;
+    line-height: 1.4;
   }
 
   &__gallery {
     display: flex;
     flex-wrap: wrap;
     gap: 16rpx;
-    margin-top: 18rpx;
+    margin-top: 20rpx;
   }
 
   &__image-card,
   &__upload {
-    width: calc((100% - 32rpx) / 3);
-    height: 176rpx;
-    border-radius: 24rpx;
-    overflow: hidden;
     position: relative;
-    background: #f5f6f8;
+    width: 160rpx;
+    height: 160rpx;
+    overflow: hidden;
+    border-radius: $radius-input;
+    box-sizing: border-box;
+  }
+
+  &__image-card {
+    background: $color-border-soft;
   }
 
   &__image {
@@ -147,45 +219,74 @@
 
   &__remove {
     position: absolute;
-    top: 10rpx;
-    right: 10rpx;
-    width: 88rpx;
-    height: 88rpx;
-    border-radius: 44rpx;
+    top: 8rpx;
+    right: 8rpx;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: rgba(17, 17, 17, 0.72);
+    width: 44rpx;
+    height: 44rpx;
+    border-radius: $radius-pill;
+    background: $color-text-primary;
+  }
 
-    &--pressed {
-      opacity: 0.76;
-    }
+  &__remove--pressed {
+    transform: scale(0.96);
   }
 
   &__remove-text {
-    color: #ffffff;
+    color: $color-white;
     font-size: 28rpx;
     line-height: 1;
   }
 
   &__upload {
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    border: 1rpx dashed rgba(17, 17, 17, 0.12);
-    background: #fafafa;
+    flex-direction: column;
+    border: 1rpx dashed $color-line-soft;
+    background: $color-white;
+    color: $color-text-primary;
+    transition: border-color 0.18s, transform 0.18s;
+  }
+
+  &__upload--pressed {
+    transform: translateY(2rpx);
+  }
+
+  &__upload--loading {
+    color: $color-text-tertiary;
   }
 
   &__upload-plus {
-    color: #111111;
-    font-size: 42rpx;
+    color: currentColor;
+    font-size: 54rpx;
+    font-weight: 300;
     line-height: 1;
   }
 
   &__upload-text {
-    margin-top: 10rpx;
-    color: #6b7280;
-    font-size: 22rpx;
+    margin-top: 12rpx;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1;
+  }
+
+  &__submit {
+    height: 92rpx;
+    border-radius: $radius-pill;
+    background: linear-gradient(90deg, $color-brand-main 0%, $color-accent-blue 100%);
+    border-color: transparent;
+    color: $color-white;
+    box-shadow: $shadow-sm;
+    font-size: 30rpx;
+    font-weight: 600;
+  }
+
+  &__submit.btn--disabled {
+    background: linear-gradient(90deg, $color-button-disabled 0%, $color-button-disabled-soft 100%);
+    border-color: transparent;
+    color: $color-white;
   }
 }

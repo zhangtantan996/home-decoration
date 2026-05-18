@@ -1,15 +1,21 @@
 import Taro from '@tarojs/taro';
+import { navigateBackWithFallback } from '@/utils/navigation';
 import { Text, View } from '@tarojs/components';
 import React from 'react';
 import { Card } from '@/components/Card';
 import { ListItem } from '@/components/ListItem';
 import { Icon } from '@/components/Icon';
+import MiniPageNav from '@/components/MiniPageNav';
 import { showErrorToast } from '@/utils/error';
 
 const SUPPORT_PHONE = '17764774797';
 const SUPPORT_TIME = '工作日 09:00 - 18:00';
 
 export default function SupportPage() {
+  const handleBack = () => {
+    navigateBackWithFallback('/pages/profile/index');
+  };
+
   const handleCallSupport = async () => {
     try {
       await Taro.makePhoneCall({ phoneNumber: SUPPORT_PHONE });
@@ -20,6 +26,7 @@ export default function SupportPage() {
 
   return (
     <View className="page">
+      <MiniPageNav title="联系客服" onBack={handleBack} placeholder />
       <View className="m-md">
         <Card title="客服热线" className="mb-lg">
           <ListItem

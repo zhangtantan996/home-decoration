@@ -66,7 +66,6 @@ export default {
         'account-security/change-password/index',
         'account-security/delete-account/index',
         'account-security/verification/index',
-        'devices/index',
         'notification/index',
         'privacy/index',
         'general/index',

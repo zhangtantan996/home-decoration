@@ -255,16 +255,16 @@
 
   &__agreement-line {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: center;
     gap: 4rpx;
-    height: 42rpx;
+    min-height: 40rpx;
   }
 
   &__agreement-text,
   &__agreement-link {
-    font-size: 30rpx;
-    line-height: 42rpx;
+    font-size: 28rpx;
+    line-height: 40rpx;
   }
 
   &__agreement-text {

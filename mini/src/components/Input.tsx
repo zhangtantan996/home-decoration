@@ -13,6 +13,8 @@ interface InputProps {
   error?: string;
   className?: string;
   maxLength?: number;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
 const buildClassName = (base: string, parts: Array<string | false | undefined>) => {
@@ -28,7 +30,9 @@ export const Input: React.FC<InputProps> = ({
   disabled,
   error,
   className,
-  maxLength
+  maxLength,
+  onFocus,
+  onBlur
 }) => {
   const wrapperClass = buildClassName('input-wrapper', [className]);
   const fieldClass = buildClassName('input-wrapper__field', [
@@ -49,6 +53,8 @@ export const Input: React.FC<InputProps> = ({
         type={type as any}
         disabled={disabled}
         maxlength={maxLength}
+        onFocus={onFocus}
+        onBlur={onBlur}
       />
       {error && <Text className="input-wrapper__error">{error}</Text>}
     </View>

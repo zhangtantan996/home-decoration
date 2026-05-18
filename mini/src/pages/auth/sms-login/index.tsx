@@ -5,12 +5,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/Button';
 import MiniPageNav from '@/components/MiniPageNav';
 import { loginWithSmsCode, sendLoginCode } from '@/services/auth_h5';
-import {
-  fallbackPublicSiteConfig,
-  findLegalDocument,
-  getPublicSiteConfig,
-  type PublicSiteConfig,
-} from '@/services/publicSiteConfig';
 import { getAuthAgreementAccepted, setAuthAgreementAccepted } from '@/utils/authAgreement';
 import { navigateAfterAuthSuccess } from '@/utils/authRedirect';
 import { showErrorToast } from '@/utils/error';
@@ -23,16 +17,19 @@ const AGREEMENT_SUBLINE = '· 若您的手机号未注册，将为您直接注�
 type AgreementDocType = 'terms' | 'privacy';
 type AgreementTitles = Record<AgreementDocType, string>;
 
+const AGREEMENT_DISPLAY_TITLES: AgreementTitles = {
+  terms: '用户协议',
+  privacy: '隐私政策',
+};
+
 const AGREEMENT_PAGE_MAP: Record<AgreementDocType, string> = {
   terms: '/pages/legal/user-agreement/index',
   privacy: '/pages/legal/privacy-policy/index',
 };
 
 const AgreementCopy = ({
-  legalTitles,
   onOpenAgreement,
 }: {
-  legalTitles: AgreementTitles;
   onOpenAgreement: (type: AgreementDocType) => void;
 }) => (
   <>
@@ -43,7 +40,7 @@ const AgreementCopy = ({
         onClick={() => onOpenAgreement('terms')}
         hoverClass="mini-sms-login__agreement-link--pressed"
       >
-        <Text className="mini-sms-login__agreement-link">《{legalTitles.terms}》</Text>
+        <Text className="mini-sms-login__agreement-link">《{AGREEMENT_DISPLAY_TITLES.terms}》</Text>
       </View>
       <Text className="mini-sms-login__agreement-text">、</Text>
       <View
@@ -51,7 +48,7 @@ const AgreementCopy = ({
         onClick={() => onOpenAgreement('privacy')}
         hoverClass="mini-sms-login__agreement-link--pressed"
       >
-        <Text className="mini-sms-login__agreement-link">《{legalTitles.privacy}》</Text>
+        <Text className="mini-sms-login__agreement-link">《{AGREEMENT_DISPLAY_TITLES.privacy}》</Text>
       </View>
     </View>
     <Text className="mini-sms-login__agreement-text mini-sms-login__agreement-text--subline">
@@ -71,32 +68,10 @@ export default function SmsLoginPage() {
   const [agreed, setAgreed] = useState(getAuthAgreementAccepted);
   const [agreementTouched, setAgreementTouched] = useState(false);
   const [phoneLocked, setPhoneLocked] = useState(false);
-  const [siteConfig, setSiteConfig] = useState<PublicSiteConfig>(fallbackPublicSiteConfig);
-
-  const legalTitles = useMemo<AgreementTitles>(() => ({
-    terms: findLegalDocument(siteConfig, 'user-agreement').title,
-    privacy: findLegalDocument(siteConfig, 'privacy-policy').title,
-  }), [siteConfig]);
 
   useDidShow(() => {
     setAgreed(getAuthAgreementAccepted());
   });
-
-  useEffect(() => {
-    let active = true;
-    void getPublicSiteConfig()
-      .then((nextConfig) => {
-        if (active) {
-          setSiteConfig(nextConfig);
-        }
-      })
-      .catch(() => {
-        // Keep fallback legal titles; login must remain usable when config API is unavailable.
-      });
-    return () => {
-      active = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (countdown <= 0) {
@@ -324,7 +299,7 @@ export default function SmsLoginPage() {
             </View>
           </View>
           <View className="mini-sms-login__agreement-copy">
-            <AgreementCopy legalTitles={legalTitles} onOpenAgreement={handleOpenAgreement} />
+            <AgreementCopy onOpenAgreement={handleOpenAgreement} />
           </View>
         </View>
       </View>
