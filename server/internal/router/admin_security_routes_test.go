@@ -193,6 +193,7 @@ func TestReleaseKnownMigrationsIncludesV151RuntimeMigrations(t *testing.T) {
 	for _, migration := range []string{
 		"server/migrations/v1.15.1_add_admin_phone_view_permission.sql",
 		"server/migrations/v1.15.1_add_supervisor_runtime_schema.sql",
+		"server/migrations/v1.15.10_rehome_supervisor_management_menu.sql",
 	} {
 		if !strings.Contains(content, migration) {
 			t.Fatalf("release_apply_known_migrations must include %s", migration)
@@ -227,6 +228,32 @@ func TestSupervisorRuntimeMigrationSeedsAdminMenus(t *testing.T) {
 	} {
 		if !strings.Contains(content, expected) {
 			t.Fatalf("supervisor runtime migration must seed admin menu/permission %s", expected)
+		}
+	}
+}
+
+func TestSupervisorManagementMenuRehomeMigrationMatchesSidebarGrouping(t *testing.T) {
+	repoRoot, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	if err != nil {
+		t.Fatalf("resolve repo root: %v", err)
+	}
+	contentBytes, err := os.ReadFile(filepath.Join(repoRoot, "server", "migrations", "v1.15.10_rehome_supervisor_management_menu.sql"))
+	if err != nil {
+		t.Fatalf("read supervisor management menu rehome migration: %v", err)
+	}
+	content := string(contentBytes)
+
+	for _, expected := range []string{
+		"'/supervisors'",
+		"'监理管理'",
+		"sort = 35",
+		"'/supervisors/list'",
+		"'/supervisors/whitelist'",
+		"'/supervisors/applications'",
+		"'/supervisors/assignments'",
+	} {
+		if !strings.Contains(content, expected) {
+			t.Fatalf("supervisor management menu rehome migration must contain %s", expected)
 		}
 	}
 }
