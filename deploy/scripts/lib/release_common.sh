@@ -211,6 +211,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.15.7_grant_ops_supervisor_list_permissions.sql"
     "server/migrations/v1.15.8_rehome_project_supervisor_role.sql"
     "server/migrations/v1.15.9_enable_supervisor_portal.sql"
+    "server/migrations/v1.15.10_rehome_supervisor_management_menu.sql"
   )
   local migration_file
   local latest_known_migration
