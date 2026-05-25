@@ -19,6 +19,7 @@ import {
   Row,
   Col,
   Badge,
+  Grid,
   Tooltip,
   Image,
   theme,
@@ -58,6 +59,7 @@ import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 
 const { Title, Text, Paragraph } = Typography;
 const { TextArea } = Input;
+const { useBreakpoint } = Grid;
 const MAX_LOG_PHOTOS = 9;
 type PhaseAction = "start" | "complete" | "pause" | "resume";
 
@@ -103,6 +105,11 @@ const latestDay = (...days: Array<Dayjs | null | undefined>): Dayjs | null => {
   }, null);
 };
 
+const formatDisplayDate = (value?: string | null): string => {
+  const parsed = toValidDay(value);
+  return parsed ? parsed.format("YYYY-MM-DD") : "-";
+};
+
 const findCurrentPhaseCandidate = (
   list: ProjectPhaseView[],
   currentPhaseLabel?: string,
@@ -133,6 +140,8 @@ const SupervisorProjectDetail: React.FC = () => {
   const navigate = useNavigate();
   const projectId = Number(id);
   const { token } = theme.useToken();
+  const screens = useBreakpoint();
+  const isMobile = !screens.md;
 
   // core data
   const [loading, setLoading] = useState(true);
@@ -352,6 +361,14 @@ const SupervisorProjectDetail: React.FC = () => {
         : null,
     });
     setPhaseActionModalOpen(true);
+  };
+
+  const openRiskModal = () => {
+    riskForm.resetFields();
+    if (currentManagedPhase) {
+      riskForm.setFieldsValue({ phaseId: currentManagedPhase.id });
+    }
+    setRiskModalOpen(true);
   };
 
   const handleSavePhase = async () => {
@@ -586,35 +603,34 @@ const SupervisorProjectDetail: React.FC = () => {
   // ── render ──────────────────────────────────────────────────────────────
 
   return (
-    <div className="supervisor-page">
+    <div className="supervisor-page supervisor-project-detail-page">
       {/* 顶部操作栏 */}
       <div
+        className="supervisor-project-action-row"
         style={{
-          marginBottom: 24,
-          paddingTop: 16,
+          marginBottom: isMobile ? 8 : 24,
+          paddingTop: isMobile ? 4 : 16,
           display: "flex",
           justifyContent: "space-between",
-          alignItems: "center",
+          alignItems: isMobile ? "flex-start" : "center",
+          flexDirection: isMobile ? "column" : "row",
+          gap: isMobile ? 6 : 16,
         }}
       >
         <Button
+          className="supervisor-project-back-button"
           type="text"
           icon={<ArrowLeftOutlined />}
           onClick={() => navigate("/projects")}
-          style={{ paddingLeft: 0, fontWeight: 500 }}
+          style={{ paddingLeft: isMobile ? 4 : 0, fontWeight: 500 }}
         >
           返回项目大厅
         </Button>
-        <Button
-          danger
-          icon={<WarningOutlined />}
-          onClick={() => {
-            riskForm.resetFields();
-            setRiskModalOpen(true);
-          }}
-        >
-          上报风险预警
-        </Button>
+        {!isMobile ? (
+          <Button danger icon={<WarningOutlined />} onClick={openRiskModal}>
+            上报风险预警
+          </Button>
+        ) : null}
       </div>
 
       {/* 核心看板 - Header */}
@@ -624,7 +640,7 @@ const SupervisorProjectDetail: React.FC = () => {
         style={cardStyle}
         styles={{ body: { padding: 0 } }}
       >
-        <div style={{ padding: "32px 32px 24px" }}>
+        <div style={{ padding: isMobile ? "20px 18px 16px" : "32px 32px 24px" }}>
           <div
             style={{
               display: "flex",
@@ -636,7 +652,7 @@ const SupervisorProjectDetail: React.FC = () => {
           >
             <div>
               <Title
-                level={3}
+                level={isMobile ? 4 : 3}
                 style={{ margin: "0 0 16px 0", fontWeight: 600 }}
               >
                 {workspace.name}
@@ -658,7 +674,7 @@ const SupervisorProjectDetail: React.FC = () => {
                 </span>
               </Space>
             </div>
-            <div style={{ textAlign: "right" }}>
+            <div style={{ textAlign: isMobile ? "left" : "right" }}>
               <Text
                 style={{
                   display: "block",
@@ -687,7 +703,7 @@ const SupervisorProjectDetail: React.FC = () => {
         <Divider style={{ margin: 0 }} />
         <div
           style={{
-            padding: "24px 32px",
+            padding: isMobile ? "18px" : "24px 32px",
             backgroundColor: SUPERVISOR_THEME.surfaceMuted,
             borderBottomLeftRadius: SUPERVISOR_THEME.cardRadius,
             borderBottomRightRadius: SUPERVISOR_THEME.cardRadius,
@@ -719,7 +735,7 @@ const SupervisorProjectDetail: React.FC = () => {
                 计划进场时间
               </Text>
               <Text strong style={{ fontSize: 16 }}>
-                {workspace.plannedStartDate || "未定"}
+                {formatDisplayDate(workspace.plannedStartDate)}
               </Text>
             </Col>
             <Col xs={12} sm={6}>
@@ -781,6 +797,7 @@ const SupervisorProjectDetail: React.FC = () => {
                   style={{
                     display: "flex",
                     alignItems: "flex-start",
+                    flexWrap: "wrap",
                     gap: 12,
                     width: "100%",
                   }}
@@ -819,6 +836,7 @@ const SupervisorProjectDetail: React.FC = () => {
             bordered={false}
             style={cardStyle}
             extra={
+              !isMobile &&
               currentManagedPhase && (
                 <Space size={10} wrap>
                   <Text type="secondary" style={{ fontSize: 12 }}>
@@ -902,7 +920,7 @@ const SupervisorProjectDetail: React.FC = () => {
                               gap: 6,
                             }}
                           >
-                            <ScheduleOutlined /> {phase.startDate || "-"}
+                            <ScheduleOutlined /> {formatDisplayDate(phase.startDate)}
                           </span>
                         </Descriptions.Item>
                         <Descriptions.Item
@@ -915,7 +933,7 @@ const SupervisorProjectDetail: React.FC = () => {
                               gap: 6,
                             }}
                           >
-                            <ClockCircleOutlined /> {phase.endDate || "-"}
+                            <ClockCircleOutlined /> {formatDisplayDate(phase.endDate)}
                           </span>
                         </Descriptions.Item>
                       </Descriptions>
@@ -942,17 +960,19 @@ const SupervisorProjectDetail: React.FC = () => {
             bordered={false}
             style={{ ...cardStyle, height: "100%" }}
             extra={
-              <Tooltip title={currentPhaseLogBlockReason}>
-                <Button
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={openLogModal}
-                  shape="round"
-                  disabled={!canCreateCurrentPhaseLog}
-                >
-                  记录巡检
-                </Button>
-              </Tooltip>
+              !isMobile ? (
+                <Tooltip title={currentPhaseLogBlockReason}>
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={openLogModal}
+                    shape="round"
+                    disabled={!canCreateCurrentPhaseLog}
+                  >
+                    记录巡检
+                  </Button>
+                </Tooltip>
+              ) : null
             }
           >
             {logsLoading ? (
@@ -1005,6 +1025,8 @@ const SupervisorProjectDetail: React.FC = () => {
                             style={{
                               display: "flex",
                               justifyContent: "space-between",
+                              flexDirection: isMobile ? "column" : "row",
+                              gap: isMobile ? 4 : 8,
                               marginBottom: 8,
                             }}
                           >
@@ -1032,8 +1054,8 @@ const SupervisorProjectDetail: React.FC = () => {
                                   <Image
                                     key={idx}
                                     src={toAbsoluteAssetUrl(url)}
-                                    width={90}
-                                    height={90}
+                                    width={isMobile ? 76 : 90}
+                                    height={isMobile ? 76 : 90}
                                     style={{
                                       borderRadius: 8,
                                       objectFit: "cover",
@@ -1054,8 +1076,32 @@ const SupervisorProjectDetail: React.FC = () => {
         </Col>
       </Row>
 
+      {isMobile ? (
+        <div className="supervisor-mobile-action-bar">
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={openLogModal}
+            disabled={!canCreateCurrentPhaseLog}
+          >
+            巡检
+          </Button>
+          <Button
+            icon={<EditOutlined />}
+            onClick={openPhaseActionModal}
+            disabled={!currentManagedPhase || allowedPhaseActions.length === 0}
+          >
+            阶段
+          </Button>
+          <Button danger icon={<WarningOutlined />} onClick={openRiskModal}>
+            风险
+          </Button>
+        </div>
+      ) : null}
+
       {/* ── Modal: 创建日志 ── */}
       <Modal
+        className="supervisor-mobile-modal"
         title={<span style={{ fontWeight: 600 }}>新增现场巡检日志</span>}
         open={logModalOpen}
         onOk={handleCreateLog}
@@ -1063,7 +1109,8 @@ const SupervisorProjectDetail: React.FC = () => {
         confirmLoading={logSubmitting}
         okText="确认提交"
         cancelText="取消"
-        destroyOnClose
+        width={isMobile ? "calc(100vw - 24px)" : 520}
+        destroyOnHidden
       >
         <Form form={logForm} layout="vertical" style={{ marginTop: 24 }}>
           <Form.Item label="当前阶段">
@@ -1123,7 +1170,8 @@ const SupervisorProjectDetail: React.FC = () => {
             <Upload
               listType="picture-card"
               multiple
-              accept="image/jpeg,image/png,image/gif,image/webp"
+              accept="image/*"
+              capture="environment"
               maxCount={MAX_LOG_PHOTOS}
               fileList={logImageList}
               customRequest={handleLogImageUpload}
@@ -1141,6 +1189,7 @@ const SupervisorProjectDetail: React.FC = () => {
               style={{ width: "100%" }}
               size="large"
               placeholder="默认为今日"
+              inputReadOnly={isMobile}
               disabledDate={(d) => d && d.isAfter(dayjs(), "day")}
             />
           </Form.Item>
@@ -1149,6 +1198,7 @@ const SupervisorProjectDetail: React.FC = () => {
 
       {/* ── Modal: 当前阶段动作 ── */}
       <Modal
+        className="supervisor-mobile-modal"
         title={
           <span style={{ fontWeight: 600 }}>
             更新当前阶段：
@@ -1163,8 +1213,8 @@ const SupervisorProjectDetail: React.FC = () => {
         cancelText="取消"
         okButtonProps={{ shape: "round", disabled: allowedPhaseActions.length === 0 }}
         cancelButtonProps={{ shape: "round" }}
-        width={460}
-        destroyOnClose
+        width={isMobile ? "calc(100vw - 24px)" : 460}
+        destroyOnHidden
       >
         <Form form={phaseForm} layout="vertical" size="large" style={{ marginTop: 20 }}>
           <Form.Item label="当前状态">
@@ -1227,6 +1277,7 @@ const SupervisorProjectDetail: React.FC = () => {
             >
               <DatePicker
                 style={{ width: "100%" }}
+                inputReadOnly={isMobile}
                 disabledDate={shouldDisablePhaseStartDate}
               />
             </Form.Item>
@@ -1263,6 +1314,7 @@ const SupervisorProjectDetail: React.FC = () => {
             >
               <DatePicker
                 style={{ width: "100%" }}
+                inputReadOnly={isMobile}
                 disabledDate={shouldDisablePhaseEndDate}
               />
             </Form.Item>
@@ -1298,6 +1350,7 @@ const SupervisorProjectDetail: React.FC = () => {
 
       {/* ── Modal: 上报风险 ── */}
       <Modal
+        className="supervisor-mobile-modal"
         title={
           <>
             <WarningOutlined style={{ color: SUPERVISOR_THEME.errorColor }} />{" "}
@@ -1315,7 +1368,8 @@ const SupervisorProjectDetail: React.FC = () => {
         okButtonProps={{ danger: true, shape: "round" }}
         cancelButtonProps={{ shape: "round" }}
         cancelText="取消"
-        destroyOnClose
+        width={isMobile ? "calc(100vw - 24px)" : 520}
+        destroyOnHidden
       >
         <Form
           form={riskForm}
@@ -1324,7 +1378,7 @@ const SupervisorProjectDetail: React.FC = () => {
           size="large"
         >
           <Row gutter={16}>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 name="type"
                 label="异常类型"
@@ -1343,7 +1397,7 @@ const SupervisorProjectDetail: React.FC = () => {
                 />
               </Form.Item>
             </Col>
-            <Col span={12}>
+            <Col xs={24} sm={12}>
               <Form.Item
                 name="level"
                 label="严重程度"

@@ -3,6 +3,7 @@ import React, { Suspense } from "react";
 import { Spin } from "antd";
 import SupervisorLayout from "../layouts/SupervisorLayout";
 import SupervisorAuthGuard from "../components/SupervisorAuthGuard";
+import SupervisorRouteError from "../components/SupervisorRouteError";
 import SupervisorPortalUnavailable from "../pages/SupervisorPortalUnavailable";
 import { getRouterBasename, isSupervisorPortalFrontendEnabled } from "../utils/env";
 
@@ -51,6 +52,7 @@ const routes = isSupervisorPortalFrontendEnabled()
     { path: "/", element: <Navigate to="/dashboard" replace /> },
     {
       element: <SupervisorAuthGuard />,
+      errorElement: <SupervisorRouteError />,
       children: [
         // 公网页面（无需登录）
         { path: "/login", element: withSuspense(<SupervisorLogin />) },
@@ -83,7 +85,13 @@ const routes = isSupervisorPortalFrontendEnabled()
     },
     { path: "*", element: <Navigate to="/dashboard" replace /> },
   ]
-  : [{ path: "*", element: <SupervisorPortalUnavailable /> }];
+  : [
+    {
+      path: "*",
+      element: <SupervisorPortalUnavailable />,
+      errorElement: <SupervisorRouteError />,
+    },
+  ];
 
 const router = createBrowserRouter(
   routes,

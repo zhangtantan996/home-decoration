@@ -75,6 +75,7 @@ const SupervisorLayout: React.FC = () => {
     return (
       <Layout className="supervisor-shell">
         <Header
+          className="supervisor-mobile-header"
           style={{
             background: "rgba(254, 254, 254, 0.94)",
             padding: "0 16px",
@@ -84,9 +85,10 @@ const SupervisorLayout: React.FC = () => {
             borderBottom: `1px solid ${SUPERVISOR_THEME.borderColor}`,
             position: "sticky",
             top: 0,
-            zIndex: 100,
-            height: 58,
-            lineHeight: "58px",
+            zIndex: 220,
+            minHeight: 58,
+            height: "auto",
+            lineHeight: "normal",
             backdropFilter: "blur(18px)",
           }}
         >
@@ -96,14 +98,19 @@ const SupervisorLayout: React.FC = () => {
             subtitle="项目巡检工作台"
           />
           <Dropdown menu={{ items: userMenuItems }} placement="bottomRight">
-            <Button type="text" icon={<UserOutlined />} size="small">
+            <Button
+              type="text"
+              icon={<UserOutlined />}
+              size="small"
+              style={{ maxWidth: 118, overflow: "hidden" }}
+            >
               {supervisor?.realName || "监理"}
             </Button>
           </Dropdown>
         </Header>
         <Content
           style={{
-            padding: "14px 0 86px",
+            padding: "14px 0 96px",
             background: "transparent",
           }}
         >
@@ -121,7 +128,7 @@ const SupervisorLayout: React.FC = () => {
             display: "flex",
             justifyContent: "space-around",
             padding: "8px 8px",
-            zIndex: 100,
+            zIndex: 210,
             backdropFilter: "blur(18px)",
           }}
         >
@@ -138,6 +145,10 @@ const SupervisorLayout: React.FC = () => {
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
+                justifyContent: "center",
+                flex: 1,
+                minWidth: 0,
+                minHeight: 48,
                 padding: "6px 10px",
                 cursor: "pointer",
                 color: location.pathname.startsWith(item.key)

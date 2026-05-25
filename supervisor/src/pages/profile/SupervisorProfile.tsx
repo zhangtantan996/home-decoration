@@ -152,7 +152,7 @@ const SupervisorProfile: React.FC = () => {
                   ))
                 : "—"}
             </Descriptions.Item>
-            <Descriptions.Item label="资质材料" span={2}>
+            <Descriptions.Item label="资质材料" span={{ xs: 1, sm: 2 }}>
               {parseTags(profile.certifications).length > 0 ? (
                 <Image.PreviewGroup>
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 12 }}>

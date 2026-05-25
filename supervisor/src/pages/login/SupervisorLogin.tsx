@@ -31,6 +31,7 @@ import { useSupervisorAuthStore } from "../../stores/supervisorAuthStore";
 import { SUPERVISOR_THEME } from "../../constants/supervisorTheme";
 import { LOGOUT_REASON_KEY } from "../../constants/authConstants";
 import { useSupervisorDocumentBranding } from "../../utils/branding";
+import { normalizeRedirectPath } from "../../utils/redirect";
 
 const { Text } = Typography;
 const { useBreakpoint } = Grid;
@@ -271,8 +272,7 @@ const SupervisorLogin: React.FC = () => {
           supervisor: res.data.supervisor,
         });
         messageApi.success(`欢迎回来，${res.data.supervisor.realName || "监理"}`);
-        const redirect = searchParams.get("redirect");
-        navigate(redirect || "/dashboard", { replace: true });
+        navigate(normalizeRedirectPath(searchParams.get("redirect")), { replace: true });
       } else {
         const errMsg = res.message || "登录失败";
         if (handlePortalClosedError(errMsg)) return;

@@ -68,7 +68,7 @@ const SupervisorProjectList: React.FC = () => {
   };
 
   return (
-    <div className="supervisor-page">
+    <div className="supervisor-page supervisor-project-list-page">
       {/* Header & Search */}
       <div
         style={{
@@ -161,12 +161,14 @@ const SupervisorProjectList: React.FC = () => {
                 >
                   {/* Project Header */}
                   <div
+                    className="supervisor-project-card-header"
                     style={{
                       padding: "24px 28px",
                       borderBottom: `1px solid ${token.colorSplit}40`,
                     }}
                   >
                     <div
+                      className="supervisor-project-card-title-row"
                       style={{
                         display: "flex",
                         justifyContent: "space-between",
@@ -217,6 +219,7 @@ const SupervisorProjectList: React.FC = () => {
 
                   {/* Project Details & Status */}
                   <div
+                    className="supervisor-project-card-meta"
                     style={{
                       padding: "20px 28px",
                       backgroundColor: SUPERVISOR_THEME.surfaceMuted,

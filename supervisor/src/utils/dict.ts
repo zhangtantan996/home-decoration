@@ -52,10 +52,15 @@ export const riskTypeLabel: Record<string, string> = {
 
 export const phaseTypeLabel: Record<string, string> = {
   preparation: "开工准备",
+  demolition: "拆改阶段",
+  electrical: "水电阶段",
+  masonry: "泥木阶段",
+  painting: "油漆阶段",
   water_electricity: "水电施工",
   mud_wood: "泥木施工",
   paint: "油漆施工",
-  installation: "安装竣工",
+  installation: "安装阶段",
+  inspection: "竣工验收",
   type: "未命名阶段", // fallback for old seed data
 };
 
