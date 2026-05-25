@@ -66,7 +66,6 @@ export interface ProviderCaseVM {
   coverImage: string;
   style: string;
   area: string;
-  showInInspiration?: boolean;
 }
 
 export interface ProviderSceneVM {
@@ -115,7 +114,6 @@ export interface ProviderDetailVM extends ProviderListItemVM {
 
 export interface ProviderShowcaseDetailVM {
   id: number;
-  providerId: number;
   title: string;
   coverImage: string;
   style: string;

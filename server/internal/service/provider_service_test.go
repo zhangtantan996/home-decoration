@@ -589,6 +589,15 @@ func TestProviderServiceGetProviderCaseDetailReturnsSpecificCase(t *testing.T) {
 	if got.ID != target.ID {
 		t.Fatalf("unexpected case id: got=%d want=%d", got.ID, target.ID)
 	}
+	detailJSON, err := json.Marshal(got)
+	if err != nil {
+		t.Fatalf("marshal public provider case detail: %v", err)
+	}
+	for _, forbidden := range []string{"providerId", "quoteTotalCent", "quoteCurrency", "sortOrder", "showInInspiration", "createdAt", "updatedAt"} {
+		if strings.Contains(string(detailJSON), forbidden) {
+			t.Fatalf("public provider case detail leaked %s: %s", forbidden, string(detailJSON))
+		}
+	}
 }
 
 func TestProviderServiceListKeepsLegacyCompanySubtypeInDesignerTab(t *testing.T) {
@@ -913,6 +922,15 @@ func TestProviderServiceGetProviderCases_ReturnsAllProviderCasesForDetail(t *tes
 	if total != 1 || len(cases) != 1 || cases[0].ID != craftCase.ID {
 		t.Fatalf("expected only craft cases in provider case list, total=%d cases=%+v", total, cases)
 	}
+	casesJSON, err := json.Marshal(cases)
+	if err != nil {
+		t.Fatalf("marshal public provider cases: %v", err)
+	}
+	for _, forbidden := range []string{"providerId", "quoteTotalCent", "quoteCurrency", "sortOrder", "showInInspiration", "createdAt", "updatedAt"} {
+		if strings.Contains(string(casesJSON), forbidden) {
+			t.Fatalf("public provider cases leaked %s: %s", forbidden, string(casesJSON))
+		}
+	}
 
 	sceneCases, sceneTotal, err := service.GetProviderSceneCases(provider.ID, 1, 10)
 	if err != nil {
@@ -988,8 +1006,17 @@ func TestProviderServiceKeepsDesignerCasesUnified(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected non-foreman showcase detail to be available, got %v", err)
 	}
-	if showcaseDetail.ID != regularCase.ID || showcaseDetail.ProviderID != provider.ID {
+	if showcaseDetail.ID != regularCase.ID {
 		t.Fatalf("unexpected non-foreman showcase detail payload: %+v", showcaseDetail)
+	}
+	showcaseJSON, err := json.Marshal(showcaseDetail)
+	if err != nil {
+		t.Fatalf("marshal showcase detail: %v", err)
+	}
+	for _, forbidden := range []string{"providerId", "quoteTotalCent", "quoteCurrency", "sortOrder", "showInInspiration", "createdAt", "updatedAt"} {
+		if strings.Contains(string(showcaseJSON), forbidden) {
+			t.Fatalf("public showcase detail leaked %s: %s", forbidden, string(showcaseJSON))
+		}
 	}
 }
 

@@ -29,20 +29,44 @@ type CaseQuote struct {
 	UpdatedAt string          `json:"updatedAt"`
 }
 
+type PublicCaseDetail struct {
+	ID          uint64  `json:"id"`
+	Title       string  `json:"title"`
+	CoverImage  string  `json:"coverImage"`
+	Style       string  `json:"style"`
+	Layout      string  `json:"layout"`
+	Area        string  `json:"area"`
+	Price       float64 `json:"price"`
+	Year        string  `json:"year"`
+	Description string  `json:"description"`
+	Images      string  `json:"images"`
+}
+
 type CaseService struct{}
 
 // GetCaseDetail 获取案例详情（公开接口，不含报价明细）
-func (s *CaseService) GetCaseDetail(caseID uint64) (*model.ProviderCase, error) {
+func (s *CaseService) GetCaseDetail(caseID uint64) (*PublicCaseDetail, error) {
 	var pc model.ProviderCase
 
 	// 查询案例详情，排除敏感的报价明细字段
 	if err := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{})).
-		Select("provider_cases.id, provider_cases.provider_id, provider_cases.title, provider_cases.cover_image, provider_cases.style, provider_cases.layout, provider_cases.area, provider_cases.price, provider_cases.quote_total_cent, provider_cases.quote_currency, provider_cases.year, provider_cases.description, provider_cases.images, provider_cases.sort_order, provider_cases.created_at, provider_cases.updated_at").
+		Select("provider_cases.id, provider_cases.title, provider_cases.cover_image, provider_cases.style, provider_cases.layout, provider_cases.area, provider_cases.price, provider_cases.year, provider_cases.description, provider_cases.images").
 		First(&pc, caseID).Error; err != nil {
 		return nil, err
 	}
 
-	return &pc, nil
+	return &PublicCaseDetail{
+		ID:          pc.ID,
+		Title:       pc.Title,
+		CoverImage:  pc.CoverImage,
+		Style:       pc.Style,
+		Layout:      pc.Layout,
+		Area:        pc.Area,
+		Price:       pc.Price,
+		Year:        pc.Year,
+		Description: pc.Description,
+		Images:      pc.Images,
+	}, nil
 }
 
 func (s *CaseService) GetCaseQuote(caseID uint64) (*CaseQuote, error) {
