@@ -1,10 +1,10 @@
 import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   Alert,
+  App,
   Form,
   Input,
   Button,
-  message,
   Typography,
   Grid,
   Result,
@@ -54,6 +54,7 @@ const SupervisorLogin: React.FC = () => {
   const [searchParams] = useSearchParams();
   const screens = useBreakpoint();
   const [form] = Form.useForm();
+  const { message: messageApi } = App.useApp();
   useSupervisorDocumentBranding("禾泽云 · 监理登录");
   const legalTitles = useMemo(
     () => ({
@@ -121,6 +122,25 @@ const SupervisorLogin: React.FC = () => {
     }, 1000);
   };
 
+  const getApiErrorMessage = (err: unknown, fallback: string): string =>
+    (err as { response?: { data?: { message?: string } } })?.response?.data
+      ?.message || (err instanceof Error ? err.message : fallback);
+
+  const handlePortalClosedError = (errMsg: string): boolean => {
+    if (
+      !errMsg.includes("监理端暂未开放") &&
+      !errMsg.includes("终端端暂未开放")
+    ) {
+      return false;
+    }
+    messageApi.warning({
+      key: "supervisor-portal-closed",
+      content: "监理端暂未开放，请联系运营或管理员处理。",
+      duration: 3,
+    });
+    return true;
+  };
+
   const handleSendCode = async () => {
     try {
       await form.validateFields(["phone"]);
@@ -140,36 +160,37 @@ const SupervisorLogin: React.FC = () => {
         };
         if (statusRes.status === "required") {
           // 从未申请过 / 不在白名单 → 拒绝发码，引导入驻
-          message.warning("该手机号暂无监理账号，请先申请入驻", 4);
+          messageApi.warning("该手机号暂无监理账号，请先申请入驻", 4);
           return;
         }
         if (statusRes.status === "pending_review") {
-          message.warning(
+          messageApi.warning(
             "您的申请正在审核中，账号尚未开通，请等待审核结果",
             4,
           );
           return;
         }
         if (statusRes.status === "rejected") {
-          message.error(
+          messageApi.error(
             '您的申请未通过审核，无法登录。如需重新申请请点击下方"申请入驻"',
             5,
           );
           return;
         }
         // status === 'approved' → 账号已创建，继续发短信
-      } catch {
+      } catch (err: unknown) {
+        const msg = getApiErrorMessage(err, "");
+        if (handlePortalClosedError(msg)) return;
         // 查询状态失败（网络问题等）时，保守放行，由后续登录接口兜底
       }
 
       await supervisorAuthApi.sendCode(phone);
-      message.success("验证码已发送");
+      messageApi.success("验证码已发送");
       startCountdown();
     } catch (err: unknown) {
-      const msg =
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message || (err instanceof Error ? err.message : "发送验证码失败");
-      message.error(msg);
+      const msg = getApiErrorMessage(err, "发送验证码失败");
+      if (handlePortalClosedError(msg)) return;
+      messageApi.error(msg);
     } finally {
       setSendingCode(false);
     }
@@ -193,7 +214,7 @@ const SupervisorLogin: React.FC = () => {
     if (!matched) return false;
 
     // AUTH-1: 先展示后端的原因，再跳转，不再静默
-    message.warning(errMsg || "请完成监理入驻申请", 3);
+    messageApi.warning(errMsg || "请完成监理入驻申请", 3);
     setTimeout(() => navigate("/apply"), 1500);
     return true;
   };
@@ -249,14 +270,15 @@ const SupervisorLogin: React.FC = () => {
           sessionId: res.data.sessionId,
           supervisor: res.data.supervisor,
         });
-        message.success(`欢迎回来，${res.data.supervisor.realName || "监理"}`);
+        messageApi.success(`欢迎回来，${res.data.supervisor.realName || "监理"}`);
         const redirect = searchParams.get("redirect");
         navigate(redirect || "/dashboard", { replace: true });
       } else {
         const errMsg = res.message || "登录失败";
+        if (handlePortalClosedError(errMsg)) return;
         if (handleOnboardingError(errMsg)) return;
         if (handleBlockedError(errMsg)) return;
-        message.error(errMsg);
+        messageApi.error(errMsg);
       }
     } catch (err: unknown) {
       const errResponse = (
@@ -265,12 +287,14 @@ const SupervisorLogin: React.FC = () => {
       const errMsg = errResponse?.data?.message || "登录失败，请稍后重试";
       const errCode = errResponse?.status;
 
+      if (handlePortalClosedError(errMsg)) return;
+
       if (errCode === 403) {
         if (handleOnboardingError(errMsg)) return;
         if (handleBlockedError(errMsg)) return;
       }
 
-      message.error(errMsg);
+      messageApi.error(errMsg);
     } finally {
       setLoading(false);
     }

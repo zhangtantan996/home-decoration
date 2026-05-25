@@ -6,6 +6,10 @@ type ApiEnvelope<T> = {
   data?: T;
 };
 
+const callerHandledErrorConfig = {
+  suppressGlobalErrorMessage: true,
+};
+
 const unwrapData = async <T>(request: Promise<ApiEnvelope<T>>): Promise<T> => {
   const response = await request;
   if (response.code !== 0 || response.data === undefined) {
@@ -24,10 +28,14 @@ export const supervisorAuthApi = {
       debugCode?: string;
       debugOnly?: boolean;
     }>(
-      api.post("/supervisor/send-code", {
-        phone,
-        purpose: "supervisor_login",
-      }) as Promise<
+      api.post(
+        "/supervisor/send-code",
+        {
+          phone,
+          purpose: "supervisor_login",
+        },
+        callerHandledErrorConfig,
+      ) as Promise<
         ApiEnvelope<{
           expiresIn?: number;
           requestId?: string;
@@ -38,7 +46,11 @@ export const supervisorAuthApi = {
     ),
 
   login: (phone: string, code: string) =>
-    api.post("/supervisor/login", { phone, code }),
+    api.post(
+      "/supervisor/login",
+      { phone, code },
+      callerHandledErrorConfig,
+    ),
 };
 
 // ============ Onboarding ============
@@ -59,7 +71,11 @@ export interface ServiceCityOption {
 export const supervisorOnboardingApi = {
   sendCode: (phone: string) =>
     unwrapData<{ message?: string }>(
-      api.post("/supervisor/onboarding/send-code", { phone }) as Promise<
+      api.post(
+        "/supervisor/onboarding/send-code",
+        { phone },
+        callerHandledErrorConfig,
+      ) as Promise<
         ApiEnvelope<{ message?: string }>
       >,
     ),
@@ -68,6 +84,7 @@ export const supervisorOnboardingApi = {
     unwrapData<{ status: string }>(
       api.get("/supervisor/onboarding/check-eligibility", {
         params: { phone },
+        ...callerHandledErrorConfig,
       }) as Promise<ApiEnvelope<{ status: string }>>,
     ),
 
@@ -85,6 +102,7 @@ export const supervisorOnboardingApi = {
     unwrapData<SupervisorOnboardingStatus>(
       api.get("/supervisor/onboarding/status", {
         params: { phone },
+        ...callerHandledErrorConfig,
       }) as Promise<ApiEnvelope<SupervisorOnboardingStatus>>,
     ),
 

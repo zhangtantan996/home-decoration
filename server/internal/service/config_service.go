@@ -114,7 +114,7 @@ func defaultConfigDefinitions() []configDefinition {
 		{model.ConfigKeyPaymentChannelAlipayEnabled, strconv.FormatBool(appconfig.GetConfig().Alipay.Enabled), "是否启用支付宝", "boolean", configKindBool, true, false},
 		{model.ConfigKeyMiniHomePopup, defaultMiniHomePopupConfigJSON(), "小程序首页运营弹窗配置", "json", configKindMiniHomePopup, true, false},
 		{model.ConfigKeyMerchantPortalEnabled, "false", "是否开放商家端登录、入驻与工作台", "boolean", configKindBool, true, false},
-		{model.ConfigKeySupervisorPortalEnabled, "false", "是否开放监理端登录、入驻与工作台", "boolean", configKindBool, true, false},
+		{model.ConfigKeySupervisorPortalEnabled, "true", "是否开放监理端登录、入驻与工作台", "boolean", configKindBool, true, false},
 		{model.ConfigKeyTransactionFlowEnabled, "false", "是否开放订单、支付、退款、投诉和履约主链路", "boolean", configKindBool, true, false},
 		{model.ConfigKeyMiniProgressEnabled, "false", "是否开放小程序项目进度入口", "boolean", configKindBool, true, false},
 		{model.ConfigKeyMiniCommentsEnabled, "false", "是否开放小程序灵感评论功能", "boolean", configKindBool, true, false},
@@ -244,7 +244,7 @@ func (s *ConfigService) IsMerchantPortalEnabled() bool {
 }
 
 func (s *ConfigService) IsSupervisorPortalEnabled() bool {
-	return s.GetConfigBoolWithDefault(model.ConfigKeySupervisorPortalEnabled, featureGateDefaultClosed())
+	return s.GetConfigBoolWithDefault(model.ConfigKeySupervisorPortalEnabled, true)
 }
 
 func (s *ConfigService) IsTransactionFlowEnabled() bool {
