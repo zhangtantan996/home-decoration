@@ -69,7 +69,7 @@ const SupervisorDashboard: React.FC = () => {
   ).length;
 
   return (
-    <div className="supervisor-page">
+    <div className="supervisor-page supervisor-dashboard-page">
       {/* Header Section */}
       <div style={{ marginBottom: 32, padding: "0 8px" }}>
         <Title
@@ -88,10 +88,14 @@ const SupervisorDashboard: React.FC = () => {
       </div>
 
       {/* Statistics Cards */}
-      <Row gutter={[24, 24]} style={{ marginBottom: 32 }}>
+      <Row
+        className="supervisor-dashboard-stats"
+        gutter={[24, 24]}
+        style={{ marginBottom: 32 }}
+      >
         <Col xs={24} sm={8}>
           <Card
-            className="supervisor-lift-card"
+            className="supervisor-lift-card supervisor-dashboard-stat-card"
             style={{ ...iosCardStyle, padding: "8px 4px" }}
             styles={{ body: { padding: "20px 24px" } }}
           >
@@ -117,7 +121,7 @@ const SupervisorDashboard: React.FC = () => {
         </Col>
         <Col xs={24} sm={8}>
           <Card
-            className="supervisor-lift-card"
+            className="supervisor-lift-card supervisor-dashboard-stat-card"
             style={{ ...iosCardStyle, padding: "8px 4px" }}
             styles={{ body: { padding: "20px 24px" } }}
           >
@@ -152,7 +156,7 @@ const SupervisorDashboard: React.FC = () => {
         </Col>
         <Col xs={24} sm={8}>
           <Card
-            className="supervisor-lift-card"
+            className="supervisor-lift-card supervisor-dashboard-stat-card"
             style={{ ...iosCardStyle, padding: "8px 4px" }}
             styles={{ body: { padding: "20px 24px" } }}
           >
@@ -180,6 +184,7 @@ const SupervisorDashboard: React.FC = () => {
 
       {/* Recent Projects Section */}
       <div
+        className="supervisor-dashboard-section-head"
         style={{
           display: "flex",
           justifyContent: "space-between",
@@ -235,12 +240,14 @@ const SupervisorDashboard: React.FC = () => {
               >
                 {/* Project Header */}
                 <div
+                  className="supervisor-project-card-header"
                   style={{
                     padding: "24px 28px",
                     borderBottom: `1px solid ${token.colorSplit}40`,
                   }}
                 >
                   <div
+                    className="supervisor-project-card-title-row"
                     style={{
                       display: "flex",
                       justifyContent: "space-between",
@@ -288,6 +295,7 @@ const SupervisorDashboard: React.FC = () => {
 
                 {/* Project Details & Status */}
                 <div
+                  className="supervisor-project-card-meta"
                   style={{
                     padding: "20px 28px",
                     backgroundColor: SUPERVISOR_THEME.surfaceMuted,

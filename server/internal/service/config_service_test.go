@@ -147,7 +147,7 @@ func TestGetTencentIMConfigReadsSecretFromEnvOnly(t *testing.T) {
 	}
 }
 
-func TestFeatureGatesDefaultClosedWhenConfigMissing(t *testing.T) {
+func TestFeatureGatesDefaultStateWhenConfigMissing(t *testing.T) {
 	setupConfigServiceTestDB(t)
 	svc := &ConfigService{}
 	t.Setenv("APP_ENV", appconfig.AppEnvLocal)
@@ -156,8 +156,8 @@ func TestFeatureGatesDefaultClosedWhenConfigMissing(t *testing.T) {
 	if svc.IsMerchantPortalEnabled() {
 		t.Fatal("expected merchant portal to stay closed when config is missing")
 	}
-	if svc.IsSupervisorPortalEnabled() {
-		t.Fatal("expected supervisor portal to stay closed when config is missing")
+	if !svc.IsSupervisorPortalEnabled() {
+		t.Fatal("expected supervisor portal to be open when config is missing")
 	}
 	if svc.IsTransactionFlowEnabled() {
 		t.Fatal("expected transaction flow to stay closed when config is missing")

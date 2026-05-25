@@ -5,6 +5,12 @@ import { useSupervisorAuthStore } from "../stores/supervisorAuthStore";
 import { LOGOUT_REASON_KEY } from "../constants/authConstants";
 import { getDeviceId } from "../utils/device";
 
+declare module "axios" {
+  interface AxiosRequestConfig {
+    suppressGlobalErrorMessage?: boolean;
+  }
+}
+
 const API_BASE_URL = getApiBaseUrl();
 
 const api = axios.create({
@@ -24,6 +30,13 @@ const getApiErrorStatus = (error: unknown): number | undefined => {
   }
   const response = (error as { response?: { status?: number } }).response;
   return response?.status;
+};
+
+const shouldSuppressGlobalErrorMessage = (error: unknown): boolean => {
+  const config = (
+    error as { config?: { suppressGlobalErrorMessage?: boolean } }
+  ).config;
+  return config?.suppressGlobalErrorMessage === true;
 };
 
 const isSessionBoundaryError = (error: unknown): boolean => {
@@ -153,7 +166,7 @@ api.interceptors.response.use(
       const serverMessage = (
         error as { response?: { data?: { message?: string } } }
       ).response?.data?.message;
-      if (serverMessage) {
+      if (serverMessage && !shouldSuppressGlobalErrorMessage(error)) {
         message.error(serverMessage);
       }
       return Promise.reject(error);
