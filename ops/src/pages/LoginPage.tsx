@@ -14,6 +14,7 @@ import companyLogo from '../assets/branding/company-logo.png';
 import loginVisual from '../assets/ops-login-ecosystem.png';
 import { login, showApiError } from '../services/api';
 import { OPS_ACCESS_DENIED_MESSAGE, hasOpsAccess, type OpsUser } from '../stores/authStore';
+import { normalizeRedirectPath } from '../utils/redirect';
 
 interface LoginForm {
   username: string;
@@ -77,7 +78,7 @@ const LoginPage = () => {
         return;
       }
       setOtpRequired(false);
-      navigate(searchParams.get('redirect') || '/supply', { replace: true });
+      navigate(normalizeRedirectPath(searchParams.get('redirect')), { replace: true });
     } catch (error) {
       showApiError(error, '登录失败');
     } finally {
@@ -102,7 +103,7 @@ const LoginPage = () => {
           <div className="ops-login__copy">
             <Typography.Title level={1}>让展示内容维护更清楚</Typography.Title>
             <Typography.Paragraph>
-              统一处理商家信息、灵感内容、预约记录和操作记录。登录后按左侧导航完成维护，不需要理解复杂系统概念。
+              统一处理服务商信息、灵感内容、预约记录和操作记录。登录后按左侧导航完成维护，不需要理解复杂系统概念。
             </Typography.Paragraph>
           </div>
 
@@ -110,7 +111,7 @@ const LoginPage = () => {
             <div className="ops-login__feature">
               <AppstoreOutlined />
               <div>
-                <strong>商家信息</strong>
+                <strong>服务商信息</strong>
                 <span>维护设计师、工长、装修公司和主材商资料</span>
               </div>
             </div>

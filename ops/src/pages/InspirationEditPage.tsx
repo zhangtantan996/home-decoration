@@ -106,7 +106,7 @@ const InspirationEditPage = () => {
   const descriptionPlaceholder = activeProviderType === 'foreman'
     ? '记录施工工艺、工序细节、验收标准或现场注意事项'
     : '记录设计思路、施工细节或避坑内容';
-  const backTo = isSupplyScoped ? `/supply/provider/${fixedProviderKind}/${fixedProviderId}` : '/inspirations';
+  const backTo = isSupplyScoped ? `/providers/provider/${fixedProviderKind}/${fixedProviderId}` : '/inspirations';
 
   useEffect(() => {
     const loadProviders = async () => {

@@ -87,7 +87,7 @@ const ProtectedRoute = () => {
     );
   }
   if (security?.loginStage === 'active' && isSetupRoute) {
-    return <Navigate to="/supply" replace />;
+    return <Navigate to="/providers" replace />;
   }
   return <Outlet />;
 };

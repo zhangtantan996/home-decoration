@@ -500,7 +500,7 @@ const SupplyProviderEditPage = () => {
         const current = (await listProviders(kind || 'designer', 1, 200)).list.find((item) => String(item.id) === id);
         if (!current) {
           showApiError(new Error('未找到商家资料'), '未找到商家资料');
-          navigate('/supply');
+          navigate('/providers');
           return;
         }
         setRecord(current);
@@ -597,7 +597,7 @@ const SupplyProviderEditPage = () => {
     try {
       if (record) await updateProvider(record.id, payload);
       else await createProvider(payload);
-      navigate('/supply');
+      navigate('/providers');
     } catch (error) {
       showApiError(error, '保存失败');
     } finally {
@@ -609,7 +609,7 @@ const SupplyProviderEditPage = () => {
     <div className="ops-page ops-page--editor">
       <div className="ops-edit-header">
         <Space size={12}>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/supply')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>返回</Button>
           <div>
             <Typography.Title level={2}>{isNew ? `新增${label}` : `编辑${label}资料`}</Typography.Title>
             {!isNew ? <Typography.Text type="secondary">ID：{id}</Typography.Text> : null}
@@ -766,7 +766,7 @@ const SupplyProviderEditPage = () => {
               title={showcaseTitle(kind)}
               className="ops-edit-card"
               extra={record && showcaseCases.length ? (
-                <Button type="primary" onClick={() => navigate(`/supply/provider/${kind}/${record.id}/showcase/new`)}>
+                <Button type="primary" onClick={() => navigate(`/providers/provider/${kind}/${record.id}/showcase/new`)}>
                   {showcaseCreateLabel(kind)}
                 </Button>
               ) : null}
@@ -795,7 +795,7 @@ const SupplyProviderEditPage = () => {
                         size="small"
                         onClick={(event) => {
                           event.stopPropagation();
-                          navigate(`/supply/provider/${kind}/${record?.id}/showcase/${item.id}`);
+                          navigate(`/providers/provider/${kind}/${record?.id}/showcase/${item.id}`);
                         }}
                       >
                         编辑
@@ -809,7 +809,7 @@ const SupplyProviderEditPage = () => {
                   <Button
                     type="primary"
                     disabled={!record}
-                    onClick={() => record && navigate(`/supply/provider/${kind}/${record.id}/showcase/new`)}
+                    onClick={() => record && navigate(`/providers/provider/${kind}/${record.id}/showcase/new`)}
                   >
                     {showcaseCreateLabel(kind)}
                   </Button>
@@ -831,7 +831,7 @@ const SupplyProviderEditPage = () => {
             key="edit"
             type="primary"
             onClick={() => {
-              if (previewCase && record) navigate(`/supply/provider/${kind}/${record.id}/showcase/${previewCase.id}`);
+              if (previewCase && record) navigate(`/providers/provider/${kind}/${record.id}/showcase/${previewCase.id}`);
             }}
           >
             编辑
@@ -894,7 +894,7 @@ export const MaterialShopEditPage = () => {
         const current = await getMaterialShop(Number(id));
         if (!current) {
           showApiError(new Error('未找到主材商资料'), '未找到主材商资料');
-          navigate('/supply');
+          navigate('/providers');
           return;
         }
         setRecord(current);
@@ -955,7 +955,7 @@ export const MaterialShopEditPage = () => {
     try {
       if (record) await updateMaterialShop(record.id, payload);
       else await createMaterialShop(payload);
-      navigate('/supply');
+      navigate('/providers');
     } catch (error) {
       showApiError(error, '保存失败');
     } finally {
@@ -967,7 +967,7 @@ export const MaterialShopEditPage = () => {
     <div className="ops-page ops-page--editor">
       <div className="ops-edit-header">
         <Space size={12}>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/supply')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>返回</Button>
           <div>
             <Typography.Title level={2}>{isNew ? '新增主材商' : '编辑主材商资料'}</Typography.Title>
             {!isNew ? <Typography.Text type="secondary">ID：{id}</Typography.Text> : null}

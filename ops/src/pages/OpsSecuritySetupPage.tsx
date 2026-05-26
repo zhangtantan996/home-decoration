@@ -27,7 +27,7 @@ import { useAuthStore } from '../stores/authStore';
 
 const { Paragraph, Text, Title } = Typography;
 
-const LANDING_PATH = '/supply';
+const LANDING_PATH = '/providers';
 
 const stripOTPWhitespace = (value?: string) => (
   typeof value === 'string' ? value.replace(/\s+/g, '') : value
