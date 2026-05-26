@@ -1129,6 +1129,19 @@ func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopPr
 	if len(input.Images) < 1 || len(input.Images) > 6 {
 		return model.MaterialShopProduct{}, fmt.Errorf("商品需上传1-6张图片")
 	}
+	for _, image := range input.Images {
+		if !imgutil.IsLocalAssetReference(image) {
+			return model.MaterialShopProduct{}, fmt.Errorf("商品图片仅支持平台上传文件")
+		}
+	}
+	coverImage := firstNonEmpty(normalizeStoredAsset(input.CoverImage), input.Images[0])
+	if !imgutil.IsLocalAssetReference(coverImage) {
+		return model.MaterialShopProduct{}, fmt.Errorf("商品封面仅支持平台上传文件")
+	}
+	paramsJSON := firstNonEmpty(strings.TrimSpace(input.ParamsJSON), "{}")
+	if !json.Valid([]byte(paramsJSON)) {
+		return model.MaterialShopProduct{}, fmt.Errorf("商品参数格式错误")
+	}
 
 	imagesJSON, _ := json.Marshal(input.Images)
 
@@ -1136,10 +1149,10 @@ func toMaterialShopProduct(input materialShopProductInput) (model.MaterialShopPr
 		Name:        input.Name,
 		Unit:        input.Unit,
 		Description: input.Description,
-		ParamsJSON:  firstNonEmpty(strings.TrimSpace(input.ParamsJSON), "{}"),
+		ParamsJSON:  paramsJSON,
 		Price:       input.Price,
 		ImagesJSON:  string(imagesJSON),
-		CoverImage:  firstNonEmpty(normalizeStoredAsset(input.CoverImage), input.Images[0]),
+		CoverImage:  coverImage,
 		Status:      1,
 		SortOrder:   input.SortOrder,
 	}

@@ -7,6 +7,7 @@ import { useAsyncData } from '../hooks/useAsyncData';
 import { getBusinessStageLabel } from '../constants/statuses';
 import { getWebApiErrorMessage, isWebApiConflict } from '../services/http';
 import { disputeProject, getProjectDetail } from '../services/projects';
+import { parseEvidenceUrlInput } from '../utils/safeEvidenceUrl';
 
 export function ProjectDisputePage() {
   const params = useParams();
@@ -86,12 +87,21 @@ export function ProjectDisputePage() {
               className="button-secondary"
               disabled={submitting || !reason.trim()}
               onClick={async () => {
-                setSubmitting(true);
                 setMessage('');
+                const evidenceResult = parseEvidenceUrlInput(evidence);
+                if (evidenceResult.invalidCount > 0) {
+                  setMessage('证据链接只支持平台上传文件或 http/https 链接，请检查后再提交。');
+                  return;
+                }
+                if (evidenceResult.tooManyCount > 0) {
+                  setMessage('证据链接最多支持 10 条，请精简后再提交。');
+                  return;
+                }
+                setSubmitting(true);
                 try {
                   await disputeProject(projectId, {
                     reason: reason.trim(),
-                    evidence: evidence.split(/\n|,|，/).map((item) => item.trim()).filter(Boolean),
+                    evidence: evidenceResult.urls,
                   });
                   setMessage('争议已提交，平台将介入处理。');
                   await reload();

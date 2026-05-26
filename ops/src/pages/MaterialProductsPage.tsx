@@ -6,7 +6,7 @@ import {
   ReloadOutlined,
   ShopOutlined,
 } from '@ant-design/icons';
-import { Button, Card, Empty, Image, Input, Popconfirm, Space, Spin, Tag, Typography } from 'antd';
+import { Button, Card, Empty, Image, Input, Space, Spin, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -18,6 +18,7 @@ import {
   type MaterialShopItem,
 } from '../services/api';
 import { getAssetPreviewUrl } from '../utils/asset';
+import ReauthModal from '../components/ReauthModal';
 
 const { Text, Title } = Typography;
 
@@ -50,6 +51,7 @@ const MaterialProductsPage = () => {
   const [products, setProducts] = useState<MaterialProductItem[]>([]);
   const [keyword, setKeyword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [pendingDeleteProduct, setPendingDeleteProduct] = useState<MaterialProductItem | null>(null);
 
   const loadData = async () => {
     if (!numericShopId) return;
@@ -78,23 +80,25 @@ const MaterialProductsPage = () => {
 
   const onlineCount = useMemo(() => products.filter((item) => isOnline(item.status)).length, [products]);
 
-  const handleDelete = async (productId: number) => {
+  const handleDelete = async (payload: { reason: string; recentReauthProof: string }) => {
+    if (!pendingDeleteProduct) return;
     try {
-      await deleteMaterialProduct(numericShopId, productId);
+      await deleteMaterialProduct(numericShopId, pendingDeleteProduct.id, payload);
+      setPendingDeleteProduct(null);
       await loadData();
     } catch (error) {
       showApiError(error, '商品删除失败');
     }
   };
 
-  const goCreate = () => navigate(`/supply/material-shop/${numericShopId}/products/new`);
-  const goEdit = (productId: number) => navigate(`/supply/material-shop/${numericShopId}/products/${productId}`);
+  const goCreate = () => navigate(`/providers/material-shop/${numericShopId}/products/new`);
+  const goEdit = (productId: number) => navigate(`/providers/material-shop/${numericShopId}/products/${productId}`);
 
   return (
     <div className="ops-page ops-page--editor ops-products-page">
       <div className="ops-edit-header">
         <Space size={14}>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/supply')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>返回</Button>
           <div>
             <Title level={2}>商品维护</Title>
             <Text type="secondary">{shop?.name || `主材商 #${numericShopId}`} · 管理商品图片、价格、上架状态</Text>
@@ -163,9 +167,7 @@ const MaterialProductsPage = () => {
                     </Tag>
                     <Space size={8} className="ops-product-row__actions">
                       <Button icon={<EditOutlined />} onClick={() => goEdit(item.id)}>编辑</Button>
-                      <Popconfirm title="确认删除这个商品？" okText="删除" okButtonProps={{ danger: true }} onConfirm={() => void handleDelete(item.id)}>
-                        <Button danger icon={<DeleteOutlined />}>删除</Button>
-                      </Popconfirm>
+                      <Button danger icon={<DeleteOutlined />} onClick={() => setPendingDeleteProduct(item)}>删除</Button>
                     </Space>
                   </article>
                 ))}
@@ -180,6 +182,13 @@ const MaterialProductsPage = () => {
           </Spin>
         </Card>
       </div>
+      <ReauthModal
+        open={Boolean(pendingDeleteProduct)}
+        title="删除主材商品"
+        description={`将删除「${pendingDeleteProduct?.name || '该商品'}」，请填写原因并完成二次认证。`}
+        onCancel={() => setPendingDeleteProduct(null)}
+        onConfirmed={handleDelete}
+      />
     </div>
   );
 };

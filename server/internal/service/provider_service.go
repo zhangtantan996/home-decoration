@@ -649,7 +649,7 @@ func (s *ProviderService) GetProviderByID(id uint64) (*model.Provider, *model.Us
 type ProviderDetail struct {
 	Provider     *PublicProviderProfile `json:"provider"`
 	User         *PublicProviderUser    `json:"user,omitempty"`
-	Cases        []model.ProviderCase   `json:"cases"`
+	Cases        []PublicProviderCase   `json:"cases"`
 	SceneCases   []ProviderSceneItem    `json:"sceneCases"`
 	Reviews      []ProviderReviewItem   `json:"reviews"`
 	PriceDisplay ProviderPriceDisplay   `json:"priceDisplay"`
@@ -659,6 +659,19 @@ type ProviderDetail struct {
 	// 服务区域（名称数组 + 代码数组，方便前端展示/编辑）
 	ServiceArea      []string `json:"serviceArea"`
 	ServiceAreaCodes []string `json:"serviceAreaCodes"`
+}
+
+type PublicProviderCase struct {
+	ID          uint64  `json:"id"`
+	Title       string  `json:"title"`
+	CoverImage  string  `json:"coverImage"`
+	Style       string  `json:"style,omitempty"`
+	Layout      string  `json:"layout,omitempty"`
+	Area        string  `json:"area,omitempty"`
+	Price       float64 `json:"price,omitempty"`
+	Year        string  `json:"year,omitempty"`
+	Description string  `json:"description,omitempty"`
+	Images      string  `json:"images,omitempty"`
 }
 
 type ProviderSceneItem struct {
@@ -688,7 +701,6 @@ type ProviderSceneDetail struct {
 
 type ProviderShowcaseDetail struct {
 	ID          uint64 `json:"id"`
-	ProviderID  uint64 `json:"providerId"`
 	Title       string `json:"title"`
 	CoverImage  string `json:"coverImage"`
 	Style       string `json:"style"`
@@ -769,11 +781,23 @@ func craftProviderCaseScope(providerID uint64) *gorm.DB {
 		Where("id NOT IN (?)", approvedProjectSceneCreateAuditScope(providerID).Select("case_id"))
 }
 
-func normalizeProviderCasesForPublic(items []model.ProviderCase) {
+func normalizeProviderCasesForPublic(items []model.ProviderCase) []PublicProviderCase {
+	result := make([]PublicProviderCase, len(items))
 	for i := range items {
-		items[i].CoverImage = imgutil.GetFullImageURL(items[i].CoverImage)
-		items[i].Images = imgutil.NormalizeImageURLsJSON(items[i].Images)
+		result[i] = PublicProviderCase{
+			ID:          items[i].ID,
+			Title:       items[i].Title,
+			CoverImage:  imgutil.GetFullImageURL(items[i].CoverImage),
+			Style:       items[i].Style,
+			Layout:      items[i].Layout,
+			Area:        items[i].Area,
+			Price:       items[i].Price,
+			Year:        items[i].Year,
+			Description: items[i].Description,
+			Images:      imgutil.NormalizeImageURLsJSON(items[i].Images),
+		}
 	}
+	return result
 }
 
 func pickFirstNonEmptyProviderString(values ...string) string {
@@ -990,7 +1014,7 @@ func (s *ProviderService) GetProviderDetail(id uint64) (*ProviderDetail, error) 
 }
 
 // GetProviderCases 获取服务商案例列表（分页）
-func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int) ([]model.ProviderCase, int64, error) {
+func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int) ([]PublicProviderCase, int64, error) {
 	if page <= 0 {
 		page = 1
 	}
@@ -1018,9 +1042,8 @@ func (s *ProviderService) GetProviderCases(providerID uint64, page, pageSize int
 	if err := db.Order("sort_order ASC, created_at DESC").Offset(offset).Limit(pageSize).Find(&cases).Error; err != nil {
 		return nil, 0, err
 	}
-	normalizeProviderCasesForPublic(cases)
 
-	return cases, total, nil
+	return normalizeProviderCasesForPublic(cases), total, nil
 }
 
 func (s *ProviderService) GetProviderSceneCases(providerID uint64, page, pageSize int) ([]ProviderSceneItem, int64, error) {
@@ -1138,7 +1161,6 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 
 	return &ProviderShowcaseDetail{
 		ID:          providerCase.ID,
-		ProviderID:  providerCase.ProviderID,
 		Title:       pickFirstNonEmptyProviderString(providerCase.Title, "案例详情"),
 		CoverImage:  providerCase.CoverImage,
 		Style:       providerCase.Style,
@@ -1150,7 +1172,7 @@ func (s *ProviderService) GetProviderShowcaseDetail(caseID uint64) (*ProviderSho
 	}, nil
 }
 
-func (s *ProviderService) GetProviderCaseDetail(providerID, caseID uint64) (*model.ProviderCase, error) {
+func (s *ProviderService) GetProviderCaseDetail(providerID, caseID uint64) (*PublicProviderCase, error) {
 	var provider model.Provider
 	if err := applyVisibleProviderFilter(repository.DB.Model(&model.Provider{})).Select("id").First(&provider, providerID).Error; err != nil {
 		return nil, err
@@ -1163,9 +1185,8 @@ func (s *ProviderService) GetProviderCaseDetail(providerID, caseID uint64) (*mod
 		return nil, err
 	}
 
-	providerCase.CoverImage = imgutil.GetFullImageURL(providerCase.CoverImage)
-	providerCase.Images = imgutil.NormalizeImageURLsJSON(providerCase.Images)
-	return &providerCase, nil
+	publicCases := normalizeProviderCasesForPublic([]model.ProviderCase{providerCase})
+	return &publicCases[0], nil
 }
 
 // GetProviderReviews 获取服务商评价列表（分页+筛选）

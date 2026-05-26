@@ -81,13 +81,13 @@ const resolveStatusText = (status?: string) => {
 const resolveStatusCopy = (status?: string) => {
   switch (status) {
     case 'verified':
-      return '身份信息已完成核验，可安全进行后续支付与签约流程。';
+      return '身份信息已完成核验，可用于账号安全和必要服务确认。';
     case 'failed':
       return '认证信息未通过，请核对姓名和身份证号后重新提交。';
     case 'pending':
       return '认证信息正在核验中，请稍后查看结果。';
     default:
-      return '支付前需完成实名认证，仅用于必要身份核验。';
+      return '如后续需要身份核验，将仅用于账号安全和必要服务确认。';
   }
 };
 

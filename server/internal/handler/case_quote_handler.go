@@ -2,7 +2,7 @@ package handler
 
 import (
 	"errors"
-	"home-decoration-server/internal/model"
+	"home-decoration-server/internal/service"
 	imgutil "home-decoration-server/internal/utils/image"
 	"home-decoration-server/pkg/response"
 
@@ -12,7 +12,7 @@ import (
 )
 
 type caseDetailResponse struct {
-	*model.ProviderCase
+	*service.PublicCaseDetail
 	LikeCount    int64 `json:"likeCount"`
 	CommentCount int64 `json:"commentCount"`
 	IsLiked      bool  `json:"isLiked"`
@@ -47,11 +47,11 @@ func GetCaseDetail(c *gin.Context) {
 
 	socialStats := inspirationService.GetCaseSocialStats(caseID, userID)
 	response.Success(c, caseDetailResponse{
-		ProviderCase: caseDetail,
-		LikeCount:    socialStats.LikeCount,
-		CommentCount: socialStats.CommentCount,
-		IsLiked:      socialStats.IsLiked,
-		IsFavorited:  socialStats.IsFavorited,
+		PublicCaseDetail: caseDetail,
+		LikeCount:        socialStats.LikeCount,
+		CommentCount:     socialStats.CommentCount,
+		IsLiked:          socialStats.IsLiked,
+		IsFavorited:      socialStats.IsFavorited,
 	})
 }
 

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 
@@ -142,6 +143,12 @@ func TestUpdateProfileReadsUint64UserID(t *testing.T) {
 func TestUpdateProfileNormalizesAbsoluteAvatarURLToStoredPath(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	db := setupUserProfileHandlerDB(t)
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.Storage.PublicBaseURL = "https://cdn.example.com"
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
 
 	user := model.User{
 		Phone:    "13800138011",

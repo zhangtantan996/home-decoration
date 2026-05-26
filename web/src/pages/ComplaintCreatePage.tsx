@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
 import { StatusBanner } from '../components/StatusBanner';
 import { createComplaint } from '../services/complaints';
+import { parseEvidenceUrlInput } from '../utils/safeEvidenceUrl';
 
 const categories = [
   { value: 'quality', label: '施工质量' },
@@ -83,15 +84,24 @@ export function ComplaintCreatePage() {
               className="button-secondary"
               disabled={submitting}
               onClick={async () => {
-                setSubmitting(true);
                 setMessage('');
+                const evidenceResult = parseEvidenceUrlInput(form.evidenceUrls);
+                if (evidenceResult.invalidCount > 0) {
+                  setMessage('证据链接只支持平台上传文件或 http/https 链接，请检查后再提交。');
+                  return;
+                }
+                if (evidenceResult.tooManyCount > 0) {
+                  setMessage('证据链接最多支持 10 条，请精简后再提交。');
+                  return;
+                }
+                setSubmitting(true);
                 try {
                   const created = await createComplaint({
                     projectId: Number(form.projectId || 0),
                     category: form.category,
                     title: form.title.trim(),
                     description: form.description.trim(),
-                    evidenceUrls: form.evidenceUrls.split(/\n|,|，/).map((item) => item.trim()).filter(Boolean),
+                    evidenceUrls: evidenceResult.urls,
                   });
                   navigate(`/me/complaints?created=${created.id}`);
                 } catch (submitError) {

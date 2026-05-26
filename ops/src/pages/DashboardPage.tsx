@@ -179,12 +179,12 @@ const DashboardPage = () => {
     },
     {
       key: 'supply',
-      title: '商家信息维护',
+      title: '服务商维护',
       description: '补充封面、价格、标签和介绍',
       value: supply.length,
       icon: <AppstoreOutlined />,
       tone: 'amber',
-      onClick: () => navigate('/supply'),
+      onClick: () => navigate('/providers'),
     },
     {
       key: 'inspirations',
@@ -224,8 +224,8 @@ const DashboardPage = () => {
           <Typography.Title level={1}>工作台首页</Typography.Title>
           <Typography.Paragraph>欢迎回来，{nickname}，今日运营数据概览</Typography.Paragraph>
         </div>
-        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => navigate('/supply')}>
-          进入商家信息
+        <Button type="primary" size="large" icon={<PlusOutlined />} onClick={() => navigate('/providers')}>
+          进入服务商
         </Button>
       </section>
 
@@ -239,7 +239,7 @@ const DashboardPage = () => {
           className="ops-dashboard-panel"
           title={<span className="ops-dashboard-panel__title">商家分布</span>}
           extra={(
-            <button type="button" className="ops-dashboard-panel__link" onClick={() => navigate('/supply')}>
+            <button type="button" className="ops-dashboard-panel__link" onClick={() => navigate('/providers')}>
               查看全部
               <RightOutlined />
             </button>
@@ -255,7 +255,7 @@ const DashboardPage = () => {
                     type="button"
                     key={item.key}
                     className={`ops-dashboard-distribution__card ops-dashboard-distribution__card--${item.tone}`}
-                    onClick={() => navigate('/supply')}
+                    onClick={() => navigate('/providers')}
                   >
                     <div className="ops-dashboard-distribution__head">
                       <span className="ops-dashboard-distribution__mini-icon">{item.icon}</span>

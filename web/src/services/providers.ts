@@ -62,7 +62,6 @@ interface ProviderCaseDTO {
   coverImage?: string;
   style?: string;
   area?: string | number;
-  showInInspiration?: boolean;
 }
 
 interface ProviderSceneDTO {
@@ -79,7 +78,6 @@ interface ProviderSceneDTO {
 
 interface ProviderShowcaseDetailDTO {
   id: number;
-  providerId?: number;
   title?: string;
   coverImage?: string;
   style?: string;
@@ -195,7 +193,6 @@ function toCase(dto: ProviderCaseDTO): ProviderCaseVM {
     coverImage: dto.coverImage || 'https://placehold.co/960x720/e7eaef/0f172a?text=%E6%A1%88%E4%BE%8B',
     style: dto.style || '风格待补充',
     area: dto.area ? `${dto.area}` : '面积待补充',
-    showInInspiration: dto.showInInspiration,
   };
 }
 
@@ -330,7 +327,6 @@ export async function getProviderShowcaseDetail(id: number) {
 
   const detail: ProviderShowcaseDetailVM = {
     id: data.id,
-    providerId: Number(data.providerId || 0),
     title: data.title || '案例详情',
     coverImage,
     style: data.style || '',

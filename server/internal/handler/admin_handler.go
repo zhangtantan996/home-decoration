@@ -1583,6 +1583,41 @@ func AdminCreateProvider(c *gin.Context) {
 	if req.IsSettled != nil {
 		isSettled = *req.IsSettled
 	}
+	effectiveStatus := req.Status
+	if effectiveStatus == 0 {
+		effectiveStatus = 1
+	}
+	if err := validateProviderCoreFields(req.ProviderType, effectiveStatus, strings.TrimSpace(req.SubType), strings.TrimSpace(req.EntityType), strings.TrimSpace(req.PriceUnit), req.PriceMin, req.PriceMax); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateProviderMetricFields(req.YearsExperience, req.FollowersCount, req.TeamSize, req.EstablishedYear, nil, nil); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateAdminProviderTextFields(req.CompanyName, req.Specialty, req.WorkTypes, req.HighlightTags, req.ServiceIntro, req.Certifications, req.OfficeAddress); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateOptionalJSON("价格配置", req.PricingJSON); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	avatar, err := requireLocalAssetReference("头像/Logo", req.Avatar)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	coverImage, err := requireLocalAssetReference("详情封面图", req.CoverImage)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	companyAlbum, err := requireLocalAssetJSONArray("企业相册", req.CompanyAlbum, 12)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	provider := model.Provider{
 		UserID:           req.UserId,
@@ -1598,28 +1633,25 @@ func AdminCreateProvider(c *gin.Context) {
 		GraduateSchool:   strings.TrimSpace(req.GraduateSchool),
 		DesignPhilosophy: strings.TrimSpace(req.DesignPhilosophy),
 		YearsExperience:  req.YearsExperience,
-		Avatar:           normalizeStoredAsset(req.Avatar),
+		Avatar:           avatar,
 		PriceMin:         req.PriceMin,
 		PriceMax:         req.PriceMax,
 		PriceUnit:        strings.TrimSpace(req.PriceUnit),
-		CoverImage:       normalizeStoredAsset(req.CoverImage),
+		CoverImage:       coverImage,
 		FollowersCount:   req.FollowersCount,
 		ServiceIntro:     req.ServiceIntro,
 		TeamSize:         req.TeamSize,
 		EstablishedYear:  req.EstablishedYear,
 		Certifications:   req.Certifications,
 		OfficeAddress:    strings.TrimSpace(req.OfficeAddress),
-		CompanyAlbumJSON: strings.TrimSpace(req.CompanyAlbum),
-		Status:           req.Status,
+		CompanyAlbumJSON: companyAlbum,
+		Status:           effectiveStatus,
 		IsSettled:        isSettled,
 		CollectedSource:  req.CollectedSource,
 		ServiceArea:      string(serviceAreaJSON),
 	}
 	if req.Verified != nil {
 		provider.Verified = *req.Verified
-	}
-	if provider.Status == 0 {
-		provider.Status = 1 // 默认启用
 	}
 	if provider.SubType == "" {
 		provider.SubType = "personal"
@@ -1698,6 +1730,73 @@ func AdminUpdateProvider(c *gin.Context) {
 		serviceAreaCodes = codes
 	}
 
+	nextPriceMin := provider.PriceMin
+	if req.PriceMin != nil {
+		nextPriceMin = *req.PriceMin
+	}
+	nextPriceMax := provider.PriceMax
+	if req.PriceMax != nil {
+		nextPriceMax = *req.PriceMax
+	}
+	nextPriceUnit := provider.PriceUnit
+	if req.PriceUnit != nil {
+		nextPriceUnit = strings.TrimSpace(*req.PriceUnit)
+	}
+	nextStatus := provider.Status
+	if req.Status != nil {
+		nextStatus = *req.Status
+	}
+	nextSubType := provider.SubType
+	if req.SubType != nil {
+		nextSubType = strings.TrimSpace(*req.SubType)
+	}
+	nextEntityType := provider.EntityType
+	if req.EntityType != nil {
+		nextEntityType = strings.TrimSpace(*req.EntityType)
+	}
+	if err := validateProviderCoreFields(provider.ProviderType, nextStatus, nextSubType, nextEntityType, nextPriceUnit, nextPriceMin, nextPriceMax); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateProviderOptionalMetricFields(req.YearsExperience, req.FollowersCount, req.TeamSize, req.EstablishedYear, req.RestoreRate, req.BudgetControl); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if req.CompanyName != nil && strings.TrimSpace(*req.CompanyName) == "" {
+		response.BadRequest(c, "展示名称不能为空")
+		return
+	}
+	if req.CompanyName != nil && validateRuneLength("展示名称", *req.CompanyName, adminTextShortMax) != nil {
+		response.BadRequest(c, "展示名称不能超过 80 字符")
+		return
+	}
+	for label, value := range map[string]*string{
+		"擅长领域": req.Specialty,
+		"服务类型": req.WorkTypes,
+		"亮点标签": req.HighlightTags,
+		"资质证书": req.Certifications,
+		"办公地址": req.OfficeAddress,
+	} {
+		if value != nil {
+			if err := validateRuneLength(label, *value, adminTextMediumMax); err != nil {
+				response.BadRequest(c, err.Error())
+				return
+			}
+		}
+	}
+	if req.ServiceIntro != nil {
+		if err := validateRuneLength("服务介绍", *req.ServiceIntro, adminTextLongMax); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+	if req.PricingJSON != nil {
+		if err := validateOptionalJSON("价格配置", *req.PricingJSON); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+
 	updates := map[string]interface{}{}
 	if req.CompanyName != nil {
 		trimmed := strings.TrimSpace(*req.CompanyName)
@@ -1725,16 +1824,21 @@ func AdminUpdateProvider(c *gin.Context) {
 	if req.Specialty != nil {
 		updates["specialty"] = strings.TrimSpace(*req.Specialty)
 	}
-	if req.YearsExperience != nil && *req.YearsExperience > 0 {
+	if req.YearsExperience != nil {
 		updates["years_experience"] = *req.YearsExperience
 	}
 	if req.Avatar != nil {
-		updates["avatar"] = normalizeStoredAsset(strings.TrimSpace(*req.Avatar))
+		avatar, err := requireLocalAssetReference("头像/Logo", *req.Avatar)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		updates["avatar"] = avatar
 	}
-	if req.RestoreRate != nil && *req.RestoreRate >= 0 {
+	if req.RestoreRate != nil {
 		updates["restore_rate"] = *req.RestoreRate
 	}
-	if req.BudgetControl != nil && *req.BudgetControl >= 0 {
+	if req.BudgetControl != nil {
 		updates["budget_control"] = *req.BudgetControl
 	}
 	if req.WorkTypes != nil {
@@ -1762,18 +1866,23 @@ func AdminUpdateProvider(c *gin.Context) {
 		updates["price_unit"] = strings.TrimSpace(*req.PriceUnit)
 	}
 	if req.CoverImage != nil {
-		updates["cover_image"] = normalizeStoredAsset(strings.TrimSpace(*req.CoverImage))
+		coverImage, err := requireLocalAssetReference("详情封面图", *req.CoverImage)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		updates["cover_image"] = coverImage
 	}
-	if req.FollowersCount != nil && *req.FollowersCount >= 0 {
+	if req.FollowersCount != nil {
 		updates["followers_count"] = *req.FollowersCount
 	}
 	if req.ServiceIntro != nil {
 		updates["service_intro"] = strings.TrimSpace(*req.ServiceIntro)
 	}
-	if req.TeamSize != nil && *req.TeamSize > 0 {
+	if req.TeamSize != nil {
 		updates["team_size"] = *req.TeamSize
 	}
-	if req.EstablishedYear != nil && *req.EstablishedYear > 0 {
+	if req.EstablishedYear != nil {
 		updates["established_year"] = *req.EstablishedYear
 	}
 	if req.Certifications != nil {
@@ -1783,7 +1892,12 @@ func AdminUpdateProvider(c *gin.Context) {
 		updates["office_address"] = strings.TrimSpace(*req.OfficeAddress)
 	}
 	if req.CompanyAlbum != nil {
-		updates["company_album_json"] = strings.TrimSpace(*req.CompanyAlbum)
+		companyAlbum, err := requireLocalAssetJSONArray("企业相册", *req.CompanyAlbum, 12)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		updates["company_album_json"] = companyAlbum
 	}
 	if serviceAreaProvided {
 		serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
@@ -2599,10 +2713,61 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if strings.TrimSpace(req.Name) == "" || len([]rune(strings.TrimSpace(req.Name))) > 80 {
+		response.BadRequest(c, "门店名称需在 1-80 字符之间")
+		return
+	}
+	shopType := strings.TrimSpace(req.Type)
+	if shopType == "" {
+		shopType = "showroom"
+	}
+	if err := validateMaterialShopType(shopType); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateMaterialShopContactPhone(req.ContactPhone); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateLatLng(req.Latitude, req.Longitude); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateOptionalJSON("营业时间", req.BusinessHoursJSON); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if err := validateMaterialShopTextFields(
+		req.CompanyName,
+		req.Address,
+		req.ContactName,
+		req.ServiceArea,
+		req.MainBrands,
+		req.MainCategories,
+		req.ProductCategories,
+		req.Description,
+		req.DeliveryCapability,
+		req.InstallationCapability,
+		req.AfterSalesPolicy,
+		req.InvoiceCapability,
+	); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	cover, err := requireLocalAssetReference("门店封面", req.Cover)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	brandLogo, err := requireLocalAssetReference("品牌 Logo", req.BrandLogo)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 
 	shop := model.MaterialShop{
 		Name:                   strings.TrimSpace(req.Name),
-		Type:                   strings.TrimSpace(req.Type),
+		Type:                   shopType,
 		CompanyName:            strings.TrimSpace(req.CompanyName),
 		Description:            strings.TrimSpace(req.Description),
 		Address:                strings.TrimSpace(req.Address),
@@ -2610,8 +2775,8 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		ContactName:            strings.TrimSpace(req.ContactName),
 		MainProducts:           mainProducts,
 		ProductCategories:      strings.TrimSpace(req.ProductCategories),
-		Cover:                  normalizeStoredAsset(req.Cover),
-		BrandLogo:              normalizeStoredAsset(req.BrandLogo),
+		Cover:                  cover,
+		BrandLogo:              brandLogo,
 		OpenTime:               strings.TrimSpace(req.OpenTime),
 		BusinessHoursJSON:      strings.TrimSpace(req.BusinessHoursJSON),
 		ServiceArea:            strings.TrimSpace(req.ServiceArea),
@@ -2633,9 +2798,6 @@ func AdminCreateMaterialShop(c *gin.Context) {
 	}
 	if req.Longitude != nil {
 		shop.Longitude = *req.Longitude
-	}
-	if shop.Type == "" {
-		shop.Type = "showroom"
 	}
 	if err := repository.DB.Create(&shop).Error; err != nil {
 		response.ServerError(c, "创建失败")
@@ -2874,6 +3036,56 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		}
 		req.Tags = &normalized
 	}
+	if req.Name != nil {
+		trimmed := strings.TrimSpace(*req.Name)
+		if trimmed == "" || len([]rune(trimmed)) > 80 {
+			response.BadRequest(c, "门店名称需在 1-80 字符之间")
+			return
+		}
+	}
+	if req.Type != nil {
+		shopType := strings.TrimSpace(*req.Type)
+		if shopType == "" {
+			shopType = "showroom"
+		}
+		if err := validateMaterialShopType(shopType); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+	if req.ContactPhone != nil {
+		if err := validateMaterialShopContactPhone(*req.ContactPhone); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+	if err := validateLatLng(req.Latitude, req.Longitude); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	if req.BusinessHoursJSON != nil {
+		if err := validateOptionalJSON("营业时间", *req.BusinessHoursJSON); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
+	if err := validateMaterialShopTextFields(
+		optionalStringValue(req.CompanyName),
+		optionalStringValue(req.Address),
+		optionalStringValue(req.ContactName),
+		optionalStringValue(req.ServiceArea),
+		optionalStringValue(req.MainBrands),
+		optionalStringValue(req.MainCategories),
+		optionalStringValue(req.ProductCategories),
+		optionalStringValue(req.Description),
+		optionalStringValue(req.DeliveryCapability),
+		optionalStringValue(req.InstallationCapability),
+		optionalStringValue(req.AfterSalesPolicy),
+		optionalStringValue(req.InvoiceCapability),
+	); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	updates := map[string]interface{}{}
 	if req.Name != nil {
 		updates["name"] = strings.TrimSpace(*req.Name)
@@ -2907,10 +3119,20 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		updates["product_categories"] = strings.TrimSpace(*req.ProductCategories)
 	}
 	if req.Cover != nil {
-		updates["cover"] = normalizeStoredAsset(*req.Cover)
+		cover, err := requireLocalAssetReference("门店封面", *req.Cover)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		updates["cover"] = cover
 	}
 	if req.BrandLogo != nil {
-		updates["brand_logo"] = normalizeStoredAsset(*req.BrandLogo)
+		brandLogo, err := requireLocalAssetReference("品牌 Logo", *req.BrandLogo)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		updates["brand_logo"] = brandLogo
 	}
 	if req.Latitude != nil {
 		updates["latitude"] = *req.Latitude

@@ -15,7 +15,6 @@ import { listBookings, type BookingItem } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
 import { formatServerDateTime } from '@/utils/serverTime';
-import { navigateToSurveyDepositPaymentWithOptions } from '@/utils/surveyDepositPayment';
 
 type BookingStatusTone = 'neutral' | 'brand' | 'success';
 
@@ -40,10 +39,6 @@ const badgeRowStyle = {
   flexWrap: 'wrap' as const,
 };
 
-const formatCurrency = (amount: number) => `¥${amount.toLocaleString()}`;
-
-const getSurveyDepositAmount = (booking: BookingItem) => Number(booking.surveyDepositAmount || booking.surveyDeposit || 0);
-
 const getStatusTone = (statusGroup?: BookingItem['statusGroup']): BookingStatusTone => {
   switch (statusGroup) {
     case 'pending_payment':
@@ -58,9 +53,9 @@ const getStatusTone = (statusGroup?: BookingItem['statusGroup']): BookingStatusT
 const getActionLabel = (booking: BookingItem) => {
   switch (booking.statusGroup) {
     case 'pending_payment':
-      return '支付量房费';
+      return '查看预约';
     case 'in_service':
-      return '查看进度';
+      return '查看跟进';
     default:
       return '查看详情';
   }
@@ -68,16 +63,15 @@ const getActionLabel = (booking: BookingItem) => {
 
 const getStatusLabel = (booking: BookingItem) => {
   if (booking.statusGroup === 'pending_payment') {
-    const amount = getSurveyDepositAmount(booking);
-    return amount > 0 ? `待支付 ${formatCurrency(amount)}` : '待支付量房费';
+    return '待平台联系';
   }
 
-  return booking.statusText || booking.currentStageText || '预约推进中';
+  return booking.statusText || booking.currentStageText || '预约跟进中';
 };
 
 const getSummary = (booking: BookingItem) => {
   const parts = [
-    booking.currentStageText || booking.flowSummary || '预约推进中',
+    booking.currentStageText || booking.flowSummary || '预约跟进中',
     booking.preferredDate ? `期望量房 ${booking.preferredDate}` : '',
     booking.area > 0 ? `${booking.area}㎡` : '',
     booking.houseLayout || '',
@@ -98,8 +92,6 @@ const BookingListPage: React.FC = () => {
   const auth = useAuthStore();
   const [bookings, setBookings] = useState<BookingItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [actingBookingId, setActingBookingId] = useState<number | null>(null);
-
   const pendingCount = useMemo(
     () => bookings.filter((item) => item.statusGroup === 'pending_payment').length,
     [bookings],
@@ -138,17 +130,7 @@ const BookingListPage: React.FC = () => {
     navigateBackWithFallback('/pages/profile/index');
   };
 
-  const handlePrimaryAction = async (booking: BookingItem) => {
-    if (booking.statusGroup === 'pending_payment') {
-      try {
-        setActingBookingId(booking.id);
-        await navigateToSurveyDepositPaymentWithOptions(booking.id);
-      } finally {
-        setActingBookingId(null);
-      }
-      return;
-    }
-
+  const handlePrimaryAction = (booking: BookingItem) => {
     openDetail(booking.id);
   };
 
@@ -199,7 +181,7 @@ const BookingListPage: React.FC = () => {
             <NotificationInboxCell
               title="待处理预约"
               summary={`当前有 ${pendingCount} 条预约等待继续处理`}
-              statusLabel="优先处理待支付与待确认记录"
+              statusLabel="平台工作人员会线下联系跟进"
               statusTone="brand"
               typeBadge={
                 <View style={badgeRowStyle}>
@@ -225,16 +207,13 @@ const BookingListPage: React.FC = () => {
                   </Tag>
                 </View>
               }
-              actionText={actingBookingId === booking.id ? '处理中...' : getActionLabel(booking)}
+              actionText={getActionLabel(booking)}
               actionSecondary={booking.statusGroup !== 'pending_payment'}
-              actionTone={booking.statusGroup === 'pending_payment' ? 'payment' : 'project'}
+              actionTone="project"
               onClick={() => openDetail(booking.id)}
               onActionClick={(event) => {
                 event.stopPropagation?.();
-                if (actingBookingId === booking.id) {
-                  return;
-                }
-                void handlePrimaryAction(booking);
+                handlePrimaryAction(booking);
               }}
             />
           </View>

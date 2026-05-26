@@ -11,6 +11,12 @@ import { merchantProjectApi, type MerchantProjectDisputeDetail } from '../../ser
 
 const { TextArea } = Input;
 
+const isSafeEvidenceURL = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed || /^(javascript|data|vbscript|file|about):/i.test(trimmed)) return false;
+  return trimmed.startsWith('/uploads/') || trimmed.startsWith('/static/') || /^https?:\/\//i.test(trimmed);
+};
+
 const MerchantProjectDispute: React.FC = () => {
   const params = useParams();
   const navigate = useNavigate();
@@ -98,7 +104,7 @@ const MerchantProjectDispute: React.FC = () => {
                 <Descriptions.Item label="争议原因" span={2}>{detail.disputeReason || '-'}</Descriptions.Item>
                 <Descriptions.Item label="证据材料" span={2}>
                   {(detail.disputeEvidence || []).length
-                    ? (detail.disputeEvidence || []).map((url, index) => (
+                    ? (detail.disputeEvidence || []).filter(isSafeEvidenceURL).map((url, index) => (
                         <div key={`${url}-${index}`}><a href={url} target="_blank" rel="noreferrer">证据 {index + 1}</a></div>
                       ))
                     : '暂无证据材料'}

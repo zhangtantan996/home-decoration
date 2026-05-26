@@ -1,8 +1,19 @@
 package handler
 
-import "testing"
+import (
+	"testing"
+
+	"home-decoration-server/internal/config"
+)
 
 func TestNormalizeStoredAssetJSONMapNormalizesStringArrays(t *testing.T) {
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.Storage.PublicBaseURL = "https://cdn.example.com"
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
+
 	raw := `{
 		"summary":"预览摘要",
 		"floorPlanImages":["https://cdn.example.com/uploads/a.png?x=1","/uploads/b.png",""],

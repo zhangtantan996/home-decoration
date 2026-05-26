@@ -348,7 +348,7 @@ func (s *ChangeOrderService) create(projectID uint64, initiatorType string, init
 		if err != nil {
 			return fmt.Errorf("序列化变更项失败: %w", err)
 		}
-		evidenceJSON, err := json.Marshal(normalizeStoredAssetSlice(input.EvidenceURLs))
+		evidenceJSON, err := marshalSafeEvidenceURLList(input.EvidenceURLs)
 		if err != nil {
 			return fmt.Errorf("序列化附件失败: %w", err)
 		}
@@ -362,7 +362,7 @@ func (s *ChangeOrderService) create(projectID uint64, initiatorType string, init
 			Description:    strings.TrimSpace(input.Description),
 			AmountImpact:   normalizeChangeOrderAmount(input.AmountImpact),
 			TimelineImpact: input.TimelineImpact,
-			EvidenceURLs:   string(evidenceJSON),
+			EvidenceURLs:   evidenceJSON,
 			Items:          string(itemsJSON),
 			Status:         model.ChangeOrderStatusPendingUserConfirm,
 			ResolvedBy:     resolvedBy,

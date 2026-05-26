@@ -34,7 +34,19 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
+const OPS_ADMIN_API_PREFIX = '/ops-admin';
+const API_ERROR_MESSAGE_COOLDOWN_MS = 2500;
+let lastApiErrorMessage = '';
+let lastApiErrorAt = 0;
+
+const toOpsAdminUrl = (url?: string) => {
+  if (!url || !url.startsWith('/admin')) return url;
+  if (url === '/admin/ops/login') return `${OPS_ADMIN_API_PREFIX}/login`;
+  return url.replace(/^\/admin(?=\/|$)/, OPS_ADMIN_API_PREFIX);
+};
+
 api.interceptors.request.use((config) => {
+  config.url = toOpsAdminUrl(config.url);
   const token = useAuthStore.getState().token;
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
@@ -54,7 +66,7 @@ api.interceptors.response.use(
     const status = error?.response?.status;
     const text = error?.response?.data?.message || error?.message || '请求失败';
     const requestUrl = String(error?.config?.url || '');
-    const isLoginRequest = requestUrl.includes('/admin/login');
+    const isLoginRequest = requestUrl.includes('/ops-admin/login') || requestUrl.includes('/admin/ops/login');
     const sessionBoundary = !isLoginRequest && (status === 401 || (
       status === 403 && /无权访问管理接口|Token类型不匹配|账号已被禁用|管理员不存在/.test(String(text))
     ));
@@ -474,7 +486,8 @@ export const listMaterialProducts = async (shopId: number) =>
   normalizePage<MaterialProductItem>(await api.get(`/admin/material-shops/${shopId}/products`));
 export const createMaterialProduct = (shopId: number, payload: Record<string, unknown>) => api.post(`/admin/material-shops/${shopId}/products`, payload);
 export const updateMaterialProduct = (shopId: number, productId: number, payload: Record<string, unknown>) => api.put(`/admin/material-shops/${shopId}/products/${productId}`, payload);
-export const deleteMaterialProduct = (shopId: number, productId: number) => api.delete(`/admin/material-shops/${shopId}/products/${productId}`);
+export const deleteMaterialProduct = (shopId: number, productId: number, payload: { reason: string; recentReauthProof: string }) =>
+  api.delete(`/admin/material-shops/${shopId}/products/${productId}`, { data: payload });
 
 export const listCases = async (page = 1, pageSize = 20) =>
   normalizePage<CaseItem>(await api.get('/admin/cases', { params: { page, pageSize } }));
@@ -524,5 +537,12 @@ export const listAuditLogs = async (params?: AuditLogQuery) =>
   normalizePage<AuditLogItem>(await api.get('/admin/audit-logs', { params }));
 
 export const showApiError = (error: unknown, fallback = '操作失败') => {
-  message.error(normalizeApiErrorMessage(error, fallback));
+  const messageText = normalizeApiErrorMessage(error, fallback);
+  const now = Date.now();
+  if (messageText === lastApiErrorMessage && now - lastApiErrorAt < API_ERROR_MESSAGE_COOLDOWN_MS) {
+    return;
+  }
+  lastApiErrorMessage = messageText;
+  lastApiErrorAt = now;
+  message.error(messageText);
 };

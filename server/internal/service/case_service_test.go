@@ -1,6 +1,8 @@
 package service
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 
 	"home-decoration-server/internal/model"
@@ -58,6 +60,15 @@ func TestCaseServiceBlocksHiddenCaseDetailAndQuote(t *testing.T) {
 	detail, err := service.GetCaseDetail(visibleCase.ID)
 	if err != nil || detail == nil || detail.Title != "公开案例" {
 		t.Fatalf("expected visible case detail, got detail=%+v err=%v", detail, err)
+	}
+	detailJSON, err := json.Marshal(detail)
+	if err != nil {
+		t.Fatalf("marshal public case detail: %v", err)
+	}
+	for _, forbidden := range []string{"providerId", "quoteTotalCent", "quoteCurrency", "sortOrder", "showInInspiration", "createdAt", "updatedAt"} {
+		if strings.Contains(string(detailJSON), forbidden) {
+			t.Fatalf("public case detail leaked %s: %s", forbidden, string(detailJSON))
+		}
 	}
 	if _, err := service.GetCaseDetail(hiddenCase.ID); err == nil {
 		t.Fatalf("expected hidden case detail to be blocked")

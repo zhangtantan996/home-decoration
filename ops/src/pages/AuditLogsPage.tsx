@@ -8,7 +8,7 @@ const PAGE_SIZE = 20;
 
 const scopeOptions = [
   { value: 'all', label: '全部内容' },
-  { value: 'providers', label: '商家信息' },
+  { value: 'providers', label: '服务商信息' },
   { value: 'cases', label: '灵感内容' },
   { value: 'bookings', label: '预约记录' },
   { value: 'material-shops', label: '主材商商品' },
@@ -29,8 +29,8 @@ const businessOperationOptions = [
 ];
 
 const resourceLabelMap: Record<string, string> = {
-  provider: '商家信息',
-  providers: '商家信息',
+  provider: '服务商信息',
+  providers: '服务商信息',
   material_shop: '主材商',
   'material-shops': '主材商',
   cases: '灵感内容',

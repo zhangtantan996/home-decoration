@@ -585,6 +585,90 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			adminSecurity.POST("/security/reauth", middleware.RequireActiveAdminSession(), handler.AdminReauth)
 		}
 
+		// Ops 运营平台复用部分管理能力，但不套用管理后台网络白名单。
+		// 只暴露 Ops 实际使用的接口，后台管理仍继续走 /admin/* 的网络门禁。
+		opsAdminPublic := v1.Group("/ops-admin")
+		{
+			opsAdminPublic.POST("/login", middleware.LoginRateLimit(), handler.AdminOpsLogin)
+		}
+
+		opsAdminSecurity := v1.Group("/ops-admin")
+		opsAdminSecurity.Use(middleware.AdminJWT(cfg.JWT.Secret))
+		{
+			opsAdminSecurity.GET("/info", handler.AdminGetInfo)
+			opsAdminSecurity.POST("/logout", handler.AdminLogout)
+			opsAdminSecurity.GET("/security/status", handler.AdminGetSecurityStatus)
+			opsAdminSecurity.POST("/security/password/reset-initial", handler.AdminResetInitialPassword)
+			opsAdminSecurity.POST("/security/2fa/bind", handler.AdminBeginBind2FA)
+			opsAdminSecurity.POST("/security/2fa/verify", handler.AdminVerify2FA)
+			opsAdminSecurity.POST("/security/reauth", middleware.RequireActiveAdminSession(), handler.AdminReauth)
+		}
+
+		opsAdmin := v1.Group("/ops-admin")
+		opsAdmin.Use(middleware.AdminJWT(cfg.JWT.Secret))
+		opsAdmin.Use(middleware.RequireActiveAdminSession())
+		opsAdmin.Use(middleware.AdminLog())
+		{
+			opsUserListPerm := middleware.RequirePermission("system:user:list")
+			opsProviderListPerm := middleware.RequireAnyPermission("provider:designer:list", "provider:company:list", "provider:foreman:list")
+			opsProviderCreatePerm := middleware.RequireAnyPermission("provider:designer:create", "provider:company:create", "provider:foreman:create")
+			opsProviderEditPerm := middleware.RequireAnyPermission("provider:designer:edit", "provider:company:edit", "provider:foreman:edit")
+			opsBookingListPerm := middleware.RequirePermission("booking:list")
+			opsBookingEditPerm := middleware.RequirePermission("booking:edit")
+			opsMaterialShopListPerm := middleware.RequirePermission("material:shop:list")
+			opsMaterialShopCreatePerm := middleware.RequirePermission("material:shop:create")
+			opsMaterialShopEditPerm := middleware.RequirePermission("material:shop:edit")
+			opsCaseListPerm := middleware.RequirePermission("system:case:list")
+			opsCaseViewPerm := middleware.RequirePermission("system:case:view")
+			opsProjectListPerm := middleware.RequirePermission("project:list")
+			opsProjectViewPerm := middleware.RequirePermission("project:view")
+			opsProjectEditPerm := middleware.RequirePermission("project:edit")
+			opsSupervisorListPerm := middleware.RequirePermission("supervision:supervisor:list")
+			opsSupervisorAssignPerm := middleware.RequirePermission("supervision:assignment:manage")
+			opsLogListPerm := middleware.RequirePermission("system:log:list")
+
+			opsAdmin.POST("/upload", opsCaseListPerm, handler.AdminUploadImage)
+			opsAdmin.GET("/users", opsUserListPerm, handler.AdminListUsers)
+
+			opsAdmin.GET("/providers", opsProviderListPerm, handler.AdminListProviders)
+			opsAdmin.POST("/providers", opsProviderCreatePerm, handler.AdminCreateProvider)
+			opsAdmin.PUT("/providers/:id", opsProviderEditPerm, handler.AdminUpdateProvider)
+			opsAdmin.PATCH("/providers/:id/platform-display", opsProviderEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateProviderPlatformDisplay)
+			opsAdmin.PATCH("/providers/:id/availability", opsProviderEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminSetProviderAvailability)
+
+			opsAdmin.GET("/bookings", opsBookingListPerm, handler.AdminListBookings)
+			opsAdmin.GET("/bookings/:id", opsBookingListPerm, handler.AdminGetBooking)
+			opsAdmin.PATCH("/bookings/:id/status", opsBookingEditPerm, handler.AdminUpdateBookingStatus)
+
+			opsAdmin.GET("/material-shops", opsMaterialShopListPerm, handler.AdminListMaterialShops)
+			opsAdmin.GET("/material-shops/:id", opsMaterialShopListPerm, handler.AdminGetMaterialShop)
+			opsAdmin.POST("/material-shops", opsMaterialShopCreatePerm, handler.AdminCreateMaterialShop)
+			opsAdmin.PUT("/material-shops/:id", opsMaterialShopEditPerm, handler.AdminUpdateMaterialShop)
+			opsAdmin.GET("/material-shops/:id/products", opsMaterialShopListPerm, handler.AdminListMaterialShopProducts)
+			opsAdmin.POST("/material-shops/:id/products", opsMaterialShopEditPerm, handler.AdminCreateMaterialShopProduct)
+			opsAdmin.PUT("/material-shops/:id/products/:productId", opsMaterialShopEditPerm, handler.AdminUpdateMaterialShopProduct)
+			opsAdmin.DELETE("/material-shops/:id/products/:productId", opsMaterialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteMaterialShopProduct)
+			opsAdmin.PATCH("/material-shops/:id/platform-display", opsMaterialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateMaterialShopPlatformDisplay)
+			opsAdmin.PATCH("/material-shops/:id/availability", opsMaterialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminSetMaterialShopAvailability)
+
+			opsAdmin.GET("/cases", opsCaseViewPerm, handler.AdminListCases)
+			opsAdmin.GET("/cases/:id", opsCaseViewPerm, handler.AdminGetCase)
+			opsAdmin.POST("/cases", opsCaseListPerm, handler.AdminCreateCase)
+			opsAdmin.PUT("/cases/:id", opsCaseListPerm, handler.AdminUpdateCase)
+			opsAdmin.DELETE("/cases/:id", opsCaseListPerm, handler.AdminDeleteCase)
+			opsAdmin.PATCH("/cases/:id/inspiration", opsCaseListPerm, handler.AdminToggleCaseInspiration)
+
+			opsAdmin.GET("/projects", opsProjectListPerm, handler.AdminListProjects)
+			opsAdmin.POST("/projects", opsProjectEditPerm, handler.AdminCreateProject)
+			opsAdmin.GET("/projects/:id", opsProjectViewPerm, handler.AdminGetProject)
+			opsAdmin.PUT("/projects/:id", opsProjectEditPerm, handler.AdminUpdateProject)
+			opsAdmin.GET("/supervisors/available", opsSupervisorListPerm, handler.AdminListAvailableSupervisors)
+			opsAdmin.GET("/supervisor-assignments", opsSupervisorAssignPerm, handler.AdminListSupervisorAssignments)
+			opsAdmin.POST("/supervisor-assignments", opsSupervisorAssignPerm, middleware.RequireAdminReason(), handler.AdminCreateSupervisorAssignment)
+			opsAdmin.DELETE("/supervisor-assignments/:id", opsSupervisorAssignPerm, middleware.RequireAdminReason(), handler.AdminDeleteSupervisorAssignment)
+			opsAdmin.GET("/audit-logs", opsLogListPerm, handler.AdminListAuditLogs)
+		}
+
 		// ✅ 管理后台路由（使用AdminJWT中间件验证token类型）
 		admin := v1.Group("/admin")
 		admin.Use(middleware.AdminNetworkGate())
@@ -723,7 +807,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/material-shops/:id/products", materialShopListPerm, handler.AdminListMaterialShopProducts)
 			admin.POST("/material-shops/:id/products", materialShopEditPerm, handler.AdminCreateMaterialShopProduct)
 			admin.PUT("/material-shops/:id/products/:productId", materialShopEditPerm, handler.AdminUpdateMaterialShopProduct)
-			admin.DELETE("/material-shops/:id/products/:productId", materialShopEditPerm, handler.AdminDeleteMaterialShopProduct)
+			admin.DELETE("/material-shops/:id/products/:productId", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminDeleteMaterialShopProduct)
 			admin.PATCH("/material-shops/:id/verify", materialShopEditPerm, handler.AdminVerifyMaterialShop)
 			admin.PATCH("/material-shops/:id/status", materialShopEditPerm, handler.AdminUpdateMaterialShopStatus)
 			admin.PATCH("/material-shops/:id/platform-display", materialShopEditPerm, middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminUpdateMaterialShopPlatformDisplay)

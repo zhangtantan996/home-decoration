@@ -259,10 +259,10 @@ const SupplyPage = () => {
   const handleCreate = (key: string) => {
     setCreateOpen(false);
     if (key === 'materials') {
-      navigate('/supply/material-shop/new');
+      navigate('/providers/material-shop/new');
       return;
     }
-    navigate(`/supply/provider/${key}/new`);
+    navigate(`/providers/provider/${key}/new`);
   };
 
   const updateRowSwitch = async (row: SupplyRow, field: 'settled' | 'certified' | 'visibility', checked: boolean) => {
@@ -399,11 +399,11 @@ const SupplyPage = () => {
             size="small"
             type="primary"
             ghost
-            onClick={() => row.type === 'materials' ? navigate(`/supply/material-shop/${row.id}`) : navigate(`/supply/provider/${row.type}/${row.id}`)}
+            onClick={() => row.type === 'materials' ? navigate(`/providers/material-shop/${row.id}`) : navigate(`/providers/provider/${row.type}/${row.id}`)}
           >
             编辑
           </Button>
-          {row.shop ? <Button size="small" onClick={() => navigate(`/supply/material-shop/${row.id}/products`)}>商品</Button> : null}
+          {row.shop ? <Button size="small" onClick={() => navigate(`/providers/material-shop/${row.id}/products`)}>商品</Button> : null}
         </Space>
       ),
     },

@@ -17,6 +17,7 @@ export interface PublicSiteConfig {
   companyRegisterAddress?: string;
   companyContactAddress?: string;
   icp?: string;
+  miniProgramRecordNumber?: string;
   customerPhone: string;
   customerEmail?: string;
   complaintEmail?: string;
@@ -47,6 +48,7 @@ export const fallbackPublicSiteConfig: PublicSiteConfig = {
   companyRegisterAddress: fallbackSiteConfigData.companyRegisterAddress,
   companyContactAddress: fallbackSiteConfigData.companyContactAddress,
   icp: fallbackSiteConfigData.icp,
+  miniProgramRecordNumber: fallbackSiteConfigData.miniProgramRecordNumber,
   customerPhone: fallbackSiteConfigData.customerPhone,
   legalVersion: fallbackSiteConfigData.legalVersion,
   legalEffectiveDate: fallbackSiteConfigData.legalEffectiveDate,

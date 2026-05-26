@@ -129,6 +129,7 @@ func defaultConfigDefinitions() []configDefinition {
 		{model.ConfigKeyPublicCompanyRegisterAddr, "陕西省西安市新城区解放路166号1幢所住10401室", "注册地址", "string", configKindString, true, false},
 		{model.ConfigKeyPublicCompanyContactAddr, "陕西省西安市新城区解放路103号民生百货解放路店F7层7004", "对外联系地址", "string", configKindString, true, false},
 		{model.ConfigKeyPublicICP, "陕ICP备2026004441号", "ICP备案号", "string", configKindString, true, false},
+		{model.ConfigKeyPublicMiniProgramRecordNumber, "", "小程序备案号，备案通过后补充", "string", configKindString, true, false},
 		{model.ConfigKeyPublicSecurityBeian, "", "公安备案号，未取得时留空", "string", configKindString, true, false},
 		{model.ConfigKeyPublicCustomerPhone, "17764774797", "客服电话", "string", configKindString, true, false},
 		{model.ConfigKeyPublicCustomerEmail, "", "客服邮箱，未开通时留空", "string", configKindString, true, false},
@@ -137,12 +138,12 @@ func defaultConfigDefinitions() []configDefinition {
 		{model.ConfigKeyPublicUserAgreement, defaultPublicUserAgreement(), "用户服务协议正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicPrivacyPolicy, defaultPublicPrivacyPolicy(), "隐私政策正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicPersonalInfoCollectionList, defaultPublicPersonalInfoCollectionList(), "个人信息收集清单正文", "string", configKindString, true, false},
-		{model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules(), "对外交易规则文案", "string", configKindString, true, false},
-		{model.ConfigKeyPublicRefundRules, defaultPublicRefundRules(), "对外退款与售后规则文案", "string", configKindString, true, false},
-		{model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules(), "对外商家准入规则文案", "string", configKindString, true, false},
-		{model.ConfigKeyPublicMerchantOnboardingAgreement, defaultMerchantOnboardingAgreement(), "商家平台入驻协议正文", "string", configKindString, true, false},
-		{model.ConfigKeyPublicPlatformRules, defaultMerchantPlatformRules(), "商家平台规则正文", "string", configKindString, true, false},
-		{model.ConfigKeyPublicPrivacyDataProcessing, defaultMerchantPrivacyDataProcessing(), "商家隐私与数据处理条款正文", "string", configKindString, true, false},
+		{model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules(), "轻预约服务规则文案", "string", configKindString, true, false},
+		{model.ConfigKeyPublicRefundRules, defaultPublicRefundRules(), "预约反馈与服务说明文案", "string", configKindString, true, false},
+		{model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules(), "服务商展示规则文案", "string", configKindString, true, false},
+		{model.ConfigKeyPublicMerchantOnboardingAgreement, defaultMerchantOnboardingAgreement(), "服务商资料授权与展示协议正文", "string", configKindString, true, false},
+		{model.ConfigKeyPublicPlatformRules, defaultMerchantPlatformRules(), "服务商展示平台规则正文", "string", configKindString, true, false},
+		{model.ConfigKeyPublicPrivacyDataProcessing, defaultMerchantPrivacyDataProcessing(), "服务商资料与数据处理条款正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicThirdPartySharing, defaultPublicThirdPartySharing(), "第三方信息共享清单正文", "string", configKindString, true, false},
 		{model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion(), "对外协议规则版本号", "string", configKindString, true, false},
 		{model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate(), "对外协议规则生效日期", "string", configKindString, true, false},
@@ -577,6 +578,21 @@ func legacyPublicLegalDefaults() map[string]string {
 	}
 }
 
+func isV12PublicLegalVersion(value string) bool {
+	return strings.TrimSpace(value) == "v1.2.0-20260514"
+}
+
+func (s *ConfigService) hasV12PublicLegalVersion() (bool, error) {
+	var existing model.SystemConfig
+	if err := repository.DB.Where("key = ?", model.ConfigKeyPublicLegalVersion).First(&existing).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return false, nil
+		}
+		return false, err
+	}
+	return isV12PublicLegalVersion(existing.Value), nil
+}
+
 func (s *ConfigService) migrateLegacyPublicLegalDefaults() error {
 	defs := configDefinitionMap()
 	legacyDefaults := legacyPublicLegalDefaults()
@@ -592,26 +608,32 @@ func (s *ConfigService) migrateLegacyPublicLegalDefaults() error {
 		model.ConfigKeyPublicPrivacyDataProcessing:       true,
 		model.ConfigKeyPublicThirdPartySharing:           true,
 	}
+	forceUpgradeV12Defaults, err := s.hasV12PublicLegalVersion()
+	if err != nil {
+		return err
+	}
 	hasCustomLegalContent := false
 
-	for key := range legalContentKeys {
-		var existing model.SystemConfig
-		if err := repository.DB.Where("key = ?", key).First(&existing).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				continue
+	if !forceUpgradeV12Defaults {
+		for key := range legalContentKeys {
+			var existing model.SystemConfig
+			if err := repository.DB.Where("key = ?", key).First(&existing).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					continue
+				}
+				return err
 			}
-			return err
-		}
-		currentValue := strings.TrimSpace(existing.Value)
-		currentDefault := ""
-		if def, ok := defs[key]; ok {
-			currentDefault = strings.TrimSpace(def.DefaultValue)
-		}
-		if currentValue != "" &&
-			currentValue != strings.TrimSpace(legacyDefaults[key]) &&
-			(currentDefault == "" || currentValue != currentDefault) {
-			hasCustomLegalContent = true
-			break
+			currentValue := strings.TrimSpace(existing.Value)
+			currentDefault := ""
+			if def, ok := defs[key]; ok {
+				currentDefault = strings.TrimSpace(def.DefaultValue)
+			}
+			if currentValue != "" &&
+				currentValue != strings.TrimSpace(legacyDefaults[key]) &&
+				(currentDefault == "" || currentValue != currentDefault) {
+				hasCustomLegalContent = true
+				break
+			}
 		}
 	}
 
@@ -628,7 +650,7 @@ func (s *ConfigService) migrateLegacyPublicLegalDefaults() error {
 			continue
 		}
 		currentValue := strings.TrimSpace(existing.Value)
-		if currentValue != "" && currentValue != strings.TrimSpace(legacyValue) {
+		if !forceUpgradeV12Defaults && currentValue != "" && currentValue != strings.TrimSpace(legacyValue) {
 			continue
 		}
 		if hasCustomLegalContent && (key == model.ConfigKeyPublicLegalVersion || key == model.ConfigKeyPublicLegalEffectiveDate) {
@@ -664,24 +686,25 @@ type PublicLegalDocument struct {
 }
 
 type PublicSiteConfig struct {
-	BrandName              string                    `json:"brandName"`
-	CompanyName            string                    `json:"companyName"`
-	CompanyCreditCode      string                    `json:"companyCreditCode"`
-	CompanyRegisterAddress string                    `json:"companyRegisterAddress"`
-	CompanyContactAddress  string                    `json:"companyContactAddress"`
-	ICP                    string                    `json:"icp"`
-	SecurityBeian          string                    `json:"securityBeian,omitempty"`
-	CustomerPhone          string                    `json:"customerPhone"`
-	CustomerEmail          string                    `json:"customerEmail,omitempty"`
-	ComplaintEmail         string                    `json:"complaintEmail,omitempty"`
-	PrivacyEmail           string                    `json:"privacyEmail,omitempty"`
-	LegalVersion           string                    `json:"legalVersion"`
-	LegalEffectiveDate     string                    `json:"legalEffectiveDate"`
-	TransactionRules       string                    `json:"transactionRules"`
-	RefundRules            string                    `json:"refundRules"`
-	MerchantOnboarding     string                    `json:"merchantOnboardingRules"`
-	LegalDocuments         []PublicLegalDocument     `json:"legalDocuments"`
-	ThirdPartyServices     []PublicThirdPartyService `json:"thirdPartyServices"`
+	BrandName               string                    `json:"brandName"`
+	CompanyName             string                    `json:"companyName"`
+	CompanyCreditCode       string                    `json:"companyCreditCode"`
+	CompanyRegisterAddress  string                    `json:"companyRegisterAddress"`
+	CompanyContactAddress   string                    `json:"companyContactAddress"`
+	ICP                     string                    `json:"icp"`
+	MiniProgramRecordNumber string                    `json:"miniProgramRecordNumber,omitempty"`
+	SecurityBeian           string                    `json:"securityBeian,omitempty"`
+	CustomerPhone           string                    `json:"customerPhone"`
+	CustomerEmail           string                    `json:"customerEmail,omitempty"`
+	ComplaintEmail          string                    `json:"complaintEmail,omitempty"`
+	PrivacyEmail            string                    `json:"privacyEmail,omitempty"`
+	LegalVersion            string                    `json:"legalVersion"`
+	LegalEffectiveDate      string                    `json:"legalEffectiveDate"`
+	TransactionRules        string                    `json:"transactionRules"`
+	RefundRules             string                    `json:"refundRules"`
+	MerchantOnboarding      string                    `json:"merchantOnboardingRules"`
+	LegalDocuments          []PublicLegalDocument     `json:"legalDocuments"`
+	ThirdPartyServices      []PublicThirdPartyService `json:"thirdPartyServices"`
 }
 
 func defaultPublicUserAgreement() string {
@@ -753,16 +776,18 @@ func (s *ConfigService) detectPublicThirdPartyServices() []PublicThirdPartyServi
 	services := make([]PublicThirdPartyService, 0, 8)
 
 	if strings.EqualFold(cfg.SMS.Provider, "aliyun") {
-		services = appendPublicService(services, "短信服务", "阿里云短信", "发送登录、注册、身份核验、商家审核和账户安全验证码或通知")
+		services = appendPublicService(services, "短信服务", "阿里云短信", "发送登录、注册、身份核验、账户安全验证码或预约联系提醒")
 	}
-	if cfg.Alipay.Enabled {
-		services = appendPublicService(services, "支付服务", "支付宝", "完成订单支付、支付结果通知和交易对账")
-	}
-	if strings.TrimSpace(cfg.WechatPay.AppID) != "" && strings.TrimSpace(cfg.WechatPay.MchID) != "" {
-		services = appendPublicService(services, "支付服务", "微信支付", "完成订单支付、退款通知和交易对账")
+	if s.IsTransactionFlowEnabled() {
+		if cfg.Alipay.Enabled {
+			services = appendPublicService(services, "支付服务", "支付宝", "完成订单支付、支付结果通知和交易对账")
+		}
+		if strings.TrimSpace(cfg.WechatPay.AppID) != "" && strings.TrimSpace(cfg.WechatPay.MchID) != "" {
+			services = appendPublicService(services, "支付服务", "微信支付", "完成订单支付、退款通知和交易对账")
+		}
 	}
 	if strings.EqualFold(cfg.Storage.Driver, "oss") || strings.TrimSpace(cfg.Storage.OSSBucket) != "" {
-		services = appendPublicService(services, "对象存储", "阿里云 OSS", "存储用户、商家上传的图片、资质、案例、工艺和售后凭证")
+		services = appendPublicService(services, "对象存储", "阿里云 OSS", "存储用户、服务商上传的图片、资质、案例、工艺和反馈附件")
 	}
 	if strings.TrimSpace(os.Getenv("TINODE_SERVER_URL")) != "" || strings.TrimSpace(os.Getenv("TINODE_DATABASE_DSN")) != "" {
 		services = appendPublicService(services, "即时通信", "Tinode", "提供平台内沟通、消息同步和会话服务")
@@ -808,42 +833,42 @@ func (s *ConfigService) buildPublicLegalDocuments(version, effectiveDate string)
 		},
 		{
 			Slug:          "transaction-rules",
-			Title:         "平台交易规则",
+			Title:         "轻预约服务规则",
 			Version:       version,
 			EffectiveDate: effectiveDate,
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()),
 		},
 		{
 			Slug:          "refund-rules",
-			Title:         "退款与售后规则",
+			Title:         "预约反馈与服务说明",
 			Version:       version,
 			EffectiveDate: effectiveDate,
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()),
 		},
 		{
 			Slug:          "merchant-rules",
-			Title:         "商家入驻规则",
+			Title:         "服务商展示规则",
 			Version:       version,
 			EffectiveDate: effectiveDate,
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()),
 		},
 		{
 			Slug:          "merchant-onboarding-agreement",
-			Title:         "商家入驻协议",
+			Title:         "服务商资料授权与展示协议",
 			Version:       version,
 			EffectiveDate: effectiveDate,
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboardingAgreement, defaultMerchantOnboardingAgreement()),
 		},
 		{
 			Slug:          "platform-rules",
-			Title:         "商家平台规则",
+			Title:         "服务商展示平台规则",
 			Version:       version,
 			EffectiveDate: effectiveDate,
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicPlatformRules, defaultMerchantPlatformRules()),
 		},
 		{
 			Slug:          "privacy-data-processing",
-			Title:         "商家隐私与数据处理条款",
+			Title:         "服务商资料与数据处理条款",
 			Version:       version,
 			EffectiveDate: effectiveDate,
 			Content:       s.getPublicConfigValue(model.ConfigKeyPublicPrivacyDataProcessing, defaultMerchantPrivacyDataProcessing()),
@@ -862,24 +887,25 @@ func (s *ConfigService) GetPublicSiteConfig() PublicSiteConfig {
 	version := s.getPublicConfigValue(model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion())
 	effectiveDate := s.getPublicConfigValue(model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate())
 	return PublicSiteConfig{
-		BrandName:              s.getPublicConfigValue(model.ConfigKeyPublicBrandName, "禾泽云"),
-		CompanyName:            s.getPublicConfigValue(model.ConfigKeyPublicCompanyName, "陕西禾泽云创科技有限公司"),
-		CompanyCreditCode:      s.getPublicConfigValue(model.ConfigKeyPublicCompanyCreditCode, "91610102MAK4U1K51H"),
-		CompanyRegisterAddress: s.getPublicConfigValue(model.ConfigKeyPublicCompanyRegisterAddr, "陕西省西安市新城区解放路166号1幢所住10401室"),
-		CompanyContactAddress:  s.getPublicConfigValue(model.ConfigKeyPublicCompanyContactAddr, "陕西省西安市新城区解放路103号民生百货解放路店F7层7004"),
-		ICP:                    s.getPublicConfigValue(model.ConfigKeyPublicICP, "陕ICP备2026004441号"),
-		SecurityBeian:          s.getPublicConfigValue(model.ConfigKeyPublicSecurityBeian, ""),
-		CustomerPhone:          s.getPublicConfigValue(model.ConfigKeyPublicCustomerPhone, "17764774797"),
-		CustomerEmail:          s.getPublicConfigValue(model.ConfigKeyPublicCustomerEmail, ""),
-		ComplaintEmail:         s.getPublicConfigValue(model.ConfigKeyPublicComplaintEmail, ""),
-		PrivacyEmail:           s.getPublicConfigValue(model.ConfigKeyPublicPrivacyEmail, ""),
-		LegalVersion:           version,
-		LegalEffectiveDate:     effectiveDate,
-		TransactionRules:       s.getPublicConfigValue(model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()),
-		RefundRules:            s.getPublicConfigValue(model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()),
-		MerchantOnboarding:     s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()),
-		LegalDocuments:         s.buildPublicLegalDocuments(version, effectiveDate),
-		ThirdPartyServices:     s.detectPublicThirdPartyServices(),
+		BrandName:               s.getPublicConfigValue(model.ConfigKeyPublicBrandName, "禾泽云"),
+		CompanyName:             s.getPublicConfigValue(model.ConfigKeyPublicCompanyName, "陕西禾泽云创科技有限公司"),
+		CompanyCreditCode:       s.getPublicConfigValue(model.ConfigKeyPublicCompanyCreditCode, "91610102MAK4U1K51H"),
+		CompanyRegisterAddress:  s.getPublicConfigValue(model.ConfigKeyPublicCompanyRegisterAddr, "陕西省西安市新城区解放路166号1幢所住10401室"),
+		CompanyContactAddress:   s.getPublicConfigValue(model.ConfigKeyPublicCompanyContactAddr, "陕西省西安市新城区解放路103号民生百货解放路店F7层7004"),
+		ICP:                     s.getPublicConfigValue(model.ConfigKeyPublicICP, "陕ICP备2026004441号"),
+		MiniProgramRecordNumber: s.getPublicConfigValue(model.ConfigKeyPublicMiniProgramRecordNumber, ""),
+		SecurityBeian:           s.getPublicConfigValue(model.ConfigKeyPublicSecurityBeian, ""),
+		CustomerPhone:           s.getPublicConfigValue(model.ConfigKeyPublicCustomerPhone, "17764774797"),
+		CustomerEmail:           s.getPublicConfigValue(model.ConfigKeyPublicCustomerEmail, ""),
+		ComplaintEmail:          s.getPublicConfigValue(model.ConfigKeyPublicComplaintEmail, ""),
+		PrivacyEmail:            s.getPublicConfigValue(model.ConfigKeyPublicPrivacyEmail, ""),
+		LegalVersion:            version,
+		LegalEffectiveDate:      effectiveDate,
+		TransactionRules:        s.getPublicConfigValue(model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()),
+		RefundRules:             s.getPublicConfigValue(model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()),
+		MerchantOnboarding:      s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()),
+		LegalDocuments:          s.buildPublicLegalDocuments(version, effectiveDate),
+		ThirdPartyServices:      s.detectPublicThirdPartyServices(),
 	}
 }
 

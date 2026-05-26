@@ -81,7 +81,7 @@ const getCaseProviderDisplayName = (providerId?: number | null, providerName?: s
     if (!providerId) {
         return '官方作品';
     }
-    return '未关联商家信息';
+    return '未关联服务商信息';
 };
 
 const renderCaseAuditSourceTag = (sourceType?: string) => {

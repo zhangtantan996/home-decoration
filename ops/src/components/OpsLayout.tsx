@@ -9,7 +9,7 @@ const { Header, Content, Sider } = Layout;
 
 const baseItems = [
   { key: '/dashboard', icon: <HomeFilled />, label: '工作台首页' },
-  { key: '/supply', icon: <AppstoreOutlined />, label: '商家信息' },
+  { key: '/providers', icon: <AppstoreOutlined />, label: '服务商' },
   { key: '/inspirations', icon: <FileTextOutlined />, label: '灵感编辑' },
   { key: '/bookings', icon: <ScheduleOutlined />, label: '预约记录' },
   { key: '/audit-logs', icon: <UnorderedListOutlined />, label: '操作记录' },
@@ -77,7 +77,7 @@ const OpsLayout = () => {
           <Menu
             mode="inline"
             className="ops-shell__menu"
-            selectedKeys={[items.find((item) => location.pathname.startsWith(item.key))?.key || '/supply']}
+            selectedKeys={[items.find((item) => location.pathname.startsWith(item.key))?.key || '/providers']}
             items={items}
             onClick={({ key }) => navigate(key)}
           />

@@ -545,20 +545,16 @@ const LogImageSheet = ({
 
 const PendingQuoteState = ({
   quote,
-  onOpen,
 }: {
   quote: PendingQuoteViewModel;
-  onOpen: () => void;
 }) => (
   <View className="progress-page__content">
     <View className="progress-page__empty-card">
-      <Text className="progress-page__empty-badge">待确认施工报价</Text>
+      <Text className="progress-page__empty-badge">待线下沟通</Text>
       <Text className="progress-page__empty-title">{quote.title}</Text>
       <Text className="progress-page__empty-copy">{quote.subtitle}</Text>
       <Text className="progress-page__empty-note">当前状态：{quote.statusLabel}</Text>
-      <Button className="progress-page__primary-button" onClick={onOpen}>
-        去确认施工报价
-      </Button>
+      <Text className="progress-page__empty-copy">平台当前不在线上完成报价确认和成交，工作人员会协助转入线下沟通。</Text>
     </View>
   </View>
 );
@@ -866,7 +862,6 @@ export default function Progress() {
       {!loading && !project && pendingQuote ? (
         <PendingQuoteState
           quote={pendingQuote}
-          onOpen={() => Taro.navigateTo({ url: `/pages/quote-tasks/detail/index?id=${pendingQuoteTask?.id}` })}
         />
       ) : null}
 

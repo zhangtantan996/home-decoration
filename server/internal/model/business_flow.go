@@ -88,6 +88,7 @@ const (
 	ConfigKeyPublicCompanyRegisterAddr         = "public.company_register_addr"
 	ConfigKeyPublicCompanyContactAddr          = "public.company_contact_addr"
 	ConfigKeyPublicICP                         = "public.icp"
+	ConfigKeyPublicMiniProgramRecordNumber     = "public.mini_program_record_number"
 	ConfigKeyPublicSecurityBeian               = "public.security_beian"
 	ConfigKeyPublicCustomerPhone               = "public.customer_phone"
 	ConfigKeyPublicCustomerEmail               = "public.customer_email"

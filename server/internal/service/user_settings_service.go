@@ -1,9 +1,15 @@
 package service
 
 import (
+	"encoding/json"
 	"errors"
+	"regexp"
+	"strings"
+
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
+	"home-decoration-server/pkg/utils"
 
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
@@ -121,6 +127,10 @@ func (s *UserSettingsService) UpdateSettings(userID uint64, updates map[string]i
 
 // SubmitFeedback 提交意见反馈
 func (s *UserSettingsService) SubmitFeedback(userID uint64, feedbackType, content, contact, images string) error {
+	feedbackType, content, contact, images, err := normalizeUserFeedbackInput(feedbackType, content, contact, images)
+	if err != nil {
+		return err
+	}
 	fb := model.UserFeedback{
 		UserID:  userID,
 		Type:    feedbackType,
@@ -130,6 +140,67 @@ func (s *UserSettingsService) SubmitFeedback(userID uint64, feedbackType, conten
 		Status:  0,
 	}
 	return repository.DB.Create(&fb).Error
+}
+
+var allowedFeedbackTypes = map[string]struct{}{
+	"产品建议": {},
+	"功能异常": {},
+	"体验问题": {},
+	"其他":   {},
+}
+
+func normalizeUserFeedbackInput(feedbackType, content, contact, images string) (string, string, string, string, error) {
+	feedbackType = strings.TrimSpace(feedbackType)
+	if _, ok := allowedFeedbackTypes[feedbackType]; !ok {
+		return "", "", "", "", errors.New("请选择有效反馈类型")
+	}
+	content = strings.TrimSpace(content)
+	if len([]rune(content)) == 0 || len([]rune(content)) > 300 {
+		return "", "", "", "", errors.New("反馈内容需在 1-300 字符之间")
+	}
+	contact = strings.TrimSpace(contact)
+	if contact != "" && !utils.ValidatePhone(contact) && !regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]{5,19}$`).MatchString(contact) {
+		return "", "", "", "", errors.New("请填写正确的联系方式")
+	}
+	normalizedImages, err := normalizeLocalAssetJSONArray(images, 4, "反馈图片")
+	if err != nil {
+		return "", "", "", "", err
+	}
+	return feedbackType, content, contact, normalizedImages, nil
+}
+
+func normalizeLocalAssetJSONArray(raw string, maxCount int, fieldLabel string) (string, error) {
+	if strings.TrimSpace(raw) == "" {
+		return "[]", nil
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return "", errors.New(fieldLabel + "格式错误")
+	}
+	if len(items) > maxCount {
+		return "", errors.New(fieldLabel + "数量超出限制")
+	}
+	normalized := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		value := imgutil.NormalizeStoredImagePath(item)
+		if value == "" {
+			continue
+		}
+		if !imgutil.IsLocalAssetReference(value) {
+			return "", errors.New(fieldLabel + "仅支持平台上传文件")
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+	}
+	payload, err := json.Marshal(normalized)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
 }
 
 // RecordLoginDevice 记录登录设备（在登录时调用）

@@ -122,3 +122,47 @@ func TestBookingServiceCreateRejectsAreaAboveResidentialLimit(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestBookingServiceCreateRejectsInvalidPhoneBeforePersist(t *testing.T) {
+	db := setupBookingServiceNotificationTestDB(t)
+
+	previousKey := os.Getenv("ENCRYPTION_KEY")
+	if err := os.Setenv("ENCRYPTION_KEY", "0123456789abcdef0123456789abcdef"); err != nil {
+		t.Fatalf("set encryption key: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Setenv("ENCRYPTION_KEY", previousKey)
+	})
+
+	provider := model.Provider{
+		Base:         model.Base{ID: 31001},
+		ProviderType: 1,
+		CompanyName:  "测试设计师",
+		Status:       1,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	svc := &BookingService{}
+	if _, err := svc.Create(1001, &CreateBookingRequest{
+		ProviderID:     provider.ID,
+		ProviderType:   "designer",
+		Address:        "西安市高新区科技路 88 号",
+		Area:           98,
+		RenovationType: "新房装修",
+		BudgetRange:    "20-30万",
+		PreferredDate:  "2026-03-30",
+		Phone:          "abc",
+	}); err == nil {
+		t.Fatalf("expected invalid phone to be rejected")
+	}
+
+	var count int64
+	if err := db.Model(&model.Booking{}).Count(&count).Error; err != nil {
+		t.Fatalf("count bookings: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("expected no booking persisted, got %d", count)
+	}
+}

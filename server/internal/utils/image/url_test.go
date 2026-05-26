@@ -103,3 +103,73 @@ func TestGetFullImageURL_IgnoresUnresolvedStoragePublicBaseURLPlaceholder(t *tes
 		t.Fatalf("GetFullImageURL() = %q, want %q", got, want)
 	}
 }
+
+func TestIsSafeEvidenceURLBlocksDangerousSchemes(t *testing.T) {
+	for _, value := range []string{
+		"javascript:alert(1)",
+		"data:text/html,<script>alert(1)</script>",
+		"vbscript:msgbox(1)",
+		"file:///etc/passwd",
+		"about:blank",
+	} {
+		if IsSafeEvidenceURL(value) {
+			t.Fatalf("expected %q to be rejected as evidence URL", value)
+		}
+	}
+}
+
+func TestIsSafeEvidenceURLAllowsHTTPAndLocalAssets(t *testing.T) {
+	for _, value := range []string{
+		"https://example.com/evidence/1",
+		"http://example.com/evidence/1",
+		"/uploads/evidence/a.png",
+		"/static/docs/a.pdf",
+	} {
+		if !IsSafeEvidenceURL(value) {
+			t.Fatalf("expected %q to be accepted as evidence URL", value)
+		}
+	}
+}
+
+func TestIsLocalAssetReferenceRejectsExternalHTTP(t *testing.T) {
+	cfg := config.GetConfig()
+	previous := *cfg
+	cfg.Server.PublicURL = "https://api.hezeyunchuang.com"
+	cfg.Storage.PublicBaseURL = ""
+	t.Cleanup(func() {
+		*cfg = previous
+	})
+
+	if !IsLocalAssetReference("/uploads/providers/avatar.png") {
+		t.Fatalf("expected local upload path to be accepted")
+	}
+	if !IsLocalAssetReference("https://api.hezeyunchuang.com/uploads/providers/avatar.png") {
+		t.Fatalf("expected configured public asset host to be accepted")
+	}
+	if IsLocalAssetReference("https://third-party.example.com/uploads/providers/avatar.png") {
+		t.Fatalf("expected external upload-looking URL to be rejected")
+	}
+	if IsLocalAssetReference("https://third-party.example.com/avatar.png") {
+		t.Fatalf("expected external http asset reference to be rejected")
+	}
+}
+
+func TestNormalizeStoredImagePathDoesNotConvertUntrustedUploadURL(t *testing.T) {
+	cfg := config.GetConfig()
+	previous := *cfg
+	cfg.Server.PublicURL = "https://api.hezeyunchuang.com"
+	cfg.Storage.PublicBaseURL = ""
+	t.Cleanup(func() {
+		*cfg = previous
+	})
+
+	trusted := "https://api.hezeyunchuang.com/uploads/providers/avatar.png"
+	if got := NormalizeStoredImagePath(trusted); got != "/uploads/providers/avatar.png" {
+		t.Fatalf("expected trusted local asset URL to normalize to path, got %q", got)
+	}
+
+	untrusted := "https://third-party.example.com/uploads/providers/avatar.png"
+	if got := NormalizeStoredImagePath(untrusted); got != untrusted {
+		t.Fatalf("expected untrusted upload-looking URL to stay external, got %q", got)
+	}
+}

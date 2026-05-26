@@ -490,6 +490,78 @@ func TestAdminNetworkGateBlocksDisallowedIP(t *testing.T) {
 	}
 }
 
+func TestOpsAdminInfoBypassesAdminNetworkGate(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	cfg := config.GetConfig()
+	cfg.AdminAuth.APIIPEnforced = true
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    true,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "setup_required",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ops-admin/info", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ops admin route to bypass network gate, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "当前网络不允许访问管理接口") {
+		t.Fatalf("ops admin route should not return network gate error, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"loginStage\":\"setup_required\"") {
+		t.Fatalf("expected downstream admin info response, got %s", rec.Body.String())
+	}
+}
+
+func TestOpsAdminDoesNotExposeAdminRefreshOrShopDelete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    true,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "active",
+		"sid":         "admin-test-session",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	for _, tc := range []struct {
+		method string
+		path   string
+		body   string
+	}{
+		{method: http.MethodPost, path: "/api/v1/ops-admin/token/refresh", body: `{"refreshToken":"stale-admin-refresh-token"}`},
+		{method: http.MethodDelete, path: "/api/v1/ops-admin/material-shops/1"},
+	} {
+		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+
+		r.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("%s %s should not be exposed on ops-admin, got %d body=%s", tc.method, tc.path, rec.Code, rec.Body.String())
+		}
+	}
+}
+
 func TestAdminNetworkGateAllowsConfiguredCIDR(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := setupAdminSecurityRouter(t)

@@ -135,6 +135,45 @@ func TestAdminCreateProvider_PersistsAdminFormFields(t *testing.T) {
 	}
 }
 
+func TestAdminCreateProvider_RejectsInvalidMetrics(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Region{}, &model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	if err := db.Create(&model.Region{Code: "610100", Name: "西安市", Level: 2, Enabled: true, ServiceEnabled: true}).Error; err != nil {
+		t.Fatalf("seed region: %v", err)
+	}
+
+	resp := requestAdminCreateProvider(t, "/api/v1/admin/providers", `{
+		"providerType":1,
+		"companyName":"异常服务商",
+		"yearsExperience":-1,
+		"followersCount":-2,
+		"teamSize":-3,
+		"establishedYear":1800,
+		"status":1,
+		"serviceArea":["610100"]
+	}`)
+	if resp.Code == 0 {
+		t.Fatalf("expected invalid metrics to be rejected")
+	}
+
+	var count int64
+	if err := db.Model(&model.Provider{}).Where("company_name = ?", "异常服务商").Count(&count).Error; err != nil {
+		t.Fatalf("count providers: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("invalid provider should not be persisted")
+	}
+}
+
 func TestAdminUpdateProvider_PreservesExplicitPriceUnit(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -176,6 +215,58 @@ func TestAdminUpdateProvider_PreservesExplicitPriceUnit(t *testing.T) {
 	}
 	if stored.PriceUnit != "元/天" {
 		t.Fatalf("expected price unit preserved as 元/天, got %q", stored.PriceUnit)
+	}
+}
+
+func TestValidateProviderCoreFields_AllowsAdminPriceUnits(t *testing.T) {
+	for _, unit := range []string{"元/㎡", "元/天", "元/套", "元/全包", "元/半包"} {
+		if err := validateProviderCoreFields(2, 1, "company", "company", unit, 0, 100); err != nil {
+			t.Fatalf("expected price unit %q to be allowed, got %v", unit, err)
+		}
+	}
+}
+
+func TestAdminUpdateProvider_RejectsInvalidMetricsAndKeepsExistingValue(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.Provider{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	provider := model.Provider{
+		Base:            model.Base{ID: 92001},
+		ProviderType:    1,
+		DisplayName:     "设计师B",
+		CompanyName:     "设计师B",
+		YearsExperience: 8,
+		FollowersCount:  20,
+		RestoreRate:     4.5,
+		Status:          1,
+		ServiceArea:     `["610100"]`,
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("seed provider: %v", err)
+	}
+
+	resp := requestAdminUpdateProvider(t, "/api/v1/admin/providers/92001", `{
+		"yearsExperience":81,
+		"restoreRate":101
+	}`)
+	if resp.Code == 0 {
+		t.Fatalf("expected invalid metrics to be rejected")
+	}
+
+	var stored model.Provider
+	if err := db.First(&stored, provider.ID).Error; err != nil {
+		t.Fatalf("load provider: %v", err)
+	}
+	if stored.YearsExperience != 8 || stored.RestoreRate != 4.5 {
+		t.Fatalf("metrics should remain unchanged, got years=%d restore=%v", stored.YearsExperience, stored.RestoreRate)
 	}
 }
 

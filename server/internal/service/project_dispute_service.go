@@ -377,7 +377,10 @@ func (s *ProjectDisputeService) SubmitProjectDispute(projectID, userID uint64, i
 		beforeState := financeSnapshot(project, nil)
 		providerUserID = getProviderUserIDTx(tx, project.ProviderID)
 		now := time.Now()
-		evidenceJSON := marshalStringList(input.Evidence)
+		evidenceJSON, err := marshalSafeEvidenceURLList(input.Evidence)
+		if err != nil {
+			return err
+		}
 		if err := tx.Model(project).Updates(map[string]interface{}{
 			"disputed_at":      now,
 			"dispute_reason":   reason,

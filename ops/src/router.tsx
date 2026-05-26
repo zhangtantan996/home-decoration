@@ -1,6 +1,6 @@
 import { App } from 'antd';
 import { useEffect } from 'react';
-import { Navigate, createBrowserRouter } from 'react-router-dom';
+import { Navigate, createBrowserRouter, useLocation } from 'react-router-dom';
 import OpsLayout from './components/OpsLayout';
 import ProtectedRoute from './components/ProtectedRoute';
 import DashboardPage from './pages/DashboardPage';
@@ -19,6 +19,12 @@ import { useAuthStore } from './stores/authStore';
 import { getRouterBasename } from './utils/env';
 
 const PROJECT_PERMISSION_WARNING_KEY = 'ops-project-permission-denied';
+
+const LegacySupplyRedirect = () => {
+  const location = useLocation();
+  const targetPath = location.pathname.replace(/^\/supply/, '/providers');
+  return <Navigate to={`${targetPath}${location.search}`} replace />;
+};
 
 const GuardedProjectsPage = () => {
   const { message } = App.useApp();
@@ -52,12 +58,13 @@ export const createOpsRouter = () => createBrowserRouter([
         children: [
           { path: '/', element: <Navigate to="/dashboard" replace /> },
           { path: '/dashboard', element: <DashboardPage /> },
-          { path: '/supply', element: <SupplyPage /> },
-          { path: '/supply/provider/:kind/:id', element: <SupplyProviderEditPage /> },
-          { path: '/supply/provider/:kind/:providerId/showcase/:caseId', element: <InspirationEditPage /> },
-          { path: '/supply/material-shop/:shopId/products', element: <MaterialProductsPage /> },
-          { path: '/supply/material-shop/:shopId/products/:productId', element: <MaterialProductEditPage /> },
-          { path: '/supply/material-shop/:id', element: <MaterialShopEditPage /> },
+          { path: '/supply/*', element: <LegacySupplyRedirect /> },
+          { path: '/providers', element: <SupplyPage /> },
+          { path: '/providers/provider/:kind/:id', element: <SupplyProviderEditPage /> },
+          { path: '/providers/provider/:kind/:providerId/showcase/:caseId', element: <InspirationEditPage /> },
+          { path: '/providers/material-shop/:shopId/products', element: <MaterialProductsPage /> },
+          { path: '/providers/material-shop/:shopId/products/:productId', element: <MaterialProductEditPage /> },
+          { path: '/providers/material-shop/:id', element: <MaterialShopEditPage /> },
           { path: '/inspirations', element: <InspirationPage /> },
           { path: '/inspirations/:id', element: <InspirationEditPage /> },
           { path: '/bookings', element: <BookingsPage /> },

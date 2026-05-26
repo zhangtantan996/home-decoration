@@ -556,6 +556,9 @@ func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
 // UpdateUser 更新用户信息
 func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *time.Time, bio string) error {
 	avatar = image.NormalizeStoredImagePath(avatar)
+	if avatar != "" && !image.IsLocalAssetReference(avatar) {
+		return errors.New("头像仅支持平台上传图片")
+	}
 	// Capture the current DB handle before spawning goroutines. Tests replace
 	// repository.DB, and reading it from an async goroutine can trigger races.
 	db := repository.DB
@@ -571,30 +574,22 @@ func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *t
 		return err
 	}
 
-	// 异步同步到腾讯云 IM
-	go func(db *gorm.DB) {
-		// 重新查询用户以获取完整信息（或者直接使用传入的新值）
-		// 这里直接使用新值，注意处理avatar可能为空的情况（如果是局部更新）
-		// 但为了保险，建议如果为空则查询数据库，或者简单地 assume 传入的就是最新值
-		// 这里参数是必传的吗？ handler里是 struct binding，可能是空字符串
-		// 为了稳健，查询一次数据库最新的状态
-		var user model.User
-		if err := db.First(&user, id).Error; err == nil {
-			// 处理默认昵称
-			if user.Nickname == "" {
-				suffix := ""
-				if len(user.Phone) >= 4 {
-					suffix = user.Phone[len(user.Phone)-4:]
-				}
-				user.Nickname = fmt.Sprintf("用户%s", suffix)
+	var syncUser model.User
+	if err := db.First(&syncUser, id).Error; err == nil {
+		if syncUser.Nickname == "" {
+			suffix := ""
+			if len(syncUser.Phone) >= 4 {
+				suffix = syncUser.Phone[len(syncUser.Phone)-4:]
 			}
-
-			fullAvatar := image.GetFullImageURL(user.Avatar)
-			if err := tencentim.SyncUserToIM(user.ID, user.Nickname, fullAvatar); err != nil {
-				log.Printf("[TencentIM] 更新用户同步失败: userID=%d, err=%v", user.ID, err)
-			}
+			syncUser.Nickname = fmt.Sprintf("用户%s", suffix)
 		}
-	}(db)
+		fullAvatar := image.GetFullImageURL(syncUser.Avatar)
+		go func(userID uint64, nickname, avatarURL string) {
+			if err := tencentim.SyncUserToIM(userID, nickname, avatarURL); err != nil {
+				log.Printf("[TencentIM] 更新用户同步失败: userID=%d, err=%v", userID, err)
+			}
+		}(syncUser.ID, syncUser.Nickname, fullAvatar)
+	}
 
 	return nil
 }
