@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 
@@ -129,6 +130,14 @@ func TestProjectServiceCreateWorkLog(t *testing.T) {
 
 func TestProjectServiceCreateProjectManualPersistsEntryWindow(t *testing.T) {
 	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.Server.PublicURL = "https://api.hezeyunchuang.com"
+	cfg.Storage.PublicBaseURL = ""
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
+
 	db := setupProjectServiceTestDB(t)
 
 	owner := model.User{Base: model.Base{ID: 501}, Phone: "13800138501", Status: 1, Nickname: "业主D"}

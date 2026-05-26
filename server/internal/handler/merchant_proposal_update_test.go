@@ -9,12 +9,19 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 )
 
 func TestMerchantUpdateProposalNormalizesArrayAssetFields(t *testing.T) {
 	gin.SetMode(gin.TestMode)
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.Storage.PublicBaseURL = "https://cdn.example.com"
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
 
 	db := setupSQLiteDB(t)
 	if err := db.AutoMigrate(&model.Proposal{}); err != nil {
