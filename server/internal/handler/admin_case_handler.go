@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	"home-decoration-server/internal/service"
@@ -47,6 +48,66 @@ func normalizeAdminCasePayload(
 	if images != nil {
 		*images = normalizeStoredAssetSlice(*images)
 	}
+}
+
+func validateAdminCaseInput(providerID *uint64, title, coverImage, style, area string, price float64, quoteTotalCent *int64, year string, description string, images []string) (string, []string, error) {
+	if strings.TrimSpace(title) == "" || len([]rune(strings.TrimSpace(title))) > 80 {
+		return "", nil, errors.New("作品标题需在 1-80 字符之间")
+	}
+	if strings.TrimSpace(style) == "" || len([]rune(strings.TrimSpace(style))) > 40 {
+		return "", nil, errors.New("风格需在 1-40 字符之间")
+	}
+	if err := validateRuneLength("面积", area, 30); err != nil {
+		return "", nil, err
+	}
+	if price < 0 || price > adminPriceMax {
+		return "", nil, errors.New("价格范围无效")
+	}
+	if quoteTotalCent != nil && (*quoteTotalCent < 0 || *quoteTotalCent > adminPriceMax*100) {
+		return "", nil, errors.New("报价金额范围无效")
+	}
+	if err := validateYearText(year); err != nil {
+		return "", nil, err
+	}
+	if err := validateRuneLength("案例说明", description, adminTextLongMax); err != nil {
+		return "", nil, err
+	}
+	if providerID != nil && *providerID > 0 {
+		var count int64
+		if err := repository.DB.Model(&model.Provider{}).Where("id = ?", *providerID).Count(&count).Error; err != nil {
+			return "", nil, err
+		}
+		if count == 0 {
+			return "", nil, errors.New("服务商不存在")
+		}
+	}
+	cover, err := requireLocalAssetReference("案例封面", coverImage)
+	if err != nil {
+		return "", nil, err
+	}
+	if cover == "" {
+		return "", nil, errors.New("请上传案例封面")
+	}
+	normalizedImages, err := requireLocalAssetReferences("案例图片", images, 12)
+	if err != nil {
+		return "", nil, err
+	}
+	return cover, normalizedImages, nil
+}
+
+func validateCaseQuoteItems(items []service.CaseQuoteItem) error {
+	if len(items) > 100 {
+		return errors.New("报价明细最多支持 100 项")
+	}
+	for _, item := range items {
+		if item.Quantity < 0 || item.Quantity > 100000 {
+			return errors.New("报价明细数量范围无效")
+		}
+		if item.UnitPriceCent < 0 || item.AmountCent < 0 || item.UnitPriceCent > adminPriceMax*100 || item.AmountCent > adminPriceMax*100 {
+			return errors.New("报价明细金额范围无效")
+		}
+	}
+	return nil
 }
 
 // ==================== 管理员作品管理 ====================
@@ -210,6 +271,13 @@ func AdminCreateCase(c *gin.Context) {
 		return
 	}
 	normalizeAdminCasePayload(&input.CoverImage, &input.Style, &input.Layout, &input.Area, &input.QuoteCurrency, &input.Year, &input.Description, &input.Images)
+	coverImage, normalizedImages, err := validateAdminCaseInput(input.ProviderID, input.Title, input.CoverImage, input.Style, input.Area, input.Price, input.QuoteTotalCent, input.Year, input.Description, input.Images)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	input.CoverImage = coverImage
+	input.Images = normalizedImages
 
 	if strings.TrimSpace(input.Layout) == "" {
 		// Keep layout always present for downstream filtering & display.
@@ -231,11 +299,12 @@ func AdminCreateCase(c *gin.Context) {
 			response.Error(c, 400, "报价明细格式错误")
 			return
 		}
+		if err := validateCaseQuoteItems(quoteItems); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		computedTotal, normalizedItems := service.NormalizeCaseQuote(quoteItems)
 		quoteTotalCent = computedTotal
-		if input.QuoteTotalCent != nil && *input.QuoteTotalCent > 0 {
-			quoteTotalCent = *input.QuoteTotalCent
-		}
 		if b, err := json.Marshal(normalizedItems); err == nil {
 			quoteItemsJSON = string(b)
 		}
@@ -312,6 +381,13 @@ func AdminUpdateCase(c *gin.Context) {
 		return
 	}
 	normalizeAdminCasePayload(&input.CoverImage, &input.Style, &input.Layout, &input.Area, &input.QuoteCurrency, &input.Year, &input.Description, &input.Images)
+	coverImage, normalizedImages, err := validateAdminCaseInput(input.ProviderID, input.Title, input.CoverImage, input.Style, input.Area, input.Price, input.QuoteTotalCent, input.Year, input.Description, input.Images)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	input.CoverImage = coverImage
+	input.Images = normalizedImages
 
 	if strings.TrimSpace(input.Layout) == "" {
 		input.Layout = "其他"
@@ -339,11 +415,12 @@ func AdminUpdateCase(c *gin.Context) {
 			response.Error(c, 400, "报价明细格式错误")
 			return
 		}
+		if err := validateCaseQuoteItems(quoteItems); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
 		computedTotal, normalizedItems := service.NormalizeCaseQuote(quoteItems)
 		quoteTotalCent = computedTotal
-		if input.QuoteTotalCent != nil && *input.QuoteTotalCent > 0 {
-			quoteTotalCent = *input.QuoteTotalCent
-		}
 		if b, err := json.Marshal(normalizedItems); err == nil {
 			quoteItemsJSON = string(b)
 		} else {

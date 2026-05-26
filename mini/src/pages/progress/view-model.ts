@@ -217,7 +217,7 @@ const resolveMilestoneMeta = (status?: Milestone['status']) => {
     case 'paid':
       return {
         tone: 'success' as ProgressTone,
-        label: '已支付',
+        label: '已完成',
         iconName: 'success' as IconName,
         isDone: true,
         isActive: false,
@@ -367,7 +367,7 @@ export const buildPendingQuoteViewModel = (
     subtitle:
       task.flowSummary
       || task.businessStage
-      || '设计确认后不会直接创建项目，请先确认施工报价。',
+      || '平台会协助转入线下沟通，线上仅展示跟进记录。',
     statusLabel: task.status || '待确认',
   };
 };

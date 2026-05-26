@@ -43,10 +43,10 @@ export default function SupportPage() {
             <Text>• 如何预约服务商：在服务商详情页点击“立即预约”。</Text>
           </View>
           <View className="text-secondary" style={{ fontSize: '26rpx', lineHeight: '1.7' }}>
-            <Text>• 如何查看订单：在“我的”页进入“我的订单”。</Text>
+            <Text>• 如何查看预约：在“我的”页进入“我的预约”。</Text>
           </View>
           <View className="text-secondary" style={{ fontSize: '26rpx', lineHeight: '1.7' }}>
-            <Text>• 支付异常：请联系客服热线并提供订单号。</Text>
+            <Text>• 预约后如何跟进：平台工作人员会根据预约信息进行线下联系。</Text>
           </View>
         </Card>
       </View>

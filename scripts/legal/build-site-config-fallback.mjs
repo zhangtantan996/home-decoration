@@ -18,9 +18,10 @@ const defaultMeta = {
   companyRegisterAddress: '陕西省西安市新城区解放路166号1幢所住10401室',
   companyContactAddress: '陕西省西安市新城区解放路103号民生百货解放路店F7层7004',
   icp: '陕ICP备2026004441号',
+  miniProgramRecordNumber: '',
   customerPhone: '17764774797',
-  legalVersion: 'v1.2.0-20260514',
-  legalEffectiveDate: '2026-05-14',
+  legalVersion: 'v1.3.0-20260520',
+  legalEffectiveDate: '2026-05-20',
 };
 
 const docOrder = [

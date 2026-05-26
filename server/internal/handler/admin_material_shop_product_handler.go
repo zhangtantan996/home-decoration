@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
@@ -213,7 +214,7 @@ func auditAdminMaterialShopProductTx(c *gin.Context, tx *gorm.DB, operation stri
 		Resource:      "material_shop_product",
 		ResourceType:  "material_shop_product",
 		ResourceID:    productID,
-		Reason:        "Ops维护主材商品",
+		Reason:        firstNonEmpty(strings.TrimSpace(c.GetString("admin_reason")), "Ops维护主材商品"),
 		Result:        "success",
 		BeforeState:   before,
 		AfterState:    after,

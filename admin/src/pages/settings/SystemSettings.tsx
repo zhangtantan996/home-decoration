@@ -65,6 +65,7 @@ const PUBLIC_COMPLIANCE_CONFIG_KEYS = {
   companyRegisterAddress: "public.company_register_addr",
   companyContactAddress: "public.company_contact_addr",
   icp: "public.icp",
+  miniProgramRecordNumber: "public.mini_program_record_number",
   securityBeian: "public.security_beian",
   customerPhone: "public.customer_phone",
   customerEmail: "public.customer_email",
@@ -91,7 +92,7 @@ const LEGAL_DOCUMENT_CONFIGS = [
     slug: "user-agreement",
     formName: "userAgreement",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement,
-    description: "账号注册、预约报价、交易确认、退款售后和平台边界。",
+    description: "账号注册、轻预约、平台联系跟进和平台边界。",
   },
   {
     category: "公开侧",
@@ -111,51 +112,51 @@ const LEGAL_DOCUMENT_CONFIGS = [
   },
   {
     category: "公开侧",
-    title: "交易规则",
+    title: "轻预约服务规则",
     slug: "transaction-rules",
     formName: "transactionRules",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules,
-    description: "平台撮合、交易流程管理、履约协同和线下合同关系。",
+    description: "信息展示、预约提交、平台线下联系跟进和服务边界。",
   },
   {
     category: "公开侧",
-    title: "退款与售后规则",
+    title: "预约反馈与服务说明",
     slug: "refund-rules",
     formName: "refundRules",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.refundRules,
-    description: "退款条件、处理时限、争议材料和平台介入条件。",
+    description: "预约调整、预约关闭、资料反馈和客服支持边界。",
   },
   {
     category: "公开侧",
-    title: "商家入驻规则",
+    title: "服务商展示规则",
     slug: "merchant-rules",
     formName: "merchantOnboardingRules",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules,
-    description: "设计师、工长、装修公司、主材商准入与清退规则。",
+    description: "设计师、工长、装修公司、主材商资料展示、审核和持续准入规则。",
   },
   {
-    category: "商家侧",
-    title: "商家入驻协议",
+    category: "服务商侧",
+    title: "服务商资料授权与展示协议",
     slug: "merchant-onboarding-agreement",
     formName: "merchantOnboardingAgreement",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingAgreement,
-    description: "商家登录/入驻时勾选的协议正文，说明准入、账号安全、服务责任和争议解决。",
+    description: "服务商提交资料、授权展示、资料真实性、分角色要求和争议解决。",
   },
   {
-    category: "商家侧",
-    title: "商家平台规则",
+    category: "服务商侧",
+    title: "服务商展示平台规则",
     slug: "platform-rules",
     formName: "platformRules",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.platformRules,
-    description: "商家经营、内容发布、交易履约、投诉处理和违规约束。",
+    description: "服务商资料维护、内容展示、预约跟进边界和违规约束。",
   },
   {
-    category: "商家侧",
-    title: "商家隐私与数据处理条款",
+    category: "服务商侧",
+    title: "服务商资料与数据处理条款",
     slug: "privacy-data-processing",
     formName: "privacyDataProcessing",
     configKey: PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyDataProcessing,
-    description: "商家入驻和商家中心使用过程中的数据处理规则。",
+    description: "服务商资料收集、展示授权、预约联系和数据处理规则。",
   },
   {
     category: "公开侧",
@@ -177,6 +178,7 @@ interface ComplianceFormValues {
   companyRegisterAddress?: string;
   companyContactAddress?: string;
   icp?: string;
+  miniProgramRecordNumber?: string;
   securityBeian?: string;
   customerPhone?: string;
   customerEmail?: string;
@@ -917,9 +919,9 @@ const SystemSettings: React.FC = () => {
   );
 
   const legalVersionPreview =
-    readComplianceValue("legalVersion") || "v1.2.0-20260514";
+    readComplianceValue("legalVersion") || "v1.3.0-20260520";
   const legalEffectiveDatePreview =
-    readComplianceValue("legalEffectiveDate") || "2026-05-14";
+    readComplianceValue("legalEffectiveDate") || "2026-05-20";
   const customerPhonePreview =
     readComplianceValue("customerPhone") || "17764774797";
   const customerEmailPreview = readComplianceValue("customerEmail");
@@ -1021,6 +1023,9 @@ const SystemSettings: React.FC = () => {
         icp:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.icp] ||
           "陕ICP备2026004441号",
+        miniProgramRecordNumber:
+          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.miniProgramRecordNumber] ||
+          "",
         securityBeian:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.securityBeian] || "",
         customerPhone:
@@ -1059,10 +1064,10 @@ const SystemSettings: React.FC = () => {
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing] || "",
         legalVersion:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion] ||
-          "v1.2.0-20260514",
+          "v1.3.0-20260520",
         legalEffectiveDate:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate] ||
-          "2026-05-14",
+          "2026-05-20",
       });
       bizForm.setFieldsValue({
         surveyDepositDefault: Number(
@@ -1307,6 +1312,9 @@ const SystemSettings: React.FC = () => {
         readValue("companyContactAddress") || "",
       ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.icp]: String(readValue("icp") || ""),
+      [PUBLIC_COMPLIANCE_CONFIG_KEYS.miniProgramRecordNumber]: String(
+        readValue("miniProgramRecordNumber") || "",
+      ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.securityBeian]: String(
         readValue("securityBeian") || "",
       ),
@@ -1353,10 +1361,10 @@ const SystemSettings: React.FC = () => {
         normalizeLegalText(readValue("thirdPartySharing")),
       ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion]: String(
-        readValue("legalVersion") || "v1.0.0-20260430",
+        readValue("legalVersion") || "v1.3.0-20260520",
       ),
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate]: String(
-        readValue("legalEffectiveDate") || "2026-04-30",
+        readValue("legalEffectiveDate") || "2026-05-20",
       ),
     };
   };
@@ -1378,12 +1386,12 @@ const SystemSettings: React.FC = () => {
         [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion]: String(
           values.legalVersion ||
             complianceForm.getFieldValue("legalVersion") ||
-            "v1.0.0-20260430",
+            "v1.3.0-20260520",
         ),
         [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate]: String(
           values.legalEffectiveDate ||
             complianceForm.getFieldValue("legalEffectiveDate") ||
-            "2026-04-30",
+            "2026-05-20",
         ),
       });
       setReauthOpen(true);
@@ -2187,7 +2195,7 @@ const SystemSettings: React.FC = () => {
                 </Col>
               </Row>
               <Row gutter={16}>
-                <Col span={12}>
+                <Col span={8}>
                   <Form.Item
                     label="ICP备案号"
                     name="icp"
@@ -2196,7 +2204,16 @@ const SystemSettings: React.FC = () => {
                     <Input placeholder="陕ICP备2026004441号" />
                   </Form.Item>
                 </Col>
-                <Col span={12}>
+                <Col span={8}>
+                  <Form.Item
+                    label="小程序备案号"
+                    name="miniProgramRecordNumber"
+                    tooltip="小程序备案通过后补充，未取得时留空"
+                  >
+                    <Input placeholder="未取得时留空" />
+                  </Form.Item>
+                </Col>
+                <Col span={8}>
                   <Form.Item
                     label="公安备案号"
                     name="securityBeian"
@@ -2270,7 +2287,7 @@ const SystemSettings: React.FC = () => {
                 type="secondary"
                 className="system-settings-block-hint"
               >
-                当前分为公开侧 7 份文档和商家侧 3 份协议。不是重复文档，而是展示对象不同。
+                当前分为公开侧 7 份文档和服务商侧 3 份协议。不是重复文档，而是展示对象和使用场景不同。
               </Typography.Text>
               <Row gutter={16}>
                 <Col span={12}>
@@ -2279,7 +2296,7 @@ const SystemSettings: React.FC = () => {
                     name="legalVersion"
                     rules={[{ required: true, message: "请输入协议版本" }]}
                   >
-                    <Input placeholder="v1.0.0-20260430" />
+                    <Input placeholder="v1.3.0-20260520" />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
@@ -2288,7 +2305,7 @@ const SystemSettings: React.FC = () => {
                     name="legalEffectiveDate"
                     rules={[{ required: true, message: "请输入生效日期" }]}
                   >
-                    <Input placeholder="2026-04-30" />
+                    <Input placeholder="2026-05-20" />
                   </Form.Item>
                 </Col>
               </Row>
@@ -2304,7 +2321,7 @@ const SystemSettings: React.FC = () => {
                       <Space direction="vertical" size={2}>
                         <Space size={8}>
                           <Typography.Text strong>{row.title}</Typography.Text>
-                          <Tag color={row.category === "商家侧" ? "purple" : "blue"}>
+                          <Tag color={row.category === "服务商侧" ? "purple" : "blue"}>
                             {row.category}
                           </Tag>
                         </Space>
@@ -2319,7 +2336,7 @@ const SystemSettings: React.FC = () => {
                     dataIndex: "category",
                     width: 110,
                     render: (category: string) => (
-                      <Tag color={category === "商家侧" ? "purple" : "blue"}>
+                      <Tag color={category === "服务商侧" ? "purple" : "blue"}>
                         {category}
                       </Tag>
                     ),

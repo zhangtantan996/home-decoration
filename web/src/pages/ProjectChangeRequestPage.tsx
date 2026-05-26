@@ -12,6 +12,7 @@ import {
   type ChangeOrderDTO,
 } from '../services/projects';
 import { formatCurrency, formatDateTime } from '../utils/format';
+import { isSafeEvidenceUrl } from '../utils/safeEvidenceUrl';
 
 const CHANGE_STATUS_LABELS: Record<string, string> = {
   pending_user_confirm: '待你确认',
@@ -116,6 +117,7 @@ export function ProjectChangeRequestPage() {
             <div className="page-stack">
               {data.changeOrders.map((item) => {
                 const canRespond = item.status === 'pending_user_confirm';
+                const safeEvidenceUrls = item.evidenceUrls?.filter(isSafeEvidenceUrl) || [];
                 return (
                   <article className="card section-card" key={item.id} style={{ boxShadow: 'none', border: '1px solid rgba(15,23,42,0.08)' }}>
                     <div className="panel-head">
@@ -168,9 +170,9 @@ export function ProjectChangeRequestPage() {
                       </div>
                     ) : null}
 
-                    {item.evidenceUrls?.length ? (
+                    {safeEvidenceUrls.length ? (
                       <div className="chip-row" style={{ marginTop: 16 }}>
-                        {item.evidenceUrls.map((url, index) => (
+                        {safeEvidenceUrls.map((url, index) => (
                           <a className="status-chip" href={url} key={`${item.id}-evidence-${index}`} rel="noreferrer" target="_blank">
                             附件 {index + 1}
                           </a>

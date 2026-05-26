@@ -14,7 +14,6 @@ import { showErrorToast } from '@/utils/error';
 import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { normalizeProviderMediaUrl } from '@/utils/providerMedia';
 import { formatServerDateTime } from '@/utils/serverTime';
-import { navigateToSurveyDepositPaymentWithOptions } from '@/utils/surveyDepositPayment';
 
 import './index.scss';
 
@@ -47,27 +46,21 @@ const resolveStatusTone = (detail: BookingDetailResponse) => {
   return { label: '服务中', tone: 'active' as const };
 };
 
-const canPromptSurveyDepositPayment = (detail: BookingDetailResponse) => (
-  !detail.booking.surveyDepositPaid
-  && (detail.booking.status === 2 || (detail.surveyDepositPaymentOptions?.length ?? 0) > 0)
-  && (detail.statusGroup || detail.booking.statusGroup) !== 'cancelled'
-);
-
 const resolveSummaryTitle = (detail: BookingDetailResponse) => {
   const statusGroup = detail.statusGroup || detail.booking.statusGroup;
   if (statusGroup === 'pending_confirmation') {
-    return '量房服务待确认';
+    return '预约待平台联系';
   }
   if (statusGroup === 'pending_payment') {
-    return '量房费用待支付';
+    return '预约待平台联系';
   }
   if (statusGroup === 'completed') {
-    return '量房服务已完成';
+    return '预约已完成';
   }
   if (statusGroup === 'cancelled') {
-    return '预约服务已取消';
+    return '预约已取消';
   }
-  return '量房服务进行中';
+  return '预约跟进中';
 };
 
 const resolveProgressStepIndex = (detail: BookingDetailResponse) => {
@@ -85,12 +78,6 @@ const resolveProgressStepIndex = (detail: BookingDetailResponse) => {
 };
 
 const resolvePrimaryAction = (detail: BookingDetailResponse) => {
-  if (canPromptSurveyDepositPayment(detail)) {
-    return { label: '去支付', action: 'pay' as const };
-  }
-  if (detail.siteSurveySummary) {
-    return { label: '查看量房', action: 'site-survey' as const };
-  }
   if (detail.provider?.id) {
     return { label: '查看服务方', action: 'provider' as const };
   }
@@ -265,28 +252,6 @@ const BookingDetailPage: React.FC = () => {
     });
   }, [actionLoading, detail?.booking?.id, fetchDetail]);
 
-  const handleOpenSiteSurvey = useCallback(() => {
-    if (!detail?.booking?.id) {
-      return;
-    }
-    void Taro.navigateTo({ url: `/pages/booking/site-survey/index?id=${detail.booking.id}` });
-  }, [detail?.booking?.id]);
-
-  const handlePaySurveyDeposit = useCallback(async () => {
-    if (!detail?.booking?.id) {
-      return;
-    }
-    try {
-      setActionLoading(true);
-      await navigateToSurveyDepositPaymentWithOptions(
-        detail.booking.id,
-        detail.surveyDepositPaymentOptions,
-      );
-    } finally {
-      setActionLoading(false);
-    }
-  }, [detail?.booking?.id, detail?.surveyDepositPaymentOptions]);
-
   const handlePrimaryAction = useCallback(async () => {
     if (!detail) {
       return;
@@ -295,16 +260,8 @@ const BookingDetailPage: React.FC = () => {
     if (!action) {
       return;
     }
-    if (action.action === 'pay') {
-      await handlePaySurveyDeposit();
-      return;
-    }
-    if (action.action === 'site-survey') {
-      handleOpenSiteSurvey();
-      return;
-    }
     handleOpenProvider();
-  }, [detail, handleOpenProvider, handleOpenSiteSurvey, handlePaySurveyDeposit]);
+  }, [detail, handleOpenProvider]);
 
   const handleSecondaryAction = useCallback(async () => {
     if (!detail) {
@@ -375,7 +332,7 @@ const BookingDetailPage: React.FC = () => {
   ].filter(Boolean).join(' · ') || '服务信息待补充';
   const infoRows = [
     { label: '预约单号', value: `#${booking.id}` },
-    { label: '服务类型', value: '量房服务' },
+    { label: '服务类型', value: '轻预约' },
     { label: '房屋信息', value: [normalizeText(booking.houseLayout, ''), booking.area ? `${booking.area}㎡` : ''].filter(Boolean).join(' ｜ ') || '-' },
     { label: '联系电话', value: maskPhone(booking.phone) },
     { label: '备注', value: normalizeText(booking.notes) },
@@ -438,9 +395,9 @@ const BookingDetailPage: React.FC = () => {
           <View className="booking-detail-page__progress">
             {[
               { label: '提交预约', subLabel: formatServerDateTime(booking.createdAt, '--').replace(`${new Date().getFullYear()}-`, '') },
-              { label: '确认时间' },
-              { label: '上门量房' },
-              { label: '服务完成' },
+              { label: '平台联系' },
+              { label: '线下沟通' },
+              { label: '跟进完成' },
             ].map((step, index) => {
               const stepNo = index + 1;
               const state: BookingStepState =

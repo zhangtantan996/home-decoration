@@ -89,6 +89,21 @@ func IsLocalAssetPath(path string) bool {
 	return isLocalAssetPath(strings.TrimSpace(path))
 }
 
+func IsLocalAssetReference(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return false
+	}
+	if isLocalAssetPath(trimmed) {
+		return true
+	}
+	if strings.HasPrefix(trimmed, "http://") || strings.HasPrefix(trimmed, "https://") {
+		parsed, err := url.Parse(trimmed)
+		return err == nil && isLocalAssetPath(parsed.Path) && matchesConfiguredPublicAssetHost(parsed.Hostname(), config.GetConfig())
+	}
+	return false
+}
+
 var unsafeSchemes = []string{"javascript:", "data:", "vbscript:", "file:", "about:"}
 
 func isUnsafeOutboundScheme(raw string) bool {
@@ -99,6 +114,24 @@ func isUnsafeOutboundScheme(raw string) bool {
 		}
 	}
 	return false
+}
+
+func IsSafeEvidenceURL(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" || len([]rune(trimmed)) > 500 {
+		return false
+	}
+	if isUnsafeOutboundScheme(trimmed) {
+		return false
+	}
+	if IsLocalAssetReference(trimmed) {
+		return true
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		return false
+	}
+	return parsed.Scheme == "http" || parsed.Scheme == "https"
 }
 
 // NormalizeStoredImagePath converts a full image URL back to the stored relative
@@ -118,7 +151,7 @@ func NormalizeStoredImagePath(value string) string {
 		if err != nil {
 			return trimmed
 		}
-		if isLocalAssetPath(parsed.Path) {
+		if isLocalAssetPath(parsed.Path) && matchesConfiguredPublicAssetHost(parsed.Hostname(), config.GetConfig()) {
 			return parsed.Path
 		}
 	}

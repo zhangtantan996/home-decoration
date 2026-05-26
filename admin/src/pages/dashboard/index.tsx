@@ -239,7 +239,7 @@ const Dashboard: React.FC = () => {
                     </div>
                 </Card>
 
-                <Card className="hz-panel-card" title="供给治理分层">
+                <Card className="hz-panel-card" title="服务商治理分层">
                     <div className="hz-chart-wrap">
                         <Pie {...providerDistributionConfig} />
                     </div>

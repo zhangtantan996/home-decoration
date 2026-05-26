@@ -556,6 +556,9 @@ func (s *UserService) RefreshTinodeToken(user *model.User) (string, error) {
 // UpdateUser 更新用户信息
 func (s *UserService) UpdateUser(id uint64, nickname, avatar string, birthday *time.Time, bio string) error {
 	avatar = image.NormalizeStoredImagePath(avatar)
+	if avatar != "" && !image.IsLocalAssetReference(avatar) {
+		return errors.New("头像仅支持平台上传图片")
+	}
 	// Capture the current DB handle before spawning goroutines. Tests replace
 	// repository.DB, and reading it from an async goroutine can trigger races.
 	db := repository.DB

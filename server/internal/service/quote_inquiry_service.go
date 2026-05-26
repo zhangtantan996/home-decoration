@@ -23,13 +23,13 @@ import (
 type QuoteInquiryService struct{}
 
 const (
-	quoteInquiryUnknownCityCode  = "000000"
-	quoteInquiryAccessPurpose    = "quote_inquiry_access"
-	quoteInquiryAccessTokenTTL   = 24 * time.Hour
-	quoteInquiryDateFormat       = "2006-01-02 15:04:05"
-	quoteInquiryDateOnlyFormat   = "2006-01-02"
-	residentialAreaMin           = 10
-	residentialAreaMax           = 2000
+	quoteInquiryUnknownCityCode = "000000"
+	quoteInquiryAccessPurpose   = "quote_inquiry_access"
+	quoteInquiryAccessTokenTTL  = 24 * time.Hour
+	quoteInquiryDateFormat      = "2006-01-02 15:04:05"
+	quoteInquiryDateOnlyFormat  = "2006-01-02"
+	residentialAreaMin          = 10
+	residentialAreaMax          = 2000
 )
 
 type quoteInquiryAccessClaims struct {
@@ -58,45 +58,45 @@ var quoteInquiryCities = []quoteInquiryCityMeta{
 }
 
 var quoteInquiryRenovationTypeAliases = map[string]string{
-	"new":  "新房装修",
-	"新房":   "新房装修",
-	"新房装修": "新房装修",
-	"old":  "老房翻新",
-	"旧房翻新": "老房翻新",
-	"老房":   "老房翻新",
-	"老房翻新": "老房翻新",
+	"new":     "新房装修",
+	"新房":      "新房装修",
+	"新房装修":    "新房装修",
+	"old":     "老房翻新",
+	"旧房翻新":    "老房翻新",
+	"老房":      "老房翻新",
+	"老房翻新":    "老房翻新",
 	"partial": "局部改造",
-	"局改":     "局部改造",
-	"局部改造":  "局部改造",
+	"局改":      "局部改造",
+	"局部改造":    "局部改造",
 }
 
 var quoteInquiryStyleAliases = map[string]string{
-	"modern": "现代简约",
-	"现代":     "现代简约",
-	"现代简约":  "现代简约",
-	"nordic": "北欧",
-	"北欧":     "北欧",
-	"北欧风":    "北欧",
-	"chinese": "新中式",
-	"中式":      "新中式",
-	"新中式":    "新中式",
-	"light":  "轻奢",
-	"轻奢":     "轻奢",
-	"轻奢风":    "轻奢",
-	"cream":  "奶油风",
-	"奶油":     "奶油风",
-	"奶油风":    "奶油风",
-	"european": "欧式",
-	"欧式":       "欧式",
-	"american": "美式",
-	"美式":       "美式",
-	"japanese": "日式",
-	"日式":       "日式",
+	"modern":     "现代简约",
+	"现代":         "现代简约",
+	"现代简约":       "现代简约",
+	"nordic":     "北欧",
+	"北欧":         "北欧",
+	"北欧风":        "北欧",
+	"chinese":    "新中式",
+	"中式":         "新中式",
+	"新中式":        "新中式",
+	"light":      "轻奢",
+	"轻奢":         "轻奢",
+	"轻奢风":        "轻奢",
+	"cream":      "奶油风",
+	"奶油":         "奶油风",
+	"奶油风":        "奶油风",
+	"european":   "欧式",
+	"欧式":         "欧式",
+	"american":   "美式",
+	"美式":         "美式",
+	"japanese":   "日式",
+	"日式":         "日式",
 	"industrial": "工业风",
 	"工业":         "工业风",
-	"工业风":       "工业风",
-	"other": "其他",
-	"其他":     "其他",
+	"工业风":        "工业风",
+	"other":      "其他",
+	"其他":         "其他",
 }
 
 // CreateInquiryRequest 创建询价请求
@@ -503,12 +503,12 @@ func buildAdminQuoteInquiryDetail(inquiry *model.QuoteInquiry, result *QuoteResu
 	item := buildAdminQuoteInquiryListItem(inquiry)
 	return &AdminQuoteInquiryDetail{
 		AdminQuoteInquiryListItem: item,
-		Phone:                    strings.TrimSpace(inquiry.Phone),
-		Address:                  strings.TrimSpace(inquiry.Address),
-		Result:                   result,
-		EstimatedDurationDays:    inquiry.EstimatedDurationDays,
-		OpenID:                   strings.TrimSpace(inquiry.OpenID),
-		UpdatedAt:                inquiry.UpdatedAt.Format(quoteInquiryDateFormat),
+		Phone:                     strings.TrimSpace(inquiry.Phone),
+		Address:                   strings.TrimSpace(inquiry.Address),
+		Result:                    result,
+		EstimatedDurationDays:     inquiry.EstimatedDurationDays,
+		OpenID:                    strings.TrimSpace(inquiry.OpenID),
+		UpdatedAt:                 inquiry.UpdatedAt.Format(quoteInquiryDateFormat),
 	}
 }
 
@@ -619,6 +619,25 @@ func normalizeCreateInquiryRequest(req *CreateInquiryRequest) (*CreateInquiryReq
 	if address == "" {
 		return nil, "", errors.New("请输入房屋地址")
 	}
+	if len([]rune(address)) > 120 {
+		return nil, "", errors.New("地址不能超过 120 字符")
+	}
+	phone := strings.TrimSpace(req.Phone)
+	if phone != "" && !utils.ValidatePhone(phone) {
+		return nil, "", errors.New("请输入有效手机号")
+	}
+	houseLayout := strings.TrimSpace(req.HouseLayout)
+	if len([]rune(houseLayout)) > 30 {
+		return nil, "", errors.New("户型不能超过 30 字符")
+	}
+	budgetRange := strings.TrimSpace(req.BudgetRange)
+	if len([]rune(budgetRange)) > 40 {
+		return nil, "", errors.New("预算范围不能超过 40 字符")
+	}
+	source := strings.TrimSpace(req.Source)
+	if len([]rune(source)) > 40 || (source != "" && !regexp.MustCompile(`^[A-Za-z0-9_-]+$`).MatchString(source)) {
+		return nil, "", errors.New("来源参数无效")
+	}
 
 	renovationType, err := normalizeQuoteInquiryRenovationType(req.RenovationType)
 	if err != nil {
@@ -641,19 +660,22 @@ func normalizeCreateInquiryRequest(req *CreateInquiryRequest) (*CreateInquiryReq
 	if cityCode == "" {
 		cityCode = quoteInquiryUnknownCityCode
 	}
+	if cityName == "" && cityCode != quoteInquiryUnknownCityCode {
+		cityCode = quoteInquiryUnknownCityCode
+	}
 
 	return &CreateInquiryRequest{
 		UserID:         cloneUint64Pointer(req.UserID),
 		OpenID:         strings.TrimSpace(req.OpenID),
-		Phone:          strings.TrimSpace(req.Phone),
+		Phone:          phone,
 		Address:        address,
 		CityCode:       cityCode,
 		Area:           req.Area,
-		HouseLayout:    strings.TrimSpace(req.HouseLayout),
+		HouseLayout:    houseLayout,
 		RenovationType: renovationType,
 		Style:          style,
-		BudgetRange:    strings.TrimSpace(req.BudgetRange),
-		Source:         strings.TrimSpace(req.Source),
+		BudgetRange:    budgetRange,
+		Source:         source,
 	}, cityName, nil
 }
 

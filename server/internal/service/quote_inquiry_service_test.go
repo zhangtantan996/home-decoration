@@ -121,6 +121,25 @@ func TestQuoteInquiryService_Calculate(t *testing.T) {
 	}
 }
 
+func TestQuoteInquiryServiceCreateInquiryRejectsInvalidOptionalPhone(t *testing.T) {
+	setupQuoteInquiryServiceTestDB(t)
+	setQuoteInquiryJWTSecret(t, "quote-inquiry-secret-for-tests")
+
+	svc := &QuoteInquiryService{}
+	if _, _, err := svc.CreateInquiry(&CreateInquiryRequest{
+		Phone:          "not-a-phone",
+		Address:        "西安市雁塔区科技路 88 号",
+		CityCode:       "610100",
+		Area:           90,
+		HouseLayout:    "三室两厅一卫",
+		RenovationType: "新房装修",
+		Style:          "现代简约",
+		Source:         "mini",
+	}); err == nil {
+		t.Fatalf("expected invalid optional phone to be rejected")
+	}
+}
+
 func TestQuoteInquiryService_CreateInquiry_NormalizesAndEncrypts(t *testing.T) {
 	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
 	db := setupQuoteInquiryServiceTestDB(t)
@@ -292,23 +311,23 @@ func TestQuoteInquiryService_AdminListInquiries_Filters(t *testing.T) {
 	newTime := time.Date(2026, 4, 18, 10, 0, 0, 0, time.Local)
 
 	if err := db.Model(&model.QuoteInquiry{}).Where("id = ?", first.ID).Updates(map[string]any{
-		"created_at":         oldTime,
-		"updated_at":         oldTime,
-		"conversion_status":  "pending",
+		"created_at":        oldTime,
+		"updated_at":        oldTime,
+		"conversion_status": "pending",
 	}).Error; err != nil {
 		t.Fatalf("update first inquiry: %v", err)
 	}
 	if err := db.Model(&model.QuoteInquiry{}).Where("id = ?", second.ID).Updates(map[string]any{
-		"created_at":         midTime,
-		"updated_at":         midTime,
-		"conversion_status":  "converted",
+		"created_at":        midTime,
+		"updated_at":        midTime,
+		"conversion_status": "converted",
 	}).Error; err != nil {
 		t.Fatalf("update second inquiry: %v", err)
 	}
 	if err := db.Model(&model.QuoteInquiry{}).Where("id = ?", third.ID).Updates(map[string]any{
-		"created_at":         newTime,
-		"updated_at":         newTime,
-		"conversion_status":  "pending",
+		"created_at":        newTime,
+		"updated_at":        newTime,
+		"conversion_status": "pending",
 	}).Error; err != nil {
 		t.Fatalf("update third inquiry: %v", err)
 	}

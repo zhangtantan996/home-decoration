@@ -578,8 +578,8 @@ const BookingCreatePage: React.FC = () => {
             </View>
             <Text className="booking-create-page__field-hint">
               {phoneEditable
-                ? "用于接收商家确认、量房费支付和后续状态提醒。"
-                : "将使用当前登录手机号接收预约确认和支付提醒。"}
+                ? "用于接收平台联系、预约确认和后续跟进提醒。"
+                : "将使用当前登录手机号接收预约确认和后续跟进提醒。"}
             </Text>
           </View>
 
@@ -598,7 +598,7 @@ const BookingCreatePage: React.FC = () => {
               </Text>
             </View>
             <Text className="booking-create-page__field-hint">
-              不填也可以提交，后续可以在沟通或量房阶段继续补充。
+              不填也可以提交，后续可以在平台联系跟进时继续补充。
             </Text>
           </View>
         </View>

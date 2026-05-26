@@ -4,6 +4,7 @@ import (
 	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/utils"
 	"log"
 	"strconv"
 	"strings"
@@ -37,15 +38,31 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	if !isLightBookingProviderTypeAllowed(req.ProviderType) {
 		return nil, errors.New("当前仅支持预约设计师和装修公司")
 	}
+	normalizeCreateBookingRequest(req)
 	// 输入校验
-	addressLen := len(strings.TrimSpace(req.Address))
+	addressLen := len([]rune(req.Address))
 	if addressLen < 5 || addressLen > 100 {
 		return nil, errors.New("地址长度需在 5-100 字符之间")
 	}
 	if req.Area < residentialAreaMin || req.Area > residentialAreaMax {
 		return nil, errors.New("房屋面积需在 10-2000 ㎡ 之间")
 	}
-	if len(req.Notes) > 500 {
+	if !utils.ValidatePhone(req.Phone) {
+		return nil, errors.New("请输入有效手机号")
+	}
+	if !isValidPreferredDateText(req.PreferredDate) {
+		return nil, errors.New("请选择有效预约时间")
+	}
+	if len([]rune(req.RenovationType)) > 30 {
+		return nil, errors.New("装修类型不能超过 30 字符")
+	}
+	if len([]rune(req.BudgetRange)) > 40 {
+		return nil, errors.New("预算范围不能超过 40 字符")
+	}
+	if len([]rune(req.HouseLayout)) > 30 {
+		return nil, errors.New("户型不能超过 30 字符")
+	}
+	if len([]rune(req.Notes)) > 500 {
 		return nil, errors.New("补充说明不能超过 500 字符")
 	}
 
@@ -115,6 +132,36 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	}
 
 	return booking, nil
+}
+
+func normalizeCreateBookingRequest(req *CreateBookingRequest) {
+	if req == nil {
+		return
+	}
+	req.Address = strings.TrimSpace(req.Address)
+	req.RenovationType = strings.TrimSpace(req.RenovationType)
+	req.BudgetRange = strings.TrimSpace(req.BudgetRange)
+	req.PreferredDate = strings.TrimSpace(req.PreferredDate)
+	req.Phone = strings.TrimSpace(req.Phone)
+	req.Notes = strings.TrimSpace(req.Notes)
+	req.HouseLayout = strings.TrimSpace(req.HouseLayout)
+}
+
+func isValidPreferredDateText(value string) bool {
+	trimmed := strings.TrimSpace(value)
+	n := len([]rune(trimmed))
+	if n < 2 || n > 40 {
+		return false
+	}
+	if strings.ContainsAny(trimmed, "<>\x00\r\n") {
+		return false
+	}
+	for _, r := range trimmed {
+		if r >= '0' && r <= '9' {
+			return true
+		}
+	}
+	return false
 }
 
 func normalizeLightBookingProviderType(value string) string {

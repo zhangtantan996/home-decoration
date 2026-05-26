@@ -2,12 +2,12 @@ import fallbackSiteConfig from '../../shared/legal/site-config-fallback.json';
 
 const publicLegalSlugSet = new Set(fallbackSiteConfig.publicLegalSlugs);
 const legalLinkItems = [
-  { slug: 'merchant-rules', title: '商家入驻规则', subtitle: '对外公开的准入要求' },
+  { slug: 'merchant-rules', title: '服务商展示规则', subtitle: '平台维护展示资料的基本要求' },
   { slug: 'user-agreement', title: '用户协议', subtitle: '平台使用与服务边界' },
   { slug: 'privacy-policy', title: '隐私政策', subtitle: '信息处理与权利说明' },
   { slug: 'personal-info-collection-list', title: '个人信息收集清单', subtitle: '字段级收集范围与用途说明' },
-  { slug: 'transaction-rules', title: '平台交易规则', subtitle: '交易流程与责任边界' },
-  { slug: 'refund-rules', title: '退款与售后', subtitle: '退款、售后与争议处理' },
+  { slug: 'transaction-rules', title: '轻预约服务规则', subtitle: '预约展示与线下跟进边界' },
+  { slug: 'refund-rules', title: '预约反馈说明', subtitle: '预约调整、取消与反馈处理' },
   { slug: 'third-party-sharing', title: '第三方共享清单', subtitle: '已启用共享类型说明' },
 ];
 

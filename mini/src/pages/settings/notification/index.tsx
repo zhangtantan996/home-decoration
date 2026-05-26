@@ -26,12 +26,12 @@ export default function NotificationSettingsPage() {
               onChange={(value) => void savePatch({ notifySystem: value })}
             />
             <SettingsSwitchRow
-              label="项目进度提醒"
+              label="进度记录提醒"
               checked={settings.notifyProject}
               onChange={(value) => void savePatch({ notifyProject: value })}
             />
             <SettingsSwitchRow
-              label="订单与支付提醒"
+              label="预约跟进提醒"
               checked={settings.notifyPayment}
               onChange={(value) => void savePatch({ notifyPayment: value })}
             />

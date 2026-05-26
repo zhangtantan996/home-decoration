@@ -28,7 +28,7 @@ func loadEmbeddedPublicSiteConfig() PublicSiteConfig {
 func embeddedPublicLegalVersion() string {
 	cfg := loadEmbeddedPublicSiteConfig()
 	if strings.TrimSpace(cfg.LegalVersion) == "" {
-		return "v1.2.0-20260514"
+		return "v1.3.0-20260520"
 	}
 	return cfg.LegalVersion
 }
@@ -36,7 +36,7 @@ func embeddedPublicLegalVersion() string {
 func embeddedPublicLegalEffectiveDate() string {
 	cfg := loadEmbeddedPublicSiteConfig()
 	if strings.TrimSpace(cfg.LegalEffectiveDate) == "" {
-		return "2026-05-14"
+		return "2026-05-20"
 	}
 	return cfg.LegalEffectiveDate
 }

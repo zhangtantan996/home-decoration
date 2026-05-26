@@ -215,6 +215,45 @@ func TestInitDefaultConfigsMigratesLegacyPublicLegalDefaults(t *testing.T) {
 	}
 }
 
+func TestInitDefaultConfigsMigratesV12ManagedPublicLegalDefaults(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	legacyValues := []model.SystemConfig{
+		{Key: model.ConfigKeyPublicUserAgreement, Value: "v1.2 managed user agreement"},
+		{Key: model.ConfigKeyPublicTransactionRules, Value: "v1.2 managed transaction rules"},
+		{Key: model.ConfigKeyPublicRefundRules, Value: "v1.2 managed refund rules"},
+		{Key: model.ConfigKeyPublicLegalVersion, Value: "v1.2.0-20260514"},
+		{Key: model.ConfigKeyPublicLegalEffectiveDate, Value: "2026-05-14"},
+	}
+	if err := repository.DB.Create(&legacyValues).Error; err != nil {
+		t.Fatalf("seed v1.2 legal configs: %v", err)
+	}
+
+	if err := svc.InitDefaultConfigs(); err != nil {
+		t.Fatalf("init default configs: %v", err)
+	}
+
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{model.ConfigKeyPublicUserAgreement, defaultPublicUserAgreement()},
+		{model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()},
+		{model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()},
+		{model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion()},
+		{model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate()},
+	} {
+		var cfg model.SystemConfig
+		if err := repository.DB.Where("key = ?", tc.key).First(&cfg).Error; err != nil {
+			t.Fatalf("load migrated config %s: %v", tc.key, err)
+		}
+		if cfg.Value != tc.want {
+			t.Fatalf("config %s not migrated, got %q want %q", tc.key, cfg.Value, tc.want)
+		}
+	}
+}
+
 func TestInitDefaultConfigsPreservesCustomizedPublicLegalContent(t *testing.T) {
 	setupConfigServiceTestDB(t)
 	svc := &ConfigService{}

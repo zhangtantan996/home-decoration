@@ -219,7 +219,7 @@ func TestMaterialShopUpdateProduct_PersistsDescriptionAndStatus(t *testing.T) {
 		t.Fatalf("create shop: %v", err)
 	}
 
-	payload := `{"name":"新商品","unit":"套","description":"新描述","price":199,"images":["https://img.example.com/new.jpg"],"status":0}`
+	payload := `{"name":"新商品","unit":"套","description":"新描述","price":199,"images":["/uploads/material-products/new.jpg"],"status":0}`
 	w := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(w)
 	c.Set("materialShopId", uint64(88))

@@ -35,26 +35,6 @@ export default {
         'create/index',
         'list/index',
         'detail/index',
-        'site-survey/index',
-        'design-quote/index',
-        'design-deliverable/index',
-        'construction-subject-select/index',
-        'construction-confirm-waiting/index',
-      ],
-    },
-    {
-      root: 'pages/projects',
-      pages: [
-        'detail/index',
-        'completion/index',
-        'contract/index',
-        'design-deliverable/index',
-        'change-request/index',
-        'pause/index',
-        'dispute/index',
-        'closure/index',
-        'bill/index',
-        'inspection/index',
       ],
     },
     {
@@ -70,24 +50,6 @@ export default {
         'privacy/index',
         'general/index',
         'feedback/index',
-      ],
-    },
-    {
-      root: 'pages/orders',
-      pages: [
-        'pending/index',
-        'list/index',
-        'detail/index',
-        'survey-deposit/index',
-      ],
-    },
-    {
-      root: 'pages/demands',
-      pages: [
-        'list/index',
-        'create/index',
-        'detail/index',
-        'compare/index',
       ],
     },
     {
@@ -114,21 +76,6 @@ export default {
       ],
     },
     {
-      root: 'pages/after-sales',
-      pages: [
-        'list/index',
-        'create/index',
-        'detail/index',
-      ],
-    },
-    {
-      root: 'pages/complaints',
-      pages: [
-        'list/index',
-        'create/index',
-      ],
-    },
-    {
       root: 'pages/legal',
       pages: [
         'user-agreement/index',
@@ -143,61 +90,6 @@ export default {
       root: 'pages/material-shops',
       pages: [
         'detail/index',
-      ],
-    },
-    {
-      root: 'pages/proposals',
-      pages: [
-        'list/index',
-        'detail/index',
-      ],
-    },
-    {
-      root: 'pages/payments',
-      pages: [
-        'webview/index',
-      ],
-    },
-    {
-      root: 'pages/bookings',
-      pages: [
-        'refund/index',
-      ],
-    },
-    {
-      root: 'pages/refunds',
-      pages: [
-        'list/index',
-      ],
-    },
-    {
-      root: 'pages/quote',
-      pages: [
-        'estimate/index',
-      ],
-    },
-    {
-      root: 'pages/quote-tasks',
-      pages: [
-        'detail/index',
-      ],
-    },
-    {
-      root: 'pages/quote-pk',
-      pages: [
-        'comparison/index',
-      ],
-    },
-    {
-      root: 'pages/identity',
-      pages: [
-        'apply/index',
-      ],
-    },
-    {
-      root: 'pages/chat',
-      pages: [
-        'index',
       ],
     },
     {

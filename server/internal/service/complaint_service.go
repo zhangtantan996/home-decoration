@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"strings"
 	"time"
 
 	"home-decoration-server/internal/model"
@@ -33,19 +34,59 @@ func marshalStringList(items []string) string {
 	return string(payload)
 }
 
+func marshalSafeEvidenceURLList(items []string) (string, error) {
+	if len(items) == 0 {
+		return "[]", nil
+	}
+	if len(items) > 10 {
+		return "", errors.New("证据最多支持 10 条")
+	}
+	result := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		value := imgutil.NormalizeStoredImagePath(strings.TrimSpace(item))
+		if value == "" {
+			continue
+		}
+		if !imgutil.IsSafeEvidenceURL(value) {
+			return "", errors.New("证据链接格式不正确")
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	payload, err := json.Marshal(result)
+	if err != nil {
+		return "", err
+	}
+	return string(payload), nil
+}
+
 func (s *ComplaintService) CreateComplaint(userID uint64, input *CreateComplaintInput) (*model.Complaint, error) {
 	if input.ProjectID == 0 {
 		return nil, errors.New("缺少项目ID")
 	}
-	if input.Title == "" {
+	input.Category = strings.TrimSpace(input.Category)
+	if !isAllowedComplaintCategory(input.Category) {
+		return nil, errors.New("请选择有效投诉类型")
+	}
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Title == "" || len([]rune(input.Title)) > 80 {
 		return nil, errors.New("投诉标题不能为空")
 	}
-	if input.Description == "" {
+	input.Description = strings.TrimSpace(input.Description)
+	if input.Description == "" || len([]rune(input.Description)) > 2000 {
 		return nil, errors.New("投诉说明不能为空")
+	}
+	evidenceJSON, err := marshalSafeEvidenceURLList(input.EvidenceURLs)
+	if err != nil {
+		return nil, err
 	}
 
 	var complaint *model.Complaint
-	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
 		var project model.Project
 		if err := tx.First(&project, input.ProjectID).Error; err != nil {
 			return errors.New("项目不存在")
@@ -61,7 +102,7 @@ func (s *ComplaintService) CreateComplaint(userID uint64, input *CreateComplaint
 			Category:         input.Category,
 			Title:            input.Title,
 			Description:      input.Description,
-			EvidenceURLs:     marshalStringList(input.EvidenceURLs),
+			EvidenceURLs:     evidenceJSON,
 			Status:           "submitted",
 			FreezePayment:    false,
 			MerchantResponse: "",
@@ -75,6 +116,25 @@ func (s *ComplaintService) CreateComplaint(userID uint64, input *CreateComplaint
 		return nil, err
 	}
 	return complaint, nil
+}
+
+var allowedComplaintCategories = map[string]struct{}{
+	"quality":         {},
+	"delay":           {},
+	"service":         {},
+	"payment":         {},
+	"other":           {},
+	"工程质量":            {},
+	"进度延期":            {},
+	"服务态度":            {},
+	"费用争议":            {},
+	"其他":              {},
+	"project_dispute": {},
+}
+
+func isAllowedComplaintCategory(value string) bool {
+	_, ok := allowedComplaintCategories[strings.TrimSpace(value)]
+	return ok
 }
 
 func (s *ComplaintService) ListUserComplaints(userID uint64) ([]model.Complaint, error) {

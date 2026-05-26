@@ -20,6 +20,12 @@ interface Arbitration {
     updatedAt?: string;
 }
 
+const isSafeEvidenceURL = (value: string) => {
+    const trimmed = value.trim();
+    if (!trimmed || /^(javascript|data|vbscript|file|about):/i.test(trimmed)) return false;
+    return trimmed.startsWith('/uploads/') || trimmed.startsWith('/static/') || /^https?:\/\//i.test(trimmed);
+};
+
 const ArbitrationCenter: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [arbitrations, setArbitrations] = useState<Arbitration[]>([]);
@@ -205,7 +211,7 @@ const ArbitrationCenter: React.FC = () => {
                                     } else if (Array.isArray(currentItem.evidence)) {
                                         evidenceList = currentItem.evidence;
                                     }
-                                    return evidenceList.map((url, index) => (
+                                    return evidenceList.filter(isSafeEvidenceURL).map((url, index) => (
                                         <a key={index} href={url} target="_blank" rel="noopener noreferrer">
                                             证据 {index + 1}
                                         </a>

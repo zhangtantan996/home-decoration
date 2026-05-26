@@ -20,11 +20,11 @@ export default function PrivacySettingsPage() {
           onClick={() => Taro.navigateTo({ url: '/pages/legal/personal-info-collection-list/index' })}
         />
         <SettingsRow
-          label="平台交易规则"
+          label="轻预约服务规则"
           onClick={() => Taro.navigateTo({ url: '/pages/legal/transaction-rules/index' })}
         />
         <SettingsRow
-          label="退款与售后规则"
+          label="预约反馈说明"
           onClick={() => Taro.navigateTo({ url: '/pages/legal/refund-rules/index' })}
         />
         <SettingsRow
