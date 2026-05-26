@@ -1,5 +1,8 @@
 name: Rollback Production
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   workflow_dispatch:
     inputs:
@@ -54,7 +57,7 @@ jobs:
           esac
 
       - name: Start SSH agent
-        uses: webfactory/ssh-agent@v0.9.0
+        uses: webfactory/ssh-agent@v0.10.0
         with:
           ssh-private-key: ${{ secrets.PROD_SSH_KEY }}
 
@@ -80,7 +83,7 @@ jobs:
           chmod 600 ~/.ssh/known_hosts
 
       - name: Checkout rollback tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ inputs.tag }}

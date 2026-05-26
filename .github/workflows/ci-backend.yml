@@ -1,14 +1,19 @@
 name: Backend CI
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 on:
   push:
     branches: [ "dev" ]
     paths:
       - 'server/**'
+      - '.github/workflows/ci-backend.yml'
   pull_request:
     branches: [ "dev" ]
     paths:
       - 'server/**'
+      - '.github/workflows/ci-backend.yml'
 
 jobs:
   build-and-test:
@@ -43,12 +48,12 @@ jobs:
         working-directory: server
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
-        go-version: '1.21'
+        go-version: '1.23.0'
         cache-dependency-path: server/go.sum
 
     - name: Ensure Server Directory Exists
