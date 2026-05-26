@@ -1,182 +1,66 @@
 # CODEX_WORKFLOW.md
 
-本仓库默认使用 **原生 Codex** 进行开发工作。
+本仓库不再以“原生 Codex 文档流”作为主工作流。当前默认工作流已经收敛为：
 
-目标不是增加流程负担，而是保证：
-- 约束清楚
-- 执行稳定
-- 验证真实
-- 汇报简洁
+```text
+Aegis = 执行纪律
+Trellis = 任务与项目记忆
+Codex = 实现宿主
+/goal = 长任务执行器
+```
 
----
+详细使用方式见：
 
-## 0. 文档定位
+- `docs/AI_WORKFLOW_OPERATION_GUIDE.md`
+- `.trellis/spec/ai-workflow-routing.md`
+- `.trellis/spec/home-decoration-baseline.md`
+- `docs/CODE_REVIEW_SOP.md`
 
-- 根目录 `AGENTS.md` 是仓库级硬规则，优先级高于本文件。
-- `docs/AGENT_EXECUTION_RULES.md` 只是对根 `AGENTS.md` 中 12 条执行纪律的展开解释，不是独立规则源。
-- 本文件只说明默认工作流与执行习惯，不覆盖 `AGENTS.md` 里的业务基线、硬约束、验证规则和安全边界。
-- 如果本文件与真实代码、脚本、配置冲突，以当前仓库可执行事实和根 `AGENTS.md` 为准。
+## 1. 默认流程
 
----
+普通任务：
 
-## 1. 默认执行方式
+```text
+用户描述功能或 bug -> Aegis 执行纪律 -> Codex 实现 -> 最小验证 -> patch P0/P1 复审 -> 收口
+```
 
-- 默认使用原生 Codex 进行读取、规划、编辑、测试与总结。
-- 不依赖额外 wrapper 或外部编排作为唯一执行路径。
-- 当任务范围清楚且风险可控时，不要因为非关键工具问题阻塞实现。
-- 旧的 Claude / OpenClaw / `ops/` 控制面文件，都不再是默认权威入口。
-- 只有在用户明确要求维护 legacy 控制面时，才回头处理这些遗留文件。
+长任务：
 
----
+```text
+Trellis brainstorm/start -> PRD -> task context -> implement/check -> finish-work
+```
 
-## 2. 任务分类
+超长任务：
 
-### A. Read / Investigate
-适用于：
-- 只读分析
-- 排查现状
-- 阅读文档
-- 判断方案
+```text
+Trellis PRD/task context -> issues/*.csv -> /goal @issues/*.csv -> final REVIEW
+```
 
-默认动作：
-- 读取必要文档和目标文件
-- 做聚焦分析
-- 不修改代码
+## 2. 什么时候停下来问
 
-### B. Direct Fix
-适用于：
-- 小到中等范围改动
-- 单点或少量文件修复
-- 已知目标、边界清楚
+遇到以下情况先停下来确认：
 
-默认动作：
-- 快速收敛上下文
-- 直接修改
-- 跑最小必要验证
-- 汇报改动与风险
+- 需求边界不清，且合理假设会影响实现方向。
+- 涉及 `auth`、`identity`、`payment/escrow`、`deploy`、`rbac`、`sms`、`legal/privacy`。
+- 需要破坏性 schema 变更、生产影响动作、真实账号或外部服务写操作。
+- 需要 `git push`。
+- 当前改动会覆盖或回退用户已有未提交变更。
 
-### C. Structured Change
-适用于：
-- 多文件改动
-- 架构调整
-- 路由拆分
-- schema / migration 改动
-- 部署 / 配置改动
-- 跨端联动任务
+## 3. 完成标准
 
-默认动作：
-1. 先看 source-of-truth 文档
-2. 说明目标 / 范围 / 不改什么
-3. 给简短计划
-4. 再实现
-5. 跑验证
-6. 输出变更总结
+任务完成前必须满足：
 
----
+- 最小必要验证已执行，或明确说明未执行原因。
+- 当前 patch 已按 P0/P1 风险复审。
+- 没有未确认的高风险边界。
+- 若验证或复审失败，继续修复并重跑最小验证，直到收口或进入需要用户确认的边界。
 
-## 3. Source of truth
+## 4. 文档职责
 
-按以下顺序阅读：
-1. `docs/CLAUDE_DEV_GUIDE.md`
-2. `docs/TROUBLESHOOTING.md`
-3. `docs/CODEX_WORKFLOW.md`
-4. `docs/SECURITY.md`
+- `AGENTS.md`：短入口规则、安全边界、项目硬约束。
+- `.trellis/spec/`：项目事实、工程基线、AI 工作流路由、可复用经验。
+- `.trellis/tasks/`：长任务 PRD、任务状态、检查记录。
+- `.trellis/workspace/`：个人工作日志和可恢复上下文。
+- `docs/CODE_REVIEW_SOP.md`：项目专属代码审查风险表。
 
-如果文档冲突，以根目录 `AGENTS.md` 和 `docs/CLAUDE_DEV_GUIDE.md` 为准。
-
-不要过度阅读。能明确改哪些文件后就停止扩展搜索。
-如需理解根 `AGENTS.md` 中 12 条执行纪律的展开说明，再额外参考 `docs/AGENT_EXECUTION_RULES.md`。
-
----
-
-## 4. 默认开发顺序
-
-除非用户明确说“直接上 / 不用计划 / 先做再说”，否则按这个顺序：
-
-1. 判断任务规模与风险
-2. 复述：目标 / 范围 / 不改什么
-3. 给简短计划
-4. 实现
-5. 验证
-6. 汇报
-
----
-
-## 5. 编辑原则
-
-- 优先做最小正确修改
-- 不改无关代码
-- 不顺手做无关重构
-- 复用现有模式
-- 先读再写，证据优先，不靠模型脑补缺失事实
-- 不默认为了“兼容”加入补丁式兜底、降级分支或 just-in-case 复杂度
-- 注释只在意图不明显时补充
-
----
-
-## 6. 子代理与 skill 使用
-
-- 子代理用于并行处理有边界的子问题，不用于把整个任务模糊外包出去。
-- 主代理负责范围判断、最终决策、集成、验证和对用户汇报。
-- 默认先考虑只读 `explorer`；写入型 `worker` 只在 owned paths 和验证目标明确时使用。
-- 前端相关任务的默认路由：
-  - `ui-orchestrator`：用户不知道怎么描述 UI，或需要先把页面方向聊清楚
-  - `frontend-design` / `frontend-skill`：品牌、landing、营销、下载、强视觉页面
-  - `ui-ux-pro-max`：`admin` / `merchant` / dashboard / form / table / detail / approval 等状态型页面
-  - `build-web-apps:shadcn`：仅用于目标页面本身已是 shadcn 体系；不要默认往 Ant Design 页面上套
-  - 完整前端 UI skill 路由矩阵、sidecar 规则与 SwiftUI 映射，见 `docs/FRONTEND_UI_SKILL_ROUTING.md`
-- `admin`、`merchant`、`web` 按应用面拆分；`mobile`、`mini` 视作独立交付面；`deploy` 保持单 owner。
-
----
-
-## 7. 验证原则
-
-验证必须基于需求，而不是只基于实现细节。
-
-至少考虑：
-- Happy path
-- 关键边界条件
-- 错误处理
-- 状态流转（如有状态机）
-
-要求：
-- 先跑最小必要验证
-- 每一步都设检查点，失败就停下来解释，不继续盲改
-- 再视情况扩大
-- 不要在没有说明验证范围的情况下宣称“完成”
-- 验证失败时，要明确写出失败现象、复现方式、初步原因和下一步处理策略
-
----
-
-## 8. 前端 UI / 布局要求
-
-工程约束先看 `docs/FRONTEND_ENGINEERING_GUIDE.md`，默认必须使用 design tokens、既有组件入口和 `check:frontend-style` 门禁。
-
-所有用户可见页面都必须注意：
-- 信息层级清楚
-- 移动端优先，兼容桌面
-- 不出现错位、溢出、卡片挤压
-- 必须考虑空态 / 错误态 / 加载态
-- 视觉统一，避免页面像拼装出来的
-
----
-
-## 9. 默认确认边界
-
-- 默认可直接做：读文件、搜索、低风险代码修改、文档更新、本地 lint / build / test、非破坏性本地 Git 检查。
-- 需要先确认：破坏性删除/回滚/reset、加依赖、破坏性 schema 变更、`git push`、生产影响操作、真实账号/真实数据/外部服务写操作。
-- 如果出现预期外的用户改动或工作区脏变更，先停下来确认，不要擅自覆盖。
-
----
-
-## 10. 汇报格式
-
-默认按以下结构简要汇报：
-- 当前状态判断
-- 已完成项
-- 未完成项（如有）
-- 改动文件
-- 验证结果
-- 风险 / 下一步（仅在有必要时写）
-
-保持简洁，优先讲结果，不堆日志。
+不要继续把新流程细则堆进 `AGENTS.md`。需要长期沉淀的规则优先进入 `.trellis/spec/`。

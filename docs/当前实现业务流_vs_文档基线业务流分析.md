@@ -141,7 +141,7 @@
 
 从 `admin/src/router.tsx` 可见，当前管理端已形成强治理导向：
 
-- 供给治理：
+- 服务商治理：
   - `providers/*`
   - `materials/*`
   - `audits/*`
