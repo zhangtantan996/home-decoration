@@ -56,6 +56,12 @@ func AdminCreateProject(c *gin.Context) {
 	if strings.TrimSpace(req.MaterialMethod) == "" {
 		req.MaterialMethod = "platform"
 	}
+	coverImage, err := requireNonEmptyLocalAssetReference("项目背景图", req.CoverImage)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	req.CoverImage = coverImage
 
 	source := "manual"
 	var bookingMetaID uint64
@@ -284,6 +290,12 @@ func AdminUpdateProject(c *gin.Context) {
 		response.BadRequest(c, "参数错误")
 		return
 	}
+	coverImage, err := requireNonEmptyLocalAssetReference("项目背景图", req.CoverImage)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	req.CoverImage = coverImage
 
 	before, err := adminProjectService.GetProjectDetail(projectID)
 	if err != nil {

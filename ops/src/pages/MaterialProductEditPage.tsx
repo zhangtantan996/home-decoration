@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MediaGalleryInput from '../components/MediaGalleryInput';
 import MediaPathInput from '../components/MediaPathInput';
+import RequiredLabel from '../components/RequiredLabel';
 import {
   createMaterialProduct,
   listMaterialProducts,
@@ -115,19 +116,19 @@ const MaterialProductEditPage = () => {
         <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void handleSave()}>保存商品</Button>
       </div>
 
-      <Form form={form} layout="vertical" className="ops-product-edit-form">
+      <Form form={form} layout="vertical" className="ops-product-edit-form" requiredMark={false}>
         <div className="ops-product-edit-layout">
           <Spin spinning={loading}>
             <Card className="ops-edit-card" title="商品信息">
               <div className="ops-form-grid">
-                <Form.Item name="name" label="商品名称" rules={[{ required: true, message: '请输入商品名称' }, { max: MAX_PRODUCT_NAME_LENGTH, message: `商品名称最多 ${MAX_PRODUCT_NAME_LENGTH} 个字` }]}>
+                <Form.Item name="name" label={<RequiredLabel>商品名称</RequiredLabel>} rules={[{ required: true, message: '请输入商品名称' }, { max: MAX_PRODUCT_NAME_LENGTH, message: `商品名称最多 ${MAX_PRODUCT_NAME_LENGTH} 个字` }]}>
                   <Input maxLength={MAX_PRODUCT_NAME_LENGTH} showCount placeholder="例如：岩板台面 / 瓷砖套餐" />
                 </Form.Item>
-                <Form.Item name="unit" label="销售单位" rules={[{ required: true, message: '请输入销售单位' }, { max: MAX_PRODUCT_UNIT_LENGTH, message: `单位最多 ${MAX_PRODUCT_UNIT_LENGTH} 个字` }]}>
+                <Form.Item name="unit" label={<RequiredLabel>销售单位</RequiredLabel>} rules={[{ required: true, message: '请输入销售单位' }, { max: MAX_PRODUCT_UNIT_LENGTH, message: `单位最多 ${MAX_PRODUCT_UNIT_LENGTH} 个字` }]}>
                   <Input maxLength={MAX_PRODUCT_UNIT_LENGTH} showCount placeholder="件 / 套 / ㎡" />
                 </Form.Item>
-                <Form.Item name="price" label="商品价格" rules={[{ required: true, message: '请输入价格' }, { type: 'number', min: 0, max: MAX_PRODUCT_PRICE, message: `价格需在 0-${MAX_PRODUCT_PRICE} 之间` }]}>
-                  <InputNumber min={0} max={MAX_PRODUCT_PRICE} precision={2} addonAfter="元" className="ops-form-wide" />
+                <Form.Item name="price" label={<RequiredLabel>商品价格</RequiredLabel>} rules={[{ required: true, message: '请输入价格' }, { type: 'number', min: 0.01, max: MAX_PRODUCT_PRICE, message: `价格需在 0.01-${MAX_PRODUCT_PRICE} 之间` }]}>
+                  <InputNumber min={0.01} max={MAX_PRODUCT_PRICE} precision={2} addonAfter="元" className="ops-form-wide" />
                 </Form.Item>
                 <Form.Item name="sortOrder" label="排序" rules={[{ type: 'number', min: 0, max: MAX_PRODUCT_SORT, message: `排序需在 0-${MAX_PRODUCT_SORT} 之间` }]}>
                   <InputNumber min={0} max={MAX_PRODUCT_SORT} precision={0} addonAfter="位" className="ops-form-wide" />
@@ -140,10 +141,10 @@ const MaterialProductEditPage = () => {
 
             <Card className="ops-edit-card" title="图片展示">
               <div className="ops-form-grid">
-                <Form.Item name="coverImage" label="商品封面" rules={[{ required: true, message: '请上传商品封面' }]}>
+                <Form.Item name="coverImage" label={<RequiredLabel>商品封面</RequiredLabel>} rules={[{ required: true, message: '请上传商品封面' }]}>
                   <MediaPathInput placeholder="商品封面" maxSizeMB={5} />
                 </Form.Item>
-                <Form.Item name="images" label="商品图片" rules={[{ required: true, message: '请至少上传一张商品图片' }]}>
+                <Form.Item name="images" label={<RequiredLabel>商品图片</RequiredLabel>} rules={[{ required: true, message: '请至少上传一张商品图片' }]}>
                   <MediaGalleryInput placeholder="商品图片" maxCount={9} maxSizeMB={5} />
                 </Form.Item>
               </div>

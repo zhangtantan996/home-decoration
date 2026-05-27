@@ -23,6 +23,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import MediaPathInput from '../components/MediaPathInput';
 import ReauthModal from '../components/ReauthModal';
+import RequiredLabel from '../components/RequiredLabel';
 import {
   assignSupervisor,
   createProject,
@@ -876,10 +877,10 @@ const ProjectsPage = () => {
             </Space>
           ) : <Empty description="未选择项目" />
         ) : (
-          <Form form={form} layout="vertical" className="ops-detail-form">
+          <Form form={form} layout="vertical" className="ops-detail-form" requiredMark={false}>
             <div className="ops-project-party-grid">
               <div className="ops-project-party-block">
-                <Form.Item name="ownerId" label="业主" rules={[{ required: true, message: '请选择业主' }]}>
+                <Form.Item name="ownerId" label={<RequiredLabel>业主</RequiredLabel>} rules={[{ required: true, message: '请选择业主' }]}>
                   <Select
                     allowClear
                     showSearch={!selectedOwnerOption}
@@ -910,7 +911,7 @@ const ProjectsPage = () => {
               </div>
 
               <div className="ops-project-party-block">
-                <Form.Item name="providerId" label="服务商" rules={[{ required: true, message: '请选择服务商' }]}>
+                <Form.Item name="providerId" label={<RequiredLabel>服务商</RequiredLabel>} rules={[{ required: true, message: '请选择服务商' }]}>
                   <Select
                     allowClear
                     showSearch={!selectedProviderOption}
@@ -944,7 +945,7 @@ const ProjectsPage = () => {
             </div>
             <Form.Item
               name="name"
-              label="项目名称"
+              label={<RequiredLabel>项目名称</RequiredLabel>}
               rules={[
                 { required: true, whitespace: true, message: '请填写项目名称' },
                 { max: PROJECT_NAME_MAX_LENGTH, message: `项目名称不能超过${PROJECT_NAME_MAX_LENGTH}个字` },
@@ -954,7 +955,7 @@ const ProjectsPage = () => {
             </Form.Item>
             <Form.Item
               name="address"
-              label="施工地址"
+              label={<RequiredLabel>施工地址</RequiredLabel>}
               rules={[
                 { required: true, whitespace: true, message: '请填写施工地址' },
                 { max: PROJECT_ADDRESS_MAX_LENGTH, message: `施工地址不能超过${PROJECT_ADDRESS_MAX_LENGTH}个字` },
@@ -962,12 +963,12 @@ const ProjectsPage = () => {
             >
               <Input maxLength={PROJECT_ADDRESS_MAX_LENGTH} showCount placeholder="请输入施工地址" />
             </Form.Item>
-            <Form.Item name="coverImage" label="项目背景图">
+            <Form.Item name="coverImage" label={<RequiredLabel>项目背景图</RequiredLabel>} rules={[{ required: true, message: '请上传项目背景图' }]}>
               <MediaPathInput placeholder="用于小程序项目进度顶部展示，仅上传一张" maxSizeMB={5} />
             </Form.Item>
             <Form.Item
               name="area"
-              label="面积(㎡)"
+              label={<RequiredLabel>面积(㎡)</RequiredLabel>}
               rules={[
                 {
                   validator: (_, value) => validateDecimalValue(value, { label: '面积', max: PROJECT_AREA_MAX, unit: '㎡' }),
@@ -985,7 +986,7 @@ const ProjectsPage = () => {
             </Form.Item>
             <Form.Item
               name="budget"
-              label="预算(元)"
+              label={<RequiredLabel>预算(元)</RequiredLabel>}
               rules={[
                 {
                   validator: (_, value) => validateDecimalValue(value, { label: '预算', max: PROJECT_BUDGET_MAX, unit: '元', allowZero: true }),
@@ -1001,7 +1002,7 @@ const ProjectsPage = () => {
                 placeholder={`仅支持数字，最多${PROJECT_BUDGET_MAX}元`}
               />
             </Form.Item>
-            <Form.Item name="materialMethod" label="主材方式" rules={[{ required: true, message: '请选择主材方式' }]}>
+            <Form.Item name="materialMethod" label={<RequiredLabel>主材方式</RequiredLabel>} rules={[{ required: true, message: '请选择主材方式' }]}>
               <Select options={[
                 { value: 'platform', label: '平台统筹' },
                 { value: 'self', label: '业主自采' },
@@ -1083,7 +1084,7 @@ const ProjectsPage = () => {
             ) : null}
             <Form.Item
               name="enabledPhaseTypes"
-              label="启用施工阶段"
+              label={<RequiredLabel>启用施工阶段</RequiredLabel>}
               rules={[
                 {
                   validator: (_, value: string[]) => {

@@ -4,6 +4,7 @@ import type { FormInstance } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import MediaPathInput from '../components/MediaPathInput';
+import RequiredLabel from '../components/RequiredLabel';
 import {
   createMaterialShop,
   createProvider,
@@ -206,6 +207,7 @@ const deriveEntityType = (subType?: string) => (subType === 'company' ? 'company
 const normalizeSubtype = (type?: string, subType?: string) => (type === 'company' ? 'company' : subType || 'personal');
 const normalizeEntityType = (type?: string, subType?: string) => (type === 'company' ? 'company' : deriveEntityType(subType));
 const normalizeWorkTypes = (type?: string, value?: unknown) => (type === 'foreman' ? toStringArray(value) : limitStringArray(value));
+const normalizeMaterialShopType = (value?: string) => (value === 'brand' ? 'brand' : 'showroom');
 const contactPhoneRules = [
   maxLengthRule('联系电话', MAX_TEXT.phone),
   {
@@ -424,12 +426,12 @@ const ServiceAreaFields = ({ form }: { form: FormInstance }) => {
         <Typography.Text type="secondary">仅可选择后台已开通服务地区，地市必填，区县可选</Typography.Text>
       </div>
       <div className="ops-service-area-panel__grid">
-      <Form.Item name="serviceProvinceCodes" label="省份" rules={[requiredArrayRule('服务省份')]}>
+      <Form.Item name="serviceProvinceCodes" label={<RequiredLabel>省份</RequiredLabel>} rules={[requiredArrayRule('服务省份')]}>
         <Select mode="multiple" allowClear placeholder="先选择省份" options={provinceOptions} onChange={handleProvinceChange} />
       </Form.Item>
       <Form.Item
         name="serviceCityCodes"
-        label="地市"
+        label={<RequiredLabel>地市</RequiredLabel>}
         rules={[
           requiredArrayRule('服务地市'),
           limitedSelectRules('服务城市', MAX_AREA_COUNT)[0],
@@ -618,7 +620,7 @@ const SupplyProviderEditPage = () => {
         <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void save()}>保存资料</Button>
       </div>
 
-      <Form form={form} layout="vertical" disabled={loading}>
+      <Form form={form} layout="vertical" disabled={loading} requiredMark={false}>
         <div className="ops-edit-with-nav">
           <nav className="ops-edit-nav">
             <a href="#basic">基础信息</a>
@@ -630,13 +632,13 @@ const SupplyProviderEditPage = () => {
           <div className="ops-edit-layout">
             <Card id="basic" title="基础信息" className="ops-edit-card">
               <div className="ops-form-grid">
-                <Form.Item name="avatar" label="头像 / Logo" rules={[{ required: true, message: '请上传头像或 Logo' }]}><MediaPathInput placeholder="暂无头像" maxSizeMB={3} /></Form.Item>
-                <Form.Item name="coverImage" label="详情封面图" rules={[{ required: true, message: '请上传详情封面图' }]}><MediaPathInput placeholder="暂无封面图" maxSizeMB={5} /></Form.Item>
-                <Form.Item name="displayName" label="展示名称" rules={requiredMaxLengthRules('展示名称', MAX_TEXT.displayName)}>
+                <Form.Item name="avatar" label={<RequiredLabel>头像 / Logo</RequiredLabel>} rules={[{ required: true, message: '请上传头像或 Logo' }]}><MediaPathInput placeholder="暂无头像" maxSizeMB={3} /></Form.Item>
+                <Form.Item name="coverImage" label={<RequiredLabel>详情封面图</RequiredLabel>} rules={[{ required: true, message: '请上传详情封面图' }]}><MediaPathInput placeholder="暂无封面图" maxSizeMB={5} /></Form.Item>
+                <Form.Item name="displayName" label={<RequiredLabel>展示名称</RequiredLabel>} rules={requiredMaxLengthRules('展示名称', MAX_TEXT.displayName)}>
                   <Input placeholder="展示给用户看的名称" maxLength={MAX_TEXT.displayName} showCount />
                 </Form.Item>
                 <ServiceAreaFields form={form} />
-                <Form.Item name="subType" label="主体类型" rules={[{ required: true, message: '请选择主体类型' }]}>
+                <Form.Item name="subType" label={<RequiredLabel>主体类型</RequiredLabel>} rules={[{ required: true, message: '请选择主体类型' }]}>
                   <Select
                     disabled={kind === 'company'}
                     options={kind === 'company' ? [
@@ -653,17 +655,15 @@ const SupplyProviderEditPage = () => {
 
             <Card id="tags" title="标签与服务" className="ops-edit-card">
               <div className="ops-form-grid">
-                {specialtyConfig.options.length ? (
-                  <Form.Item name="specialty" label={specialtyConfig.label} rules={requiredLimitedSelectRules(specialtyConfig.label)}>
-                    <Select
-                      mode="multiple"
-                      allowClear
-                      maxCount={MAX_TAG_COUNT}
-                      placeholder={specialtyConfig.placeholder}
-                      options={mergeOptions(specialtyConfig.options, form.getFieldValue('specialty'))}
-                    />
-                  </Form.Item>
-                ) : null}
+                <Form.Item name="specialty" label={<RequiredLabel>{specialtyConfig.label}</RequiredLabel>} rules={requiredLimitedSelectRules(specialtyConfig.label)}>
+                  <Select
+                    mode="tags"
+                    allowClear
+                    maxCount={MAX_TAG_COUNT}
+                    placeholder={specialtyConfig.placeholder}
+                    options={mergeOptions(specialtyConfig.options, form.getFieldValue('specialty'))}
+                  />
+                </Form.Item>
                 <Form.Item name="highlightTags" label="亮点标签" rules={limitedSelectRules('亮点标签')}>
                   <Select
                     mode="multiple"
@@ -673,17 +673,15 @@ const SupplyProviderEditPage = () => {
                     options={mergeOptions(dictionaries.tags, form.getFieldValue('highlightTags'))}
                   />
                 </Form.Item>
-                {workTypeConfig.options.length ? (
-                  <Form.Item name="workTypes" label={workTypeConfig.label} rules={kind === 'foreman' ? [requiredArrayRule(workTypeConfig.label)] : requiredLimitedSelectRules(workTypeConfig.label)}>
-                    <Select
-                      mode="multiple"
-                      allowClear
-                      maxCount={workTypeConfig.maxCount}
-                      placeholder={workTypeConfig.placeholder}
-                      options={mergeOptions(workTypeConfig.options, form.getFieldValue('workTypes'))}
-                    />
-                  </Form.Item>
-                ) : null}
+                <Form.Item name="workTypes" label={<RequiredLabel>{workTypeConfig.label}</RequiredLabel>} rules={kind === 'foreman' ? [requiredArrayRule(workTypeConfig.label)] : requiredLimitedSelectRules(workTypeConfig.label)}>
+                  <Select
+                    mode="tags"
+                    allowClear
+                    maxCount={workTypeConfig.maxCount}
+                    placeholder={workTypeConfig.placeholder}
+                    options={mergeOptions(workTypeConfig.options, form.getFieldValue('workTypes'))}
+                  />
+                </Form.Item>
                 {kind === 'company' ? (
                   <>
                     <Form.Item name="constructionQualification" label="施工资质等级">
@@ -711,16 +709,16 @@ const SupplyProviderEditPage = () => {
 
             <Card id="price" title="价格与数据" className="ops-edit-card">
               <div className="ops-form-grid ops-form-grid--three">
-                <Form.Item name="priceMin" label="最低价" rules={[{ required: true, message: '请输入最低价' }, { type: 'number', min: 0, max: MAX_PRICE, message: `价格需在 0-${MAX_PRICE} 之间` }]}>
-                  <InputNumber min={0} max={MAX_PRICE} precision={0} addonAfter={PROVIDER_PRICE_UNIT} className="ops-form-wide" />
+                <Form.Item name="priceMin" label={<RequiredLabel>最低价</RequiredLabel>} rules={[{ required: true, message: '请输入最低价' }, { type: 'number', min: 1, max: MAX_PRICE, message: `价格需在 1-${MAX_PRICE} 之间` }]}>
+                  <InputNumber min={1} max={MAX_PRICE} precision={0} addonAfter={PROVIDER_PRICE_UNIT} className="ops-form-wide" />
                 </Form.Item>
                 <Form.Item
                   name="priceMax"
-                  label="最高价"
+                  label={<RequiredLabel>最高价</RequiredLabel>}
                   dependencies={['priceMin']}
                   rules={[
                     { required: true, message: '请输入最高价' },
-                    { type: 'number', min: 0, max: MAX_PRICE, message: `价格需在 0-${MAX_PRICE} 之间` },
+                    { type: 'number', min: 1, max: MAX_PRICE, message: `价格需在 1-${MAX_PRICE} 之间` },
                     ({ getFieldValue }) => ({
                       validator: (_: unknown, value?: number) => {
                         const min = Number(getFieldValue('priceMin') || 0);
@@ -730,7 +728,7 @@ const SupplyProviderEditPage = () => {
                     }),
                   ]}
                 >
-                  <InputNumber min={0} max={MAX_PRICE} precision={0} addonAfter={PROVIDER_PRICE_UNIT} className="ops-form-wide" />
+                  <InputNumber min={1} max={MAX_PRICE} precision={0} addonAfter={PROVIDER_PRICE_UNIT} className="ops-form-wide" />
                 </Form.Item>
                 <Form.Item name="yearsExperience" label="从业年限" rules={[{ type: 'number', min: 0, max: MAX_EXPERIENCE_YEARS, message: `从业年限需在 0-${MAX_EXPERIENCE_YEARS} 之间` }]}>
                   <InputNumber min={0} max={MAX_EXPERIENCE_YEARS} precision={0} addonAfter="年" className="ops-form-wide" />
@@ -756,7 +754,7 @@ const SupplyProviderEditPage = () => {
               <Form.Item name="establishedYear" label="成立年份" rules={[{ type: 'number', min: 1900, max: CURRENT_YEAR, message: `成立年份需在 1900-${CURRENT_YEAR} 之间` }]}>
                 <InputNumber min={1900} max={CURRENT_YEAR} precision={0} addonAfter="年" className="ops-form-wide" />
               </Form.Item>
-              <Form.Item name="officeAddress" label="办公地址" rules={requiredMaxLengthRules('办公地址', MAX_TEXT.address)}>
+              <Form.Item name="officeAddress" label={<RequiredLabel>办公地址</RequiredLabel>} rules={requiredMaxLengthRules('办公地址', MAX_TEXT.address)}>
                 <Input maxLength={MAX_TEXT.address} showCount />
               </Form.Item>
             </Card>
@@ -876,7 +874,7 @@ export const MaterialShopEditPage = () => {
   useEffect(() => {
     if (isNew) {
       form.setFieldsValue({
-        type: 'store',
+        type: 'showroom',
         subjectType: 'company',
         businessCategories: [],
         serviceArea: [],
@@ -903,7 +901,7 @@ export const MaterialShopEditPage = () => {
         const businessCategories = mergeUniqueStrings(current.mainProducts, current.productCategories, current.mainCategories);
         form.setFieldsValue({
           name: current.name,
-          type: current.type || 'store',
+          type: normalizeMaterialShopType(current.type),
           subjectType: 'company',
           companyName: current.companyName,
           description: current.description,
@@ -940,7 +938,7 @@ export const MaterialShopEditPage = () => {
     const businessCategories = limitStringArray(values.businessCategories);
     const payload = {
       ...submitValues,
-      type: values.type || record?.type || 'store',
+      type: normalizeMaterialShopType(values.type || record?.type),
       status: record ? (record.status ?? 1) : 1,
       isSettled: record ? record.isSettled !== false : true,
       isVerified: record ? record.isVerified === true : false,
@@ -976,7 +974,7 @@ export const MaterialShopEditPage = () => {
         <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void save()}>保存资料</Button>
       </div>
 
-      <Form form={form} layout="vertical" disabled={loading}>
+      <Form form={form} layout="vertical" disabled={loading} requiredMark={false}>
         <div className="ops-edit-with-nav">
           <nav className="ops-edit-nav">
             <a href="#shop-basic">门店基础信息</a>
@@ -986,18 +984,18 @@ export const MaterialShopEditPage = () => {
           <div className="ops-edit-layout">
           <Card id="shop-basic" title="门店基础信息" className="ops-edit-card">
             <div className="ops-form-grid">
-              <Form.Item name="cover" label="门店封面"><MediaPathInput placeholder="暂无门店封面" maxSizeMB={5} /></Form.Item>
-              <Form.Item name="brandLogo" label="品牌 Logo"><MediaPathInput placeholder="暂无品牌 Logo" maxSizeMB={3} /></Form.Item>
-              <Form.Item name="name" label="门店名称" rules={[{ required: true, message: '请输入门店名称' }, maxLengthRule('门店名称', MAX_TEXT.shopName)]}>
+              <Form.Item name="cover" label={<RequiredLabel>门店封面</RequiredLabel>} rules={[{ required: true, message: '请上传门店封面' }]}><MediaPathInput placeholder="暂无门店封面" maxSizeMB={5} /></Form.Item>
+              <Form.Item name="brandLogo" label={<RequiredLabel>品牌 Logo</RequiredLabel>} rules={[{ required: true, message: '请上传品牌 Logo' }]}><MediaPathInput placeholder="暂无品牌 Logo" maxSizeMB={3} /></Form.Item>
+              <Form.Item name="name" label={<RequiredLabel>门店名称</RequiredLabel>} rules={[{ required: true, message: '请输入门店名称' }, maxLengthRule('门店名称', MAX_TEXT.shopName)]}>
                 <Input maxLength={MAX_TEXT.shopName} showCount />
               </Form.Item>
-              <Form.Item name="subjectType" label="主体类型">
+              <Form.Item name="subjectType" label={<RequiredLabel>主体类型</RequiredLabel>} rules={[{ required: true, message: '请选择主体类型' }]}>
                 <Select disabled options={[{ value: 'company', label: '公司' }]} />
               </Form.Item>
               <Form.Item name="companyName" label="公司名称" rules={[maxLengthRule('公司名称', MAX_TEXT.companyName)]}><Input maxLength={MAX_TEXT.companyName} showCount /></Form.Item>
               <Form.Item name="address" label="地址" rules={[maxLengthRule('地址', MAX_TEXT.address)]}><Input maxLength={MAX_TEXT.address} showCount /></Form.Item>
-              <Form.Item name="contactName" label="联系人" rules={requiredMaxLengthRules('联系人', MAX_TEXT.contactName)}><Input maxLength={MAX_TEXT.contactName} showCount /></Form.Item>
-              <Form.Item name="contactPhone" label="联系电话" rules={contactPhoneRules}>
+              <Form.Item name="contactName" label={<RequiredLabel>联系人</RequiredLabel>} rules={requiredMaxLengthRules('联系人', MAX_TEXT.contactName)}><Input maxLength={MAX_TEXT.contactName} showCount /></Form.Item>
+              <Form.Item name="contactPhone" label={<RequiredLabel>联系电话</RequiredLabel>} rules={[{ required: true, message: '请输入联系电话' }, ...contactPhoneRules]}>
                 <Input maxLength={MAX_TEXT.phone} showCount />
               </Form.Item>
             </div>
@@ -1005,7 +1003,7 @@ export const MaterialShopEditPage = () => {
 
           <Card id="shop-service" title="经营与服务" className="ops-edit-card">
             <div className="ops-form-grid">
-              <Form.Item name="businessCategories" label="经营类目" rules={requiredLimitedSelectRules('经营类目')}>
+              <Form.Item name="businessCategories" label={<RequiredLabel>经营类目</RequiredLabel>} rules={requiredLimitedSelectRules('经营类目')}>
                 <Select
                   mode="multiple"
                   allowClear

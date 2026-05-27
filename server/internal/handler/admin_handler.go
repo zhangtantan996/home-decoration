@@ -1599,16 +1599,20 @@ func AdminCreateProvider(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if err := validateRequiredAdminProviderDisplayFields(req.Specialty, req.WorkTypes, req.OfficeAddress, req.PriceMin, req.PriceMax, string(serviceAreaJSON)); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	if err := validateOptionalJSON("价格配置", req.PricingJSON); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	avatar, err := requireLocalAssetReference("头像/Logo", req.Avatar)
+	avatar, err := requireNonEmptyLocalAssetReference("头像/Logo", req.Avatar)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	coverImage, err := requireLocalAssetReference("详情封面图", req.CoverImage)
+	coverImage, err := requireNonEmptyLocalAssetReference("详情封面图", req.CoverImage)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -1758,6 +1762,69 @@ func AdminUpdateProvider(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	nextSpecialty := provider.Specialty
+	if req.Specialty != nil {
+		nextSpecialty = *req.Specialty
+	}
+	nextWorkTypes := provider.WorkTypes
+	if req.WorkTypes != nil {
+		nextWorkTypes = *req.WorkTypes
+	}
+	nextOfficeAddress := provider.OfficeAddress
+	if req.OfficeAddress != nil {
+		nextOfficeAddress = *req.OfficeAddress
+	}
+	nextAvatar := provider.Avatar
+	if req.Avatar != nil {
+		nextAvatar = *req.Avatar
+	}
+	nextCoverImage := provider.CoverImage
+	if req.CoverImage != nil {
+		nextCoverImage = *req.CoverImage
+	}
+	nextServiceArea := provider.ServiceArea
+	if serviceAreaProvided {
+		serviceAreaJSON, _ := json.Marshal(serviceAreaCodes)
+		nextServiceArea = string(serviceAreaJSON)
+	}
+	requiresDisplayFieldValidation := req.CompanyName != nil ||
+		req.RealName != nil ||
+		req.SubType != nil ||
+		req.EntityType != nil ||
+		req.Specialty != nil ||
+		req.YearsExperience != nil ||
+		req.Avatar != nil ||
+		req.WorkTypes != nil ||
+		req.HighlightTags != nil ||
+		req.PricingJSON != nil ||
+		req.GraduateSchool != nil ||
+		req.DesignPhilosophy != nil ||
+		req.PriceMin != nil ||
+		req.PriceMax != nil ||
+		req.PriceUnit != nil ||
+		req.CoverImage != nil ||
+		req.ServiceIntro != nil ||
+		req.TeamSize != nil ||
+		req.EstablishedYear != nil ||
+		req.Certifications != nil ||
+		req.OfficeAddress != nil ||
+		req.CompanyAlbum != nil ||
+		req.CollectedSource != nil ||
+		serviceAreaProvided
+	if requiresDisplayFieldValidation {
+		if err := validateRequiredAdminProviderDisplayFields(nextSpecialty, nextWorkTypes, nextOfficeAddress, nextPriceMin, nextPriceMax, nextServiceArea); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		if _, err := requireNonEmptyLocalAssetReference("头像/Logo", nextAvatar); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		if _, err := requireNonEmptyLocalAssetReference("详情封面图", nextCoverImage); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
 	if err := validateProviderOptionalMetricFields(req.YearsExperience, req.FollowersCount, req.TeamSize, req.EstablishedYear, req.RestoreRate, req.BudgetControl); err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -1828,7 +1895,7 @@ func AdminUpdateProvider(c *gin.Context) {
 		updates["years_experience"] = *req.YearsExperience
 	}
 	if req.Avatar != nil {
-		avatar, err := requireLocalAssetReference("头像/Logo", *req.Avatar)
+		avatar, err := requireNonEmptyLocalAssetReference("头像/Logo", *req.Avatar)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
@@ -1866,7 +1933,7 @@ func AdminUpdateProvider(c *gin.Context) {
 		updates["price_unit"] = strings.TrimSpace(*req.PriceUnit)
 	}
 	if req.CoverImage != nil {
-		coverImage, err := requireLocalAssetReference("详情封面图", *req.CoverImage)
+		coverImage, err := requireNonEmptyLocalAssetReference("详情封面图", *req.CoverImage)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
@@ -2729,6 +2796,10 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
+	if err := validateRequiredMaterialShopDisplayFields(req.ContactName, req.ContactPhone, req.ServiceArea, mainProducts); err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
 	if err := validateLatLng(req.Latitude, req.Longitude); err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -2754,12 +2825,12 @@ func AdminCreateMaterialShop(c *gin.Context) {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	cover, err := requireLocalAssetReference("门店封面", req.Cover)
+	cover, err := requireNonEmptyLocalAssetReference("门店封面", req.Cover)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-	brandLogo, err := requireLocalAssetReference("品牌 Logo", req.BrandLogo)
+	brandLogo, err := requireNonEmptyLocalAssetReference("品牌 Logo", req.BrandLogo)
 	if err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -3059,6 +3130,68 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 			return
 		}
 	}
+	nextContactName := shop.ContactName
+	if req.ContactName != nil {
+		nextContactName = *req.ContactName
+	}
+	nextContactPhone := shop.ContactPhone
+	if req.ContactPhone != nil {
+		nextContactPhone = *req.ContactPhone
+	}
+	nextServiceArea := shop.ServiceArea
+	if req.ServiceArea != nil {
+		nextServiceArea = *req.ServiceArea
+	}
+	nextMainProducts := shop.MainProducts
+	if req.MainProducts != nil {
+		nextMainProducts = *req.MainProducts
+	}
+	nextCover := shop.Cover
+	if req.Cover != nil {
+		nextCover = *req.Cover
+	}
+	nextBrandLogo := shop.BrandLogo
+	if req.BrandLogo != nil {
+		nextBrandLogo = *req.BrandLogo
+	}
+	requiresShopDisplayFieldValidation := req.Name != nil ||
+		req.Type != nil ||
+		req.CompanyName != nil ||
+		req.Description != nil ||
+		req.Address != nil ||
+		req.ContactPhone != nil ||
+		req.ContactName != nil ||
+		req.MainProducts != nil ||
+		req.ProductCategories != nil ||
+		req.Cover != nil ||
+		req.BrandLogo != nil ||
+		req.OpenTime != nil ||
+		req.BusinessHoursJSON != nil ||
+		req.ServiceArea != nil ||
+		req.Latitude != nil ||
+		req.Longitude != nil ||
+		req.MainBrands != nil ||
+		req.MainCategories != nil ||
+		req.DeliveryCapability != nil ||
+		req.InstallationCapability != nil ||
+		req.AfterSalesPolicy != nil ||
+		req.InvoiceCapability != nil ||
+		req.Tags != nil ||
+		req.CollectedSource != nil
+	if requiresShopDisplayFieldValidation {
+		if err := validateRequiredMaterialShopDisplayFields(nextContactName, nextContactPhone, nextServiceArea, nextMainProducts); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		if _, err := requireNonEmptyLocalAssetReference("门店封面", nextCover); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		if _, err := requireNonEmptyLocalAssetReference("品牌 Logo", nextBrandLogo); err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+	}
 	if err := validateLatLng(req.Latitude, req.Longitude); err != nil {
 		response.BadRequest(c, err.Error())
 		return
@@ -3119,7 +3252,7 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		updates["product_categories"] = strings.TrimSpace(*req.ProductCategories)
 	}
 	if req.Cover != nil {
-		cover, err := requireLocalAssetReference("门店封面", *req.Cover)
+		cover, err := requireNonEmptyLocalAssetReference("门店封面", *req.Cover)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return
@@ -3127,7 +3260,7 @@ func AdminUpdateMaterialShop(c *gin.Context) {
 		updates["cover"] = cover
 	}
 	if req.BrandLogo != nil {
-		brandLogo, err := requireLocalAssetReference("品牌 Logo", *req.BrandLogo)
+		brandLogo, err := requireNonEmptyLocalAssetReference("品牌 Logo", *req.BrandLogo)
 		if err != nil {
 			response.BadRequest(c, err.Error())
 			return

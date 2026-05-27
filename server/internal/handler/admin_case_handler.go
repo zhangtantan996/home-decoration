@@ -88,7 +88,7 @@ func validateAdminCaseInput(providerID *uint64, title, coverImage, style, area s
 	if cover == "" {
 		return "", nil, errors.New("请上传案例封面")
 	}
-	normalizedImages, err := requireLocalAssetReferences("案例图片", images, 12)
+	normalizedImages, err := requireNonEmptyLocalAssetReferences("案例图片", images, 12)
 	if err != nil {
 		return "", nil, err
 	}

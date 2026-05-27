@@ -9,6 +9,7 @@ import (
 	"home-decoration-server/internal/config"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	imgutil "home-decoration-server/internal/utils/image"
 
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -254,6 +255,9 @@ func TestProjectServiceCreateProjectAppliesPhaseSelection(t *testing.T) {
 	if fmt.Sprint(got) != fmt.Sprint(want) {
 		t.Fatalf("expected enabled phases %v, got %v", want, got)
 	}
+	if project.CoverImage != imgutil.DefaultInspirationCoverPath {
+		t.Fatalf("expected default project cover fallback, got %q", project.CoverImage)
+	}
 
 	var disabled model.ProjectPhase
 	if err := db.Where("project_id = ? AND phase_type = ?", project.ID, "demolition").First(&disabled).Error; err != nil {
@@ -261,6 +265,70 @@ func TestProjectServiceCreateProjectAppliesPhaseSelection(t *testing.T) {
 	}
 	if disabled.Enabled {
 		t.Fatalf("expected demolition phase disabled")
+	}
+}
+
+func TestProjectServiceCreateProjectSkipsLegacyExternalCoverFallback(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 541}, Phone: "13800138541", Status: 1, Nickname: "业主旧图"}
+	provider := model.Provider{
+		Base:         model.Base{ID: 542},
+		ProviderType: 2,
+		CompanyName:  "旧图装修公司",
+		CoverImage:   "https://legacy.example.com/provider-cover.jpg",
+		Avatar:       "/uploads/providers/fallback-avatar.jpg",
+	}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	project, err := (&ProjectService{}).CreateProject(&CreateProjectRequest{
+		OwnerID:        owner.ID,
+		ProviderID:     provider.ID,
+		Name:           "旧图兜底项目",
+		Address:        "西安市高新区阶段路 3 号",
+		Area:           108,
+		Budget:         210000,
+		MaterialMethod: "platform",
+	})
+	if err != nil {
+		t.Fatalf("CreateProject should skip legacy external provider cover: %v", err)
+	}
+	if project.CoverImage != "/uploads/providers/fallback-avatar.jpg" {
+		t.Fatalf("expected provider avatar fallback, got %q", project.CoverImage)
+	}
+}
+
+func TestProjectServiceCreateProjectRejectsExplicitExternalCover(t *testing.T) {
+	t.Setenv("ENCRYPTION_KEY", base64.StdEncoding.EncodeToString([]byte("12345678901234567890123456789012")))
+	db := setupProjectServiceTestDB(t)
+
+	owner := model.User{Base: model.Base{ID: 543}, Phone: "13800138543", Status: 1, Nickname: "业主外链"}
+	provider := model.Provider{Base: model.Base{ID: 544}, ProviderType: 2, CompanyName: "外链装修公司"}
+	if err := db.Create(&owner).Error; err != nil {
+		t.Fatalf("create owner: %v", err)
+	}
+	if err := db.Create(&provider).Error; err != nil {
+		t.Fatalf("create provider: %v", err)
+	}
+
+	_, err := (&ProjectService{}).CreateProject(&CreateProjectRequest{
+		OwnerID:        owner.ID,
+		ProviderID:     provider.ID,
+		Name:           "外链封面项目",
+		Address:        "西安市高新区阶段路 4 号",
+		CoverImage:     "https://third-party.example.com/cover.jpg",
+		Area:           108,
+		Budget:         210000,
+		MaterialMethod: "platform",
+	})
+	if err == nil || err.Error() != "项目背景图仅支持平台上传文件" {
+		t.Fatalf("expected explicit external cover to be rejected, got %v", err)
 	}
 }
 

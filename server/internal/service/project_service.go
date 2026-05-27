@@ -316,6 +316,29 @@ func validateProjectBasicsInput(ownerID, providerID uint64, name, address string
 	return nil
 }
 
+func resolveProjectCoverImage(reqCover string, currentCover string, provider model.Provider) (string, error) {
+	trimmedReqCover := strings.TrimSpace(reqCover)
+	if trimmedReqCover != "" {
+		normalized := imgutil.NormalizeStoredImagePath(trimmedReqCover)
+		if normalized == "" || !imgutil.IsLocalAssetReference(normalized) {
+			return "", errors.New("项目背景图仅支持平台上传文件")
+		}
+		return normalized, nil
+	}
+
+	for _, candidate := range []string{currentCover, provider.CoverImage, provider.Avatar, imgutil.DefaultInspirationCoverPath} {
+		normalized := imgutil.NormalizeStoredImagePath(strings.TrimSpace(candidate))
+		if normalized == "" {
+			continue
+		}
+		if !imgutil.IsLocalAssetReference(normalized) {
+			continue
+		}
+		return normalized, nil
+	}
+	return "", errors.New("项目背景图不能为空")
+}
+
 func normalizeEnabledProjectPhaseTypes(raw []string) (map[string]bool, error) {
 	if raw == nil {
 		enabled := make(map[string]bool, len(defaultProjectPhaseSpecs))
@@ -423,7 +446,6 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 		CurrentPhase:            "准备阶段",
 		BusinessStatus:          model.ProjectBusinessStatusDraft,
 		MaterialMethod:          req.MaterialMethod,
-		CoverImage:              normalizeStoredAsset(strings.TrimSpace(req.CoverImage)),
 		CrewID:                  req.CrewID,
 		ConstructionPaymentMode: (&ConfigService{}).GetConstructionPaymentModeTx(tx),
 	}
@@ -476,7 +498,6 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 		project.Longitude = req.Longitude
 		project.Area = req.Area
 		project.Budget = req.Budget
-		project.CoverImage = normalizeStoredAsset(strings.TrimSpace(req.CoverImage))
 		if t, err := time.Parse("2006-01-02", req.EntryStartDate); err == nil {
 			project.EntryStartDate = &t
 		}
@@ -505,6 +526,11 @@ func (s *ProjectService) CreateProjectTx(tx *gorm.DB, req *CreateProjectRequest)
 	if err := tx.First(&provider, project.ProviderID).Error; err != nil {
 		return nil, errors.New("服务商不存在")
 	}
+	coverImage, err := resolveProjectCoverImage(req.CoverImage, project.CoverImage, provider)
+	if err != nil {
+		return nil, err
+	}
+	project.CoverImage = coverImage
 	plainAddress := project.Address
 	plainLatitude := project.Latitude
 	plainLongitude := project.Longitude
@@ -567,15 +593,19 @@ func (s *ProjectService) UpdateProjectBasics(projectID uint64, req *UpdateProjec
 			return errors.New("业主不存在")
 		}
 		var provider model.Provider
-		if err := tx.Select("id").First(&provider, req.ProviderID).Error; err != nil {
+		if err := tx.First(&provider, req.ProviderID).Error; err != nil {
 			return errors.New("服务商不存在")
 		}
 
+		coverImage, err := resolveProjectCoverImage(req.CoverImage, project.CoverImage, provider)
+		if err != nil {
+			return err
+		}
 		project.OwnerID = req.OwnerID
 		project.ProviderID = req.ProviderID
 		project.Name = strings.TrimSpace(req.Name)
 		project.Address = strings.TrimSpace(req.Address)
-		project.CoverImage = normalizeStoredAsset(strings.TrimSpace(req.CoverImage))
+		project.CoverImage = coverImage
 		project.Area = req.Area
 		project.Budget = req.Budget
 		if strings.TrimSpace(req.MaterialMethod) != "" {

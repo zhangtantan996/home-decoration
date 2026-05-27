@@ -133,7 +133,7 @@ export default function FeedbackSettingsPage() {
         type: feedbackType,
         content: content.trim(),
         contact: contact.trim() || undefined,
-        images: images.length > 0 ? images.map((item) => item.remoteUrl).join(',') : undefined,
+        images: images.length > 0 ? JSON.stringify(images.map((item) => item.remoteUrl)) : undefined,
       });
       if (!mountedRef.current) {
         return;

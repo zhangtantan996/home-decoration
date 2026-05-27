@@ -63,10 +63,13 @@ func TestAdminCreateMaterialShop_PersistsExtendedFormFields(t *testing.T) {
 		"type":"brand",
 		"companyName":"测试主材公司",
 		"address":"西安市雁塔区科技路 1 号",
+		"contactName":"王店长",
+		"contactPhone":"13800138001",
 		"cover":"/uploads/material-shops/cover.jpg",
 		"brandLogo":"/uploads/material-shops/logo.jpg",
 		"mainProducts":"[\"全屋定制\",\"整体橱柜\"]",
 		"productCategories":"柜体,木门",
+		"serviceArea":"西安市",
 		"latitude":34.231,
 		"longitude":108.934,
 		"openTime":"09:00-21:00",
@@ -124,11 +127,14 @@ func TestAdminUpdateMaterialShop_OnlyUpdatesEditableFields(t *testing.T) {
 		Type:                   "showroom",
 		Name:                   "旧门店",
 		CompanyName:            "旧公司",
-		Cover:                  "https://example.com/old-cover.jpg",
-		BrandLogo:              "https://example.com/old-logo.jpg",
+		Cover:                  "/uploads/material-shops/old-cover.jpg",
+		BrandLogo:              "/uploads/material-shops/old-logo.jpg",
 		MainProducts:           `["旧产品"]`,
 		ProductCategories:      "旧分类",
 		Address:                "旧地址",
+		ContactName:            "旧联系人",
+		ContactPhone:           "13800138002",
+		ServiceArea:            "西安市",
 		Latitude:               30.1,
 		Longitude:              120.2,
 		OpenTime:               "08:00-18:00",
@@ -173,7 +179,7 @@ func TestAdminUpdateMaterialShop_OnlyUpdatesEditableFields(t *testing.T) {
 	if stored.UserID != 88 {
 		t.Fatalf("user id should remain unchanged, got %d", stored.UserID)
 	}
-	if stored.Cover != "https://example.com/old-cover.jpg" {
+	if stored.Cover != "/uploads/material-shops/old-cover.jpg" {
 		t.Fatalf("omitted cover should remain unchanged, got %q", stored.Cover)
 	}
 }
@@ -213,6 +219,43 @@ func TestAdminUpdateMaterialShop_RejectsOverlongTextAndKeepsExistingValue(t *tes
 	}
 	if stored.Description != "旧介绍" {
 		t.Fatalf("description should remain unchanged, got %q", stored.Description)
+	}
+}
+
+func TestAdminUpdateMaterialShop_RejectsProfileEditWhenDisplayFieldsIncomplete(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := setupSQLiteDB(t)
+	if err := db.AutoMigrate(&model.MaterialShop{}); err != nil {
+		t.Fatalf("auto migrate: %v", err)
+	}
+
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+
+	shop := model.MaterialShop{
+		Base: model.Base{ID: 93001},
+		Type: "showroom",
+		Name: "缺资料门店",
+	}
+	if err := db.Create(&shop).Error; err != nil {
+		t.Fatalf("seed material shop: %v", err)
+	}
+
+	resp := requestAdminUpdateMaterialShop(t, "/api/v1/admin/material-shops/93001", `{
+		"companyName":"缺资料门店有限公司"
+	}`)
+	if resp.Code == 0 {
+		t.Fatalf("expected profile edit to require complete display fields")
+	}
+
+	var stored model.MaterialShop
+	if err := db.First(&stored, shop.ID).Error; err != nil {
+		t.Fatalf("load material shop: %v", err)
+	}
+	if stored.CompanyName != "" {
+		t.Fatalf("companyName should remain unchanged, got %q", stored.CompanyName)
 	}
 }
 

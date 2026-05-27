@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import MediaGalleryInput from '../components/MediaGalleryInput';
 import MediaPathInput from '../components/MediaPathInput';
+import RequiredLabel from '../components/RequiredLabel';
 import { createCase, listCases, listProviders, showApiError, updateCase, type CaseItem, type ProviderItem } from '../services/api';
 import { getAssetPreviewUrl, getAssetStoredPath, joinStoredAssetText } from '../utils/asset';
 
@@ -240,17 +241,19 @@ const InspirationEditPage = () => {
         <Button type="primary" icon={<SaveOutlined />} loading={saving} onClick={() => void save()}>保存内容</Button>
       </div>
 
-      <Form form={form} layout="vertical" disabled={loading}>
+      <Form form={form} layout="vertical" disabled={loading} requiredMark={false}>
         <div className="ops-inspiration-edit-layout">
           <div className="ops-inspiration-edit-main">
             <Card title="内容信息" className="ops-edit-card">
-              <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }, { max: MAX_TITLE_LENGTH, message: `标题最多 ${MAX_TITLE_LENGTH} 个字` }]}>
+              <Form.Item name="title" label={<RequiredLabel>标题</RequiredLabel>} rules={[{ required: true, message: '请输入标题' }, { max: MAX_TITLE_LENGTH, message: `标题最多 ${MAX_TITLE_LENGTH} 个字` }]}>
                 <Input placeholder={`输入${contentName}标题`} maxLength={MAX_TITLE_LENGTH} showCount />
               </Form.Item>
-              <Form.Item name="coverImage" label="封面图片" rules={[{ required: true, message: '请上传封面图片' }]}>
+              <Form.Item name="coverImage" label={<RequiredLabel>封面图片</RequiredLabel>} rules={[{ required: true, message: '请上传封面图片' }]}>
                 <MediaPathInput placeholder="暂无封面图片" maxSizeMB={5} />
               </Form.Item>
-              <Form.Item name="images" label="灵感相册"><MediaGalleryInput placeholder="暂无灵感图片" maxCount={12} maxSizeMB={5} /></Form.Item>
+              <Form.Item name="images" label={<RequiredLabel>灵感相册</RequiredLabel>} rules={[{ required: true, message: '请至少上传一张灵感图片' }]}>
+                <MediaGalleryInput placeholder="暂无灵感图片" maxCount={12} maxSizeMB={5} />
+              </Form.Item>
               <Form.Item name="description" label="灵感说明" rules={[{ max: MAX_DESCRIPTION_LENGTH, message: `灵感说明最多 ${MAX_DESCRIPTION_LENGTH} 个字` }]}>
                 <Input.TextArea rows={8} maxLength={MAX_DESCRIPTION_LENGTH} showCount placeholder={descriptionPlaceholder} />
               </Form.Item>
@@ -259,7 +262,7 @@ const InspirationEditPage = () => {
 
           <div className="ops-inspiration-edit-side">
             <Card title="展示属性" className="ops-edit-card">
-              <Form.Item name="style" label="风格" rules={[{ required: true, message: '请选择风格' }]}>
+              <Form.Item name="style" label={<RequiredLabel>风格</RequiredLabel>} rules={[{ required: true, message: '请选择风格' }]}>
                 <Select options={[
                   { value: '现代简约', label: '现代简约' },
                   { value: '法式复古', label: '法式复古' },
