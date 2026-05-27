@@ -195,7 +195,7 @@ export default function CustomTabBar() {
               <View className={`floating-tabbar__icon-wrap ${active ? 'floating-tabbar__icon-wrap--active' : ''}`}>
                 <Icon
                   name={item.icon}
-                  size={28}
+                  size={44}
                   color={active ? '#111111' : colors.secondary}
                 />
                 {showUnreadBadge ? (
