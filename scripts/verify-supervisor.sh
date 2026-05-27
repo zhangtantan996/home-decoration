@@ -7,4 +7,5 @@ cd "$ROOT_DIR"
 node ./scripts/testing/run_command_suite.mjs \
   --suite verify-supervisor \
   --step "supervisor-lint::cd supervisor && npm run lint" \
-  --step "supervisor-build::cd supervisor && VITE_API_URL=http://127.0.0.1:8080/api/v1 npm run build"
+  --step "supervisor-build::cd supervisor && VITE_API_URL=http://127.0.0.1:8080/api/v1 npm run build" \
+  --step "supervisor-apply-service-area-smoke::./scripts/testing/run_supervisor_apply_service_area_smoke.sh"

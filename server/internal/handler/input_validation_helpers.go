@@ -46,6 +46,17 @@ func requireLocalAssetReference(label, value string) (string, error) {
 	return normalized, nil
 }
 
+func requireNonEmptyLocalAssetReference(label, value string) (string, error) {
+	normalized, err := requireLocalAssetReference(label, value)
+	if err != nil {
+		return "", err
+	}
+	if normalized == "" {
+		return "", fmt.Errorf("请上传%s", label)
+	}
+	return normalized, nil
+}
+
 func requireLocalAssetReferences(label string, values []string, maxCount int) ([]string, error) {
 	normalized := normalizeStoredAssetSlice(values)
 	if len(normalized) > maxCount {
@@ -55,6 +66,17 @@ func requireLocalAssetReferences(label string, values []string, maxCount int) ([
 		if !imgutil.IsLocalAssetReference(value) {
 			return nil, fmt.Errorf("%s仅支持平台上传文件", label)
 		}
+	}
+	return normalized, nil
+}
+
+func requireNonEmptyLocalAssetReferences(label string, values []string, maxCount int) ([]string, error) {
+	normalized, err := requireLocalAssetReferences(label, values, maxCount)
+	if err != nil {
+		return nil, err
+	}
+	if len(normalized) == 0 {
+		return nil, fmt.Errorf("请至少上传一张%s", label)
 	}
 	return normalized, nil
 }
@@ -197,6 +219,28 @@ func validateAdminProviderTextFields(companyName, specialty, workTypes, highligh
 	return validateRuneLength("服务介绍", serviceIntro, adminTextLongMax)
 }
 
+func validateRequiredAdminProviderDisplayFields(specialty, workTypes, officeAddress string, priceMin, priceMax float64, serviceArea string) error {
+	if strings.TrimSpace(specialty) == "" {
+		return errors.New("请选择风格、专长或服务特色")
+	}
+	if strings.TrimSpace(workTypes) == "" {
+		return errors.New("请选择设计服务、工种或服务类型")
+	}
+	if !jsonArrayTextHasItems(serviceArea) {
+		return errors.New("请至少选择服务城市，区县可选")
+	}
+	if strings.TrimSpace(officeAddress) == "" {
+		return errors.New("办公地址不能为空")
+	}
+	if priceMin <= 0 || priceMax <= 0 {
+		return errors.New("价格区间必须大于0")
+	}
+	if priceMin > priceMax {
+		return errors.New("最高价不能低于最低价")
+	}
+	return nil
+}
+
 func validateMaterialShopTextFields(companyName, address, contactName, serviceArea, mainBrands, mainCategories, productCategories, description, deliveryCapability, installationCapability, afterSalesPolicy, invoiceCapability string) error {
 	for label, value := range map[string]string{
 		"公司名称": companyName,
@@ -244,6 +288,39 @@ func validateMaterialShopContactPhone(value string) error {
 		return nil
 	}
 	return errors.New("联系电话格式不正确")
+}
+
+func validateRequiredMaterialShopDisplayFields(contactName, contactPhone, serviceArea, mainProducts string) error {
+	if strings.TrimSpace(contactName) == "" {
+		return errors.New("联系人不能为空")
+	}
+	if strings.TrimSpace(contactPhone) == "" {
+		return errors.New("联系电话不能为空")
+	}
+	if strings.TrimSpace(serviceArea) == "" {
+		return errors.New("服务区域不能为空")
+	}
+	if !jsonArrayTextHasItems(mainProducts) {
+		return errors.New("经营类目不能为空")
+	}
+	return validateMaterialShopContactPhone(contactPhone)
+}
+
+func jsonArrayTextHasItems(value string) bool {
+	raw := strings.TrimSpace(value)
+	if raw == "" || raw == "[]" {
+		return false
+	}
+	var items []string
+	if err := json.Unmarshal([]byte(raw), &items); err != nil {
+		return raw != ""
+	}
+	for _, item := range items {
+		if strings.TrimSpace(item) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func validateLatLng(lat, lng *float64) error {

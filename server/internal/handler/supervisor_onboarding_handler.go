@@ -73,11 +73,11 @@ func parseAndValidateSupervisorOnboardingForm(raw json.RawMessage) (*supervisorO
 	if form.CityCode == "" {
 		return nil, "", "请选择主要服务城市"
 	}
+	if len(form.ServiceArea) == 0 {
+		form.ServiceArea = []string{form.CityCode}
+	}
 	if form.IDNo == "" || len(form.IDNo) < 15 || len(form.IDNo) > 18 {
 		return nil, "", "请填写有效证件号码"
-	}
-	if len(form.ServiceArea) == 0 {
-		return nil, "", "请选择可服务城市"
 	}
 	if len(form.Certifications) == 0 {
 		return nil, "", "请填写至少一项资质材料"

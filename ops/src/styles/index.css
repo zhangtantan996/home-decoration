@@ -10,6 +10,17 @@ body {
   background: var(--ant-color-bg-layout);
 }
 
+.ops-required-label {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.ops-required-label__mark {
+  color: var(--ant-color-error);
+  font-weight: 700;
+}
+
 .ops-shell {
   height: 100vh;
   min-height: 100vh;

@@ -515,10 +515,19 @@ func TestAdminCreateProviderPreservesDistrictServiceArea(t *testing.T) {
 	}
 
 	body := map[string]any{
-		"providerType": 2,
-		"companyName":  "测试装修公司",
-		"status":       1,
-		"serviceArea":  []string{"610100", "610113"},
+		"providerType":  2,
+		"companyName":   "测试装修公司",
+		"subType":       "company",
+		"entityType":    "company",
+		"specialty":     "全案交付",
+		"workTypes":     "整装",
+		"avatar":        "/uploads/providers/company-avatar.jpg",
+		"coverImage":    "/uploads/providers/company-cover.jpg",
+		"priceMin":      800,
+		"priceMax":      1600,
+		"officeAddress": "西安市雁塔区测试路 3 号",
+		"status":        1,
+		"serviceArea":   []string{"610100", "610113"},
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
@@ -570,11 +579,20 @@ func TestAdminCreateProviderSavesVerifiedFlag(t *testing.T) {
 	}
 
 	body := map[string]any{
-		"providerType": 1,
-		"companyName":  "已认证设计师",
-		"status":       1,
-		"serviceArea":  []string{"610100"},
-		"verified":     true,
+		"providerType":  1,
+		"companyName":   "已认证设计师",
+		"subType":       "personal",
+		"entityType":    "personal",
+		"specialty":     "现代简约",
+		"workTypes":     "全案设计",
+		"avatar":        "/uploads/providers/designer-avatar.jpg",
+		"coverImage":    "/uploads/providers/designer-cover.jpg",
+		"priceMin":      300,
+		"priceMax":      900,
+		"officeAddress": "西安市雁塔区测试路 4 号",
+		"status":        1,
+		"serviceArea":   []string{"610100"},
+		"verified":      true,
 	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
