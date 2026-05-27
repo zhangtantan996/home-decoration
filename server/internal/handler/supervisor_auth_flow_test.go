@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -192,6 +193,21 @@ func TestSupervisorOnboardingSubmitRejectsIncompleteForm(t *testing.T) {
 	}
 	if count != 0 {
 		t.Fatalf("invalid form must not create application, got count=%d", count)
+	}
+}
+
+func TestSupervisorOnboardingFormDefaultsEmptyServiceAreaToCity(t *testing.T) {
+	raw := json.RawMessage(`{"realName":"张监理","cityCode":"610100","serviceArea":[],"certifications":["cert-a"],"idNo":"110101199001011234","agreementConfirmed":true}`)
+
+	form, normalized, formErr := parseAndValidateSupervisorOnboardingForm(raw)
+	if formErr != "" {
+		t.Fatalf("empty service area should default to city, got error=%s", formErr)
+	}
+	if len(form.ServiceArea) != 1 || form.ServiceArea[0] != "610100" {
+		t.Fatalf("service area not defaulted to city, got=%v", form.ServiceArea)
+	}
+	if !strings.Contains(normalized, `"serviceArea":["610100"]`) {
+		t.Fatalf("normalized form should persist city service area, got=%s", normalized)
 	}
 }
 

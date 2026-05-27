@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import {
   Form,
   Input,
@@ -29,6 +29,13 @@ const { Title, Text } = Typography;
 const { useBreakpoint } = Grid;
 
 type PageState = "check_whitelist" | "fill_form" | "submitted";
+type SelectOption = { label: string; value: string };
+
+const getCityWideLabel = (cityName: string): string =>
+  cityName.endsWith("市") ? `${cityName}全市` : `${cityName}全域`;
+
+const buildCityWideOption = (city?: SelectOption): SelectOption[] =>
+  city ? [{ label: getCityWideLabel(city.label), value: city.value }] : [];
 
 const SupervisorApply: React.FC = () => {
   const [pageState, setPageState] = useState<PageState>("check_whitelist");
@@ -48,6 +55,8 @@ const SupervisorApply: React.FC = () => {
     Array<{ label: string; value: string }>
   >([]);
   const [districtLoading, setDistrictLoading] = useState(false);
+  const [activeCityCode, setActiveCityCode] = useState("");
+  const [serviceAreaHint, setServiceAreaHint] = useState("");
   const timerRef = useRef<number | null>(null);
   const navigate = useNavigate();
   const screens = useBreakpoint();
@@ -96,32 +105,54 @@ const SupervisorApply: React.FC = () => {
     void loadCities();
   }, []);
 
-  const selectedCityCode = Form.useWatch("cityCode", applyForm);
+  const selectedCityOption = cityOptions.find(
+    (city) => city.value === activeCityCode,
+  );
 
-  useEffect(() => {
-    if (!selectedCityCode) {
-      setDistrictOptions([]);
-      return;
-    }
-    const loadDistricts = async () => {
+  const loadDistrictOptions = useCallback(
+    async (cityCode: string, city?: SelectOption) => {
+      if (!cityCode) {
+        setDistrictOptions([]);
+        return;
+      }
+      const cityWideOption = buildCityWideOption(city);
+      setDistrictOptions(cityWideOption);
       setDistrictLoading(true);
       try {
         const districts =
-          await supervisorOnboardingApi.listDistrictsByCity(selectedCityCode);
+          await supervisorOnboardingApi.listDistrictsByCity(cityCode);
         setDistrictOptions(
-          districts.map((d: ServiceCityOption) => ({
-            label: d.name,
-            value: d.code,
-          })),
+          cityWideOption.concat(
+            districts
+              .filter((d: ServiceCityOption) => d.code !== cityCode)
+              .map((d: ServiceCityOption) => ({
+                label: d.name,
+                value: d.code,
+              })),
+          ),
         );
       } catch {
-        setDistrictOptions([]);
+        setDistrictOptions(cityWideOption);
       } finally {
         setDistrictLoading(false);
       }
-    };
-    void loadDistricts();
-  }, [selectedCityCode]);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (!activeCityCode) {
+      setDistrictOptions([]);
+      return;
+    }
+    void loadDistrictOptions(activeCityCode, selectedCityOption);
+  }, [activeCityCode, loadDistrictOptions, selectedCityOption]);
+
+  useEffect(() => {
+    if (activeCityCode) {
+      setServiceAreaHint("");
+    }
+  }, [activeCityCode]);
 
   const startCountdown = () => {
     setCountdown(60);
@@ -291,8 +322,38 @@ const SupervisorApply: React.FC = () => {
       // 确保 DOM 已渲染后再填值
       setTimeout(() => {
         applyForm.setFieldsValue(formattedData);
+        setActiveCityCode(formattedData.cityCode || "");
       }, 50);
     }
+  };
+
+  const handleServiceAreaPointerDownCapture = (
+    event: React.PointerEvent<HTMLDivElement>,
+  ) => {
+    if (activeCityCode) {
+      if (serviceAreaHint) {
+        setServiceAreaHint("");
+      }
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setServiceAreaHint("请先选择服务城市");
+  };
+
+  const normalizeServiceAreaValues = (
+    values: string[],
+    cityCode: string,
+    prevValues: string[] = [],
+  ): string[] => {
+    const nextValues = Array.from(new Set(values));
+    const hasCityWide = nextValues.includes(cityCode);
+    const districtValues = nextValues.filter((value) => value !== cityCode);
+    if (!hasCityWide || districtValues.length === 0) {
+      return nextValues;
+    }
+    const previousHasCityWide = prevValues.includes(cityCode);
+    return previousHasCityWide ? districtValues : [cityCode];
   };
 
   const isMobile = !screens.md;
@@ -569,7 +630,13 @@ const SupervisorApply: React.FC = () => {
           onFinish={handleSubmit}
           onValuesChange={(changedValues) => {
             if ("cityCode" in changedValues) {
+              setActiveCityCode(changedValues.cityCode || "");
               applyForm.setFieldsValue({ serviceArea: [] });
+              setServiceAreaHint("");
+              const nextCity = cityOptions.find(
+                (city) => city.value === changedValues.cityCode,
+              );
+              setDistrictOptions(buildCityWideOption(nextCity));
             }
           }}
         >
@@ -626,19 +693,44 @@ const SupervisorApply: React.FC = () => {
           </Form.Item>
 
           <Form.Item
-            name="serviceArea"
-            label="服务范围（区/县）"
-            rules={[{ required: true, message: "请选择服务范围" }]}
+            label="服务范围（区/县或全市）"
+            validateStatus={serviceAreaHint ? "error" : undefined}
+            help={serviceAreaHint || undefined}
           >
-            <Select
-              mode="multiple"
-              placeholder="请选择一个或多个区县"
-              size="large"
-              options={districtOptions}
-              loading={districtLoading}
-              showSearch
-              optionFilterProp="label"
-            />
+            <div onPointerDownCapture={handleServiceAreaPointerDownCapture}>
+              <Form.Item
+                name="serviceArea"
+                noStyle
+                normalize={(values, prevValue, allValues) => {
+                  if (!Array.isArray(values)) {
+                    return [];
+                  }
+                  const currentCityCode = String(
+                    allValues?.cityCode || activeCityCode || "",
+                  );
+                  if (!currentCityCode) {
+                    return values;
+                  }
+                  return normalizeServiceAreaValues(
+                    values,
+                    currentCityCode,
+                    Array.isArray(prevValue) ? prevValue : [],
+                  );
+                }}
+              >
+                <Select
+                  mode="multiple"
+                  placeholder="不选择时默认全市，可改选具体区县"
+                  size="large"
+                  options={districtOptions}
+                  loading={districtLoading}
+                  showSearch
+                  optionFilterProp="label"
+                  allowClear
+                  status={serviceAreaHint ? "error" : undefined}
+                />
+              </Form.Item>
+            </div>
           </Form.Item>
 
           <Form.Item
