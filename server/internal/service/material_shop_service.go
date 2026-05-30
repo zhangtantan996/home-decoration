@@ -40,6 +40,7 @@ type MaterialShopListItem struct {
 	MainProducts      []string                  `json:"mainProducts"`
 	ProductCategories []string                  `json:"productCategories"`
 	Address           string                    `json:"address"`
+	ContactPhone      string                    `json:"contactPhone,omitempty"`
 	Distance          string                    `json:"distance"`
 	OpenTime          string                    `json:"openTime"`
 	Tags              []string                  `json:"tags"`
@@ -168,6 +169,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			MainProducts:      mainProducts,
 			ProductCategories: productCategories,
 			Address:           shop.Address,
+			ContactPhone:      strings.TrimSpace(shop.ContactPhone),
 			Distance:          distance,
 			OpenTime:          shop.OpenTime,
 			Tags:              tags,
@@ -244,6 +246,7 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 		MainProducts:      mainProducts,
 		ProductCategories: productCategories,
 		Address:           shop.Address,
+		ContactPhone:      strings.TrimSpace(shop.ContactPhone),
 		Distance:          "—",
 		OpenTime:          shop.OpenTime,
 		Tags:              tags,

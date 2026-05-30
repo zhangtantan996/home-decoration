@@ -1,0 +1,229 @@
+@import "../../../theme/tokens";
+
+.material-product-detail {
+  min-height: 100vh;
+  padding-bottom: calc(40rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, $color-bg-page-top 0%, $color-bg-page-bottom 100%);
+  box-sizing: border-box;
+
+  &--loading,
+  &--empty {
+    padding: 0 24rpx 40rpx;
+    box-sizing: border-box;
+  }
+
+  &__hero {
+    position: relative;
+    margin: 0 0 24rpx;
+    overflow: hidden;
+    background: $color-gray-100;
+  }
+
+  &__swiper,
+  &__swiper-item {
+    width: 100%;
+    height: 430rpx;
+  }
+
+  &__hero-image,
+  &__hero-placeholder {
+    display: block;
+    width: 100%;
+    height: 430rpx;
+  }
+
+  &__hero-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 14rpx;
+    background: linear-gradient(135deg, $color-gray-200 0%, $color-gray-400 100%);
+    color: $color-white;
+    font-size: 24rpx;
+    font-weight: 700;
+  }
+
+  &__image-count {
+    position: absolute;
+    right: 22rpx;
+    top: 22rpx;
+    min-width: 72rpx;
+    height: 44rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: $radius-pill;
+    background: $color-gray-900;
+    color: $color-white;
+    font-size: 22rpx;
+    font-weight: 700;
+  }
+
+  &__main {
+    padding: 0 24rpx;
+  }
+
+  &__heading {
+    padding: 0 0 22rpx;
+  }
+
+  &__title {
+    display: block;
+    color: $color-text-primary;
+    font-size: 40rpx;
+    font-weight: 900;
+    line-height: 1.22;
+  }
+
+  &__subtitle {
+    display: block;
+    margin-top: 12rpx;
+    color: $color-text-secondary;
+    font-size: 26rpx;
+    line-height: 1.4;
+  }
+
+  &__price-row {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin: 6rpx 0 30rpx;
+  }
+
+  &__price {
+    color: $color-error;
+    font-size: 42rpx;
+    font-weight: 900;
+    line-height: 1;
+  }
+
+  &__price-note {
+    display: flex;
+    align-items: center;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1;
+  }
+
+  &__card {
+    margin-bottom: 24rpx;
+    padding: 28rpx;
+    border: 1rpx solid $color-line-soft;
+    border-radius: $radius-card;
+    background: $color-bg-card;
+    box-shadow: $shadow-card;
+    box-sizing: border-box;
+  }
+
+  &__card-title {
+    display: block;
+    color: $color-text-primary;
+    font-size: 30rpx;
+    font-weight: 800;
+    line-height: 1.2;
+  }
+
+  &__spec-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 24rpx 18rpx;
+    margin-top: 24rpx;
+  }
+
+  &__spec-item {
+    min-width: 0;
+    display: flex;
+    align-items: flex-start;
+    gap: 14rpx;
+  }
+
+  &__spec-label {
+    flex-shrink: 0;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.45;
+  }
+
+  &__spec-value {
+    min-width: 0;
+    color: $color-text-primary;
+    font-size: 24rpx;
+    line-height: 1.45;
+  }
+
+  &__shop-card {
+    display: block;
+  }
+
+  &__shop-name {
+    display: block;
+    margin-top: 20rpx;
+    color: $color-text-primary;
+    font-size: 28rpx;
+    font-weight: 800;
+    line-height: 1.25;
+  }
+
+  &__rating-row {
+    display: flex;
+    align-items: center;
+    gap: 6rpx;
+    margin-top: 12rpx;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.2;
+  }
+
+  &__shop-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 8rpx;
+    margin-top: 12rpx;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.45;
+  }
+
+  &__shop-meta-text {
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__copy-action {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    min-width: 72rpx;
+    height: 44rpx;
+    border-radius: $radius-pill;
+    background: $color-brand-soft;
+    color: $color-info;
+    font-size: 22rpx;
+    font-weight: 700;
+    line-height: 1;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+
+    &--pressed {
+      transform: translateY(2rpx);
+      opacity: 0.76;
+    }
+  }
+
+  &__hero-skeleton {
+    height: 430rpx;
+    border-radius: 0;
+  }
+
+  &__content-skeleton {
+    height: 176rpx;
+    margin-top: 24rpx;
+    border-radius: $radius-card;
+  }
+
+  &__empty-wrap {
+    padding-top: 36rpx;
+  }
+}

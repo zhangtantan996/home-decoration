@@ -93,6 +93,13 @@ export default {
       ],
     },
     {
+      root: 'pages/material-products',
+      pages: [
+        'list/index',
+        'detail/index',
+      ],
+    },
+    {
       root: 'pages/support',
       pages: [
         'index',

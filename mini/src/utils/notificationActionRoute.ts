@@ -53,6 +53,8 @@ const lightAppointmentPagePrefixes = [
   '/pages/legal/refund-rules/index',
   '/pages/legal/third-party-sharing/index',
   '/pages/material-shops/detail/index',
+  '/pages/material-products/list/index',
+  '/pages/material-products/detail/index',
   '/pages/support/index',
   '/pages/about/index',
 ];

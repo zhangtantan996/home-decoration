@@ -1,0 +1,34 @@
+@import "../../../theme/tokens";
+
+.material-products-page {
+  min-height: 100vh;
+  padding: 0 24rpx calc(40rpx + constant(safe-area-inset-bottom));
+  padding-bottom: calc(40rpx + env(safe-area-inset-bottom));
+  background: linear-gradient(180deg, $color-bg-page-top 0%, $color-bg-page-bottom 100%);
+  box-sizing: border-box;
+
+  &--loading,
+  &--empty {
+    min-height: 100vh;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18rpx;
+    margin-top: 18rpx;
+  }
+
+  &__card-skeleton {
+    height: 340rpx;
+    border-radius: 18rpx;
+  }
+
+  &__empty-wrap {
+    padding-top: 40rpx;
+  }
+
+  &__empty-wrap--products {
+    min-height: 420rpx;
+  }
+}
