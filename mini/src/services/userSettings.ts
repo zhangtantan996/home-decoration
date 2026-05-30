@@ -47,8 +47,6 @@ export interface FeedbackPayload {
 interface SendCodeResult {
   expiresIn: number;
   requestId?: string;
-  debugCode?: string;
-  debugOnly?: boolean;
 }
 
 export const DEFAULT_USER_SETTINGS: UserSettings = {

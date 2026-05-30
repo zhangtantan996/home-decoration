@@ -1,9 +1,13 @@
 import { buildAbsoluteUrl, parseAbsoluteUrl } from '@/utils/url';
+import { getLoopbackHostname, getLoopbackIPv4 } from '@/utils/localAddress';
 
 export type AppEnv = "local" | "test" | "staging" | "production";
 
 const PLACEHOLDER_API_HOST_PATTERN = /api\.yourdomain\.com/i;
-const LOCAL_API_HOST_PATTERN = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\b/i;
+const LOOPBACK_HOSTS = new Set([
+  getLoopbackIPv4(),
+  getLoopbackHostname(),
+]);
 
 const normalizeAppEnv = (raw?: string): AppEnv => {
   const value = (raw || "").trim().toLowerCase();
@@ -39,12 +43,16 @@ const createApiUrl = (path: string) => {
   const suffixPath = `${apiBasePath.replace(/^https?:\/\/[^/]+/i, '')}${normalizePath(path)}`;
   return buildAbsoluteUrl(API_BASE_URL, suffixPath);
 };
+const isLoopbackApiBase = (raw: string) => {
+  const parsed = parseAbsoluteUrl(raw);
+  return Boolean(parsed && LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase()));
+};
 
 const getDefaultApiBaseUrl = (appEnv: AppEnv) => {
   switch (appEnv) {
     case "local":
     case "test":
-      return "http://127.0.0.1:8080/api/v1";
+      return `http://${getLoopbackIPv4()}:8080/api/v1`;
     default:
       throw new Error('TARO_APP_API_BASE is required for production mini runtime');
   }
@@ -58,7 +66,7 @@ const H5_URL = (process.env.TARO_APP_H5_URL || "").trim();
 const TINODE_URL = (process.env.TARO_APP_TINODE_URL || "").trim();
 const TINODE_API_KEY = (process.env.TARO_APP_TINODE_API_KEY || "").trim();
 const IS_PLACEHOLDER_API_BASE = PLACEHOLDER_API_HOST_PATTERN.test(API_BASE_URL);
-const IS_LOCAL_API_BASE = LOCAL_API_HOST_PATTERN.test(API_BASE_URL);
+const IS_LOCAL_API_BASE = isLoopbackApiBase(API_BASE_URL);
 const ENABLE_NOTIFICATION_WS = (() => {
   const raw = (process.env.TARO_APP_ENABLE_NOTIFICATION_WS || "").trim().toLowerCase();
   if (raw === "true") {

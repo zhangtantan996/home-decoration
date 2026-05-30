@@ -254,6 +254,102 @@ func TestInitDefaultConfigsMigratesV12ManagedPublicLegalDefaults(t *testing.T) {
 	}
 }
 
+func TestInitDefaultConfigsMigratesLaunchPublicLegalStatements(t *testing.T) {
+	setupConfigServiceTestDB(t)
+	svc := &ConfigService{}
+
+	legacyValues := []model.SystemConfig{
+		{
+			Key:   model.ConfigKeyPublicUserAgreement,
+			Value: "前文\n平台暂不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。\n后文",
+		},
+		{
+			Key:   model.ConfigKeyPublicTransactionRules,
+			Value: "前文\n平台当前不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。\n后文",
+		},
+		{
+			Key:   model.ConfigKeyPublicRefundRules,
+			Value: "禾泽云当前线上为轻预约模式，不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。后续说明",
+		},
+		{
+			Key:   model.ConfigKeyPublicPlatformRules,
+			Value: "平台当前仅提供设计师和装修公司轻预约留资及线下联系跟进能力。\n平台当前不提供线上交易、在线支付、退款、订单履约、施工进度管理或线上结算能力。",
+		},
+		{
+			Key:   model.ConfigKeyPublicThirdPartySharing,
+			Value: "当前轻预约模式不因线上支付、退款或对账目的向支付机构共享信息。",
+		},
+		{Key: model.ConfigKeyPublicLegalVersion, Value: "v1.3.0-20260520"},
+		{Key: model.ConfigKeyPublicLegalEffectiveDate, Value: "2026-05-20"},
+	}
+	if err := repository.DB.Create(&legacyValues).Error; err != nil {
+		t.Fatalf("seed launch legal configs: %v", err)
+	}
+
+	if err := svc.InitDefaultConfigs(); err != nil {
+		t.Fatalf("init default configs: %v", err)
+	}
+
+	for _, tc := range []struct {
+		key          string
+		mustContain  string
+		mustNotMatch string
+	}{
+		{
+			key:          model.ConfigKeyPublicUserAgreement,
+			mustContain:  "页面实际启用范围",
+			mustNotMatch: "暂不提供线上交易",
+		},
+		{
+			key:          model.ConfigKeyPublicTransactionRules,
+			mustContain:  "项目进度写入管理能力",
+			mustNotMatch: "施工进度管理",
+		},
+		{
+			key:          model.ConfigKeyPublicRefundRules,
+			mustContain:  "项目进度查看",
+			mustNotMatch: "施工进度管理",
+		},
+		{
+			key:          model.ConfigKeyPublicPlatformRules,
+			mustContain:  "项目进度查看",
+			mustNotMatch: "施工进度管理",
+		},
+		{
+			key:          model.ConfigKeyPublicThirdPartySharing,
+			mustContain:  "如页面未启用线上支付",
+			mustNotMatch: "轻预约模式不因线上支付",
+		},
+	} {
+		var cfg model.SystemConfig
+		if err := repository.DB.Where("key = ?", tc.key).First(&cfg).Error; err != nil {
+			t.Fatalf("load migrated config %s: %v", tc.key, err)
+		}
+		if !strings.Contains(cfg.Value, tc.mustContain) {
+			t.Fatalf("config %s missing migrated statement %q: %s", tc.key, tc.mustContain, cfg.Value)
+		}
+		if strings.Contains(cfg.Value, tc.mustNotMatch) {
+			t.Fatalf("config %s still contains outdated statement %q: %s", tc.key, tc.mustNotMatch, cfg.Value)
+		}
+	}
+
+	for _, tc := range []struct {
+		key  string
+		want string
+	}{
+		{model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion()},
+		{model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate()},
+	} {
+		var cfg model.SystemConfig
+		if err := repository.DB.Where("key = ?", tc.key).First(&cfg).Error; err != nil {
+			t.Fatalf("load migrated meta %s: %v", tc.key, err)
+		}
+		if cfg.Value != tc.want {
+			t.Fatalf("config %s not migrated, got %q want %q", tc.key, cfg.Value, tc.want)
+		}
+	}
+}
+
 func TestInitDefaultConfigsPreservesCustomizedPublicLegalContent(t *testing.T) {
 	setupConfigServiceTestDB(t)
 	svc := &ConfigService{}

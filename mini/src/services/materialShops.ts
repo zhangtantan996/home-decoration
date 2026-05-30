@@ -14,6 +14,7 @@ export interface MaterialShopItem {
   mainProducts: string[];
   productCategories: string[];
   address: string;
+  contactPhone?: string;
   distance: string;
   openTime: string;
   tags: string[];
@@ -50,6 +51,7 @@ interface MaterialShopDTO {
   mainProducts?: string[];
   productCategories?: string[];
   address?: string;
+  contactPhone?: string;
   distance?: string | number;
   openTime?: string;
   tags?: string[];
@@ -93,6 +95,7 @@ const toMaterialShopItem = (dto: MaterialShopDTO): MaterialShopItem => ({
   mainProducts: normalizeStringArray(dto.mainProducts),
   productCategories: normalizeStringArray(dto.productCategories),
   address: dto.address || '地址待补充',
+  contactPhone: String(dto.contactPhone || '').trim(),
   distance: String(dto.distance || '附近'),
   openTime: dto.openTime || '营业时间待补充',
   tags: normalizeStringArray(dto.tags),

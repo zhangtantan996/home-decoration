@@ -136,12 +136,9 @@ export default function SmsLoginPage() {
 
     try {
       setSending(true);
-      const result = await sendLoginCode(phone.trim());
+      await sendLoginCode(phone.trim());
       setCountdown(60);
       setPhoneLocked(true);
-      if (result.debugCode) {
-        console.debug(`[DEV] 登录验证码: ${result.debugCode}`);
-      }
       Taro.showToast({ title: '验证码已发送', icon: 'success' });
     } catch (error) {
       showErrorToast(error, '发送失败');
