@@ -193,7 +193,7 @@ const MaterialProductDetailPage: React.FC = () => {
             {specRows.map((row) => (
               <View key={row.label} className="material-product-detail__spec-item">
                 <Text className="material-product-detail__spec-label">{row.label}</Text>
-                <Text className="material-product-detail__spec-value" numberOfLines={2}>{row.value}</Text>
+                <Text className="material-product-detail__spec-value">{row.value}</Text>
               </View>
             ))}
           </View>
