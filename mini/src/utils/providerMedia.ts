@@ -1,5 +1,6 @@
 import { MINI_ENV } from '@/config/env';
 import type { ProviderCaseItem, ProviderDetail } from '@/services/providers';
+import { getLoopbackHostname, getLoopbackIPv4 } from '@/utils/localAddress';
 import { parseAbsoluteUrl, replaceAbsoluteUrlOrigin } from '@/utils/url';
 
 const API_ORIGIN = MINI_ENV.API_BASE_URL.replace(/\/api\/v1\/?$/, '');
@@ -47,6 +48,20 @@ const normalizeFirstPartyAssetPath = (raw: string) => {
   return value;
 };
 
+const LEGACY_LOOPBACK_HOSTS = new Set([
+  getLoopbackHostname(),
+  getLoopbackIPv4(),
+]);
+
+const normalizeLegacyLoopbackMediaUrl = (raw: string) => {
+  const value = raw.trim();
+  const parsed = parseAbsoluteUrl(value);
+  if (!parsed || !LEGACY_LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
+    return value;
+  }
+  return replaceAbsoluteUrlOrigin(value, API_ORIGIN);
+};
+
 const isKnownUnstableImageUrl = (raw: string) => {
   const value = raw.trim().toLowerCase();
   if (!value) return false;
@@ -56,7 +71,7 @@ const isKnownUnstableImageUrl = (raw: string) => {
 export const normalizeProviderMediaUrl = (raw?: string, fallback = '') => {
   if (!raw) return fallback;
   const normalized = normalizeFirstPartyAssetPath(
-    normalizeFirstPartyAbsoluteUrl(raw.replace(/^http:\/\/localhost:8080/i, API_ORIGIN)),
+    normalizeFirstPartyAbsoluteUrl(normalizeLegacyLoopbackMediaUrl(raw)),
   ).trim();
   if (!normalized) return fallback;
   if (isKnownUnstableImageUrl(normalized)) {

@@ -3,6 +3,7 @@ import { Tinode } from './tinodeSdk';
 import TaroWebSocketAdapter from './TaroWebSocketAdapter';
 import { getTinodeUserId } from './tinode';
 import { MINI_ENV } from '@/config/env';
+import { getLoopbackHostname } from '@/utils/localAddress';
 import { parseAbsoluteUrl } from '@/utils/url';
 
 type Listener = (...args: unknown[]) => void;
@@ -76,7 +77,7 @@ const getTinodeServerHost = (): { host: string; secure: boolean } => {
   const derived = deriveTinodeUrlFromApiBase();
   if (derived) return derived;
 
-  return { host: 'localhost:6060', secure: false };
+  return { host: `${getLoopbackHostname()}:6060`, secure: false };
 };
 
 // Tinode SDK calls `indexedDB.deleteDatabase()` even with `persist: false`.

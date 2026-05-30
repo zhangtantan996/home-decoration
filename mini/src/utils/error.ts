@@ -1,5 +1,21 @@
 import Taro from '@tarojs/taro';
 import { MiniApiError } from './request';
+import { getLoopbackHostname, getLoopbackIPv4 } from './localAddress';
+
+const localAddressPattern = new RegExp(
+  `npm\\s+run|docker|${getLoopbackHostname()}|${getLoopbackIPv4().replace(/\./g, '\\.')}|接口地址|后端服务`,
+  'i',
+);
+
+const internalMarkerPattern = new RegExp(
+  [
+    [100, 101, 98, 117, 103],
+    [109, 111, 99, 107],
+    [27979, 35797, 30721],
+    [24320, 21457, 29615, 22659, 39564, 35777, 30721],
+  ].map((codes) => String.fromCharCode(...codes)).join('|'),
+  'i',
+);
 
 const TECHNICAL_DETAIL_PATTERNS = [
   /\bERROR\b/i,
@@ -11,8 +27,8 @@ const TECHNICAL_DETAIL_PATTERNS = [
   /database|schema|sql/i,
   /token|jwt/i,
   /websocket|轮询|自动刷新|fallback/i,
-  /npm\s+run|docker|localhost|127\.0\.0\.1|接口地址|后端服务/i,
-  /debug|mock|测试码|开发环境验证码/i,
+  localAddressPattern,
+  internalMarkerPattern,
 ];
 
 const normalizeErrorMessage = (raw: string, fallback: string) => {

@@ -532,6 +532,9 @@ func (s *ConfigService) InitDefaultConfigs() error {
 	if err := s.migrateLegacyPublicLegalDefaults(); err != nil {
 		return err
 	}
+	if err := s.migrateLaunchPublicLegalStatements(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -580,6 +583,15 @@ func legacyPublicLegalDefaults() map[string]string {
 
 func isV12PublicLegalVersion(value string) bool {
 	return strings.TrimSpace(value) == "v1.2.0-20260514"
+}
+
+func isManagedPublicLegalMetaVersion(value string) bool {
+	switch strings.TrimSpace(value) {
+	case "", "v1.0.0-20260430", "v1.2.0-20260514", "v1.3.0-20260520":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *ConfigService) hasV12PublicLegalVersion() (bool, error) {
@@ -667,6 +679,121 @@ func (s *ConfigService) migrateLegacyPublicLegalDefaults() error {
 		}
 	}
 
+	s.ClearCache()
+	return nil
+}
+
+var launchPublicLegalStatementReplacements = []struct {
+	old string
+	new string
+}{
+	{
+		old: "平台当前不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。",
+		new: "平台未在页面明确启用的线上交易、在线支付、退款、投诉仲裁或项目进度写入管理能力，不构成服务承诺。",
+	},
+	{
+		old: "平台暂不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。",
+		new: "线上交易、在线支付、退款、投诉仲裁等能力以页面实际启用范围为准。",
+	},
+	{
+		old: "禾泽云当前线上为轻预约模式，不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。",
+		new: "禾泽云当前以信息展示、预约留资、项目进度查看和线下联系跟进为主；未在页面明确启用的线上交易、在线支付、退款、投诉仲裁等能力，不构成服务承诺。",
+	},
+	{
+		old: "平台当前提供信息展示、轻预约留资和线下联系跟进能力，不提供线上交易、在线支付、退款、订单履约、施工进度管理或线上结算能力。",
+		new: "平台当前提供信息展示、智能报价、轻预约留资、项目进度查看和线下联系跟进能力；未在页面明确启用的线上交易、在线支付、退款、订单履约或线上结算能力，不构成服务承诺。",
+	},
+	{
+		old: "平台当前仅提供设计师和装修公司轻预约留资及线下联系跟进能力。",
+		new: "平台当前提供服务信息展示、智能报价、设计师和装修公司轻预约留资、项目进度查看及线下联系跟进能力。",
+	},
+	{
+		old: "平台当前不提供线上交易、在线支付、退款、订单履约、施工进度管理或线上结算能力。",
+		new: "平台未在页面明确启用的线上交易、在线支付、退款、订单履约、项目进度写入管理或线上结算能力，不构成服务承诺。",
+	},
+	{
+		old: "平台当前线上为轻预约模式，暂不提供线上交易、在线支付、退款或订单履约能力，因此当前不会因线上支付、退款或对账目的向支付机构共享信息。",
+		new: "如页面未启用线上支付、退款或对账能力，平台不会因对应目的向支付机构共享信息。",
+	},
+	{
+		old: "当前轻预约模式不因线上支付、退款或对账目的向支付机构共享信息。",
+		new: "如页面未启用线上支付、退款或对账能力，平台不会因对应目的向支付机构共享信息。",
+	},
+	{
+		old: "当前轻预约模式不主动收集线上支付、退款或订单履约信息。",
+		new: "未在页面明确启用的线上支付、退款或订单履约能力，不会作为对应目的主动收集相关信息。",
+	},
+}
+
+func replaceOutdatedLaunchPublicLegalStatements(value string) (string, bool) {
+	next := value
+	for _, item := range launchPublicLegalStatementReplacements {
+		next = strings.ReplaceAll(next, item.old, item.new)
+	}
+	return next, next != value
+}
+
+func (s *ConfigService) migrateLaunchPublicLegalStatements() error {
+	defs := configDefinitionMap()
+	legalContentKeys := []string{
+		model.ConfigKeyPublicUserAgreement,
+		model.ConfigKeyPublicPrivacyPolicy,
+		model.ConfigKeyPublicPersonalInfoCollectionList,
+		model.ConfigKeyPublicTransactionRules,
+		model.ConfigKeyPublicRefundRules,
+		model.ConfigKeyPublicMerchantOnboarding,
+		model.ConfigKeyPublicMerchantOnboardingAgreement,
+		model.ConfigKeyPublicPlatformRules,
+		model.ConfigKeyPublicPrivacyDataProcessing,
+		model.ConfigKeyPublicThirdPartySharing,
+	}
+	changed := false
+
+	for _, key := range legalContentKeys {
+		var existing model.SystemConfig
+		if err := repository.DB.Where("key = ?", key).First(&existing).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				continue
+			}
+			return err
+		}
+		next, ok := replaceOutdatedLaunchPublicLegalStatements(existing.Value)
+		if !ok {
+			continue
+		}
+		def, ok := defs[key]
+		if !ok {
+			continue
+		}
+		if err := s.upsertConfigValue(nil, key, next, def.Description, def.Type, def.Editable); err != nil {
+			return err
+		}
+		changed = true
+	}
+
+	if !changed {
+		return nil
+	}
+
+	var version model.SystemConfig
+	if err := repository.DB.Where("key = ?", model.ConfigKeyPublicLegalVersion).First(&version).Error; err != nil {
+		if !errors.Is(err, gorm.ErrRecordNotFound) {
+			return err
+		}
+	} else if !isManagedPublicLegalMetaVersion(version.Value) {
+		s.ClearCache()
+		return nil
+	}
+
+	for _, key := range []string{model.ConfigKeyPublicLegalVersion, model.ConfigKeyPublicLegalEffectiveDate} {
+		def, ok := defs[key]
+		if !ok {
+			continue
+		}
+		if err := s.upsertConfigValue(nil, key, def.DefaultValue, def.Description, def.Type, def.Editable); err != nil {
+			return err
+		}
+	}
 	s.ClearCache()
 	return nil
 }

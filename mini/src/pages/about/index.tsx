@@ -10,28 +10,28 @@ import { fallbackPublicSiteConfig, getPublicSiteConfig } from '@/services/public
 import './index.scss';
 
 export default function AboutPage() {
-  const [version, setVersion] = useState('开发版');
+  const [version, setVersion] = useState('');
   const [miniProgramRecordNumber, setMiniProgramRecordNumber] = useState(
-    fallbackPublicSiteConfig.miniProgramRecordNumber || '备案中',
+    fallbackPublicSiteConfig.miniProgramRecordNumber || '',
   );
-  const [icp, setIcp] = useState(fallbackPublicSiteConfig.icp || '已备案');
+  const [icp, setIcp] = useState(fallbackPublicSiteConfig.icp || '');
 
   useEffect(() => {
     try {
       const accountInfo = Taro.getAccountInfoSync();
-      setVersion(accountInfo.miniProgram.version || '开发版');
+      setVersion(accountInfo.miniProgram.version || '');
     } catch {
-      setVersion('开发版');
+      setVersion('');
     }
 
     void getPublicSiteConfig()
       .then((config) => {
-        setMiniProgramRecordNumber(config.miniProgramRecordNumber || '备案中');
-        setIcp(config.icp || fallbackPublicSiteConfig.icp || '已备案');
+        setMiniProgramRecordNumber(config.miniProgramRecordNumber || '');
+        setIcp(config.icp || fallbackPublicSiteConfig.icp || '');
       })
       .catch(() => {
-        setMiniProgramRecordNumber(fallbackPublicSiteConfig.miniProgramRecordNumber || '备案中');
-        setIcp(fallbackPublicSiteConfig.icp || '已备案');
+        setMiniProgramRecordNumber(fallbackPublicSiteConfig.miniProgramRecordNumber || '');
+        setIcp(fallbackPublicSiteConfig.icp || '');
       });
   }, []);
 
@@ -49,27 +49,27 @@ export default function AboutPage() {
       <View className="about-page__hero">
         <Text className="about-page__eyebrow">禾泽云</Text>
         <Text className="about-page__title">让家装服务选择更清晰</Text>
-        <Text className="about-page__subtitle">从找服务商、看灵感案例到提交轻预约，平台工作人员会在线下联系跟进。</Text>
+        <Text className="about-page__subtitle">从找服务商、看灵感案例、智能报价到项目进度查看，帮助你更清楚地推进装修决策。</Text>
       </View>
 
       <View className="about-page__content">
         <Card title="平台介绍" className="about-page__card">
           <View className="about-page__paragraph">
-            <Text>禾泽云是面向本地家装服务的信息展示与轻预约小程序，当前以西安试点为主，展示设计师、工长、装修公司、主材门店与灵感案例。</Text>
+            <Text>禾泽云是面向本地家装服务的信息展示与轻预约小程序，当前以西安试点为主，提供服务商浏览、灵感案例、智能报价、预约留资和项目进度查看等能力。</Text>
           </View>
         </Card>
 
         <Card title="我们提供" className="about-page__card">
           <View className="about-page__list">
-            <Text className="about-page__list-item">服务商资料浏览、筛选与收藏</Text>
-            <Text className="about-page__list-item">设计师和装修公司轻预约留资</Text>
-            <Text className="about-page__list-item">灵感案例、主材门店和商品资料展示</Text>
+            <Text className="about-page__list-item">设计师、工长、装修公司和主材门店资料浏览</Text>
+            <Text className="about-page__list-item">灵感案例、智能报价和预约留资</Text>
+            <Text className="about-page__list-item">项目进度查看、通知提醒和意见反馈</Text>
           </View>
         </Card>
 
         <Card title="服务边界" className="about-page__card">
           <View className="about-page__paragraph">
-            <Text>平台当前不提供线上交易、在线支付、订单履约、退款、投诉仲裁或施工进度管理。具体设计、施工、商品交付和售后服务由用户与对应服务商在线下确认。</Text>
+            <Text>平台提供信息展示、预约留资、项目进度查看和必要的联系跟进。具体设计、施工、材料交付、付款安排和售后责任，以用户与对应服务主体确认的线下约定或平台记录为准。</Text>
           </View>
         </Card>
 
@@ -80,18 +80,24 @@ export default function AboutPage() {
         </Card>
 
         <Card title="版本信息" className="about-page__card">
-          <View className="about-page__meta-row">
-            <Text className="about-page__meta-label">小程序版本</Text>
-            <Text className="about-page__meta-value">{version}</Text>
-          </View>
-          <View className="about-page__meta-row">
-            <Text className="about-page__meta-label">小程序备案号</Text>
-            <Text className="about-page__meta-value">{miniProgramRecordNumber}</Text>
-          </View>
-          <View className="about-page__meta-row">
-            <Text className="about-page__meta-label">ICP备案号</Text>
-            <Text className="about-page__meta-value">{icp}</Text>
-          </View>
+          {version ? (
+            <View className="about-page__meta-row">
+              <Text className="about-page__meta-label">小程序版本</Text>
+              <Text className="about-page__meta-value">{version}</Text>
+            </View>
+          ) : null}
+          {miniProgramRecordNumber ? (
+            <View className="about-page__meta-row">
+              <Text className="about-page__meta-label">小程序备案号</Text>
+              <Text className="about-page__meta-value">{miniProgramRecordNumber}</Text>
+            </View>
+          ) : null}
+          {icp ? (
+            <View className="about-page__meta-row">
+              <Text className="about-page__meta-label">ICP备案号</Text>
+              <Text className="about-page__meta-value">{icp}</Text>
+            </View>
+          ) : null}
         </Card>
 
         <Button variant="outline" block onClick={handleOpenSupport}>联系平台客服</Button>

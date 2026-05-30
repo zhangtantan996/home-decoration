@@ -53,12 +53,9 @@ export default function WechatBindPhonePage() {
     }
     setSending(true);
     try {
-      const res = await sendLoginCode(phone.trim());
+      await sendLoginCode(phone.trim());
       setPhoneLocked(true);
       setCountdown(60);
-      if (res.debugCode) {
-        console.debug(`[DEV] 绑定手机号验证码: ${res.debugCode}`);
-      }
       Taro.showToast({ title: '验证码已发送', icon: 'success' });
     } catch (err) {
       showErrorToast(err, '发送失败');

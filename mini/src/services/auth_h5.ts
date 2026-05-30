@@ -6,8 +6,6 @@ import { request } from '@/utils/request';
 interface SendCodeResult {
   expiresIn: number;
   requestId?: string;
-  debugCode?: string;
-  debugOnly?: boolean;
 }
 
 interface LoginTokenPayload {
