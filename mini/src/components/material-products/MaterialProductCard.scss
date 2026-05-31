@@ -14,11 +14,9 @@
   }
 
   &--rail {
-    width: 178rpx;
+    width: 196rpx;
     flex-shrink: 0;
-    border: none;
-    box-shadow: none;
-    background: transparent;
+    border-radius: 18rpx;
   }
 
   &--grid {
@@ -32,8 +30,8 @@
     background: $color-gray-100;
 
     .material-product-card--rail & {
-      height: 178rpx;
-      border-radius: 16rpx;
+      height: 176rpx;
+      border-radius: 18rpx 18rpx 0 0;
     }
 
     .material-product-card--grid & {
@@ -51,7 +49,7 @@
 
   &__body {
     .material-product-card--rail & {
-      padding-top: 14rpx;
+      padding: 16rpx 16rpx 18rpx;
     }
 
     .material-product-card--grid & {

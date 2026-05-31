@@ -53,7 +53,7 @@ const MaterialProductListPage: React.FC = () => {
     }
 
     if (shopId) {
-      Taro.navigateTo({ url: `/pages/material-shops/detail/index?id=${shopId}` });
+      Taro.redirectTo({ url: `/pages/material-shops/detail/index?id=${shopId}` });
       return;
     }
 
