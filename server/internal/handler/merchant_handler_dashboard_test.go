@@ -55,7 +55,9 @@ func TestMerchantDashboardStats_FlatFields(t *testing.T) {
 		t.Fatalf("seed provider: %v", err)
 	}
 
-	oldDate := time.Now().AddDate(0, -1, 0)
+	now := time.Now()
+	monthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	oldDate := monthStart.AddDate(0, 0, -1)
 
 	bookings := []model.Booking{
 		{ProviderID: providerID, Status: 1},
