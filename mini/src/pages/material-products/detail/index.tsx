@@ -19,6 +19,9 @@ import {
 
 import './index.scss';
 
+const PREVIEW_CURRENT_TIMEOUT_MS = 8000;
+const PREVIEW_OPTIONAL_TIMEOUT_MS = 1200;
+
 const MaterialProductDetailPage: React.FC = () => {
   const router = useRouter();
   const shopId = Number(router.params?.shopId || router.params?.id || 0);
@@ -71,7 +74,7 @@ const MaterialProductDetailPage: React.FC = () => {
     }
 
     if (shopId) {
-      Taro.navigateTo({ url: `/pages/material-products/list/index?shopId=${shopId}` });
+      Taro.redirectTo({ url: `/pages/material-products/list/index?shopId=${shopId}` });
       return;
     }
 
@@ -93,6 +96,79 @@ const MaterialProductDetailPage: React.FC = () => {
       return;
     }
     Taro.setClipboardData({ data: phone });
+  };
+
+  const downloadPreviewImage = (url: string, timeoutMs: number) =>
+    new Promise<string>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        reject(new Error('download timeout'));
+      }, timeoutMs);
+
+      Taro.downloadFile({
+        url,
+        success: (res) => {
+          clearTimeout(timeout);
+          const ok = res.statusCode >= 200 && res.statusCode < 300 && Boolean(res.tempFilePath);
+          if (ok) {
+            resolve(res.tempFilePath);
+            return;
+          }
+          reject(new Error('download failed'));
+        },
+        fail: (error) => {
+          clearTimeout(timeout);
+          reject(error);
+        },
+      });
+    });
+
+  const handlePreviewImage = async (current: string) => {
+    const previewImages = productImages.filter((image) => image && !failedImages[image]);
+    if (!current || failedImages[current] || previewImages.length === 0) {
+      Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+      return;
+    }
+
+    Taro.showLoading({ title: '加载图片', mask: true });
+    try {
+      const currentLocal = await downloadPreviewImage(current, PREVIEW_CURRENT_TIMEOUT_MS);
+      const optionalImages = await Promise.all(
+        previewImages
+          .filter((image) => image !== current)
+          .map(async (image) => {
+            try {
+              return { origin: image, local: await downloadPreviewImage(image, PREVIEW_OPTIONAL_TIMEOUT_MS) };
+            } catch {
+              return null;
+            }
+          }),
+      );
+      const downloadedImages = [
+        { origin: current, local: currentLocal },
+        ...optionalImages,
+      ];
+      const validImages = previewImages.map((image) => downloadedImages.find((item) => item?.origin === image)).filter(
+        (item): item is { origin: string; local: string } => Boolean(item?.local),
+      );
+      const currentImage = validImages.find((item) => item.origin === current);
+
+      Taro.hideLoading();
+      if (!currentImage || validImages.length === 0) {
+        Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+        return;
+      }
+
+      Taro.previewImage({
+        current: currentImage.local,
+        urls: validImages.map((item) => item.local),
+        fail: () => {
+          Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+        },
+      });
+    } catch {
+      Taro.hideLoading();
+      Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+    }
   };
 
   if (loading) {
@@ -154,6 +230,7 @@ const MaterialProductDetailPage: React.FC = () => {
                     className="material-product-detail__hero-image"
                     src={image}
                     mode="aspectFill"
+                    onClick={() => void handlePreviewImage(image)}
                     onError={() => setFailedImages((prev) => ({ ...prev, [image]: true }))}
                   />
                 ) : (
