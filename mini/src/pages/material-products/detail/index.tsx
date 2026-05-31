@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components';
 import Taro, { useRouter } from '@tarojs/taro';
 
@@ -22,6 +22,11 @@ import './index.scss';
 const PREVIEW_CURRENT_TIMEOUT_MS = 8000;
 const PREVIEW_OPTIONAL_TIMEOUT_MS = 1200;
 
+type PreviewImageItem = {
+  origin: string;
+  local: string;
+};
+
 const MaterialProductDetailPage: React.FC = () => {
   const router = useRouter();
   const shopId = Number(router.params?.shopId || router.params?.id || 0);
@@ -32,6 +37,8 @@ const MaterialProductDetailPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [failedImages, setFailedImages] = useState<Record<string, boolean>>({});
+  const previewImageCacheRef = useRef<Record<string, string>>({});
+  const warmingPreviewImagesRef = useRef<Record<string, boolean>>({});
 
   const fetchShop = useCallback(async () => {
     if (!shopId || !productId) {
@@ -65,6 +72,8 @@ const MaterialProductDetailPage: React.FC = () => {
   useEffect(() => {
     setCurrentImageIndex(0);
     setFailedImages({});
+    previewImageCacheRef.current = {};
+    warmingPreviewImagesRef.current = {};
   }, [productId, productImages.length]);
 
   const handleBack = () => {
@@ -100,6 +109,12 @@ const MaterialProductDetailPage: React.FC = () => {
 
   const downloadPreviewImage = (url: string, timeoutMs: number) =>
     new Promise<string>((resolve, reject) => {
+      const cachedPath = previewImageCacheRef.current[url];
+      if (cachedPath) {
+        resolve(cachedPath);
+        return;
+      }
+
       const timeout = setTimeout(() => {
         reject(new Error('download timeout'));
       }, timeoutMs);
@@ -110,6 +125,7 @@ const MaterialProductDetailPage: React.FC = () => {
           clearTimeout(timeout);
           const ok = res.statusCode >= 200 && res.statusCode < 300 && Boolean(res.tempFilePath);
           if (ok) {
+            previewImageCacheRef.current[url] = res.tempFilePath;
             resolve(res.tempFilePath);
             return;
           }
@@ -122,10 +138,57 @@ const MaterialProductDetailPage: React.FC = () => {
       });
     });
 
+  const getCachedPreviewImages = (images: string[]): PreviewImageItem[] =>
+    images
+      .map((image) => ({ origin: image, local: previewImageCacheRef.current[image] }))
+      .filter((item): item is PreviewImageItem => Boolean(item.local));
+
+  const previewLocalImages = (images: PreviewImageItem[], current: string) => {
+    const currentImage = images.find((item) => item.origin === current);
+
+    if (!currentImage || images.length === 0) {
+      Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+      return;
+    }
+
+    Taro.previewImage({
+      current: currentImage.local,
+      urls: images.map((item) => item.local),
+      fail: () => {
+        images.forEach((item) => {
+          delete previewImageCacheRef.current[item.origin];
+        });
+        Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+      },
+    });
+  };
+
+  const warmPreviewImageCache = (images: string[]) => {
+    images.forEach((image) => {
+      if (previewImageCacheRef.current[image] || warmingPreviewImagesRef.current[image]) {
+        return;
+      }
+
+      warmingPreviewImagesRef.current[image] = true;
+      void downloadPreviewImage(image, PREVIEW_OPTIONAL_TIMEOUT_MS)
+        .catch(() => {})
+        .finally(() => {
+          delete warmingPreviewImagesRef.current[image];
+        });
+    });
+  };
+
   const handlePreviewImage = async (current: string) => {
     const previewImages = productImages.filter((image) => image && !failedImages[image]);
     if (!current || failedImages[current] || previewImages.length === 0) {
       Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
+      return;
+    }
+
+    const cachedImages = getCachedPreviewImages(previewImages);
+    if (cachedImages.some((item) => item.origin === current)) {
+      warmPreviewImageCache(previewImages.filter((image) => !previewImageCacheRef.current[image]));
+      previewLocalImages(cachedImages, current);
       return;
     }
 
@@ -134,7 +197,7 @@ const MaterialProductDetailPage: React.FC = () => {
       const currentLocal = await downloadPreviewImage(current, PREVIEW_CURRENT_TIMEOUT_MS);
       const optionalImages = await Promise.all(
         previewImages
-          .filter((image) => image !== current)
+          .filter((image) => image !== current && !previewImageCacheRef.current[image])
           .map(async (image) => {
             try {
               return { origin: image, local: await downloadPreviewImage(image, PREVIEW_OPTIONAL_TIMEOUT_MS) };
@@ -145,26 +208,21 @@ const MaterialProductDetailPage: React.FC = () => {
       );
       const downloadedImages = [
         { origin: current, local: currentLocal },
+        ...cachedImages,
         ...optionalImages,
       ];
-      const validImages = previewImages.map((image) => downloadedImages.find((item) => item?.origin === image)).filter(
-        (item): item is { origin: string; local: string } => Boolean(item?.local),
+      const downloadedImageMap = new Map(
+        downloadedImages.filter((item): item is PreviewImageItem => Boolean(item?.local)).map((item) => [
+          item.origin,
+          item,
+        ]),
       );
-      const currentImage = validImages.find((item) => item.origin === current);
+      const validImages = previewImages
+        .map((image) => downloadedImageMap.get(image))
+        .filter((item): item is PreviewImageItem => Boolean(item?.local));
 
       Taro.hideLoading();
-      if (!currentImage || validImages.length === 0) {
-        Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
-        return;
-      }
-
-      Taro.previewImage({
-        current: currentImage.local,
-        urls: validImages.map((item) => item.local),
-        fail: () => {
-          Taro.showToast({ title: '图片暂不可预览', icon: 'none' });
-        },
-      });
+      previewLocalImages(validImages, current);
     } catch {
       Taro.hideLoading();
       Taro.showToast({ title: '图片暂不可预览', icon: 'none' });

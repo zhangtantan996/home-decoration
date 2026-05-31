@@ -11,10 +11,13 @@ Multi-platform home decoration (家装) marketplace connecting homeowners, desig
 | `server/` | Go 1.23, Gin, GORM, PostgreSQL 15, Redis 6.2 | Backend API + WebSocket |
 | `admin/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Admin governance panel |
 | `merchant/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Merchant fulfillment panel |
+| `ops/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Service-provider maintenance panel |
+| `supervisor/` | React 18.3.1, Vite 7, Ant Design 5, Zustand | Project execution panel |
 | `web/` | React 18.3.1, Vite 7, Zustand | User-facing H5 app |
 | `mini/` | Taro 4.1, NutUI React Taro | WeChat mini program (primary transaction surface) |
 | `mobile/` | React 19.2, RN 0.83, Expo | Native mobile app |
 | `website/` | Vite | Landing/marketing site |
+| `shared/` | — | Cross-app types, API clients, design tokens, UI primitives, legal docs |
 | `deploy/` | Docker, Nginx | Deployment configs and gateway |
 | `tests/e2e/` | Playwright | E2E tests |
 
@@ -46,6 +49,12 @@ cd admin && npm run build && npm run lint
 # merchant
 cd merchant && npm run dev -- --host   # localhost:5174
 
+# ops
+cd ops && npm run dev                  # localhost:5179
+
+# supervisor
+cd supervisor && npm run dev           # localhost:5178
+
 # web (user H5)
 cd web && npm run dev                  # localhost:5176
 
@@ -64,7 +73,7 @@ cd mobile && npm run ios               # react-native run-ios
 ```bash
 npm run gen:tokens                     # regenerate from shared/design-tokens/tokens.json
 npm run check:frontend-style           # style guard (all scopes)
-npm run check:frontend-style -- --scope admin|merchant|web|website|mini|mobile
+npm run check:frontend-style -- --scope admin|ops|merchant|web|website|mini|mobile
 ```
 
 ### Testing
@@ -72,11 +81,24 @@ npm run check:frontend-style -- --scope admin|merchant|web|website|mini|mobile
 npm run test:e2e                       # default Playwright (merchant on :5174)
 npm run test:e2e:user-web              # user-web E2E
 npm run test:e2e:merchant:smoke        # merchant smoke tests
+npm run test:e2e:merchant:onboarding   # merchant onboarding field tests
+npm run test:e2e:quote:bridge          # quote system cross-surface smoke
 npm run test:identity:acceptance       # identity acceptance tests
 npm run verify:backend                 # go vet + go test
 npm run verify:admin                   # lint + build
 npm run verify:merchant                # lint + build
+npm run verify:ops                     # style + lint + build
+npm run verify:supervisor              # lint + build + apply smoke
+npm run verify:mini                    # style + lint + build
+npm run verify:mobile                  # style + lint + tests
 npm run smoke:test                     # full smoke test
+```
+
+### RBAC Guard
+```bash
+npm run rbac:guard                     # validate RBAC config
+npm run rbac:drift:report              # report RBAC drift
+npm run rbac:reconcile:generate        # generate RBAC reconciliation
 ```
 
 ### Database
@@ -103,6 +125,17 @@ router/ → handler/ → service/ → repository/
 - Entry: `server/cmd/api/main.go`
 - Use response helpers from `server/pkg/response`
 - Wrap errors: `fmt.Errorf("...: %w", err)`, no `panic` in request paths
+- Migrations: `server/migrations/` — numbered SQL files, run via `server/cmd/dbcheck`
+
+### Shared Packages (`shared/`)
+| Dir | Purpose |
+|-----|---------|
+| `shared/api/` | Typed API clients for frontend apps |
+| `shared/types/` | Cross-app TypeScript type definitions |
+| `shared/design-tokens/` | Token source (`tokens.json`) + platform generators |
+| `shared/ui/` | Shared UI primitives (generated from tokens) |
+| `shared/utils/` | Cross-app utility functions |
+| `shared/legal/` | Legal document templates |
 
 ### Local Dev Ports
 | Service | Port | Router basename |
@@ -110,6 +143,8 @@ router/ → handler/ → service/ → repository/
 | API | 8080 | — |
 | Admin | 5173 | `/admin` |
 | Merchant | 5174 | `/merchant` |
+| Ops | 5179 | `/ops` |
+| Supervisor | 5178 | `/supervisor` |
 | User Web | 5176 | `/app` |
 | Website | 5177 (→5175) | — |
 | Nginx gateway | 5175 | routes all |
@@ -121,19 +156,21 @@ All CI triggers on the **`dev`** branch (not `main`). Path-filtered per app:
 - `server/**` → ci-backend
 - `admin/**` → ci-admin
 - `merchant/**` → ci-merchant
+- `ops/**` → ci-ops
+- `supervisor/**` → ci-supervisor
 - `mini/**` → ci-mini
 - `mobile/**` → ci-mobile
 - `web/**` + `tests/**` → ci-user-web
 
 ## Hard Constraints
 
-- `admin/`, `merchant/`: pinned to **react@18.3.1** — do not upgrade.
+- `admin/`, `merchant/`, `ops/`, `supervisor/`: pinned to **react@18.3.1** — do not upgrade.
 - `mobile/`: uses **react@19.2.0** and **rn@0.83.0** — do not unify React versions across apps.
-- UI framework: `admin/` and `merchant/` use **Ant Design 5.x** only.
+- UI framework: `admin/`, `merchant/`, `ops/`, and `supervisor/` use **Ant Design 5.x** only.
 - State management: **Zustand** everywhere — no Redux, MobX, or Recoil.
 - Backend: `handler → service → repository` is strict. Do not skip layers.
 - Design tokens: no hardcoded Hex/RGB/HSL colors, spacing, radii, or shadows in business code. Add tokens in `shared/design-tokens/tokens.json`, run `npm run gen:tokens`, then consume generated variables/exports.
-- Components: do not hand-roll buttons, inputs, switches, checkboxes, dialogs, cards, or status primitives with raw controls. Use Ant Design in `admin/`/`merchant/`, `mini/src/components` in `mini/`, generated CSS/token primitives in `web/`/`website/`, and `mobile/src/components/primitives` in `mobile/`.
+- Components: do not hand-roll buttons, inputs, switches, checkboxes, dialogs, cards, or status primitives with raw controls. Use Ant Design in `admin/`/`merchant/`/`ops/`/`supervisor/`, `mini/src/components` in `mini/`, generated CSS/token primitives in `web/`/`website/`, and `mobile/src/components/primitives` in `mobile/`.
 - Mobile visual baseline: iOS-like simple style across Android and iOS — white/soft-gray, low-saturation state colors, light borders, restrained shadows.
 - UI state coverage: every user-visible change must account for loading, empty, error, disabled, narrow-width, long-text, and multi-item states.
 - Never hardcode secrets (JWT, DB passwords, API keys). Use env/config.
@@ -145,6 +182,8 @@ All CI triggers on the **`dev`** branch (not `main`). Path-filtered per app:
 - **mini** = primary transaction surface
 - **merchant** web = primary fulfillment surface
 - **admin** web = primary governance surface
+- **ops** = service-provider maintenance surface
+- **supervisor** = project execution surface
 - **web/H5** = landing, payment-result, and auxiliary browsing
 
 Core transaction flow: 设计方案确认(成交点A) → 报价基线提交 → 施工主体选择 → 施工报价 → 用户确认施工报价(成交点B) → 项目创建
