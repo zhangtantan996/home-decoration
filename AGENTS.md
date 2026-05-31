@@ -28,6 +28,7 @@ Use the smallest useful read set.
 3. `docs/AI_WORKFLOW_OPERATION_GUIDE.md` - how to use Aegis, Trellis, Codex, and `/goal`.
 4. `docs/CODE_REVIEW_SOP.md` - project-specific review risk table and 3-round stop rule.
 5. `docs/CLAUDE_DEV_GUIDE.md`, `docs/TROUBLESHOOTING.md`, `docs/SECURITY.md` - deeper project context when needed.
+6. `.trellis/workflow.md` - Trellis task lifecycle, current-task state, and authoritative `task.py` command reference when Trellis is in scope.
 
 If docs conflict with executable code, scripts, CI, or checked-in config, follow the executable source of truth and report the conflict.
 
@@ -90,6 +91,9 @@ High-risk work requires explicit scope framing, targeted verification, and curre
 
 - Always report what was verified and what was not.
 - Start with the smallest meaningful validation for the touched surface.
+- Root verification entrypoints are `npm run verify:backend|admin|ops|merchant|web|mobile|mini|supervisor`; prefer these over ad hoc command bundles when they match the touched surface.
+- `npm run verify:supervisor` includes supervisor lint, build, and the apply service-area smoke via `scripts/testing/run_supervisor_apply_service_area_smoke.sh`.
+- Root `npm run dev:web` and `npm run dev:user-web` intentionally fail because user-web is no longer the default local entry; use `*:legacy` variants only when maintaining the old H5 surface.
 - If validation fails, report symptom, repro path, likely cause, and next step; continue fixing unless a high-risk boundary needs user confirmation.
 - Before claiming completion: minimal verification -> current patch P0/P1 review -> no blockers -> no unconfirmed high-risk item.
 - Only then tell the user the work is ready to commit or ready for the next task.
