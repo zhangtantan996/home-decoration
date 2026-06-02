@@ -7,6 +7,8 @@ import { deleteCase, listCases, showApiError, toggleCaseInspiration, type CaseIt
 import { getAssetPreviewUrl } from '../utils/asset';
 
 const isVisible = (value?: boolean) => value !== false;
+const FOREMAN_PROVIDER_TYPE = 3;
+const isForemanCase = (item: CaseItem) => Number(item.providerType || 0) === FOREMAN_PROVIDER_TYPE;
 const formatBudget = (value?: number) => {
   if (!value) return null;
   if (value >= 10000) {
@@ -60,6 +62,7 @@ const InspirationPage = () => {
   const filteredItems = useMemo(() => {
     const q = keyword.trim().toLowerCase();
     return items.filter((item) => {
+      if (isForemanCase(item)) return false;
       if (statusFilter === 'visible' && !isVisible(item.showInInspiration)) return false;
       if (statusFilter === 'hidden' && isVisible(item.showInInspiration)) return false;
       if (styleFilter && item.style !== styleFilter) return false;

@@ -231,6 +231,8 @@ func ensureRuntimeSchemaColumns() error {
 		name  string
 		model interface{}
 	}{
+		{name: "project_phases", model: &model.ProjectPhase{}},
+		{name: "phase_tasks", model: &model.PhaseTask{}},
 		{name: "user_settings", model: &model.UserSettings{}},
 		{name: "user_verifications", model: &model.UserVerification{}},
 		{name: "user_login_devices", model: &model.UserLoginDevice{}},

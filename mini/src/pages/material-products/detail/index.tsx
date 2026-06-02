@@ -186,15 +186,22 @@ const MaterialProductDetailPage: React.FC = () => {
     }
 
     const cachedImages = getCachedPreviewImages(previewImages);
-    if (cachedImages.some((item) => item.origin === current)) {
-      warmPreviewImageCache(previewImages.filter((image) => !previewImageCacheRef.current[image]));
+    const missingImages = previewImages.filter((image) => !previewImageCacheRef.current[image]);
+    const hasCachedCurrent = cachedImages.some((item) => item.origin === current);
+
+    if (hasCachedCurrent && missingImages.length === 0) {
       previewLocalImages(cachedImages, current);
       return;
     }
 
+    if (hasCachedCurrent && missingImages.length > 0) {
+      warmPreviewImageCache(missingImages);
+    }
+
     Taro.showLoading({ title: '加载图片', mask: true });
     try {
-      const currentLocal = await downloadPreviewImage(current, PREVIEW_CURRENT_TIMEOUT_MS);
+      const currentLocal = previewImageCacheRef.current[current]
+        || (await downloadPreviewImage(current, PREVIEW_CURRENT_TIMEOUT_MS));
       const optionalImages = await Promise.all(
         previewImages
           .filter((image) => image !== current && !previewImageCacheRef.current[image])
