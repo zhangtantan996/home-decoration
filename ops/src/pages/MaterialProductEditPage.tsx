@@ -38,7 +38,7 @@ const MaterialProductEditPage = () => {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const productsPath = useMemo(() => `/providers/material-shop/${numericShopId}/products`, [numericShopId]);
+  const productsPath = useMemo(() => `/providers/material-shop/${numericShopId}/products?tab=materials`, [numericShopId]);
 
   useEffect(() => {
     if (!numericShopId) return;

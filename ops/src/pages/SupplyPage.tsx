@@ -24,7 +24,7 @@ import {
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import {
   listMaterialShops,
   listProviders,
@@ -46,6 +46,10 @@ const SUPPLY_TABS = [
   { key: 'company', label: '装修公司', icon: <TeamOutlined /> },
   { key: 'materials', label: '主材商', icon: <ShopOutlined /> },
 ];
+type SupplyTabKey = (typeof SUPPLY_TABS)[number]['key'];
+const isSupplyTabKey = (value?: string | null): value is SupplyTabKey => SUPPLY_TABS.some((item) => item.key === value);
+const resolveSupplyTab = (value?: string | null, fallback: SupplyTabKey = 'designer'): SupplyTabKey => (isSupplyTabKey(value) ? value : fallback);
+const withSupplyTab = (path: string, tab: SupplyTabKey) => `${path}?tab=${tab}`;
 
 const DEFAULT_VISIBLE_OPTIONAL_COLUMNS: string[] = [];
 const OPTIONAL_COLUMN_OPTIONS = [
@@ -137,7 +141,8 @@ interface SupplyRow {
 
 const SupplyPage = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState('designer');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = resolveSupplyTab(searchParams.get('tab'));
   const [keyword, setKeyword] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>();
   const [settleFilter, setSettleFilter] = useState<string>();
@@ -177,6 +182,13 @@ const SupplyPage = () => {
   };
 
   useEffect(() => { void loadAll(); }, []);
+
+  useEffect(() => {
+    if (searchParams.get('tab') === activeTab) return;
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', activeTab);
+    setSearchParams(nextParams, { replace: true });
+  }, [activeTab, searchParams, setSearchParams]);
 
   useEffect(() => {
     if (!createOpen) return;
@@ -259,10 +271,17 @@ const SupplyPage = () => {
   const handleCreate = (key: string) => {
     setCreateOpen(false);
     if (key === 'materials') {
-      navigate('/providers/material-shop/new');
+      navigate(withSupplyTab('/providers/material-shop/new', 'materials'));
       return;
     }
-    navigate(`/providers/provider/${key}/new`);
+    navigate(withSupplyTab(`/providers/provider/${key}/new`, resolveSupplyTab(key)));
+  };
+
+  const handleTabChange = (key: string) => {
+    const nextTab = resolveSupplyTab(key);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('tab', nextTab);
+    setSearchParams(nextParams);
   };
 
   const updateRowSwitch = async (row: SupplyRow, field: 'settled' | 'certified' | 'visibility', checked: boolean) => {
@@ -399,11 +418,13 @@ const SupplyPage = () => {
             size="small"
             type="primary"
             ghost
-            onClick={() => row.type === 'materials' ? navigate(`/providers/material-shop/${row.id}`) : navigate(`/providers/provider/${row.type}/${row.id}`)}
+            onClick={() => row.type === 'materials'
+              ? navigate(withSupplyTab(`/providers/material-shop/${row.id}`, 'materials'))
+              : navigate(withSupplyTab(`/providers/provider/${row.type}/${row.id}`, row.type))}
           >
             编辑
           </Button>
-          {row.shop ? <Button size="small" onClick={() => navigate(`/providers/material-shop/${row.id}/products`)}>商品</Button> : null}
+          {row.shop ? <Button size="small" onClick={() => navigate(withSupplyTab(`/providers/material-shop/${row.id}/products`, 'materials'))}>商品</Button> : null}
         </Space>
       ),
     },
@@ -417,7 +438,7 @@ const SupplyPage = () => {
         <div className="ops-supply-head">
           <Tabs
             activeKey={activeTab}
-            onChange={setActiveTab}
+            onChange={handleTabChange}
             className="ops-supply-tabs"
             items={SUPPLY_TABS.map((item) => ({
               key: item.key,
