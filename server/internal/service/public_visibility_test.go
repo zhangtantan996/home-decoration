@@ -511,6 +511,18 @@ func TestEvaluateCasePublicVisibility(t *testing.T) {
 	if !hasBlockerCode(hidden.Blockers, "case_hidden_from_inspiration") {
 		t.Fatalf("expected case_hidden_from_inspiration blocker, got %+v", hidden.Blockers)
 	}
+
+	foreman := model.Provider{ProviderType: 3, Verified: true, Status: 1, IsSettled: true, PlatformDisplayEnabled: true, MerchantDisplayEnabled: true}
+	if err := repository.DB.Create(&foreman).Error; err != nil {
+		t.Fatalf("create foreman provider: %v", err)
+	}
+	hidden = EvaluateCasePublicVisibility(&model.ProviderCase{ProviderID: foreman.ID, ShowInInspiration: true})
+	if hidden.PublicVisible {
+		t.Fatalf("expected foreman construction showcase hidden from inspiration")
+	}
+	if !hasBlockerCode(hidden.Blockers, "case_hidden_from_inspiration") {
+		t.Fatalf("expected foreman case inspiration blocker, got %+v", hidden.Blockers)
+	}
 }
 
 func TestApplyVisibleInspirationCaseFilterRespectsProviderDisplaySwitches(t *testing.T) {
@@ -541,10 +553,23 @@ func TestApplyVisibleInspirationCaseFilterRespectsProviderDisplaySwitches(t *tes
 		t.Fatalf("hide provider: %v", err)
 	}
 
+	foremanProvider := model.Provider{
+		ProviderType:           3,
+		Verified:               true,
+		Status:                 1,
+		IsSettled:              true,
+		PlatformDisplayEnabled: true,
+		MerchantDisplayEnabled: true,
+	}
+	if err := repository.DB.Create(&foremanProvider).Error; err != nil {
+		t.Fatalf("create foreman provider: %v", err)
+	}
+
 	cases := []model.ProviderCase{
 		{ProviderID: 0, Title: "灵感公海案例", ShowInInspiration: true},
 		{ProviderID: visibleProvider.ID, Title: "公开服务商案例", ShowInInspiration: true},
 		{ProviderID: hiddenProvider.ID, Title: "已下线服务商案例", ShowInInspiration: true},
+		{ProviderID: foremanProvider.ID, Title: "工长施工工艺", ShowInInspiration: true},
 	}
 	if err := repository.DB.Create(&cases).Error; err != nil {
 		t.Fatalf("create provider cases: %v", err)
@@ -564,5 +589,27 @@ func TestApplyVisibleInspirationCaseFilterRespectsProviderDisplaySwitches(t *tes
 		if item.ProviderID == hiddenProvider.ID {
 			t.Fatalf("expected hidden provider case to be filtered out")
 		}
+		if item.ProviderID == foremanProvider.ID {
+			t.Fatalf("expected foreman showcase case to be filtered out")
+		}
+	}
+}
+
+func TestCachedHasColumnDoesNotCacheTransientFalse(t *testing.T) {
+	setupPublicVisibilitySchema(t)
+
+	sqlDB, err := repository.DB.DB()
+	if err != nil {
+		t.Fatalf("get sql db: %v", err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatalf("close sql db: %v", err)
+	}
+
+	if !cachedHasColumn("provider_cases.show_in_inspiration", &model.ProviderCase{}, "show_in_inspiration") {
+		t.Fatalf("expected transient schema probe failure to keep visibility filter enabled")
+	}
+	if _, ok := publicVisibilitySchemaCache.Load("provider_cases.show_in_inspiration"); ok {
+		t.Fatalf("expected transient schema probe failure not to cache false")
 	}
 }

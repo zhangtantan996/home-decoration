@@ -14,12 +14,22 @@ const MAX_TITLE_LENGTH = 60;
 const MAX_DESCRIPTION_LENGTH = 800;
 const MAX_BUDGET = 100_000_000;
 const OFFICIAL_PROVIDER_VALUE = 'official';
+const FOREMAN_PROVIDER_TYPE = 3;
 
 const providerTypeLabel = (type?: string) => {
   if (type === 'company') return '装修公司';
   if (type === 'foreman') return '工长';
   return '设计师';
 };
+
+const providerKindFromCase = (record?: CaseItem | null) => {
+  if (record?.providerType === 2) return 'company';
+  if (record?.providerType === FOREMAN_PROVIDER_TYPE) return 'foreman';
+  if (record?.providerType === 1) return 'designer';
+  return undefined;
+};
+
+const isForemanCase = (record?: CaseItem | null) => providerKindFromCase(record) === 'foreman';
 
 const providerDisplayName = (record: ProviderItem) => record.displayName || record.nickname || record.companyName || `服务商 #${record.id}`;
 
@@ -93,12 +103,13 @@ const InspirationEditPage = () => {
   const currentId = id || caseId || 'new';
   const isNew = currentId === 'new';
   const isSupplyScoped = Boolean(fixedProviderId);
+  const isForemanSupplyShowcase = isSupplyScoped && fixedProviderKind === 'foreman';
   const selectedProviderValue = Form.useWatch('providerId', form);
   const selectedProvider = useMemo(
     () => providers.find((item) => String(item.id) === String(selectedProviderValue)),
     [providers, selectedProviderValue],
   );
-  const activeProviderType = selectedProvider?.type || fixedProviderKind;
+  const activeProviderType = selectedProvider?.type || fixedProviderKind || providerKindFromCase(record);
   const contentName = activeProviderType === 'foreman'
     ? '施工工艺'
     : activeProviderType === 'designer' || activeProviderType === 'company'
@@ -107,14 +118,18 @@ const InspirationEditPage = () => {
   const descriptionPlaceholder = activeProviderType === 'foreman'
     ? '记录施工工艺、工序细节、验收标准或现场注意事项'
     : '记录设计思路、施工细节或避坑内容';
-  const backTo = isSupplyScoped ? `/providers/provider/${fixedProviderKind}/${fixedProviderId}` : '/inspirations';
+  const galleryLabel = activeProviderType === 'foreman' ? '施工图片' : '灵感相册';
+  const descriptionLabel = activeProviderType === 'foreman' ? '施工说明' : '灵感说明';
+  const supplyTab = fixedProviderKind === 'foreman' || fixedProviderKind === 'company' ? fixedProviderKind : 'designer';
+  const backTo = isSupplyScoped ? `/providers/provider/${fixedProviderKind}/${fixedProviderId}?tab=${supplyTab}` : '/inspirations';
 
   useEffect(() => {
     const loadProviders = async () => {
       try {
+        const shouldLoadForemen = fixedProviderKind === 'foreman';
         const [designers, foremen, companies] = await Promise.all([
           listProviders('designer', 1, 200),
-          listProviders('foreman', 1, 200),
+          shouldLoadForemen ? listProviders('foreman', 1, 200) : Promise.resolve({ list: [], total: 0 }),
           listProviders('company', 1, 200),
         ]);
         setProviders([
@@ -127,13 +142,13 @@ const InspirationEditPage = () => {
       }
     };
     void loadProviders();
-  }, []);
+  }, [fixedProviderKind]);
 
   useEffect(() => {
     if (isNew) {
       form.setFieldsValue({
         providerId: fixedProviderId || searchParams.get('providerId') || OFFICIAL_PROVIDER_VALUE,
-        showInInspiration: true,
+        showInInspiration: isForemanSupplyShowcase ? false : true,
         style: '现代简约',
         layout: '其他',
       });
@@ -148,6 +163,11 @@ const InspirationEditPage = () => {
           navigate(backTo);
           return;
         }
+        if (!isSupplyScoped && isForemanCase(current)) {
+          showApiError(new Error('工长施工工艺请在服务商资料中维护'), '该内容不属于灵感');
+          navigate('/inspirations');
+          return;
+        }
         setRecord(current);
         form.setFieldsValue({
           providerId: fixedProviderId || (current.providerId ? String(current.providerId) : OFFICIAL_PROVIDER_VALUE),
@@ -160,7 +180,7 @@ const InspirationEditPage = () => {
           year: current.year,
           images: joinStoredAssetText((current.images || []).map((item) => getAssetStoredPath(item))),
           description: current.description,
-          showInInspiration: current.showInInspiration !== false,
+          showInInspiration: isForemanCase(current) ? false : current.showInInspiration !== false,
         });
       } catch (error) {
         showApiError(error, '灵感加载失败');
@@ -169,7 +189,7 @@ const InspirationEditPage = () => {
       }
     };
     void load();
-  }, [backTo, currentId, fixedProviderId, form, isNew, navigate, searchParams]);
+  }, [backTo, currentId, fixedProviderId, form, isForemanSupplyShowcase, isNew, isSupplyScoped, navigate, searchParams]);
 
   const providerOptions: ProviderSelectOption[] = [
     {
@@ -208,13 +228,24 @@ const InspirationEditPage = () => {
   const save = async () => {
     const values = await form.validateFields();
     const selectedProviderId = values.providerId && values.providerId !== OFFICIAL_PROVIDER_VALUE ? Number(values.providerId) : undefined;
+    const selectedProviderRecord = Number.isFinite(selectedProviderId)
+      ? providers.find((item) => item.id === selectedProviderId)
+      : undefined;
+    if (!isSupplyScoped && selectedProviderRecord?.type === 'foreman') {
+      showApiError(new Error('工长施工工艺请在服务商资料中维护'), '保存失败');
+      return;
+    }
+    if (!isSupplyScoped && Number.isFinite(selectedProviderId) && !selectedProviderRecord) {
+      showApiError(new Error('请选择有效服务商'), '保存失败');
+      return;
+    }
     const payload = {
       ...values,
       providerId: Number.isFinite(selectedProviderId) ? selectedProviderId : undefined,
       price: Number(values.price || 0),
       area: values.area === undefined || values.area === null || values.area === '' ? '' : `${values.area}㎡`,
       images: splitText(values.images || values.coverImage),
-      showInInspiration: Boolean(values.showInInspiration),
+      showInInspiration: isForemanSupplyShowcase ? false : Boolean(values.showInInspiration),
     };
     setSaving(true);
     try {
@@ -251,10 +282,10 @@ const InspirationEditPage = () => {
               <Form.Item name="coverImage" label={<RequiredLabel>封面图片</RequiredLabel>} rules={[{ required: true, message: '请上传封面图片' }]}>
                 <MediaPathInput placeholder="暂无封面图片" maxSizeMB={5} />
               </Form.Item>
-              <Form.Item name="images" label={<RequiredLabel>灵感相册</RequiredLabel>} rules={[{ required: true, message: '请至少上传一张灵感图片' }]}>
-                <MediaGalleryInput placeholder="暂无灵感图片" maxCount={12} maxSizeMB={5} />
+              <Form.Item name="images" label={<RequiredLabel>{galleryLabel}</RequiredLabel>} rules={[{ required: true, message: `请至少上传一张${activeProviderType === 'foreman' ? '施工图片' : '灵感图片'}` }]}>
+                <MediaGalleryInput placeholder={`暂无${activeProviderType === 'foreman' ? '施工图片' : '灵感图片'}`} maxCount={12} maxSizeMB={5} />
               </Form.Item>
-              <Form.Item name="description" label="灵感说明" rules={[{ max: MAX_DESCRIPTION_LENGTH, message: `灵感说明最多 ${MAX_DESCRIPTION_LENGTH} 个字` }]}>
+              <Form.Item name="description" label={descriptionLabel} rules={[{ max: MAX_DESCRIPTION_LENGTH, message: `${descriptionLabel}最多 ${MAX_DESCRIPTION_LENGTH} 个字` }]}>
                 <Input.TextArea rows={8} maxLength={MAX_DESCRIPTION_LENGTH} showCount placeholder={descriptionPlaceholder} />
               </Form.Item>
             </Card>
@@ -327,7 +358,9 @@ const InspirationEditPage = () => {
                   notFoundContent={providerSearchKeyword ? '暂无匹配服务商' : null}
                 />
               </Form.Item>
-              <Form.Item name="showInInspiration" label="展示到灵感中心" valuePropName="checked"><Switch /></Form.Item>
+              {!isForemanSupplyShowcase ? (
+                <Form.Item name="showInInspiration" label="展示到灵感中心" valuePropName="checked"><Switch /></Form.Item>
+              ) : null}
             </Card>
           </div>
         </div>

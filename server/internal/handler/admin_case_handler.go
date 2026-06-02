@@ -112,30 +112,54 @@ func validateCaseQuoteItems(items []service.CaseQuoteItem) error {
 
 // ==================== 管理员作品管理 ====================
 
-func buildAdminCaseProviderName(providerID uint64) string {
+type adminCaseProviderMeta struct {
+	Name string
+	Type int8
+}
+
+func buildAdminCaseProviderMeta(providerID uint64) adminCaseProviderMeta {
 	if providerID == 0 {
-		return "官方"
+		return adminCaseProviderMeta{Name: "官方"}
 	}
 
 	var provider model.Provider
 	if err := repository.DB.First(&provider, providerID).Error; err != nil {
-		return ""
+		return adminCaseProviderMeta{}
 	}
 
 	var user model.User
 	_ = repository.DB.First(&user, provider.UserID).Error
 
 	if name := strings.TrimSpace(user.Nickname); name != "" {
-		return name
+		return adminCaseProviderMeta{Name: name, Type: provider.ProviderType}
 	}
 	if name := strings.TrimSpace(provider.CompanyName); name != "" {
-		return name
+		return adminCaseProviderMeta{Name: name, Type: provider.ProviderType}
 	}
 	if phone := strings.TrimSpace(user.Phone); phone != "" {
-		return phone
+		return adminCaseProviderMeta{Name: phone, Type: provider.ProviderType}
 	}
 
-	return ""
+	return adminCaseProviderMeta{Type: provider.ProviderType}
+}
+
+func adminCaseProviderIsForeman(providerID uint64) (bool, error) {
+	if providerID == 0 {
+		return false, nil
+	}
+	var provider model.Provider
+	if err := repository.DB.Select("id", "provider_type").First(&provider, providerID).Error; err != nil {
+		return false, err
+	}
+	return provider.ProviderType == 3, nil
+}
+
+func adminCaseRecordIsForeman(caseID uint64) (bool, error) {
+	var providerCase model.ProviderCase
+	if err := repository.DB.Select("id", "provider_id").First(&providerCase, caseID).Error; err != nil {
+		return false, err
+	}
+	return adminCaseProviderIsForeman(providerCase.ProviderID)
 }
 
 // AdminListCases 获取所有作品列表
@@ -170,7 +194,7 @@ func AdminListCases(c *gin.Context) {
 	// 聚合商家名称
 	var resultList []gin.H
 	for _, caseItem := range cases {
-		providerName := buildAdminCaseProviderName(caseItem.ProviderID)
+		providerMeta := buildAdminCaseProviderMeta(caseItem.ProviderID)
 
 		// 解析图片
 		var images []string
@@ -180,7 +204,8 @@ func AdminListCases(c *gin.Context) {
 		resultList = append(resultList, gin.H{
 			"id":                caseItem.ID,
 			"providerId":        caseItem.ProviderID,
-			"providerName":      providerName,
+			"providerName":      providerMeta.Name,
+			"providerType":      providerMeta.Type,
 			"title":             caseItem.Title,
 			"coverImage":        imgutil.GetFullImageURL(caseItem.CoverImage),
 			"style":             caseItem.Style,
@@ -218,7 +243,7 @@ func AdminGetCase(c *gin.Context) {
 		return
 	}
 
-	providerName := buildAdminCaseProviderName(caseItem.ProviderID)
+	providerMeta := buildAdminCaseProviderMeta(caseItem.ProviderID)
 
 	var images []string
 	json.Unmarshal([]byte(caseItem.Images), &images)
@@ -227,7 +252,8 @@ func AdminGetCase(c *gin.Context) {
 	response.Success(c, gin.H{
 		"id":                caseItem.ID,
 		"providerId":        caseItem.ProviderID,
-		"providerName":      providerName,
+		"providerName":      providerMeta.Name,
+		"providerType":      providerMeta.Type,
 		"title":             caseItem.Title,
 		"coverImage":        imgutil.GetFullImageURL(caseItem.CoverImage),
 		"style":             caseItem.Style,
@@ -319,6 +345,18 @@ func AdminCreateCase(c *gin.Context) {
 	} else {
 		providerID = 0
 	}
+	isForemanCase, err := adminCaseProviderIsForeman(providerID)
+	if err != nil {
+		response.Error(c, 500, "服务商校验失败")
+		return
+	}
+	showInInspiration := true
+	if input.ShowInInspiration != nil {
+		showInInspiration = *input.ShowInInspiration
+	}
+	if isForemanCase {
+		showInInspiration = false
+	}
 
 	newCase := model.ProviderCase{
 		ProviderID:     providerID,
@@ -335,13 +373,8 @@ func AdminCreateCase(c *gin.Context) {
 		Description:    input.Description,
 		Images:         string(imagesJSON),
 		SortOrder:      0,
-		// 管理员创建的作品默认展示到灵感库；如需不展示，前端显式传 false。
-		ShowInInspiration: func() bool {
-			if input.ShowInInspiration != nil {
-				return *input.ShowInInspiration
-			}
-			return true
-		}(),
+		// 管理员创建的作品默认展示到灵感库；工长施工工艺暂不纳入灵感中心。
+		ShowInInspiration: showInInspiration,
 	}
 
 	if err := repository.DB.Create(&newCase).Error; err != nil {
@@ -437,6 +470,11 @@ func AdminUpdateCase(c *gin.Context) {
 	} else {
 		providerID = 0
 	}
+	isForemanCase, err := adminCaseProviderIsForeman(providerID)
+	if err != nil {
+		response.Error(c, 500, "服务商校验失败")
+		return
+	}
 
 	// 更新数据
 	updates := map[string]interface{}{
@@ -463,6 +501,9 @@ func AdminUpdateCase(c *gin.Context) {
 	}
 	if input.ShowInInspiration != nil {
 		updates["show_in_inspiration"] = *input.ShowInInspiration
+	}
+	if isForemanCase {
+		updates["show_in_inspiration"] = false
 	}
 
 	if err := repository.DB.Model(&model.ProviderCase{}).Where("id = ?", caseID).Updates(updates).Error; err != nil {
@@ -500,6 +541,15 @@ func AdminToggleCaseInspiration(c *gin.Context) {
 	}
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, "参数错误")
+		return
+	}
+	isForemanCase, err := adminCaseRecordIsForeman(caseID)
+	if err != nil {
+		response.ServerError(c, "作品校验失败")
+		return
+	}
+	if isForemanCase && input.ShowInInspiration {
+		response.BadRequest(c, "工长施工工艺暂不纳入灵感中心")
 		return
 	}
 

@@ -11,6 +11,7 @@
 - `deploy/正式上线实施方案.md`：面向当前项目的正式上线目标态、采购清单、域名规划与实施阶段
 - `docs/DEPLOYMENT_GUIDE_ZH.md`：当前仓库的生产与测试部署 SOP
 - `deploy/阿里云生产上线指南.md`：阿里云资源购买与落地细节
+- `deploy/DISK_GUARD_RUNBOOK.md`：磁盘清理、阈值告警、cron 与阿里云 OOS 的收口方案
 
 ---
 

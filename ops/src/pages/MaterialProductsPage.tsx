@@ -47,6 +47,7 @@ const MaterialProductsPage = () => {
   const navigate = useNavigate();
   const { shopId } = useParams();
   const numericShopId = Number(shopId);
+  const backToProviders = '/providers?tab=materials';
   const [shop, setShop] = useState<MaterialShopItem | null>(null);
   const [products, setProducts] = useState<MaterialProductItem[]>([]);
   const [keyword, setKeyword] = useState('');
@@ -91,14 +92,14 @@ const MaterialProductsPage = () => {
     }
   };
 
-  const goCreate = () => navigate(`/providers/material-shop/${numericShopId}/products/new`);
-  const goEdit = (productId: number) => navigate(`/providers/material-shop/${numericShopId}/products/${productId}`);
+  const goCreate = () => navigate(`/providers/material-shop/${numericShopId}/products/new?tab=materials`);
+  const goEdit = (productId: number) => navigate(`/providers/material-shop/${numericShopId}/products/${productId}?tab=materials`);
 
   return (
     <div className="ops-page ops-page--editor ops-products-page">
       <div className="ops-edit-header">
         <Space size={14}>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backToProviders)}>返回</Button>
           <div>
             <Title level={2}>商品维护</Title>
             <Text type="secondary">{shop?.name || `主材商 #${numericShopId}`} · 管理商品图片、价格、上架状态</Text>

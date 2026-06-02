@@ -4,6 +4,7 @@ import (
 	"errors"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"strings"
 	"sync"
 
 	"gorm.io/gorm"
@@ -246,6 +247,9 @@ func IsInspirationCasePublicVisible(providerCase *model.ProviderCase) bool {
 	if err := repository.DB.First(&provider, providerCase.ProviderID).Error; err != nil {
 		return false
 	}
+	if provider.ProviderType == 3 {
+		return false
+	}
 	return IsProviderPublicVisible(&provider)
 }
 
@@ -255,6 +259,7 @@ func applyVisibleInspirationCaseFilter(db *gorm.DB) *gorm.DB {
 	}
 	filtered := db.Joins("LEFT JOIN providers ON providers.id = provider_cases.provider_id").
 		Where("provider_cases.show_in_inspiration = ?", true)
+	filtered = filtered.Where("(provider_cases.provider_id = 0) OR (providers.provider_type <> ?)", 3)
 	if supportsUserAccountPublicVisibility() {
 		filtered = filtered.Where("(provider_cases.provider_id = 0) OR NOT EXISTS (SELECT 1 FROM users AS public_case_provider_users WHERE public_case_provider_users.id = providers.user_id AND public_case_provider_users.status <> ?)", 1)
 	}
@@ -443,6 +448,15 @@ func cachedHasColumn(cacheKey string, schema any, column string) bool {
 		return false
 	}
 	hasColumn := repository.DB.Migrator().HasColumn(schema, column)
+	if !hasColumn {
+		confirmedMissing, err := confirmColumnMissing(schema, column)
+		if err != nil {
+			// DB outage / recovery can make GORM's schema probe return false.
+			// Do not cache that transient false; fail closed so public filters stay enabled.
+			return true
+		}
+		hasColumn = !confirmedMissing
+	}
 	publicVisibilitySchemaCache.Store(cacheKey, hasColumn)
 	return hasColumn
 }
@@ -455,6 +469,89 @@ func cachedHasTable(cacheKey string, schema any) bool {
 		return false
 	}
 	hasTable := repository.DB.Migrator().HasTable(schema)
+	if !hasTable {
+		confirmedMissing, err := confirmTableMissing(schema)
+		if err != nil {
+			return true
+		}
+		hasTable = !confirmedMissing
+	}
 	publicVisibilitySchemaCache.Store(cacheKey, hasTable)
 	return hasTable
+}
+
+func schemaTableName(schema any) (string, error) {
+	stmt := &gorm.Statement{DB: repository.DB}
+	if err := stmt.Parse(schema); err != nil {
+		return "", err
+	}
+	return stmt.Schema.Table, nil
+}
+
+func confirmColumnMissing(schema any, column string) (bool, error) {
+	tableName, err := schemaTableName(schema)
+	if err != nil {
+		return false, err
+	}
+	switch repository.DB.Dialector.Name() {
+	case "postgres":
+		var count int64
+		err := repository.DB.Raw(
+			"SELECT COUNT(*) FROM information_schema.columns WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND column_name = ?",
+			tableName,
+			column,
+		).Scan(&count).Error
+		return count == 0, err
+	case "sqlite":
+		rows, err := repository.DB.Raw("PRAGMA table_info(" + quoteSQLiteIdentifier(tableName) + ")").Rows()
+		if err != nil {
+			return false, err
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var cid int
+			var name, columnType string
+			var notNull, pk int
+			var defaultValue any
+			if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+				return false, err
+			}
+			if name == column {
+				return false, nil
+			}
+		}
+		if err := rows.Err(); err != nil {
+			return false, err
+		}
+		return true, nil
+	default:
+		return false, errors.New("unsupported database dialector")
+	}
+}
+
+func confirmTableMissing(schema any) (bool, error) {
+	tableName, err := schemaTableName(schema)
+	if err != nil {
+		return false, err
+	}
+	switch repository.DB.Dialector.Name() {
+	case "postgres":
+		var count int64
+		err := repository.DB.Raw(
+			"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = CURRENT_SCHEMA() AND table_name = ? AND table_type = 'BASE TABLE'",
+			tableName,
+		).Scan(&count).Error
+		return count == 0, err
+	case "sqlite":
+		var count int64
+		err := repository.DB.Raw("SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", tableName).Scan(&count).Error
+		return count == 0, err
+	default:
+		return false, errors.New("unsupported database dialector")
+	}
+}
+
+func quoteSQLiteIdentifier(value string) string {
+	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
 }

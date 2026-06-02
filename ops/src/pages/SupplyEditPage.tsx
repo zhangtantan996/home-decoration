@@ -27,6 +27,7 @@ import { getAssetPreviewUrl, getAssetStoredPath } from '../utils/asset';
 type SelectOption = { value: string; label: string };
 type CityOption = SelectOption & { provinceCode: string; provinceName?: string };
 type DistrictOption = SelectOption & { cityCode: string };
+type SupplyTabKey = 'designer' | 'foreman' | 'company' | 'materials';
 
 const MAX_TAG_COUNT = 3;
 const MAX_AREA_COUNT = 8;
@@ -75,6 +76,9 @@ const providerTypeLabel = (type?: string) => {
   if (type === 'foreman') return '工长';
   return '设计师';
 };
+const resolveProviderSupplyTab = (type?: string): SupplyTabKey => (type === 'foreman' || type === 'company' ? type : 'designer');
+const buildProvidersPath = (tab: SupplyTabKey) => `/providers?tab=${tab}`;
+const withSupplyTab = (path: string, tab: SupplyTabKey) => `${path}?tab=${tab}`;
 
 const showcaseTitle = (type?: string) => {
   if (type === 'foreman') return '施工工艺展示';
@@ -475,6 +479,8 @@ const SupplyProviderEditPage = () => {
   const dictionaries = useSupplyDictionaries();
   const isNew = id === 'new';
   const label = useMemo(() => providerTypeLabel(kind), [kind]);
+  const currentSupplyTab = useMemo(() => resolveProviderSupplyTab(kind), [kind]);
+  const backToProviders = useMemo(() => buildProvidersPath(currentSupplyTab), [currentSupplyTab]);
   const specialtyConfig = useMemo(() => specialtyFieldConfig(kind, dictionaries), [dictionaries, kind]);
   const workTypeConfig = useMemo(() => workTypeFieldConfig(kind, dictionaries), [dictionaries, kind]);
 
@@ -502,7 +508,7 @@ const SupplyProviderEditPage = () => {
         const current = (await listProviders(kind || 'designer', 1, 200)).list.find((item) => String(item.id) === id);
         if (!current) {
           showApiError(new Error('未找到商家资料'), '未找到商家资料');
-          navigate('/providers');
+          navigate(backToProviders);
           return;
         }
         setRecord(current);
@@ -551,7 +557,7 @@ const SupplyProviderEditPage = () => {
       }
     };
     void load();
-  }, [form, id, isNew, kind, navigate]);
+  }, [backToProviders, form, id, isNew, kind, navigate]);
 
   const save = async () => {
     const values = await form.validateFields();
@@ -599,7 +605,7 @@ const SupplyProviderEditPage = () => {
     try {
       if (record) await updateProvider(record.id, payload);
       else await createProvider(payload);
-      navigate('/providers');
+      navigate(backToProviders);
     } catch (error) {
       showApiError(error, '保存失败');
     } finally {
@@ -611,7 +617,7 @@ const SupplyProviderEditPage = () => {
     <div className="ops-page ops-page--editor">
       <div className="ops-edit-header">
         <Space size={12}>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backToProviders)}>返回</Button>
           <div>
             <Typography.Title level={2}>{isNew ? `新增${label}` : `编辑${label}资料`}</Typography.Title>
             {!isNew ? <Typography.Text type="secondary">ID：{id}</Typography.Text> : null}
@@ -764,7 +770,7 @@ const SupplyProviderEditPage = () => {
               title={showcaseTitle(kind)}
               className="ops-edit-card"
               extra={record && showcaseCases.length ? (
-                <Button type="primary" onClick={() => navigate(`/providers/provider/${kind}/${record.id}/showcase/new`)}>
+                <Button type="primary" onClick={() => navigate(withSupplyTab(`/providers/provider/${kind}/${record.id}/showcase/new`, currentSupplyTab))}>
                   {showcaseCreateLabel(kind)}
                 </Button>
               ) : null}
@@ -793,7 +799,7 @@ const SupplyProviderEditPage = () => {
                         size="small"
                         onClick={(event) => {
                           event.stopPropagation();
-                          navigate(`/providers/provider/${kind}/${record?.id}/showcase/${item.id}`);
+                          navigate(withSupplyTab(`/providers/provider/${kind}/${record?.id}/showcase/${item.id}`, currentSupplyTab));
                         }}
                       >
                         编辑
@@ -807,7 +813,7 @@ const SupplyProviderEditPage = () => {
                   <Button
                     type="primary"
                     disabled={!record}
-                    onClick={() => record && navigate(`/providers/provider/${kind}/${record.id}/showcase/new`)}
+                    onClick={() => record && navigate(withSupplyTab(`/providers/provider/${kind}/${record.id}/showcase/new`, currentSupplyTab))}
                   >
                     {showcaseCreateLabel(kind)}
                   </Button>
@@ -829,7 +835,7 @@ const SupplyProviderEditPage = () => {
             key="edit"
             type="primary"
             onClick={() => {
-              if (previewCase && record) navigate(`/providers/provider/${kind}/${record.id}/showcase/${previewCase.id}`);
+              if (previewCase && record) navigate(withSupplyTab(`/providers/provider/${kind}/${record.id}/showcase/${previewCase.id}`, currentSupplyTab));
             }}
           >
             编辑
@@ -870,6 +876,8 @@ export const MaterialShopEditPage = () => {
   const [saving, setSaving] = useState(false);
   const dictionaries = useSupplyDictionaries();
   const isNew = id === 'new';
+  const currentSupplyTab = 'materials';
+  const backToProviders = useMemo(() => buildProvidersPath(currentSupplyTab), [currentSupplyTab]);
 
   useEffect(() => {
     if (isNew) {
@@ -892,7 +900,7 @@ export const MaterialShopEditPage = () => {
         const current = await getMaterialShop(Number(id));
         if (!current) {
           showApiError(new Error('未找到主材商资料'), '未找到主材商资料');
-          navigate('/providers');
+          navigate(backToProviders);
           return;
         }
         setRecord(current);
@@ -928,7 +936,7 @@ export const MaterialShopEditPage = () => {
       }
     };
     void load();
-  }, [form, id, isNew, navigate]);
+  }, [backToProviders, form, id, isNew, navigate]);
 
   const save = async () => {
     const values = await form.validateFields();
@@ -953,7 +961,7 @@ export const MaterialShopEditPage = () => {
     try {
       if (record) await updateMaterialShop(record.id, payload);
       else await createMaterialShop(payload);
-      navigate('/providers');
+      navigate(backToProviders);
     } catch (error) {
       showApiError(error, '保存失败');
     } finally {
@@ -965,7 +973,7 @@ export const MaterialShopEditPage = () => {
     <div className="ops-page ops-page--editor">
       <div className="ops-edit-header">
         <Space size={12}>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/providers')}>返回</Button>
+          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate(backToProviders)}>返回</Button>
           <div>
             <Typography.Title level={2}>{isNew ? '新增主材商' : '编辑主材商资料'}</Typography.Title>
             {!isNew ? <Typography.Text type="secondary">ID：{id}</Typography.Text> : null}

@@ -224,6 +224,7 @@ export interface CaseItem {
   id: number;
   providerId?: number;
   providerName?: string;
+  providerType?: number;
   title: string;
   coverImage?: string;
   style?: string;
