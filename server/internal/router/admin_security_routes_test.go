@@ -282,6 +282,9 @@ func setupAdminSecurityRouter(t *testing.T) *gin.Engine {
 		&model.SysAdminRole{},
 		&model.SysRoleMenu{},
 		&model.AuditLog{},
+		&model.User{},
+		&model.AdminProfile{},
+		&model.UserIdentity{},
 	); err != nil {
 		t.Fatalf("auto migrate admin security router models: %v", err)
 	}
@@ -573,6 +576,60 @@ func TestAdminLoginFromAdaptiveUntrustedNetworkRequiresOTP(t *testing.T) {
 		if !strings.Contains(body, expected) {
 			t.Fatalf("expected adaptive untrusted login response to contain %s, got %s", expected, body)
 		}
+	}
+}
+
+func TestOpsAdminLoginBypassesAdminNetworkAndTOTPPolicy(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("SecurePassword123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if err := repository.DB.Model(&model.SysAdmin{}).Where("id = ?", 1).Updates(map[string]interface{}{
+		"password":            string(passwordHash),
+		"must_reset_password": false,
+		"is_super_admin":      true,
+		"two_factor_enabled":  false,
+		"two_factor_secret":   "",
+		"two_factor_bound_at": nil,
+		"password_changed_at": time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("update admin password: %v", err)
+	}
+
+	cfg := config.GetConfig()
+	cfg.AdminAuth.NetworkMode = "adaptive"
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.RequiredRoleKeys = "*"
+	cfg.AdminAuth.TOTPEnabled = true
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/ops-admin/login", strings.NewReader(`{"username":"sec-admin","password":"SecurePassword123!"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected ops login response, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, unexpected := range []string{
+		`"loginStage":"otp_required"`,
+		`"loginStage":"setup_required"`,
+		`"securitySetupRequired":true`,
+	} {
+		if strings.Contains(body, unexpected) {
+			t.Fatalf("ops login should bypass admin network/TOTP policy, got %s", body)
+		}
+	}
+	if !strings.Contains(body, `"loginStage":"active"`) {
+		t.Fatalf("expected ops login to return active session, got %s", body)
+	}
+	if !strings.Contains(body, `"networkTrustLevel":"trusted_network"`) {
+		t.Fatalf("expected ops login to be treated as trusted network, got %s", body)
 	}
 }
 

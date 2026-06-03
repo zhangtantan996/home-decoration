@@ -131,7 +131,7 @@ func adminLogin(c *gin.Context, opsOnly bool) {
 		rdb.Del(ctx, failKey)
 	}
 
-	networkTrustLevel, restrictedSession, networkErr := securitySvc.ClassifyNetworkTrust(&admin, getAdminClientIP(c), getAdminDeviceID(c))
+	networkTrustLevel, restrictedSession, networkErr := classifyAdminNetworkTrustForRequest(securitySvc, c, &admin, opsOnly)
 	if networkErr != nil {
 		auditAdminSecurityEvent(admin.ID, "login_blocked", "sys_admin", admin.ID, "network_denied", getAdminClientIP(c), c.Request.UserAgent(), map[string]interface{}{
 			"message": networkErr.Error(),
@@ -139,8 +139,8 @@ func adminLogin(c *gin.Context, opsOnly bool) {
 		response.Forbidden(c, networkErr.Error())
 		return
 	}
-	securityStatus := withAdminNetworkStatus(securitySvc.ResolveSecurityStatus(&admin), networkTrustLevel, restrictedSession)
-	networkRequiresTwoFactor := networkTrustLevel != service.AdminNetworkTrustTrustedNetwork
+	securityStatus := withAdminNetworkStatus(resolveAdminSecurityStatusForRequest(securitySvc, &admin, opsOnly), networkTrustLevel, restrictedSession)
+	networkRequiresTwoFactor := adminNetworkRequiresTwoFactor(networkTrustLevel, restrictedSession)
 	if networkRequiresTwoFactor && !admin.TwoFactorEnabled {
 		securityStatus.LoginStage = service.AdminLoginStageSetupRequired
 		securityStatus.SecuritySetupRequired = true
@@ -162,7 +162,7 @@ func adminLogin(c *gin.Context, opsOnly bool) {
 		return
 	}
 
-	if securitySvc.AdminRequiresTwoFactor(&admin) || networkRequiresTwoFactor {
+	if adminLoginRequiresTwoFactor(securitySvc, &admin, opsOnly, networkRequiresTwoFactor) {
 		if strings.TrimSpace(req.OTPCode) == "" {
 			response.Success(c, buildAdminLoginPayload(&admin, nil, service.AdminSecurityStatus{
 				LoginStage:                service.AdminLoginStageOTPRequired,
@@ -214,7 +214,11 @@ func AdminGetInfo(c *gin.Context) {
 	}
 
 	securitySvc := service.NewAdminSecurityService()
-	response.Success(c, buildAdminLoginPayload(&admin, nil, securitySvc.ResolveSecurityStatusForSession(&admin, c.GetString("admin_sid"))))
+	securityStatus := securitySvc.ResolveSecurityStatusForSession(&admin, c.GetString("admin_sid"))
+	if isOpsAdminRequest(c) {
+		securityStatus = resolveAdminSecurityStatusForRequest(securitySvc, &admin, true)
+	}
+	response.Success(c, buildAdminLoginPayload(&admin, nil, securityStatus))
 }
 
 func AdminLogout(c *gin.Context) {
@@ -265,6 +269,9 @@ func AdminGetSecurityStatus(c *gin.Context) {
 	}
 	securitySvc := service.NewAdminSecurityService()
 	securityStatus := securitySvc.ResolveSecurityStatusForSession(admin, c.GetString("admin_sid"))
+	if isOpsAdminRequest(c) {
+		securityStatus = resolveAdminSecurityStatusForRequest(securitySvc, admin, true)
+	}
 	sessionItems, err := securitySvc.ListSessions(admin.ID, c.GetString("admin_sid"))
 	if err != nil {
 		response.ServerError(c, "查询安全状态失败")
@@ -338,12 +345,12 @@ func AdminResetInitialPassword(c *gin.Context) {
 		response.ServerError(c, "加载管理员失败")
 		return
 	}
-	networkTrustLevel, restrictedSession, networkErr := securitySvc.ClassifyNetworkTrust(admin, getAdminClientIP(c), getAdminDeviceID(c))
+	networkTrustLevel, restrictedSession, networkErr := classifyAdminNetworkTrustForRequest(securitySvc, c, admin, isOpsAdminRequest(c))
 	if networkErr != nil {
 		response.Forbidden(c, networkErr.Error())
 		return
 	}
-	securityStatus := withAdminNetworkStatus(securitySvc.ResolveSecurityStatus(admin), networkTrustLevel, restrictedSession)
+	securityStatus := withAdminNetworkStatus(resolveAdminSecurityStatusForRequest(securitySvc, admin, isOpsAdminRequest(c)), networkTrustLevel, restrictedSession)
 	payload := gin.H{
 		"security": securityStatus,
 	}
@@ -403,12 +410,12 @@ func AdminVerify2FA(c *gin.Context) {
 		response.ServerError(c, "加载管理员失败")
 		return
 	}
-	networkTrustLevel, restrictedSession, networkErr := securitySvc.ClassifyNetworkTrust(admin, getAdminClientIP(c), getAdminDeviceID(c))
+	networkTrustLevel, restrictedSession, networkErr := classifyAdminNetworkTrustForRequest(securitySvc, c, admin, isOpsAdminRequest(c))
 	if networkErr != nil {
 		response.Forbidden(c, networkErr.Error())
 		return
 	}
-	securityStatus := withAdminNetworkStatus(securitySvc.ResolveSecurityStatus(admin), networkTrustLevel, restrictedSession)
+	securityStatus := withAdminNetworkStatus(resolveAdminSecurityStatusForRequest(securitySvc, admin, isOpsAdminRequest(c)), networkTrustLevel, restrictedSession)
 	payload := gin.H{"security": securityStatus}
 	if securityStatus.LoginStage == service.AdminLoginStageActive {
 		_ = securitySvc.RevokeSession(c.GetString("admin_sid"))
@@ -652,6 +659,59 @@ func getAdminDeviceID(c *gin.Context) string {
 		return deviceID[:128]
 	}
 	return deviceID
+}
+
+func classifyAdminNetworkTrustForRequest(securitySvc *service.AdminSecurityService, c *gin.Context, admin *model.SysAdmin, bypassNetworkPolicy bool) (string, bool, error) {
+	if bypassNetworkPolicy || isOpsAdminRequest(c) {
+		return service.AdminNetworkTrustTrustedNetwork, false, nil
+	}
+	return securitySvc.ClassifyNetworkTrust(admin, getAdminClientIP(c), getAdminDeviceID(c))
+}
+
+func resolveAdminSecurityStatusForRequest(securitySvc *service.AdminSecurityService, admin *model.SysAdmin, skipTwoFactorPolicy bool) service.AdminSecurityStatus {
+	status := securitySvc.ResolveSecurityStatus(admin)
+	if !skipTwoFactorPolicy {
+		return status
+	}
+	status.TwoFactorRequired = false
+	status.NetworkTrustLevel = service.AdminNetworkTrustTrustedNetwork
+	status.SecurityChallengeRequired = false
+	status.RestrictedSession = false
+	if admin == nil {
+		return status
+	}
+	if !admin.MustResetPassword && !securitySvc.IsPasswordExpired(admin) {
+		status.LoginStage = service.AdminLoginStageActive
+		status.SecuritySetupRequired = false
+	}
+	return status
+}
+
+func adminNetworkRequiresTwoFactor(networkTrustLevel string, restrictedSession bool) bool {
+	networkTrustLevel = strings.TrimSpace(networkTrustLevel)
+	return restrictedSession ||
+		networkTrustLevel == service.AdminNetworkTrustRestricted ||
+		networkTrustLevel == service.AdminNetworkTrustUntrustedChallenged
+}
+
+func adminLoginRequiresTwoFactor(securitySvc *service.AdminSecurityService, admin *model.SysAdmin, skipTwoFactorPolicy bool, networkRequiresTwoFactor bool) bool {
+	if skipTwoFactorPolicy {
+		return false
+	}
+	return securitySvc.AdminRequiresTwoFactor(admin) || networkRequiresTwoFactor
+}
+
+func isOpsAdminRequest(c *gin.Context) bool {
+	if c == nil {
+		return false
+	}
+	if strings.Contains(c.FullPath(), "/ops-admin") {
+		return true
+	}
+	if c.Request != nil && c.Request.URL != nil {
+		return strings.Contains(c.Request.URL.Path, "/ops-admin")
+	}
+	return false
 }
 
 func withAdminNetworkStatus(status service.AdminSecurityStatus, networkTrustLevel string, restrictedSession bool) service.AdminSecurityStatus {
