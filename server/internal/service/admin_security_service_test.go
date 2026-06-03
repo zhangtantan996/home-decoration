@@ -124,6 +124,81 @@ func TestAdminRequiresTwoFactorRespectsRoleScope(t *testing.T) {
 	}
 }
 
+func TestClassifyNetworkTrustAdaptiveAllowsUntrustedWithRiskState(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.AdminAuth.NetworkMode = AdminNetworkModeAdaptive
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.TrustedCIDRs = ""
+	cfg.AdminAuth.UntrustedLogin = true
+	cfg.AdminAuth.HighRiskRoleKeys = "super_admin,security_admin"
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
+
+	svc := NewAdminSecurityService()
+	normalAdmin := &model.SysAdmin{ID: 1, Username: "ops-admin"}
+	level, restricted, err := svc.ClassifyNetworkTrust(normalAdmin, "203.0.113.10", "")
+	if err != nil {
+		t.Fatalf("expected adaptive untrusted network to pass, got %v", err)
+	}
+	if level != AdminNetworkTrustUntrustedChallenged || restricted {
+		t.Fatalf("expected untrusted challenge for normal admin, got level=%s restricted=%v", level, restricted)
+	}
+
+	highRiskAdmin := &model.SysAdmin{ID: 2, Username: "super-admin", IsSuperAdmin: true}
+	level, restricted, err = svc.ClassifyNetworkTrust(highRiskAdmin, "203.0.113.10", "")
+	if err != nil {
+		t.Fatalf("expected high-risk adaptive untrusted network to pass restricted, got %v", err)
+	}
+	if level != AdminNetworkTrustRestricted || !restricted {
+		t.Fatalf("expected restricted trust state for high-risk admin, got level=%s restricted=%v", level, restricted)
+	}
+}
+
+func TestClassifyNetworkTrustAdaptiveWithoutCIDRsTreatsAsUntrusted(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.AdminAuth.NetworkMode = AdminNetworkModeAdaptive
+	cfg.AdminAuth.AllowedCIDRs = ""
+	cfg.AdminAuth.TrustedCIDRs = ""
+	cfg.AdminAuth.UntrustedLogin = true
+	cfg.AdminAuth.HighRiskRoleKeys = "super_admin,security_admin"
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
+
+	level, restricted, err := NewAdminSecurityService().ClassifyNetworkTrust(&model.SysAdmin{ID: 1}, "203.0.113.10", "")
+	if err != nil {
+		t.Fatalf("expected adaptive mode without CIDRs to pass as untrusted, got %v", err)
+	}
+	if level != AdminNetworkTrustUntrustedChallenged || restricted {
+		t.Fatalf("expected untrusted challenge without CIDRs, got level=%s restricted=%v", level, restricted)
+	}
+}
+
+func TestClassifyNetworkTrustStrictBlocksUntrustedNetwork(t *testing.T) {
+	t.Setenv("APP_ENV", config.AppEnvProduction)
+
+	cfg := config.GetConfig()
+	previousCfg := *cfg
+	cfg.AdminAuth.NetworkMode = AdminNetworkModeStrict
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.TrustedCIDRs = ""
+	t.Cleanup(func() {
+		*cfg = previousCfg
+	})
+
+	_, _, err := NewAdminSecurityService().ClassifyNetworkTrust(&model.SysAdmin{ID: 1}, "203.0.113.10", "")
+	if err == nil {
+		t.Fatal("expected strict mode to reject untrusted network")
+	}
+}
+
 func TestCreateReauthProofRequiresRedisOutsideLocalEnv(t *testing.T) {
 	t.Setenv("APP_ENV", config.AppEnvProduction)
 

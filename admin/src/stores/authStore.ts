@@ -11,6 +11,11 @@ const STORAGE_KEYS = {
 
 type BootstrapStatus = 'idle' | 'loading' | 'ready';
 export type AdminLoginStage = 'setup_required' | 'otp_required' | 'active';
+export type AdminNetworkTrustLevel =
+  | 'trusted_network'
+  | 'trusted_device'
+  | 'untrusted_challenged'
+  | 'restricted';
 
 const readStorage = (key: string): string | null => {
   try {
@@ -66,12 +71,18 @@ export interface AdminSecurityStatus {
   twoFactorEnabled: boolean;
   twoFactorRequired: boolean;
   passwordExpired?: boolean;
+  networkTrustLevel?: AdminNetworkTrustLevel;
+  securityChallengeRequired?: boolean;
+  restrictedSession?: boolean;
 }
 
 export interface AdminSessionItem {
   sessionId: string;
   clientIp?: string;
   userAgent?: string;
+  deviceId?: string;
+  networkTrustLevel?: AdminNetworkTrustLevel;
+  restrictedSession?: boolean;
   createdAt?: string;
   lastSeenAt?: string;
   current: boolean;

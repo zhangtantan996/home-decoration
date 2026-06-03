@@ -582,6 +582,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			adminSecurity.POST("/security/2fa/recovery/request", middleware.LoginRateLimit(), handler.AdminRequest2FARecovery)
 			adminSecurity.GET("/security/sessions", middleware.RequireActiveAdminSession(), handler.AdminListSecuritySessions)
 			adminSecurity.POST("/security/sessions/:sid/revoke", middleware.RequireActiveAdminSession(), middleware.RequireAdminReason(), middleware.RequireAdminReauth(), handler.AdminRevokeSecuritySession)
+			adminSecurity.GET("/security/trusted-devices", middleware.RequireActiveAdminSession(), handler.AdminListTrustedDevices)
+			adminSecurity.POST("/security/trusted-devices/:deviceId/revoke", middleware.RequireActiveAdminSession(), handler.AdminRevokeTrustedDevice)
 			adminSecurity.POST("/security/reauth", middleware.RequireActiveAdminSession(), handler.AdminReauth)
 		}
 

@@ -45,6 +45,12 @@ admin_auth:
   max_active_sessions: 5
   api_ip_enforced: false
   allowed_cidrs: ""
+  network_mode: "adaptive"
+  trusted_cidrs: ""
+  untrusted_login_allowed: true
+  trusted_device_days: 14
+  ip_change_policy: "challenge"
+  high_risk_role_keys: "super_admin,system_admin,security_admin"
 
 log:
   level: "info"

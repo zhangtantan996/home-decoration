@@ -41,6 +41,12 @@ admin_auth:
   max_active_sessions: 5
   api_ip_enforced: false
   allowed_cidrs: "" # 生产必须填写真实办公/VPN 出口网段
+  network_mode: "adaptive" # strict | adaptive | off；生产默认 adaptive，避免动态公网 IP 直接挡登录页
+  trusted_cidrs: "" # 可信办公/VPN 网段；为空时兼容读取 allowed_cidrs
+  untrusted_login_allowed: true
+  trusted_device_days: 14
+  ip_change_policy: "challenge"
+  high_risk_role_keys: "super_admin,system_admin,security_admin"
 
 log:
   level: "info"
