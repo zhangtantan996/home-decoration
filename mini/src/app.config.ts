@@ -9,6 +9,7 @@ const windowConfig = {
 export default {
   pages: [
     'pages/home/index',
+    'pages/search/index',
     'pages/inspiration/index',
     'pages/inspiration/detail/index',
     'pages/inspiration/quote/index',

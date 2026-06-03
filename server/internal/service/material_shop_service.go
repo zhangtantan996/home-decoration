@@ -18,6 +18,7 @@ type MaterialShopService struct{}
 type MaterialShopQuery struct {
 	Type      string  `form:"type"`      // showroom | brand
 	Keyword   string  `form:"keyword"`   // 名称/品类/品牌关键词
+	Category  string  `form:"category"`  // 经营类目
 	City      string  `form:"city"`      // 城市
 	RatingMin float64 `form:"ratingMin"` // 最低评分
 	Lat       float64 `form:"lat"`       // 用户纬度
@@ -101,6 +102,14 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 		db = db.Where("(address LIKE ? OR service_area LIKE ? OR address LIKE ? OR service_area LIKE ?)", pattern, pattern, altPattern, altPattern)
 	}
 
+	if category := strings.TrimSpace(query.Category); category != "" && category != "all" {
+		pattern := "%" + category + "%"
+		db = db.Where(
+			`main_products LIKE ? OR product_categories LIKE ? OR main_categories LIKE ?`,
+			pattern, pattern, pattern,
+		)
+	}
+
 	if query.RatingMin > 0 {
 		db = db.Where("rating >= ?", query.RatingMin)
 	}
@@ -148,13 +157,7 @@ func (s *MaterialShopService) ListMaterialShops(query *MaterialShopQuery) ([]Mat
 			distance = formatDistance(dist)
 		}
 
-		// 解析产品分类
-		var productCategories []string
-		if shop.ProductCategories != "" {
-			for _, cat := range splitComma(shop.ProductCategories) {
-				productCategories = append(productCategories, cat)
-			}
-		}
+		productCategories := uniqueStrings(splitComma(shop.ProductCategories), toStringSlice(shop.MainCategories))
 
 		settled := materialShopSettlementValue(&shop)
 		result[i] = MaterialShopListItem{
@@ -195,10 +198,7 @@ func (s *MaterialShopService) GetMaterialShopByID(id uint64) (*MaterialShopListI
 	_ = json.Unmarshal([]byte(shop.MainProducts), &mainProducts)
 	_ = json.Unmarshal([]byte(shop.Tags), &tags)
 
-	var productCategories []string
-	for _, cat := range splitComma(shop.ProductCategories) {
-		productCategories = append(productCategories, cat)
-	}
+	productCategories := uniqueStrings(splitComma(shop.ProductCategories), toStringSlice(shop.MainCategories))
 
 	var products []model.MaterialShopProduct
 	if err := repository.DB.
@@ -282,10 +282,39 @@ func splitComma(s string) []string {
 		return nil
 	}
 	var result []string
-	for _, part := range strings.Split(s, ",") {
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool {
+		return r == ',' || r == '，'
+	}) {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			result = append(result, part)
+		}
+	}
+	return result
+}
+
+func toStringSlice(value string) []string {
+	var items []string
+	if err := json.Unmarshal([]byte(value), &items); err == nil {
+		return items
+	}
+	return splitComma(value)
+}
+
+func uniqueStrings(groups ...[]string) []string {
+	seen := make(map[string]struct{})
+	result := make([]string, 0)
+	for _, group := range groups {
+		for _, item := range group {
+			item = strings.TrimSpace(item)
+			if item == "" {
+				continue
+			}
+			if _, ok := seen[item]; ok {
+				continue
+			}
+			seen[item] = struct{}{}
+			result = append(result, item)
 		}
 	}
 	return result

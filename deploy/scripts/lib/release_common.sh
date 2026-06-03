@@ -170,6 +170,7 @@ release_apply_known_migrations() {
     "server/migrations/v1.9.21_add_project_phase_enabled.sql"
     "server/migrations/v1.9.22_add_risk_warning_phase_id.sql"
     "server/migrations/v1.9.23_add_project_cover_image.sql"
+    "server/migrations/v1.9.24_add_other_material_category.sql"
     "server/migrations/v1.10.7_add_p0_booking_and_completion.sql"
     "server/migrations/v1.10.8_add_project_risk_and_refund.sql"
     "server/migrations/v1.10.9_add_p1_admin_menus.sql"

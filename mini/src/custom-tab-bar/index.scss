@@ -32,11 +32,10 @@
 
   &--interaction-disabled {
     &::after {
-      background: rgba(17, 17, 17, 0.28);
+      background: $color-nav-back-overlay;
     }
 
     .floating-tabbar__shell {
-      opacity: 0.58;
       pointer-events: none;
     }
   }

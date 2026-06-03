@@ -9,12 +9,14 @@ interface InputProps {
   label?: string;
   placeholder?: string;
   type?: 'text' | 'number' | 'password' | 'phone';
+  confirmType?: 'send' | 'search' | 'next' | 'go' | 'done';
   disabled?: boolean;
   error?: string;
   className?: string;
   maxLength?: number;
   onFocus?: () => void;
   onBlur?: () => void;
+  onConfirm?: () => void;
 }
 
 const buildClassName = (base: string, parts: Array<string | false | undefined>) => {
@@ -27,12 +29,14 @@ export const Input: React.FC<InputProps> = ({
   label,
   placeholder,
   type = 'text',
+  confirmType,
   disabled,
   error,
   className,
   maxLength,
   onFocus,
-  onBlur
+  onBlur,
+  onConfirm
 }) => {
   const wrapperClass = buildClassName('input-wrapper', [className]);
   const fieldClass = buildClassName('input-wrapper__field', [
@@ -51,10 +55,12 @@ export const Input: React.FC<InputProps> = ({
         placeholderClass="text-placeholder"
         placeholderStyle={`color: ${colors.secondary}`}
         type={type as any}
+        confirmType={confirmType}
         disabled={disabled}
         maxlength={maxLength}
         onFocus={onFocus}
         onBlur={onBlur}
+        onConfirm={onConfirm}
       />
       {error && <Text className="input-wrapper__error">{error}</Text>}
     </View>

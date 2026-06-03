@@ -52,13 +52,41 @@
     pointer-events: none;
   }
 
+  &__search {
+    height: 72rpx;
+    margin: 8rpx 0 18rpx;
+    padding: 0 22rpx;
+    border-radius: $radius-pill;
+    background: $color-gray-100;
+    border: 1rpx solid $color-border-soft;
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+  }
+
+  &__search--pressed {
+    opacity: 0.82;
+  }
+
+  &__search-entry-text {
+    flex: 1;
+    min-width: 0;
+    color: $color-gray-500;
+    font-size: 26rpx;
+    font-weight: 500;
+    line-height: 1.2;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
   &__category-row {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
     gap: 8rpx;
-    padding: 8rpx 8rpx 8rpx;
-    margin-bottom: 30rpx;
+    padding: 2rpx 4rpx 4rpx;
+    margin-bottom: 22rpx;
   }
 
   &__category-item {
@@ -66,13 +94,13 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 16rpx;
+    gap: 12rpx;
   }
 
   &__category-icon {
-    width: 122rpx;
-    height: 122rpx;
-    border-radius: 61rpx;
+    width: 108rpx;
+    height: 108rpx;
+    border-radius: 54rpx;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -90,7 +118,7 @@
   &__category-title {
     display: block;
     color: #6b7280;
-    font-size: 28rpx;
+    font-size: 26rpx;
     font-weight: 600;
 
     &--active {
@@ -112,6 +140,10 @@
 
     &--compact {
       justify-content: flex-start;
+    }
+
+    &--panel-open {
+      z-index: 60;
     }
   }
 
@@ -213,6 +245,12 @@
     margin-left: auto;
     gap: 28rpx;
     overflow: hidden;
+
+    &--single {
+      justify-content: flex-end;
+      gap: 0;
+      overflow: visible;
+    }
   }
 
   &__chip {
@@ -236,6 +274,118 @@
     &--active {
       color: #111111;
       font-weight: 600;
+    }
+  }
+
+  &__material-filter-anchor {
+    position: relative;
+    z-index: 62;
+    flex: 0 0 auto;
+  }
+
+  &__material-filter-trigger {
+    max-width: 220rpx;
+    min-width: 140rpx;
+    height: 72rpx;
+    padding: 0 18rpx 0 24rpx;
+    border-radius: $radius-pill;
+    background: $color-gray-100;
+    border: 1rpx solid $color-border-soft;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: $spacing-xs;
+
+    &--active {
+      position: relative;
+      z-index: 64;
+      background: $color-surface-card;
+      border-color: transparent;
+      box-shadow: none;
+    }
+  }
+
+  &__material-filter-value {
+    color: $color-text-primary;
+    font-size: $font-body;
+    font-weight: 600;
+    max-width: 128rpx;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__material-filter-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: transform 0.18s ease;
+
+    &--open {
+      transform: rotate(180deg);
+    }
+  }
+
+  &__material-filter-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 58;
+    background: $color-nav-back-overlay;
+  }
+
+  &__material-filter-panel {
+    position: absolute;
+    top: calc(100% - 2rpx);
+    right: 0;
+    z-index: 63;
+    width: calc(100vw - 48rpx);
+    padding: 26rpx 24rpx 24rpx;
+    border-radius: 30rpx;
+    background: $color-surface-card;
+    border: 1rpx solid $color-surface-border;
+    box-shadow: $shadow-lg;
+    animation: popupScaleUp 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  &__material-filter-panel-title {
+    display: block;
+    color: $color-text-primary;
+    font-size: 30rpx;
+    font-weight: 700;
+    line-height: 1.2;
+    margin-bottom: 20rpx;
+  }
+
+  &__material-filter-grid {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-md;
+  }
+
+  &__material-filter-option {
+    flex: 1 0 30%;
+    min-height: 76rpx;
+    border-radius: $radius-pill;
+    background: $color-gray-100;
+    border: 1rpx solid $color-border-soft;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 $spacing-md;
+
+    &--active {
+      background: $color-primary;
+      border-color: $color-primary;
+    }
+  }
+
+  &__material-filter-option-text {
+    color: $color-gray-600;
+    font-size: $font-body;
+    font-weight: 600;
+
+    &--active {
+      color: $color-white;
     }
   }
 

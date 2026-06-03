@@ -1,11 +1,14 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
 	imgutil "home-decoration-server/internal/utils/image"
+	"math"
 	"regexp"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -27,7 +30,15 @@ type InspirationQuery struct {
 	Layout   string `form:"layout"`
 	PriceMin int    `form:"priceMin"`
 	PriceMax int    `form:"priceMax"`
+	Sort     string `form:"sort"`
 }
+
+const (
+	inspirationSortRecommend = "recommend"
+	inspirationSortLatest    = "latest"
+	inspirationSortHot       = "hot"
+	inspirationFreshHalfLife = 168.0
+)
 
 func normalizeInspirationStyleFilter(v string) []string {
 	v = strings.TrimSpace(v)
@@ -101,6 +112,209 @@ func normalizeInspirationPriceBound(v int) float64 {
 	return float64(v) * 10000
 }
 
+func normalizeInspirationSort(v string) string {
+	switch strings.TrimSpace(v) {
+	case inspirationSortLatest:
+		return inspirationSortLatest
+	case inspirationSortHot:
+		return inspirationSortHot
+	default:
+		return inspirationSortRecommend
+	}
+}
+
+func countInspirationImages(raw string) int {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return 0
+	}
+
+	var list []string
+	if err := json.Unmarshal([]byte(raw), &list); err == nil {
+		count := 0
+		for _, item := range list {
+			if strings.TrimSpace(item) != "" {
+				count++
+			}
+		}
+		return count
+	}
+
+	parts := strings.Split(raw, ",")
+	count := 0
+	for _, part := range parts {
+		if strings.Trim(strings.TrimSpace(part), `[]"`) != "" {
+			count++
+		}
+	}
+	return count
+}
+
+func calculateInspirationQualityScore(c model.ProviderCase) float64 {
+	score := 0.0
+	if strings.TrimSpace(c.CoverImage) != "" {
+		score += 20
+	}
+
+	imageCount := countInspirationImages(c.Images)
+	switch {
+	case imageCount >= 3:
+		score += 20
+	case imageCount >= 1:
+		score += 10
+	}
+
+	if strings.TrimSpace(c.Title) != "" {
+		score += 15
+	}
+
+	descriptionLength := len([]rune(strings.TrimSpace(c.Description)))
+	switch {
+	case descriptionLength >= 30:
+		score += 15
+	case descriptionLength > 0:
+		score += 8
+	}
+
+	if strings.TrimSpace(c.Style) != "" {
+		score += 10
+	}
+	if strings.TrimSpace(c.Layout) != "" {
+		score += 10
+	}
+	if strings.TrimSpace(c.Area) != "" {
+		score += 5
+	}
+	if c.Price > 0 || c.QuoteTotalCent > 0 {
+		score += 5
+	}
+
+	return score
+}
+
+func calculateInspirationEngagementScore(likeCount, commentCount, favoriteCount int64) float64 {
+	rawAction := float64(favoriteCount*5 + commentCount*3 + likeCount*2)
+	return math.Log1p(rawAction)
+}
+
+func calculateInspirationFreshnessScore(createdAt time.Time, now time.Time) float64 {
+	if createdAt.IsZero() {
+		return 0
+	}
+	ageHours := now.Sub(createdAt).Hours()
+	if ageHours < 0 {
+		ageHours = 0
+	}
+	return math.Exp(-ageHours / inspirationFreshHalfLife)
+}
+
+type rankedInspirationCase struct {
+	item            model.ProviderCase
+	qualityScore    float64
+	engagementScore float64
+	freshnessScore  float64
+	rankScore       float64
+}
+
+func rankInspirationCases(cases []model.ProviderCase, sortMode string, likeCounts, commentCounts, favoriteCounts map[uint64]int64, now time.Time) []rankedInspirationCase {
+	ranked := make([]rankedInspirationCase, len(cases))
+	for i, item := range cases {
+		qualityScore := calculateInspirationQualityScore(item)
+		engagementScore := calculateInspirationEngagementScore(likeCounts[item.ID], commentCounts[item.ID], favoriteCounts[item.ID])
+		freshnessScore := calculateInspirationFreshnessScore(item.CreatedAt, now)
+
+		manualBoost := 0.0
+		if item.SortOrder > 0 {
+			manualBoost = 1 / float64(item.SortOrder)
+		}
+
+		rankScore := 0.0
+		switch sortMode {
+		case inspirationSortHot:
+			rankScore = engagementScore*60 + freshnessScore*20 + qualityScore*0.2
+		case inspirationSortLatest:
+			rankScore = freshnessScore*70 + qualityScore*0.3
+		default:
+			rankScore = manualBoost*100 + qualityScore*0.35 + engagementScore*20 + freshnessScore*15
+		}
+
+		ranked[i] = rankedInspirationCase{
+			item:            item,
+			qualityScore:    qualityScore,
+			engagementScore: engagementScore,
+			freshnessScore:  freshnessScore,
+			rankScore:       rankScore,
+		}
+	}
+
+	sort.SliceStable(ranked, func(i, j int) bool {
+		left, right := ranked[i], ranked[j]
+		if sortMode == inspirationSortLatest {
+			if !left.item.CreatedAt.Equal(right.item.CreatedAt) {
+				return left.item.CreatedAt.After(right.item.CreatedAt)
+			}
+			if left.qualityScore != right.qualityScore {
+				return left.qualityScore > right.qualityScore
+			}
+			return left.item.ID > right.item.ID
+		}
+
+		if left.rankScore != right.rankScore {
+			return left.rankScore > right.rankScore
+		}
+		if !left.item.CreatedAt.Equal(right.item.CreatedAt) {
+			return left.item.CreatedAt.After(right.item.CreatedAt)
+		}
+		return left.item.ID > right.item.ID
+	})
+
+	return reRankInspirationCases(ranked)
+}
+
+func reRankInspirationCases(ranked []rankedInspirationCase) []rankedInspirationCase {
+	result := make([]rankedInspirationCase, 0, len(ranked))
+	remaining := append([]rankedInspirationCase(nil), ranked...)
+
+	for len(remaining) > 0 {
+		selectedIndex := 0
+		if len(result) > 0 {
+			prev := result[len(result)-1].item
+			for idx, candidate := range remaining {
+				if candidate.item.ProviderID == prev.ProviderID && candidate.item.ProviderID != 0 {
+					continue
+				}
+				if strings.TrimSpace(candidate.item.Style) == strings.TrimSpace(prev.Style) && strings.TrimSpace(candidate.item.Style) != "" {
+					continue
+				}
+				selectedIndex = idx
+				break
+			}
+		}
+
+		result = append(result, remaining[selectedIndex])
+		remaining = append(remaining[:selectedIndex], remaining[selectedIndex+1:]...)
+	}
+
+	return result
+}
+
+func paginateRankedInspirationCases(ranked []rankedInspirationCase, page, pageSize int) []model.ProviderCase {
+	offset := (page - 1) * pageSize
+	if offset >= len(ranked) {
+		return []model.ProviderCase{}
+	}
+	end := offset + pageSize
+	if end > len(ranked) {
+		end = len(ranked)
+	}
+
+	result := make([]model.ProviderCase, end-offset)
+	for i, item := range ranked[offset:end] {
+		result[i] = item.item
+	}
+	return result
+}
+
 type InspirationItem struct {
 	ID           uint64  `json:"id"`
 	Title        string  `json:"title"`
@@ -159,6 +373,7 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 	if query.PageSize <= 0 || query.PageSize > 50 {
 		query.PageSize = 20
 	}
+	sortMode := normalizeInspirationSort(query.Sort)
 
 	db := applyVisibleInspirationCaseFilter(repository.DB.Model(&model.ProviderCase{}))
 
@@ -179,11 +394,7 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 	db.Count(&total)
 
 	var cases []model.ProviderCase
-	offset := (query.Page - 1) * query.PageSize
-	if err := db.Order("provider_cases.created_at DESC").
-		Offset(offset).
-		Limit(query.PageSize).
-		Find(&cases).Error; err != nil {
+	if err := db.Find(&cases).Error; err != nil {
 		return nil, 0, err
 	}
 
@@ -202,6 +413,23 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 
 	likeCounts := s.batchGetLikeCounts(caseIDs)
 	commentCounts := s.batchGetCommentCounts(caseIDs)
+	favoriteCounts := s.batchGetFavoriteCounts(caseIDs)
+
+	ranked := rankInspirationCases(cases, sortMode, likeCounts, commentCounts, favoriteCounts, time.Now())
+	cases = paginateRankedInspirationCases(ranked, query.Page, query.PageSize)
+
+	if len(cases) == 0 {
+		return []InspirationItem{}, total, nil
+	}
+
+	caseIDs = make([]uint64, len(cases))
+	providerIDs = make([]uint64, 0)
+	for i, c := range cases {
+		caseIDs[i] = c.ID
+		if c.ProviderID > 0 {
+			providerIDs = append(providerIDs, c.ProviderID)
+		}
+	}
 
 	var userLikes map[uint64]bool
 	var userFavorites map[uint64]bool
@@ -249,6 +477,25 @@ func (s *InspirationService) ListInspiration(query *InspirationQuery, userID *ui
 	}
 
 	return items, total, nil
+}
+
+func (s *InspirationService) batchGetFavoriteCounts(caseIDs []uint64) map[uint64]int64 {
+	type Result struct {
+		TargetID uint64
+		Count    int64
+	}
+	var results []Result
+	repository.DB.Model(&model.UserFavorite{}).
+		Select("target_id, COUNT(*) as count").
+		Where("target_id IN ? AND target_type = ?", caseIDs, "case").
+		Group("target_id").
+		Scan(&results)
+
+	counts := make(map[uint64]int64)
+	for _, r := range results {
+		counts[r.TargetID] = r.Count
+	}
+	return counts
 }
 
 func (s *InspirationService) batchGetLikeCounts(caseIDs []uint64) map[uint64]int64 {

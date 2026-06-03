@@ -25,7 +25,7 @@ func setupMaterialShopServiceDB(t *testing.T) *gorm.DB {
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
 
-	if err := db.AutoMigrate(&model.MaterialShop{}, &model.MaterialShopProduct{}); err != nil {
+	if err := db.AutoMigrate(&model.User{}, &model.MaterialShop{}, &model.MaterialShopProduct{}); err != nil {
 		t.Fatalf("auto migrate material shop tables: %v", err)
 	}
 
@@ -75,6 +75,15 @@ func createMaterialShopForTest(t *testing.T, db *gorm.DB, shop model.MaterialSho
 func containsMaterialShopName(items []MaterialShopListItem, name string) bool {
 	for _, item := range items {
 		if item.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func containsString(items []string, value string) bool {
+	for _, item := range items {
+		if item == value {
 			return true
 		}
 	}
@@ -189,6 +198,46 @@ func TestMaterialShopServiceListSupportsKeywordCityAndRatingFilters(t *testing.T
 	}
 	if list[0].Name != "西安木作馆" {
 		t.Fatalf("unexpected filtered shop: %+v", list[0])
+	}
+}
+
+func TestMaterialShopServiceListSupportsCategoryFilter(t *testing.T) {
+	db := setupMaterialShopServiceDB(t)
+	service := &MaterialShopService{}
+
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:              "其他材料馆",
+		Type:              "showroom",
+		IsVerified:        true,
+		IsSettled:         true,
+		ProductCategories: "瓷砖，其他",
+		MainCategories:    `["瓷砖","其他"]`,
+	}, 1)
+	createMaterialShopForTest(t, db, model.MaterialShop{
+		Name:              "卫浴专营店",
+		Type:              "showroom",
+		IsVerified:        true,
+		IsSettled:         true,
+		ProductCategories: "卫浴",
+		MainCategories:    `["卫浴"]`,
+	}, 1)
+
+	list, total, err := service.ListMaterialShops(&MaterialShopQuery{
+		Category: "其他",
+		Page:     1,
+		PageSize: 10,
+	})
+	if err != nil {
+		t.Fatalf("list material shops with category: %v", err)
+	}
+	if total != 1 || len(list) != 1 {
+		t.Fatalf("expected exactly one category filtered shop, total=%d len=%d", total, len(list))
+	}
+	if list[0].Name != "其他材料馆" {
+		t.Fatalf("unexpected category filtered shop: %+v", list[0])
+	}
+	if !containsString(list[0].ProductCategories, "其他") {
+		t.Fatalf("expected Chinese-comma product categories to include 其他, got=%v", list[0].ProductCategories)
 	}
 }
 

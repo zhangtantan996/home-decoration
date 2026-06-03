@@ -20,6 +20,7 @@ export interface InspirationListQuery {
   layout?: string;
   priceMin?: number;
   priceMax?: number;
+  sort?: 'recommend' | 'latest' | 'hot';
 }
 
 interface InspirationDetailRaw {

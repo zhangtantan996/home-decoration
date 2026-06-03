@@ -1,6 +1,6 @@
 import Taro, { useDidShow } from "@tarojs/taro";
 import { Image, ScrollView, Text, View } from "@tarojs/components";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/Button";
 import { Empty } from "@/components/Empty";
@@ -18,6 +18,7 @@ import {
   listMaterialShops,
   type MaterialShopItem,
 } from "@/services/materialShops";
+import { getDictionary } from "@/services/dictionaries";
 import {
   listProviders,
   type ProviderListItem,
@@ -30,6 +31,7 @@ import {
   syncCurrentTabBar,
 } from "@/utils/customTabBar";
 import { getMiniNavMetrics } from "@/utils/navLayout";
+import { colors } from "@/theme/tokens";
 import {
   consumePendingHomeProviderEntry,
   resolveLegacyProviderListTarget,
@@ -80,6 +82,21 @@ const PROVIDER_FILTER_OPTIONS = [
   { id: "personal", label: "个人" },
   { id: "company", label: "公司" },
 ] as const;
+
+const MATERIAL_CATEGORY_OTHER = "其他";
+const MATERIAL_CATEGORY_FALLBACK_OPTIONS = [
+  "瓷砖",
+  "地板",
+  "卫浴",
+  "橱柜",
+  "门窗",
+  "灯具",
+  "五金",
+  "涂料",
+  "壁纸",
+  "家具",
+  MATERIAL_CATEGORY_OTHER,
+].map((item) => ({ id: item, label: item }));
 
 const HOME_FETCH_PAGE_SIZE = 15;
 const HIDDEN_DISPLAY_TAGS = new Set(["沟通中"]);
@@ -424,7 +441,7 @@ const loadAllProviders = async ({
   orgFilter,
 }: {
   type: ProviderType;
-  keyword: string;
+  keyword?: string;
   sortBy?: ProviderQuery["sortBy"];
   page?: number;
   orgFilter?: ProviderOrgFilter;
@@ -440,13 +457,54 @@ const loadAllProviders = async ({
   return { list: data.list || [], total: data.total || 0 };
 };
 
-const loadAllMaterialShops = async (sortBy: "recommend" | "distance", page?: number) => {
+const normalizeMaterialCategoryOptions = (items: Array<{ value?: string; label?: string }>) => {
+  const seen = new Set<string>();
+  const options = items
+    .map((item) => {
+      const id = String(item.value || item.label || "").trim();
+      const label = String(item.label || id).trim();
+      return { id, label };
+    })
+    .filter((item) => {
+      if (!item.id || seen.has(item.id)) return false;
+      seen.add(item.id);
+      return true;
+    });
+
+  if (options.length === 0) {
+    return MATERIAL_CATEGORY_FALLBACK_OPTIONS;
+  }
+
+  if (!seen.has(MATERIAL_CATEGORY_OTHER)) {
+    options.push({ id: MATERIAL_CATEGORY_OTHER, label: MATERIAL_CATEGORY_OTHER });
+  }
+
+  return options;
+};
+
+const loadAllMaterialShops = async (
+  sortBy: "recommend" | "distance",
+  page?: number,
+  category?: string,
+  keyword?: string,
+) => {
   const data = await listMaterialShops({
     page: page || 1,
     pageSize: HOME_FETCH_PAGE_SIZE,
     sortBy,
+    category: category && category !== "all" ? category : undefined,
+    keyword,
   });
   return { list: data.list || [], total: data.total || 0 };
+};
+
+type MaterialCategoryOption = { id: string; label: string };
+
+const findMaterialCategoryOption = (
+  options: MaterialCategoryOption[],
+  value: string,
+) => {
+  return options.find((item) => item.id === value || item.label === value);
 };
 
 export default function Home() {
@@ -456,6 +514,9 @@ export default function Home() {
   const [foremanSortBy, setForemanSortBy] = useState("recommend");
   const [companySortBy, setCompanySortBy] = useState("recommend");
   const [materialSortBy, setMaterialSortBy] = useState("recommend");
+  const [materialCategoryFilter, setMaterialCategoryFilter] = useState("all");
+  const [materialCategoryOptions, setMaterialCategoryOptions] = useState(MATERIAL_CATEGORY_FALLBACK_OPTIONS);
+  const [materialCategoryPanelVisible, setMaterialCategoryPanelVisible] = useState(false);
   const [providerOrgFilter, setProviderOrgFilter] =
     useState<ProviderOrgFilter>("all");
   const [providerItems, setProviderItems] = useState<ProviderListItem[]>([]);
@@ -470,6 +531,7 @@ export default function Home() {
   const [sortMenuVisible, setSortMenuVisible] = useState(false);
   const [showQuotePopup, setShowQuotePopup] = useState(false);
   const [homePopup, setHomePopup] = useState<HomePopupConfig | null>(null);
+  const materialFilterRequestSeqRef = useRef(0);
   const navMetrics = useMemo(() => getMiniNavMetrics(), []);
   const headerInsetStyle = useMemo(
     () => ({
@@ -553,12 +615,35 @@ export default function Home() {
   });
 
   useEffect(() => {
-    setCustomTabBarInteractionDisabled(showQuotePopup);
+    setCustomTabBarInteractionDisabled(showQuotePopup || materialCategoryPanelVisible);
 
     return () => {
       setCustomTabBarInteractionDisabled(false);
     };
-  }, [showQuotePopup]);
+  }, [materialCategoryPanelVisible, showQuotePopup]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadMaterialCategories = async () => {
+      try {
+        const options = await getDictionary("material_category");
+        if (mounted) {
+          setMaterialCategoryOptions(normalizeMaterialCategoryOptions(options));
+        }
+      } catch {
+        if (mounted) {
+          setMaterialCategoryOptions(MATERIAL_CATEGORY_FALLBACK_OPTIONS);
+        }
+      }
+    };
+
+    void loadMaterialCategories();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const currentSortOptions =
     activeCategory === "designer"
@@ -595,6 +680,34 @@ export default function Home() {
     );
   }, [currentSortOptions, currentSortValue]);
 
+  const materialCategoryPickerOptions = useMemo(
+    () => [{ id: "all", label: "全部" }, ...materialCategoryOptions],
+    [materialCategoryOptions],
+  );
+
+  const selectedMaterialCategoryOption = useMemo(
+    () => findMaterialCategoryOption(materialCategoryPickerOptions, materialCategoryFilter),
+    [materialCategoryFilter, materialCategoryPickerOptions],
+  );
+
+  const currentMaterialCategoryLabel = useMemo(() => {
+    if (materialCategoryFilter === "all") return "全部";
+    return selectedMaterialCategoryOption?.label || materialCategoryFilter;
+  }, [materialCategoryFilter, selectedMaterialCategoryOption]);
+
+  const currentMaterialCategoryQueryValue = useMemo(() => {
+    if (materialCategoryFilter === "all") return "all";
+    return selectedMaterialCategoryOption?.label || materialCategoryFilter;
+  }, [materialCategoryFilter, selectedMaterialCategoryOption]);
+
+  const resolveMaterialCategoryQueryValue = useCallback(
+    (value: string) => {
+      if (value === "all") return "all";
+      return findMaterialCategoryOption(materialCategoryPickerOptions, value)?.label || value;
+    },
+    [materialCategoryPickerOptions],
+  );
+
   const getBackendSortBy = (sortValue: string): ProviderQuery["sortBy"] => {
     if (sortValue === "recommend") return undefined;
     if (sortValue === "rating") return "rating";
@@ -621,6 +734,7 @@ export default function Home() {
           const { list, total } = await loadAllMaterialShops(
             materialSortBy === "distance" ? "distance" : "recommend",
             1,
+            currentMaterialCategoryQueryValue,
           );
           setMaterialItems(list);
           setMaterialTotal(total);
@@ -643,7 +757,6 @@ export default function Home() {
         const { list, total } = await loadAllProviders({
           type: requestType,
           sortBy: getBackendSortBy(currentSort),
-          keyword: "",
           page: 1,
           orgFilter: activeCategory === "company" ? "all" : providerOrgFilter,
         });
@@ -667,6 +780,7 @@ export default function Home() {
       foremanSortBy,
       companySortBy,
       materialSortBy,
+      currentMaterialCategoryQueryValue,
       providerOrgFilter,
     ],
   );
@@ -692,7 +806,6 @@ export default function Home() {
       const { list } = await loadAllProviders({
         type: requestType,
         sortBy: getBackendSortBy(currentSort),
-        keyword: "",
         page: nextPage,
         orgFilter: activeCategory === "company" ? "all" : providerOrgFilter,
       });
@@ -725,6 +838,7 @@ export default function Home() {
       const { list } = await loadAllMaterialShops(
         materialSortBy === "distance" ? "distance" : "recommend",
         nextPage,
+        currentMaterialCategoryQueryValue,
       );
 
       setMaterialItems((prev) => [...prev, ...list]);
@@ -736,6 +850,7 @@ export default function Home() {
     }
   }, [
     materialSortBy,
+    currentMaterialCategoryQueryValue,
     materialPage,
     materialHasMore,
     materialLoadingMore,
@@ -766,11 +881,19 @@ export default function Home() {
 
   const handleCategoryChange = (category: HomeCategory) => {
     setSortMenuVisible(false);
+    setMaterialCategoryPanelVisible(false);
     setActiveCategory(category);
     setProviderOrgFilter("all");
   };
 
+  const handleOpenGlobalSearch = () => {
+    setSortMenuVisible(false);
+    setMaterialCategoryPanelVisible(false);
+    Taro.navigateTo({ url: "/pages/search/index?from=home" });
+  };
+
   const handleToggleSortMenu = () => {
+    setMaterialCategoryPanelVisible(false);
     setSortMenuVisible((prev) => !prev);
   };
 
@@ -836,9 +959,54 @@ export default function Home() {
 
   const handleSecondaryFilterChange = (value: string) => {
     setSortMenuVisible(false);
+    setMaterialCategoryPanelVisible(false);
     setProviderOrgFilter((prev) =>
       prev === value ? "all" : (value as ProviderOrgFilter),
     );
+  };
+
+  const handleMaterialCategoryFilterChange = (value: string) => {
+    setSortMenuVisible(false);
+    setMaterialCategoryPanelVisible(false);
+    setMaterialCategoryFilter(value);
+    setProviderItems([]);
+    setMaterialItems([]);
+    setMaterialPage(1);
+    setMaterialTotal(0);
+    setLoading(true);
+
+    const requestSeq = materialFilterRequestSeqRef.current + 1;
+    materialFilterRequestSeqRef.current = requestSeq;
+    const categoryQueryValue = resolveMaterialCategoryQueryValue(value);
+
+    void (async () => {
+      try {
+        const { list, total } = await loadAllMaterialShops(
+          materialSortBy === "distance" ? "distance" : "recommend",
+          1,
+          categoryQueryValue,
+        );
+        if (materialFilterRequestSeqRef.current !== requestSeq) {
+          return;
+        }
+        setMaterialItems(list);
+        setMaterialTotal(total);
+        setMaterialPage(1);
+      } catch (error) {
+        if (materialFilterRequestSeqRef.current === requestSeq) {
+          showErrorToast(error, "加载失败");
+        }
+      } finally {
+        if (materialFilterRequestSeqRef.current === requestSeq) {
+          setLoading(false);
+        }
+      }
+    })();
+  };
+
+  const handleToggleMaterialCategoryPanel = () => {
+    setSortMenuVisible(false);
+    setMaterialCategoryPanelVisible((prev) => !prev);
   };
 
   const renderFilterRow = () => {
@@ -858,6 +1026,61 @@ export default function Home() {
               </Text>
             </View>
           ))}
+        </View>
+      );
+    }
+
+    if (activeCategory === "material") {
+      return (
+        <View className="home-page__filter-row home-page__filter-row--single">
+          {materialCategoryPanelVisible ? (
+            <View
+              className="home-page__material-filter-backdrop"
+              onClick={() => setMaterialCategoryPanelVisible(false)}
+            />
+          ) : null}
+          <View
+            className={`home-page__material-filter-anchor ${materialCategoryPanelVisible ? "home-page__material-filter-anchor--open" : ""}`}
+          >
+            <View
+              className={`home-page__material-filter-trigger ${materialCategoryPanelVisible ? "home-page__material-filter-trigger--active" : ""}`}
+              onClick={handleToggleMaterialCategoryPanel}
+            >
+              <Text className="home-page__material-filter-value">
+                {currentMaterialCategoryLabel}
+              </Text>
+              <View
+                className={`home-page__material-filter-arrow ${materialCategoryPanelVisible ? "home-page__material-filter-arrow--open" : ""}`}
+              >
+                <Icon name="arrow-down" size={20} color={colors.gray600} />
+              </View>
+            </View>
+            {materialCategoryPanelVisible ? (
+              <View className="home-page__material-filter-panel">
+                <Text className="home-page__material-filter-panel-title">
+                  选择经营类目
+                </Text>
+                <View className="home-page__material-filter-grid">
+                  {materialCategoryPickerOptions.map((item) => {
+                    const active = materialCategoryFilter === item.id || materialCategoryFilter === item.label;
+                    return (
+                      <View
+                        key={item.id}
+                        className={`home-page__material-filter-option ${active ? "home-page__material-filter-option--active" : ""}`}
+                        onClick={() => handleMaterialCategoryFilterChange(item.id)}
+                      >
+                        <Text
+                          className={`home-page__material-filter-option-text ${active ? "home-page__material-filter-option-text--active" : ""}`}
+                        >
+                          {item.label}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
+          </View>
         </View>
       );
     }
@@ -1228,6 +1451,17 @@ export default function Home() {
         progress={drawerProgress}
       />
 
+      <View
+        className="home-page__search"
+        onClick={handleOpenGlobalSearch}
+        hoverClass="home-page__search--pressed"
+      >
+        <Icon name="search" size={28} color={colors.gray500} />
+        <Text className="home-page__search-entry-text" numberOfLines={1}>
+          搜索设计师、工长、装修公司或主材门店
+        </Text>
+      </View>
+
       <View className="home-page__category-row">
         {HOME_CATEGORIES.map((item) => {
           return (
@@ -1241,7 +1475,7 @@ export default function Home() {
               >
                 <Icon
                   name={item.iconName}
-                  size={56}
+                  size={50}
                   color={activeCategory === item.id ? "#FFFFFF" : "#6B7280"}
                 />
               </View>
@@ -1263,7 +1497,7 @@ export default function Home() {
       ) : null}
 
       <View
-        className={`home-page__filters ${showsProviderOrgFilter ? "" : "home-page__filters--compact"}`}
+        className={`home-page__filters ${showsProviderOrgFilter ? "" : "home-page__filters--compact"} ${materialCategoryPanelVisible && activeCategory === "material" ? "home-page__filters--panel-open" : ""}`}
         style={stickyFilterStyle}
       >
         <View className="home-page__sort-anchor">
