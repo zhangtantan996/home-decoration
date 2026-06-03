@@ -12,6 +12,24 @@
   text-align: right;
 }
 
+.system-settings-legal-release-summary {
+  margin-bottom: 16px;
+}
+
+.system-settings-legal-release-card {
+  height: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: var(--ant-border-radius-lg);
+  background:
+    linear-gradient(135deg, var(--ant-color-primary-bg), transparent 56%),
+    var(--ant-color-fill-quaternary);
+}
+
+.system-settings-legal-release-card h5 {
+  margin: 6px 0 4px;
+}
+
 .system-settings-legal-drawer-body {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(320px, 0.86fr);
@@ -41,6 +59,19 @@
   display: block;
   margin-bottom: 8px;
   letter-spacing: 0.08em;
+}
+
+.system-settings-legal-online-compare {
+  max-height: 150px;
+  overflow: hidden;
+  padding: 12px;
+  border: 1px dashed var(--ant-color-border);
+  border-radius: var(--ant-border-radius);
+  background: var(--ant-color-bg-container);
+}
+
+.system-settings-full-width {
+  width: 100%;
 }
 
 .system-settings-legal-preview-content {
