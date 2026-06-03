@@ -490,8 +490,12 @@ export const updateMaterialProduct = (shopId: number, productId: number, payload
 export const deleteMaterialProduct = (shopId: number, productId: number, payload: { reason: string; recentReauthProof: string }) =>
   api.delete(`/admin/material-shops/${shopId}/products/${productId}`, { data: payload });
 
-export const listCases = async (page = 1, pageSize = 20) =>
-  normalizePage<CaseItem>(await api.get('/admin/cases', { params: { page, pageSize } }));
+export const listCases = async (
+  page = 1,
+  pageSize = 20,
+  params?: { excludeProviderType?: number; providerId?: number; style?: string },
+) =>
+  normalizePage<CaseItem>(await api.get('/admin/cases', { params: { page, pageSize, ...params } }));
 export const createCase = (payload: Record<string, unknown>) => api.post('/admin/cases', payload);
 export const updateCase = (id: number, payload: Record<string, unknown>) => api.put(`/admin/cases/${id}`, payload);
 export const deleteCase = (id: number) => api.delete(`/admin/cases/${id}`);

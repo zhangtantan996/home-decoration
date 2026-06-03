@@ -44,7 +44,7 @@ const InspirationPage = () => {
   const load = async () => {
     setLoading(true);
     try {
-      setItems((await listCases(1, 200)).list);
+      setItems((await listCases(1, 200, { excludeProviderType: FOREMAN_PROVIDER_TYPE })).list);
     } catch (error) {
       showApiError(error, '灵感加载失败');
     } finally {

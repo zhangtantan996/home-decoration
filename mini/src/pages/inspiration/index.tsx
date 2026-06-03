@@ -354,6 +354,7 @@ export default function Inspiration() {
         pageSize: PAGE_SIZE,
         style: activeStyle !== ALL_FILTER_VALUE ? activeStyle : undefined,
         layout: activeLayout !== ALL_FILTER_VALUE ? activeLayout : undefined,
+        sort: sortMode,
       });
 
       if (requestId !== casesRequestIdRef.current) {
@@ -484,7 +485,7 @@ export default function Inspiration() {
 
   useEffect(() => {
     void runReload();
-  }, [activeLayout, activeStyle, runReload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [activeLayout, activeStyle, runReload, sortMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useReachBottom(() => {
     void fetchCases();
@@ -591,21 +592,8 @@ export default function Inspiration() {
           return matchAreaBucket(item.area, selectedArea);
         });
 
-    if (sortMode === 'latest') {
-      return areaFiltered.sort((left, right) => right.id - left.id);
-    }
-
-    if (sortMode === 'hot') {
-      return areaFiltered.sort((left, right) => {
-        if ((right.likeCount || 0) !== (left.likeCount || 0)) {
-          return (right.likeCount || 0) - (left.likeCount || 0);
-        }
-        return right.id - left.id;
-      });
-    }
-
     return areaFiltered;
-  }, [activeArea, cases, sortMode]);
+  }, [activeArea, cases]);
 
   const [leftCases, rightCases] = useMemo(() => splitColumns(filteredCases), [filteredCases]);
   const [leftFavorites, rightFavorites] = useMemo(() => splitColumns(favorites), [favorites]);

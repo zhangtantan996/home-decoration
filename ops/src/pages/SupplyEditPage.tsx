@@ -29,6 +29,7 @@ type CityOption = SelectOption & { provinceCode: string; provinceName?: string }
 type DistrictOption = SelectOption & { cityCode: string };
 type SupplyTabKey = 'designer' | 'foreman' | 'company' | 'materials';
 
+const MATERIAL_CATEGORY_OTHER = '其他';
 const MAX_TAG_COUNT = 3;
 const MAX_AREA_COUNT = 8;
 const MAX_PRICE = 10_000_000;
@@ -60,7 +61,22 @@ const fallbackOptions = {
   workTypes: [] as SelectOption[],
   tags: ['专业', '守时', '沟通好', '价格合理', '质量好', '服务态度好', '设计感强', '施工规范'].map((item) => ({ value: item, label: item })),
   certifications: ['一级资质', '二级资质', '三级资质', '设计甲级', '设计乙级', 'ISO认证'].map((item) => ({ value: item, label: item })),
-  materialCategories: ['瓷砖', '地板', '卫浴', '橱柜', '门窗', '灯具', '五金', '涂料', '壁纸', '家具'].map((item) => ({ value: item, label: item })),
+  materialCategories: ['瓷砖', '地板', '卫浴', '橱柜', '门窗', '灯具', '五金', '涂料', '壁纸', '家具', '其他'].map((item) => ({ value: item, label: item })),
+};
+
+const ensureMaterialCategoryOptions = (items: SelectOption[]) => {
+  const seen = new Set<string>();
+  const options = items.filter((item) => {
+    const value = String(item.value || item.label || '').trim();
+    if (!value || seen.has(value)) return false;
+    seen.add(value);
+    return true;
+  });
+  if (options.length === 0) return fallbackOptions.materialCategories;
+  if (!seen.has(MATERIAL_CATEGORY_OTHER)) {
+    options.push({ value: MATERIAL_CATEGORY_OTHER, label: MATERIAL_CATEGORY_OTHER });
+  }
+  return options;
 };
 
 const PROVIDER_PRICE_UNIT = '元/㎡';
@@ -154,7 +170,9 @@ const useSupplyDictionaries = () => {
         getDictOptions('work_type').catch(() => fallbackOptions.workTypes),
         getDictOptions('review_tag').catch(() => fallbackOptions.tags),
         getDictOptions('certification_type').catch(() => fallbackOptions.certifications),
-        getDictOptions('material_category').catch(() => fallbackOptions.materialCategories),
+        getDictOptions('material_category')
+          .then(ensureMaterialCategoryOptions)
+          .catch(() => fallbackOptions.materialCategories),
       ]);
       if (mounted) setOptions({
         styles,

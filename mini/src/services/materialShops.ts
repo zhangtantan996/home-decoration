@@ -38,6 +38,8 @@ export interface MaterialShopQuery {
   pageSize?: number;
   sortBy?: 'recommend' | 'distance';
   type?: string;
+  category?: string;
+  keyword?: string;
 }
 
 interface MaterialShopDTO {
@@ -112,6 +114,8 @@ export async function listMaterialShops(query: MaterialShopQuery = {}) {
       pageSize: query.pageSize || 8,
       sortBy: query.sortBy || 'recommend',
       ...(query.type ? { type: query.type } : {}),
+      ...(query.category ? { category: query.category } : {}),
+      ...(query.keyword ? { keyword: query.keyword } : {}),
     },
   });
 

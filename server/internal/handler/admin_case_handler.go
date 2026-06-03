@@ -168,6 +168,7 @@ func AdminListCases(c *gin.Context) {
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	providerID := c.Query("providerId") // 可选筛选
 	style := c.Query("style")           // 可选筛选
+	excludeProviderType := parseInt(c.Query("excludeProviderType"), 0)
 
 	var cases []model.ProviderCase
 	var total int64
@@ -181,10 +182,14 @@ func AdminListCases(c *gin.Context) {
 	if style != "" {
 		query = query.Where("style = ?", style)
 	}
+	if excludeProviderType > 0 {
+		query = query.Joins("LEFT JOIN providers ON providers.id = provider_cases.provider_id").
+			Where("(provider_cases.provider_id = 0) OR (providers.provider_type <> ?)", excludeProviderType)
+	}
 
 	query.Count(&total)
 
-	if err := query.Order("created_at DESC").
+	if err := query.Order("provider_cases.created_at DESC").
 		Offset((page - 1) * pageSize).Limit(pageSize).
 		Find(&cases).Error; err != nil {
 		response.Error(c, 500, "查询失败")

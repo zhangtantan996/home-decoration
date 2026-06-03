@@ -1,0 +1,537 @@
+@import "../../theme/tokens";
+
+.search-page {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: $color-bg-card;
+
+  &__header {
+    flex-shrink: 0;
+    padding-left: $spacing-xl;
+    background: $color-bg-card;
+    border-bottom: 1rpx solid $color-border-soft;
+    box-sizing: border-box;
+  }
+
+  &__header-main {
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+  }
+
+  &__back {
+    width: 56rpx;
+    height: 88rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__back--pressed {
+    opacity: 0.68;
+  }
+
+  &__back-text {
+    color: $color-text-primary;
+    font-size: 68rpx;
+    font-weight: 300;
+    line-height: 0.9;
+    transform: translateY(-1rpx);
+  }
+
+  &__search-bar {
+    flex: 1;
+    min-width: 0;
+    height: 72rpx;
+    padding: 0 6rpx 0 $spacing-lg;
+    border-radius: $radius-pill;
+    background: $color-gray-100;
+    display: flex;
+    align-items: center;
+    gap: $spacing-xs;
+  }
+
+  &__search-input {
+    flex: 1;
+    min-width: 0;
+    margin-bottom: 0;
+
+    .input-wrapper__field {
+      height: 70rpx;
+      padding: 0;
+      border: 0;
+      background: transparent;
+      color: $color-text-primary;
+      font-size: 26rpx;
+      font-weight: 500;
+      line-height: 70rpx;
+    }
+  }
+
+  &__clear {
+    width: 44rpx;
+    height: 44rpx;
+    border-radius: $radius-pill;
+    background: $color-gray-100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__clear--pressed,
+  &__submit--pressed,
+  &__result-card--pressed {
+    opacity: 0.82;
+  }
+
+  &__clear-text {
+    color: $color-gray-600;
+    font-size: 32rpx;
+    line-height: 1;
+  }
+
+  &__submit {
+    min-width: 108rpx;
+    height: 60rpx;
+    padding: 0 $spacing-xl;
+    border-radius: $radius-pill;
+    background: $color-gray-200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  &__submit-text {
+    color: $color-primary;
+    font-size: 28rpx;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  &__capsule-spacer {
+    flex-shrink: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &__result-tools {
+    margin-bottom: $spacing-md;
+  }
+
+  &__filter-row {
+    display: flex;
+    flex-wrap: nowrap;
+    gap: $spacing-xl;
+    overflow-x: auto;
+    white-space: nowrap;
+    padding: $spacing-xs 0 $spacing-md;
+  }
+
+  &__filter-chip {
+    position: relative;
+    height: 68rpx;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+
+    &--active {
+      &::after {
+        content: "";
+        position: absolute;
+        left: 50%;
+        bottom: 0;
+        width: 46rpx;
+        height: 8rpx;
+        border-radius: $radius-pill;
+        background: $color-brand;
+        transform: translateX(-50%);
+      }
+    }
+  }
+
+  &__filter-text {
+    color: $color-gray-700;
+    font-size: 30rpx;
+    font-weight: 700;
+    line-height: 1;
+
+    &--active {
+      color: $color-text-primary;
+      font-size: 40rpx;
+      font-weight: 900;
+    }
+  }
+
+  &__scroll {
+    flex: 1;
+    min-height: 0;
+  }
+
+  &__content {
+    width: 100%;
+    box-sizing: border-box;
+    padding-top: $spacing-xl;
+    padding-right: $spacing-page-x;
+    padding-left: $spacing-page-x;
+    padding-bottom: 150rpx;
+  }
+
+  &__content-safe {
+    padding-bottom: calc(150rpx + constant(safe-area-inset-bottom));
+    padding-bottom: calc(150rpx + env(safe-area-inset-bottom));
+  }
+
+  &__discover {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-lg;
+  }
+
+  &__discover-title {
+    color: $color-text-primary;
+    font-size: 40rpx;
+    font-weight: 600;
+    line-height: 1.2;
+  }
+
+  &__discover-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-md $spacing-lg;
+  }
+
+  &__discover-chip {
+    min-height: 68rpx;
+    padding: 0 $spacing-xl;
+    border-radius: $radius-sm;
+    background: $color-gray-100;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__discover-chip--pressed {
+    opacity: 0.78;
+  }
+
+  &__discover-chip-text {
+    color: $color-text-primary;
+    font-size: $font-body;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+
+  &__loading-list,
+  &__result-list {
+    display: flex;
+    flex-direction: column;
+    gap: $spacing-block-y;
+  }
+
+  &__loading-card {
+    display: flex;
+    gap: $spacing-lg;
+    padding: $spacing-card-padding;
+    border-radius: $radius-card;
+    background: $color-surface-card;
+    border: 1rpx solid $color-surface-border;
+    box-shadow: $shadow-card;
+  }
+
+  &__loading-content {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: $spacing-sm;
+  }
+
+  &__loading-more {
+    min-height: 64rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__loading-more-text {
+    color: $color-text-secondary;
+    font-size: $font-caption;
+    line-height: 1.3;
+  }
+
+  &__result-card {
+    padding: 30rpx;
+    border-radius: 34rpx;
+    background: $color-surface-card;
+    border: 1rpx solid $color-border-soft;
+    box-shadow: $shadow-card;
+  }
+
+  &__provider-head {
+    display: flex;
+    align-items: flex-start;
+    gap: $spacing-xl;
+  }
+
+  &__provider-avatar {
+    width: 116rpx;
+    height: 116rpx;
+    border-radius: $radius-pill;
+    background: $color-gray-100;
+    flex-shrink: 0;
+    overflow: hidden;
+
+    &--square {
+      width: 168rpx;
+      height: 168rpx;
+      border-radius: $radius-input;
+    }
+
+    &--fallback {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      border: 1rpx solid $color-line-soft;
+    }
+  }
+
+  &__provider-avatar-text {
+    color: $color-text-primary;
+    font-size: $font-h2;
+    font-weight: 800;
+  }
+
+  &__provider-main,
+  &__entity-main {
+    flex: 1;
+    min-width: 0;
+  }
+
+  &__provider-name {
+    display: block;
+    color: $color-text-primary;
+    font-size: $font-h1;
+    font-weight: 700;
+    line-height: 1.3;
+  }
+
+  &__provider-meta-row {
+    margin-top: $spacing-sm;
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-width: 0;
+  }
+
+  &__provider-meta-text,
+  &__provider-nearby-text {
+    color: $color-text-secondary;
+    font-size: $font-caption;
+    line-height: 1.35;
+  }
+
+  &__provider-dot {
+    width: 6rpx;
+    height: 6rpx;
+    border-radius: $radius-pill;
+    background: $color-gray-300;
+    flex-shrink: 0;
+  }
+
+  &__provider-rating,
+  &__entity-rating,
+  &__provider-nearby {
+    display: inline-flex;
+    align-items: center;
+    gap: $spacing-xs;
+    flex-shrink: 0;
+  }
+
+  &__provider-rating-text,
+  &__entity-rating-text {
+    color: $color-text-primary;
+    font-size: $font-caption;
+    font-weight: 700;
+    line-height: 1.2;
+  }
+
+  &__provider-identity-row {
+    margin-top: 18rpx;
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-width: 0;
+  }
+
+  &__provider-chip {
+    padding: 6rpx $spacing-sm;
+    border-radius: $radius-sm;
+    background: $color-gray-100;
+    flex-shrink: 0;
+  }
+
+  &__provider-chip-text {
+    color: $color-text-primary;
+    font-size: $font-xs;
+    font-weight: 700;
+    line-height: 1;
+  }
+
+  &__provider-identity-text {
+    flex: 1;
+    min-width: 0;
+    color: $color-text-secondary;
+    font-size: $font-caption;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__provider-footer {
+    margin-top: $spacing-xl;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: $spacing-lg;
+  }
+
+  &__provider-price {
+    color: $color-error;
+    font-size: $font-h3;
+    font-weight: 800;
+    flex-shrink: 0;
+  }
+
+  &__provider-style-text {
+    flex: 1;
+    min-width: 0;
+    color: $color-text-primary;
+    font-size: $font-body;
+    line-height: 1.5;
+    text-align: right;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__entity-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: $spacing-lg;
+  }
+
+  &__entity-aside {
+    width: 168rpx;
+    flex-shrink: 0;
+  }
+
+  &__entity-title-row {
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-width: 0;
+  }
+
+  &__entity-name {
+    flex: 1;
+    min-width: 0;
+    color: $color-text-primary;
+    font-size: $font-h3;
+    font-weight: 700;
+    line-height: 1.35;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__entity-meta-row {
+    margin-top: $spacing-sm;
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-width: 0;
+    overflow: hidden;
+  }
+
+  &__entity-meta-text {
+    min-width: 0;
+    color: $color-text-secondary;
+    font-size: 22rpx;
+    line-height: 1.3;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__entity-tag-row {
+    margin-top: $spacing-sm;
+    display: flex;
+    flex-wrap: wrap;
+    gap: $spacing-xs;
+  }
+
+  &__entity-tag {
+    height: 32rpx;
+    padding: 0 10rpx;
+    border-radius: $radius-xs;
+    background: $color-gray-100;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__entity-tag-text {
+    color: $color-gray-600;
+    font-size: 18rpx;
+    font-weight: 600;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  &__entity-info-row {
+    margin-top: $spacing-sm;
+    display: flex;
+    align-items: center;
+    gap: $spacing-sm;
+    min-width: 0;
+  }
+
+  &__entity-info-text {
+    flex: 1;
+    min-width: 0;
+    color: $color-text-secondary;
+    font-size: 22rpx;
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__entity-info-row &__provider-nearby-text {
+    font-size: 22rpx;
+  }
+
+  &__material-cover {
+    width: 168rpx;
+    height: 168rpx;
+    border-radius: $radius-input;
+    background: $color-gray-100;
+    border: 1rpx solid $color-border-soft;
+    flex-shrink: 0;
+
+    &--placeholder {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+}

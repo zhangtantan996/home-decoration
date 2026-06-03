@@ -129,7 +129,8 @@ INSERT INTO system_dictionaries (category_code, value, label, sort_order, enable
 ('material_category', '五金', '五金', 7, true),
 ('material_category', '涂料', '涂料', 8, true),
 ('material_category', '壁纸', '壁纸', 9, true),
-('material_category', '家具', '家具', 10, true)
+('material_category', '家具', '家具', 10, true),
+('material_category', '其他', '其他', 11, true)
 ON CONFLICT (category_code, value) DO NOTHING;
 
 -- 2.10 评价标签 (review_tag)
