@@ -38,6 +38,12 @@ admin_auth:
   max_active_sessions: 5
   api_ip_enforced: true
   allowed_cidrs: "${ADMIN_AUTH_ALLOWED_CIDRS}"
+  network_mode: "${ADMIN_AUTH_NETWORK_MODE}"
+  trusted_cidrs: "${ADMIN_AUTH_TRUSTED_CIDRS}"
+  untrusted_login_allowed: "${ADMIN_AUTH_UNTRUSTED_LOGIN_ALLOWED}"
+  trusted_device_days: "${ADMIN_AUTH_TRUSTED_DEVICE_DAYS}"
+  ip_change_policy: "${ADMIN_AUTH_IP_CHANGE_POLICY}"
+  high_risk_role_keys: "${ADMIN_AUTH_HIGH_RISK_ROLE_KEYS}"
 
 log:
   level: "info"

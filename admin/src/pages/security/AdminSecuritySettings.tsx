@@ -4,12 +4,35 @@ import type { ColumnsType } from 'antd/es/table';
 
 import AdminReauthModal from '../../components/AdminReauthModal';
 import PageHeader from '../../components/PageHeader';
-import { adminSecurityApi, type AdminSecurityStatusResponse } from '../../services/api';
+import { adminSecurityApi, type AdminSecurityStatusResponse, type AdminTrustedDeviceItem } from '../../services/api';
 import { useAuthStore, type AdminSessionItem } from '../../stores/authStore';
 import { formatServerDateTime } from '../../utils/serverTime';
 import { getLoginPath } from '../../utils/env';
 
 const { Text } = Typography;
+
+const NETWORK_TRUST_META: Record<string, { color: string; label: string }> = {
+  trusted_network: { color: 'green', label: '可信网络' },
+  trusted_device: { color: 'blue', label: '可信设备' },
+  untrusted_challenged: { color: 'orange', label: '非可信网络已验证' },
+  restricted: { color: 'red', label: '受限会话' },
+};
+
+const renderNetworkTrustTag = (value?: string, restricted?: boolean) => {
+  const key = restricted ? 'restricted' : value || 'untrusted_challenged';
+  const meta = NETWORK_TRUST_META[key] || { color: 'default', label: value || '-' };
+  return <Tag color={meta.color}>{meta.label}</Tag>;
+};
+
+const shortenDeviceId = (value?: string) => {
+  if (!value) {
+    return '-';
+  }
+  if (value.length <= 16) {
+    return value;
+  }
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
+};
 
 const AdminSecuritySettings: React.FC = () => {
   const { message } = App.useApp();
@@ -89,6 +112,16 @@ const AdminSecuritySettings: React.FC = () => {
     }
   };
 
+  const handleRevokeTrustedDevice = async (device: AdminTrustedDeviceItem) => {
+    const res = (await adminSecurityApi.revokeTrustedDevice(device.deviceId)) as { code?: number; message?: string };
+    if (res?.code !== 0) {
+      message.error(res?.message || '撤销可信设备失败');
+      return;
+    }
+    message.success('可信设备已撤销');
+    await loadData();
+  };
+
   const security = payload?.security;
 
   const columns: ColumnsType<AdminSessionItem> = [
@@ -117,6 +150,12 @@ const AdminSecuritySettings: React.FC = () => {
       },
     },
     {
+      title: '网络状态',
+      dataIndex: 'networkTrustLevel',
+      width: 150,
+      render: (value: string, record) => renderNetworkTrustTag(value, record.restrictedSession),
+    },
+    {
       title: '创建时间',
       dataIndex: 'createdAt',
       width: 180,
@@ -140,6 +179,52 @@ const AdminSecuritySettings: React.FC = () => {
             踢下线
           </Button>
         ),
+    },
+  ];
+
+  const trustedDeviceColumns: ColumnsType<AdminTrustedDeviceItem> = [
+    {
+      title: '设备',
+      dataIndex: 'deviceId',
+      render: (value?: string) => <Text code>{shortenDeviceId(value)}</Text>,
+    },
+    {
+      title: '最近来源',
+      key: 'clientIp',
+      render: (_value, record) => (
+        <Space direction="vertical" size={0}>
+          <span>{record.clientIp || '-'}</span>
+          <Text type="secondary">{record.userAgent || '-'}</Text>
+        </Space>
+      ),
+    },
+    {
+      title: '首次信任',
+      dataIndex: 'firstSeenAt',
+      width: 180,
+      render: (value?: string) => formatServerDateTime(value),
+    },
+    {
+      title: '最近使用',
+      dataIndex: 'lastSeenAt',
+      width: 180,
+      render: (value?: string) => formatServerDateTime(value),
+    },
+    {
+      title: '到期时间',
+      dataIndex: 'expiresAt',
+      width: 180,
+      render: (value?: string) => formatServerDateTime(value),
+    },
+    {
+      title: '操作',
+      key: 'action',
+      width: 130,
+      render: (_value, record) => (
+        <Button type="link" size="small" danger onClick={() => void handleRevokeTrustedDevice(record)}>
+          撤销信任
+        </Button>
+      ),
     },
   ];
 
@@ -170,6 +255,10 @@ const AdminSecuritySettings: React.FC = () => {
             </Descriptions.Item>
             <Descriptions.Item label="是否必须改密">
               {security?.mustResetPassword ? '是' : '否'}
+            </Descriptions.Item>
+            <Descriptions.Item label="当前网络状态">
+              {renderNetworkTrustTag(security?.networkTrustLevel, security?.restrictedSession)}
+              {security?.securityChallengeRequired ? <Text type="secondary"> 需要额外验证</Text> : null}
             </Descriptions.Item>
             <Descriptions.Item label="在线会话数">{payload.sessionCount}</Descriptions.Item>
             <Descriptions.Item label="最近登录时间">{formatServerDateTime(payload.admin.lastLoginAt)}</Descriptions.Item>
@@ -205,6 +294,18 @@ const AdminSecuritySettings: React.FC = () => {
           pagination={false}
           locale={{ emptyText: <Empty description="暂无在线会话" /> }}
           scroll={{ x: 980 }}
+          sticky
+        />
+      </Card>
+
+      <Card className="hz-table-card" title="可信设备">
+        <Table
+          rowKey="deviceId"
+          columns={trustedDeviceColumns}
+          dataSource={payload?.trustedDevices || []}
+          pagination={false}
+          locale={{ emptyText: <Empty description="暂无可信设备" /> }}
+          scroll={{ x: 1040 }}
           sticky
         />
       </Card>

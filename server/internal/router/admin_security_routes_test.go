@@ -21,6 +21,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
@@ -464,6 +465,7 @@ func TestAdminNetworkGateBlocksDisallowedIP(t *testing.T) {
 	cfg := config.GetConfig()
 	cfg.AdminAuth.APIIPEnforced = true
 	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.NetworkMode = "strict"
 
 	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
 		"admin_id":    float64(1),
@@ -490,6 +492,90 @@ func TestAdminNetworkGateBlocksDisallowedIP(t *testing.T) {
 	}
 }
 
+func TestAdminNetworkGateAllowsDisallowedIPInAdaptiveMode(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	cfg := config.GetConfig()
+	cfg.AdminAuth.APIIPEnforced = true
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.NetworkMode = "adaptive"
+
+	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
+		"admin_id":    float64(1),
+		"username":    "sec-admin",
+		"is_super":    true,
+		"token_type":  "admin",
+		"token_use":   "access",
+		"login_stage": "setup_required",
+		"exp":         time.Now().Add(time.Hour).Unix(),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/admin/info", nil)
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("Authorization", "Bearer "+token)
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected adaptive mode to pass through admin network gate, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "当前网络不允许访问管理接口") {
+		t.Fatalf("adaptive mode should not hard block disallowed IP, got %s", rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "\"networkTrustLevel\":\"untrusted_challenged\"") {
+		t.Fatalf("expected adaptive response to expose untrusted network state, got %s", rec.Body.String())
+	}
+}
+
+func TestAdminLoginFromAdaptiveUntrustedNetworkRequiresOTP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := setupAdminSecurityRouter(t)
+
+	passwordHash, err := bcrypt.GenerateFromPassword([]byte("SecurePassword123!"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if err := repository.DB.Model(&model.SysAdmin{}).Where("id = ?", 1).Updates(map[string]interface{}{
+		"password":            string(passwordHash),
+		"must_reset_password": false,
+		"two_factor_enabled":  true,
+		"two_factor_secret":   "test-secret",
+		"password_changed_at": time.Now(),
+		"two_factor_bound_at": time.Now(),
+	}).Error; err != nil {
+		t.Fatalf("update admin password: %v", err)
+	}
+
+	cfg := config.GetConfig()
+	cfg.AdminAuth.NetworkMode = "adaptive"
+	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.RequiredRoleKeys = ""
+	cfg.AdminAuth.TOTPEnabled = true
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/login", strings.NewReader(`{"username":"sec-admin","password":"SecurePassword123!"}`))
+	req.RemoteAddr = "203.0.113.10:12345"
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected login response, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	for _, expected := range []string{
+		`"loginStage":"otp_required"`,
+		`"networkTrustLevel":"untrusted_challenged"`,
+		`"securityChallengeRequired":true`,
+	} {
+		if !strings.Contains(body, expected) {
+			t.Fatalf("expected adaptive untrusted login response to contain %s, got %s", expected, body)
+		}
+	}
+}
+
 func TestOpsAdminInfoBypassesAdminNetworkGate(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	r := setupAdminSecurityRouter(t)
@@ -497,6 +583,7 @@ func TestOpsAdminInfoBypassesAdminNetworkGate(t *testing.T) {
 	cfg := config.GetConfig()
 	cfg.AdminAuth.APIIPEnforced = true
 	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.NetworkMode = "strict"
 
 	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
 		"admin_id":    float64(1),
@@ -569,6 +656,7 @@ func TestAdminNetworkGateAllowsConfiguredCIDR(t *testing.T) {
 	cfg := config.GetConfig()
 	cfg.AdminAuth.APIIPEnforced = true
 	cfg.AdminAuth.AllowedCIDRs = "10.0.0.0/8"
+	cfg.AdminAuth.NetworkMode = "strict"
 
 	token := signAdminToken(t, config.GetConfig().JWT.Secret, jwt.MapClaims{
 		"admin_id":    float64(1),

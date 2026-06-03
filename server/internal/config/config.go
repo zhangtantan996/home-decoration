@@ -74,6 +74,12 @@ type AdminAuthConfig struct {
 	MaxActiveSessions  int    `mapstructure:"max_active_sessions"`
 	APIIPEnforced      bool   `mapstructure:"api_ip_enforced"`
 	AllowedCIDRs       string `mapstructure:"allowed_cidrs"`
+	NetworkMode        string `mapstructure:"network_mode"`
+	TrustedCIDRs       string `mapstructure:"trusted_cidrs"`
+	UntrustedLogin     bool   `mapstructure:"untrusted_login_allowed"`
+	TrustedDeviceDays  int    `mapstructure:"trusted_device_days"`
+	IPChangePolicy     string `mapstructure:"ip_change_policy"`
+	HighRiskRoleKeys   string `mapstructure:"high_risk_role_keys"`
 }
 
 type LogConfig struct {
@@ -230,6 +236,12 @@ func Load() (*Config, error) {
 	_ = viper.BindEnv("admin_auth.max_active_sessions", "ADMIN_AUTH_MAX_ACTIVE_SESSIONS")
 	_ = viper.BindEnv("admin_auth.api_ip_enforced", "ADMIN_AUTH_API_IP_ENFORCED")
 	_ = viper.BindEnv("admin_auth.allowed_cidrs", "ADMIN_AUTH_ALLOWED_CIDRS")
+	_ = viper.BindEnv("admin_auth.network_mode", "ADMIN_AUTH_NETWORK_MODE")
+	_ = viper.BindEnv("admin_auth.trusted_cidrs", "ADMIN_AUTH_TRUSTED_CIDRS")
+	_ = viper.BindEnv("admin_auth.untrusted_login_allowed", "ADMIN_AUTH_UNTRUSTED_LOGIN_ALLOWED")
+	_ = viper.BindEnv("admin_auth.trusted_device_days", "ADMIN_AUTH_TRUSTED_DEVICE_DAYS")
+	_ = viper.BindEnv("admin_auth.ip_change_policy", "ADMIN_AUTH_IP_CHANGE_POLICY")
+	_ = viper.BindEnv("admin_auth.high_risk_role_keys", "ADMIN_AUTH_HIGH_RISK_ROLE_KEYS")
 	_ = viper.BindEnv("log.audit_retention_days", "LOG_AUDIT_RETENTION_DAYS")
 	_ = viper.BindEnv("storage.driver", "STORAGE_DRIVER")
 	_ = viper.BindEnv("storage.oss_endpoint", "STORAGE_OSS_ENDPOINT")
@@ -326,6 +338,12 @@ func Load() (*Config, error) {
 	viper.SetDefault("admin_auth.max_active_sessions", 5)
 	viper.SetDefault("admin_auth.api_ip_enforced", false)
 	viper.SetDefault("admin_auth.allowed_cidrs", "")
+	viper.SetDefault("admin_auth.network_mode", "adaptive")
+	viper.SetDefault("admin_auth.trusted_cidrs", "")
+	viper.SetDefault("admin_auth.untrusted_login_allowed", true)
+	viper.SetDefault("admin_auth.trusted_device_days", 14)
+	viper.SetDefault("admin_auth.ip_change_policy", "challenge")
+	viper.SetDefault("admin_auth.high_risk_role_keys", "super_admin,system_admin,security_admin")
 	viper.SetDefault("log.level", "info")
 	viper.SetDefault("log.file", "logs/backend.log")
 	viper.SetDefault("log.audit_retention_days", 180)

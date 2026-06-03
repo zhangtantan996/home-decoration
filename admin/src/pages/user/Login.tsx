@@ -4,7 +4,7 @@ import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-desi
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { adminAuthApi } from '../../services/api';
 import { useAuthStore } from '../../stores/authStore';
-import type { AdminLoginStage, AdminSecurityStatus, AdminUser, MenuItem } from '../../stores/authStore';
+import type { AdminLoginStage, AdminNetworkTrustLevel, AdminSecurityStatus, AdminUser, MenuItem } from '../../stores/authStore';
 import merchantAppIcon from '../../assets/branding/company-logo.png';
 import { designTokens } from '../../styles/theme';
 import { pickAdminLandingPath } from '../../utils/adminNavigation';
@@ -22,6 +22,9 @@ interface AdminLoginPayload {
   security?: AdminSecurityStatus;
   securitySetupRequired?: boolean;
   loginStage?: AdminLoginStage;
+  networkTrustLevel?: AdminNetworkTrustLevel;
+  securityChallengeRequired?: boolean;
+  restrictedSession?: boolean;
 }
 
 interface AdminLoginEnvelope {
@@ -58,9 +61,26 @@ const normalizeRedirectPath = (value: string | null) => {
   return value;
 };
 
+const buildNetworkNotice = (payload: AdminLoginPayload) => {
+  const trustLevel = payload.networkTrustLevel || payload.security?.networkTrustLevel;
+  const restrictedSession = Boolean(payload.restrictedSession || payload.security?.restrictedSession);
+  const loginStage = payload.loginStage || payload.security?.loginStage;
+  if (restrictedSession || trustLevel === 'restricted') {
+    return '当前网络未被标记为可信，本次登录会进入受限会话。高危操作需要完成二次认证。';
+  }
+  if (payload.securityChallengeRequired || payload.security?.securityChallengeRequired) {
+    return '当前网络未被标记为可信，请完成动态验证码等额外验证后继续。';
+  }
+  if (loginStage === 'active' && trustLevel === 'untrusted_challenged') {
+    return '当前网络未被标记为可信，额外验证已通过。本次会话会记录安全审计，高危操作仍需二次认证。';
+  }
+  return '';
+};
+
 const Login: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [otpRequired, setOtpRequired] = useState(false);
+  const [networkNotice, setNetworkNotice] = useState('');
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const { token, admin, menus, security, setSession } = useAuthStore();
@@ -84,10 +104,12 @@ const Login: React.FC = () => {
 
   const handleLoginSuccess = (payload: AdminLoginPayload) => {
     const loginStage = payload.loginStage || payload.security?.loginStage;
+    const notice = buildNetworkNotice(payload);
     if (loginStage === 'otp_required') {
       setOtpRequired(true);
+      setNetworkNotice(notice);
       form.setFieldValue('otpCode', '');
-      message.info('请输入动态验证码完成登录');
+      message.info(notice || '请输入动态验证码完成登录');
       return;
     }
 
@@ -97,6 +119,7 @@ const Login: React.FC = () => {
       message.error('登录响应缺少会话信息');
       return;
     }
+    setNetworkNotice(notice);
 
     setSession({
       accessToken,
@@ -112,7 +135,11 @@ const Login: React.FC = () => {
       return;
     }
 
-    message.success('登录成功');
+    if (notice) {
+      message.warning(notice);
+    } else {
+      message.success('登录成功');
+    }
     navigate(requestedPath || pickAdminLandingPath(payload.menus || []), { replace: true });
   };
 
@@ -145,6 +172,7 @@ const Login: React.FC = () => {
 
   const handleResetOtpStage = () => {
     setOtpRequired(false);
+    setNetworkNotice('');
     form.setFieldValue('otpCode', '');
   };
 
@@ -197,9 +225,19 @@ const Login: React.FC = () => {
             <Alert
               type="info"
               showIcon
-              style={{ marginBottom: 16 }}
+              className="hz-login__alert"
               message="已通过账号密码校验"
               description="请输入当前 TOTP 动态验证码完成最终登录。"
+            />
+          ) : null}
+
+          {networkNotice ? (
+            <Alert
+              type="warning"
+              showIcon
+              className="hz-login__alert"
+              message="网络安全提示"
+              description={networkNotice}
             />
           ) : null}
 

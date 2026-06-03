@@ -4,6 +4,7 @@ import { getApiBaseUrl, getLoginPath, getRouterBasename } from "../utils/env";
 import { toSafeUserFacingText } from "../utils/userFacingText";
 import {
   useAuthStore,
+  type AdminNetworkTrustLevel,
   type AdminSecurityStatus,
   type AdminSessionItem,
 } from "../stores/authStore";
@@ -21,6 +22,7 @@ const api = axios.create({
 type AdminHandledStatus = 401 | 403;
 
 const ADMIN_ERROR_STATUS_KEY = "__adminHandledStatus";
+const ADMIN_DEVICE_ID_KEY = "admin_device_id";
 const ACCESS_DENIED_MESSAGE_COOLDOWN_MS = 3000;
 let lastAccessDeniedAt = 0;
 let adminRefreshPromise: Promise<string | null> | null = null;
@@ -193,6 +195,27 @@ const isAdminAuthRequest = (url?: string) => {
   return url.includes("/admin/login") || url.includes("/admin/token/refresh");
 };
 
+const createAdminDeviceId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `admin-device-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+};
+
+const getAdminDeviceId = () => {
+  try {
+    const existing = localStorage.getItem(ADMIN_DEVICE_ID_KEY);
+    if (existing) {
+      return existing;
+    }
+    const next = createAdminDeviceId();
+    localStorage.setItem(ADMIN_DEVICE_ID_KEY, next);
+    return next;
+  } catch {
+    return "";
+  }
+};
+
 const refreshAdminSession = async (): Promise<string | null> => {
   const refreshToken = localStorage.getItem("admin_refresh_token");
   if (!refreshToken) {
@@ -205,7 +228,10 @@ const refreshAdminSession = async (): Promise<string | null> => {
         `${API_BASE_URL}/admin/token/refresh`,
         { refreshToken },
         {
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            "X-Admin-Device-Id": getAdminDeviceId(),
+          },
         },
       )
       .then((response) => {
@@ -237,6 +263,10 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("admin_token");
     const skipAdminAuth = Boolean(config.headers?.["X-Skip-Admin-Auth"]);
+    const deviceId = getAdminDeviceId();
+    if (deviceId) {
+      config.headers["X-Admin-Device-Id"] = deviceId;
+    }
     if (token && !skipAdminAuth && !isAdminAuthRequest(config.url)) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -343,11 +373,22 @@ export interface AdminSecurityStatusResponse {
   security: AdminSecurityStatus;
   sessions: AdminSessionItem[];
   sessionCount: number;
+  trustedDevices?: AdminTrustedDeviceItem[];
 }
 
 export interface AdminReauthPayload {
   otpCode?: string;
   password?: string;
+}
+
+export interface AdminTrustedDeviceItem {
+  deviceId: string;
+  clientIp?: string;
+  userAgent?: string;
+  firstSeenAt?: string;
+  lastSeenAt?: string;
+  expiresAt?: string;
+  networkTrustLevel?: AdminNetworkTrustLevel;
 }
 
 export const adminSecurityApi = {
@@ -365,6 +406,9 @@ export const adminSecurityApi = {
     sid: string,
     data: { reason: string; recentReauthProof: string },
   ) => api.post(`/admin/security/sessions/${sid}/revoke`, data),
+  listTrustedDevices: () => api.get("/admin/security/trusted-devices"),
+  revokeTrustedDevice: (deviceId: string) =>
+    api.post(`/admin/security/trusted-devices/${deviceId}/revoke`),
   reauth: (data: AdminReauthPayload) =>
     api.post("/admin/security/reauth", data),
 };

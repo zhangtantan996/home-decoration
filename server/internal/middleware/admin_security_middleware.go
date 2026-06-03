@@ -19,23 +19,34 @@ var defaultAdminReasonFields = []string{"reason", "remark", "note", "adminNotes"
 func AdminNetworkGate() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		securitySvc := service.NewAdminSecurityService()
-		if !securitySvc.IsAPIIPEnforced() || config.IsLocalLikeAppEnv() {
+		clientIP := ExtractRealClientIP(c)
+		c.Set("admin_client_ip", clientIP)
+
+		mode := securitySvc.NetworkMode()
+		if mode == service.AdminNetworkModeOff || config.IsLocalLikeAppEnv() {
+			c.Set("admin_network_trust_level", service.AdminNetworkTrustTrustedNetwork)
 			c.Next()
 			return
 		}
-		clientIP := ExtractRealClientIP(c)
 		allowed, err := securitySvc.IsIPAllowed(clientIP)
 		if err != nil {
 			response.Error(c, http.StatusForbidden, "管理员网络访问策略未就绪")
 			c.Abort()
 			return
 		}
-		if !allowed {
+		if allowed {
+			c.Set("admin_network_trust_level", service.AdminNetworkTrustTrustedNetwork)
+			c.Set("admin_network_trusted", true)
+			c.Next()
+			return
+		}
+		if mode == service.AdminNetworkModeStrict {
 			response.Error(c, http.StatusForbidden, "当前网络不允许访问管理接口")
 			c.Abort()
 			return
 		}
-		c.Set("admin_client_ip", clientIP)
+		c.Set("admin_network_trust_level", service.AdminNetworkTrustUntrustedChallenged)
+		c.Set("admin_network_trusted", false)
 		c.Next()
 	}
 }

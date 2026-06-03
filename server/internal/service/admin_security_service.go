@@ -5,8 +5,10 @@ import (
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base32"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -34,9 +36,20 @@ const (
 	AdminLoginStageOTPRequired   = "otp_required"
 	AdminLoginStageActive        = "active"
 
+	AdminNetworkModeStrict   = "strict"
+	AdminNetworkModeAdaptive = "adaptive"
+	AdminNetworkModeOff      = "off"
+
+	AdminNetworkTrustTrustedNetwork      = "trusted_network"
+	AdminNetworkTrustTrustedDevice       = "trusted_device"
+	AdminNetworkTrustUntrustedChallenged = "untrusted_challenged"
+	AdminNetworkTrustRestricted          = "restricted"
+
 	adminTokenType              = "admin"
 	adminSessionIndexKeyPrefix  = "admin:sessions:"
 	adminSessionMetaKeyPrefix   = "admin:session:meta:"
+	adminTrustedDevicePrefix    = "admin:trusted_device:"
+	adminTrustedDeviceIndexPref = "admin:trusted_devices:"
 	adminReauthKeyPrefix        = "admin:reauth:"
 	adminRecoveryRequestPrefix  = "admin:2fa:recovery:"
 	defaultTOTPPeriodSeconds    = 30
@@ -77,40 +90,62 @@ type AdminTokenPair struct {
 }
 
 type AdminSessionMeta struct {
-	SessionID   string    `json:"sessionId"`
-	AdminID     uint64    `json:"adminId"`
-	Username    string    `json:"username"`
-	LoginStage  string    `json:"loginStage"`
-	ClientIP    string    `json:"clientIp"`
-	UserAgent   string    `json:"userAgent"`
-	CreatedAt   time.Time `json:"createdAt"`
-	LastSeenAt  time.Time `json:"lastSeenAt"`
-	Current     bool      `json:"current,omitempty"`
-	SessionName string    `json:"sessionName,omitempty"`
+	SessionID         string    `json:"sessionId"`
+	AdminID           uint64    `json:"adminId"`
+	Username          string    `json:"username"`
+	LoginStage        string    `json:"loginStage"`
+	ClientIP          string    `json:"clientIp"`
+	UserAgent         string    `json:"userAgent"`
+	DeviceID          string    `json:"deviceId,omitempty"`
+	NetworkTrustLevel string    `json:"networkTrustLevel"`
+	RestrictedSession bool      `json:"restrictedSession"`
+	CreatedAt         time.Time `json:"createdAt"`
+	LastSeenAt        time.Time `json:"lastSeenAt"`
+	Current           bool      `json:"current,omitempty"`
+	SessionName       string    `json:"sessionName,omitempty"`
 }
 
 type AdminSessionItem struct {
-	SessionID  string    `json:"sessionId"`
-	ClientIP   string    `json:"clientIp"`
-	UserAgent  string    `json:"userAgent"`
-	CreatedAt  time.Time `json:"createdAt"`
-	LastSeenAt time.Time `json:"lastSeenAt"`
-	Current    bool      `json:"current"`
-	LoginStage string    `json:"loginStage"`
+	SessionID         string    `json:"sessionId"`
+	ClientIP          string    `json:"clientIp"`
+	UserAgent         string    `json:"userAgent"`
+	DeviceID          string    `json:"deviceId,omitempty"`
+	NetworkTrustLevel string    `json:"networkTrustLevel"`
+	RestrictedSession bool      `json:"restrictedSession"`
+	CreatedAt         time.Time `json:"createdAt"`
+	LastSeenAt        time.Time `json:"lastSeenAt"`
+	Current           bool      `json:"current"`
+	LoginStage        string    `json:"loginStage"`
 }
 
 type AdminSecurityStatus struct {
-	LoginStage            string `json:"loginStage"`
-	SecuritySetupRequired bool   `json:"securitySetupRequired"`
-	MustResetPassword     bool   `json:"mustResetPassword"`
-	TwoFactorEnabled      bool   `json:"twoFactorEnabled"`
-	TwoFactorRequired     bool   `json:"twoFactorRequired"`
-	PasswordExpired       bool   `json:"passwordExpired"`
+	LoginStage                string `json:"loginStage"`
+	SecuritySetupRequired     bool   `json:"securitySetupRequired"`
+	MustResetPassword         bool   `json:"mustResetPassword"`
+	TwoFactorEnabled          bool   `json:"twoFactorEnabled"`
+	TwoFactorRequired         bool   `json:"twoFactorRequired"`
+	PasswordExpired           bool   `json:"passwordExpired"`
+	NetworkTrustLevel         string `json:"networkTrustLevel"`
+	SecurityChallengeRequired bool   `json:"securityChallengeRequired"`
+	RestrictedSession         bool   `json:"restrictedSession"`
 }
 
 type AdminRefreshResult struct {
-	Pair  *AdminTokenPair
-	Admin *model.SysAdmin
+	Pair              *AdminTokenPair
+	Admin             *model.SysAdmin
+	NetworkTrustLevel string
+	RestrictedSession bool
+	IPChanged         bool
+	PreviousIP        string
+}
+
+type AdminTrustedDeviceItem struct {
+	DeviceID    string    `json:"deviceId"`
+	ClientIP    string    `json:"clientIp"`
+	UserAgent   string    `json:"userAgent"`
+	FirstSeenAt time.Time `json:"firstSeenAt"`
+	LastSeenAt  time.Time `json:"lastSeenAt"`
+	ExpiresAt   time.Time `json:"expiresAt"`
 }
 
 type AdminSecurityService struct {
@@ -198,8 +233,50 @@ func (s *AdminSecurityService) IsAPIIPEnforced() bool {
 	return s.cfg.AdminAuth.APIIPEnforced
 }
 
+func (s *AdminSecurityService) NetworkMode() string {
+	mode := strings.ToLower(strings.TrimSpace(s.cfg.AdminAuth.NetworkMode))
+	switch mode {
+	case AdminNetworkModeStrict, AdminNetworkModeAdaptive, AdminNetworkModeOff:
+		return mode
+	default:
+		return AdminNetworkModeAdaptive
+	}
+}
+
+func (s *AdminSecurityService) UntrustedLoginAllowed() bool {
+	return s.cfg.AdminAuth.UntrustedLogin
+}
+
+func (s *AdminSecurityService) TrustedDeviceTTL() time.Duration {
+	days := s.cfg.AdminAuth.TrustedDeviceDays
+	if days <= 0 {
+		days = 14
+	}
+	return time.Duration(days) * 24 * time.Hour
+}
+
+func (s *AdminSecurityService) IPChangePolicy() string {
+	policy := strings.ToLower(strings.TrimSpace(s.cfg.AdminAuth.IPChangePolicy))
+	if policy == "" {
+		return "challenge"
+	}
+	return policy
+}
+
+func (s *AdminSecurityService) HighRiskRoleKeys() map[string]struct{} {
+	raw := strings.TrimSpace(s.cfg.AdminAuth.HighRiskRoleKeys)
+	if raw == "" {
+		raw = "super_admin,system_admin,security_admin"
+	}
+	return parseCSVSet(raw)
+}
+
 func (s *AdminSecurityService) RequiredRoleKeys() map[string]struct{} {
-	raw := strings.TrimSpace(s.cfg.AdminAuth.RequiredRoleKeys)
+	return parseCSVSet(s.cfg.AdminAuth.RequiredRoleKeys)
+}
+
+func parseCSVSet(raw string) map[string]struct{} {
+	raw = strings.TrimSpace(raw)
 	result := make(map[string]struct{})
 	if raw == "" {
 		return result
@@ -212,6 +289,30 @@ func (s *AdminSecurityService) RequiredRoleKeys() map[string]struct{} {
 		result[key] = struct{}{}
 	}
 	return result
+}
+
+func (s *AdminSecurityService) AdminHasHighRiskRole(admin *model.SysAdmin) bool {
+	if admin == nil {
+		return false
+	}
+	highRisk := s.HighRiskRoleKeys()
+	if len(highRisk) == 0 {
+		return false
+	}
+	if _, ok := highRisk["*"]; ok {
+		return true
+	}
+	if admin.IsSuperAdmin {
+		if _, ok := highRisk["super_admin"]; ok {
+			return true
+		}
+	}
+	for _, role := range admin.Roles {
+		if _, ok := highRisk[strings.TrimSpace(role.Key)]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *AdminSecurityService) AdminRequiresTwoFactor(admin *model.SysAdmin) bool {
@@ -242,12 +343,15 @@ func (s *AdminSecurityService) AdminRequiresTwoFactor(admin *model.SysAdmin) boo
 func (s *AdminSecurityService) ResolveSecurityStatus(admin *model.SysAdmin) AdminSecurityStatus {
 	if !s.IsSetupEnforced() {
 		return AdminSecurityStatus{
-			LoginStage:            AdminLoginStageActive,
-			SecuritySetupRequired: false,
-			MustResetPassword:     false,
-			TwoFactorEnabled:      admin != nil && admin.TwoFactorEnabled,
-			TwoFactorRequired:     false,
-			PasswordExpired:       false,
+			LoginStage:                AdminLoginStageActive,
+			SecuritySetupRequired:     false,
+			MustResetPassword:         false,
+			TwoFactorEnabled:          admin != nil && admin.TwoFactorEnabled,
+			TwoFactorRequired:         false,
+			PasswordExpired:           false,
+			NetworkTrustLevel:         AdminNetworkTrustTrustedNetwork,
+			SecurityChallengeRequired: false,
+			RestrictedSession:         false,
 		}
 	}
 	requiresTwoFactor := s.AdminRequiresTwoFactor(admin)
@@ -258,13 +362,38 @@ func (s *AdminSecurityService) ResolveSecurityStatus(admin *model.SysAdmin) Admi
 		stage = AdminLoginStageSetupRequired
 	}
 	return AdminSecurityStatus{
-		LoginStage:            stage,
-		SecuritySetupRequired: setupRequired,
-		MustResetPassword:     admin != nil && admin.MustResetPassword,
-		TwoFactorEnabled:      admin != nil && admin.TwoFactorEnabled,
-		TwoFactorRequired:     requiresTwoFactor,
-		PasswordExpired:       passwordExpired,
+		LoginStage:                stage,
+		SecuritySetupRequired:     setupRequired,
+		MustResetPassword:         admin != nil && admin.MustResetPassword,
+		TwoFactorEnabled:          admin != nil && admin.TwoFactorEnabled,
+		TwoFactorRequired:         requiresTwoFactor,
+		PasswordExpired:           passwordExpired,
+		NetworkTrustLevel:         AdminNetworkTrustUntrustedChallenged,
+		SecurityChallengeRequired: false,
+		RestrictedSession:         false,
 	}
+}
+
+func (s *AdminSecurityService) ResolveSecurityStatusForSession(admin *model.SysAdmin, sid string) AdminSecurityStatus {
+	status := s.ResolveSecurityStatus(admin)
+	sid = strings.TrimSpace(sid)
+	if sid == "" {
+		return status
+	}
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return status
+	}
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+	meta, err := s.readSessionMeta(ctx, redisClient, sid)
+	if err != nil || meta == nil {
+		return status
+	}
+	status.NetworkTrustLevel = normalizeAdminNetworkTrustLevel(meta.NetworkTrustLevel)
+	status.RestrictedSession = meta.RestrictedSession
+	status.SecurityChallengeRequired = adminSecurityChallengeRequired(status.LoginStage, status.NetworkTrustLevel, status.RestrictedSession)
+	return status
 }
 
 func (s *AdminSecurityService) IsPasswordExpired(admin *model.SysAdmin) bool {
@@ -359,11 +488,23 @@ func (s *AdminSecurityService) generateAdminToken(admin *model.SysAdmin, loginSt
 }
 
 func (s *AdminSecurityService) IssueTokenPair(admin *model.SysAdmin, loginStage, sessionID, clientIP, userAgent string) (*AdminTokenPair, error) {
+	return s.IssueTokenPairWithNetwork(admin, loginStage, sessionID, clientIP, userAgent, "", "", false)
+}
+
+func (s *AdminSecurityService) IssueTokenPairWithNetwork(admin *model.SysAdmin, loginStage, sessionID, clientIP, userAgent, deviceID, networkTrustLevel string, restrictedSession bool) (*AdminTokenPair, error) {
 	if loginStage == AdminLoginStageActive {
 		if err := s.EnsureAdminUnifiedIdentity(admin); err != nil {
 			return nil, fmt.Errorf("确保管理员统一身份失败: %w", err)
 		}
 	}
+	if strings.TrimSpace(networkTrustLevel) == "" {
+		var err error
+		networkTrustLevel, restrictedSession, err = s.ClassifyNetworkTrust(admin, clientIP, deviceID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	networkTrustLevel = normalizeAdminNetworkTrustLevel(networkTrustLevel)
 
 	accessIssued, err := s.generateAdminToken(admin, loginStage, tokenUseAccess, sessionID, s.AccessTokenTTL())
 	if err != nil {
@@ -385,8 +526,11 @@ func (s *AdminSecurityService) IssueTokenPair(admin *model.SysAdmin, loginStage,
 	if err := registerSessionTokenPair(pair); err != nil {
 		return nil, err
 	}
-	if err := s.storeSessionMeta(admin, accessIssued.SessionID, loginStage, clientIP, userAgent, refreshIssued.ExpiresAt); err != nil {
+	if err := s.storeSessionMeta(admin, accessIssued.SessionID, loginStage, clientIP, userAgent, deviceID, networkTrustLevel, restrictedSession, refreshIssued.ExpiresAt); err != nil {
 		return nil, err
+	}
+	if loginStage == AdminLoginStageActive {
+		_ = s.MarkTrustedDevice(admin.ID, deviceID, clientIP, userAgent)
 	}
 	if err := s.enforceSessionLimit(admin.ID, accessIssued.SessionID); err != nil {
 		return nil, err
@@ -405,7 +549,7 @@ func (s *AdminSecurityService) IssueTokenPair(admin *model.SysAdmin, loginStage,
 	}, nil
 }
 
-func (s *AdminSecurityService) storeSessionMeta(admin *model.SysAdmin, sessionID, loginStage, clientIP, userAgent string, expiresAt time.Time) error {
+func (s *AdminSecurityService) storeSessionMeta(admin *model.SysAdmin, sessionID, loginStage, clientIP, userAgent, deviceID, networkTrustLevel string, restrictedSession bool, expiresAt time.Time) error {
 	if admin == nil {
 		return nil
 	}
@@ -417,17 +561,23 @@ func (s *AdminSecurityService) storeSessionMeta(admin *model.SysAdmin, sessionID
 	defer cancel()
 
 	meta := AdminSessionMeta{
-		SessionID:  sessionID,
-		AdminID:    admin.ID,
-		Username:   admin.Username,
-		LoginStage: loginStage,
-		ClientIP:   strings.TrimSpace(clientIP),
-		UserAgent:  truncateString(strings.TrimSpace(userAgent), 500),
-		CreatedAt:  time.Now(),
-		LastSeenAt: time.Now(),
+		SessionID:         sessionID,
+		AdminID:           admin.ID,
+		Username:          admin.Username,
+		LoginStage:        loginStage,
+		ClientIP:          strings.TrimSpace(clientIP),
+		UserAgent:         truncateString(strings.TrimSpace(userAgent), 500),
+		DeviceID:          hashAdminDeviceID(deviceID),
+		NetworkTrustLevel: normalizeAdminNetworkTrustLevel(networkTrustLevel),
+		RestrictedSession: restrictedSession,
+		CreatedAt:         time.Now(),
+		LastSeenAt:        time.Now(),
 	}
 	if existing, err := s.readSessionMeta(ctx, redisClient, sessionID); err == nil && existing != nil {
 		meta.CreatedAt = existing.CreatedAt
+		if meta.DeviceID == "" {
+			meta.DeviceID = existing.DeviceID
+		}
 	}
 	payload, err := json.Marshal(meta)
 	if err != nil {
@@ -491,13 +641,16 @@ func (s *AdminSecurityService) ListSessions(adminID uint64, currentSID string) (
 			continue
 		}
 		items = append(items, AdminSessionItem{
-			SessionID:  meta.SessionID,
-			ClientIP:   meta.ClientIP,
-			UserAgent:  meta.UserAgent,
-			CreatedAt:  meta.CreatedAt,
-			LastSeenAt: meta.LastSeenAt,
-			Current:    sid == currentSID,
-			LoginStage: meta.LoginStage,
+			SessionID:         meta.SessionID,
+			ClientIP:          meta.ClientIP,
+			UserAgent:         meta.UserAgent,
+			DeviceID:          meta.DeviceID,
+			NetworkTrustLevel: normalizeAdminNetworkTrustLevel(meta.NetworkTrustLevel),
+			RestrictedSession: meta.RestrictedSession,
+			CreatedAt:         meta.CreatedAt,
+			LastSeenAt:        meta.LastSeenAt,
+			Current:           sid == currentSID,
+			LoginStage:        meta.LoginStage,
 		})
 	}
 	sort.Slice(items, func(i, j int) bool {
@@ -574,7 +727,132 @@ func (s *AdminSecurityService) enforceSessionLimit(adminID uint64, keepSID strin
 	return nil
 }
 
-func (s *AdminSecurityService) RefreshTokens(refreshToken, clientIP, userAgent string) (*AdminRefreshResult, error) {
+func (s *AdminSecurityService) ClassifyNetworkTrust(admin *model.SysAdmin, clientIP, deviceID string) (string, bool, error) {
+	mode := s.NetworkMode()
+	if mode == AdminNetworkModeOff || config.IsLocalLikeAppEnv() {
+		return AdminNetworkTrustTrustedNetwork, false, nil
+	}
+	allowed, err := s.IsIPAllowed(clientIP)
+	if err != nil {
+		return "", false, err
+	}
+	if allowed {
+		return AdminNetworkTrustTrustedNetwork, false, nil
+	}
+	if mode == AdminNetworkModeStrict {
+		return "", false, errors.New("当前网络不允许访问管理接口")
+	}
+	if !s.UntrustedLoginAllowed() {
+		return "", false, errors.New("当前网络不允许访问管理接口")
+	}
+	if s.AdminHasHighRiskRole(admin) {
+		return AdminNetworkTrustRestricted, true, nil
+	}
+	if s.IsTrustedDevice(adminIDFromModel(admin), deviceID) {
+		return AdminNetworkTrustTrustedDevice, false, nil
+	}
+	return AdminNetworkTrustUntrustedChallenged, false, nil
+}
+
+func (s *AdminSecurityService) MarkTrustedDevice(adminID uint64, deviceID, clientIP, userAgent string) error {
+	deviceHash := hashAdminDeviceID(deviceID)
+	if adminID == 0 || deviceHash == "" {
+		return nil
+	}
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return nil
+	}
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+	now := time.Now()
+	ttl := s.TrustedDeviceTTL()
+	item := AdminTrustedDeviceItem{
+		DeviceID:    deviceHash,
+		ClientIP:    strings.TrimSpace(clientIP),
+		UserAgent:   truncateString(strings.TrimSpace(userAgent), 500),
+		FirstSeenAt: now,
+		LastSeenAt:  now,
+		ExpiresAt:   now.Add(ttl),
+	}
+	if existing, err := s.readTrustedDevice(ctx, redisClient, adminID, deviceHash); err == nil && existing != nil {
+		item.FirstSeenAt = existing.FirstSeenAt
+	}
+	payload, err := json.Marshal(item)
+	if err != nil {
+		return err
+	}
+	pipe := redisClient.TxPipeline()
+	pipe.Set(ctx, adminTrustedDeviceMetaKey(adminID, deviceHash), payload, ttl)
+	pipe.SAdd(ctx, adminTrustedDeviceIndexKey(adminID), deviceHash)
+	pipe.Expire(ctx, adminTrustedDeviceIndexKey(adminID), ttl)
+	_, err = pipe.Exec(ctx)
+	return err
+}
+
+func (s *AdminSecurityService) IsTrustedDevice(adminID uint64, deviceID string) bool {
+	deviceHash := hashAdminDeviceID(deviceID)
+	if adminID == 0 || deviceHash == "" {
+		return false
+	}
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return false
+	}
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+	exists, err := redisClient.Exists(ctx, adminTrustedDeviceMetaKey(adminID, deviceHash)).Result()
+	return err == nil && exists > 0
+}
+
+func (s *AdminSecurityService) ListTrustedDevices(adminID uint64) ([]AdminTrustedDeviceItem, error) {
+	if adminID == 0 {
+		return []AdminTrustedDeviceItem{}, nil
+	}
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return []AdminTrustedDeviceItem{}, nil
+	}
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+	members, err := redisClient.SMembers(ctx, adminTrustedDeviceIndexKey(adminID)).Result()
+	if err != nil {
+		return nil, err
+	}
+	items := make([]AdminTrustedDeviceItem, 0, len(members))
+	for _, deviceHash := range members {
+		item, readErr := s.readTrustedDevice(ctx, redisClient, adminID, deviceHash)
+		if readErr != nil || item == nil {
+			_ = redisClient.SRem(ctx, adminTrustedDeviceIndexKey(adminID), deviceHash).Err()
+			continue
+		}
+		items = append(items, *item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].LastSeenAt.After(items[j].LastSeenAt)
+	})
+	return items, nil
+}
+
+func (s *AdminSecurityService) RevokeTrustedDevice(adminID uint64, deviceHash string) error {
+	deviceHash = strings.TrimSpace(deviceHash)
+	if adminID == 0 || deviceHash == "" {
+		return errors.New("可信设备无效")
+	}
+	redisClient := repository.GetRedis()
+	if redisClient == nil {
+		return nil
+	}
+	ctx, cancel := repository.RedisContext()
+	defer cancel()
+	pipe := redisClient.TxPipeline()
+	pipe.Del(ctx, adminTrustedDeviceMetaKey(adminID, deviceHash))
+	pipe.SRem(ctx, adminTrustedDeviceIndexKey(adminID), deviceHash)
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (s *AdminSecurityService) RefreshTokens(refreshToken, clientIP, userAgent, deviceID string) (*AdminRefreshResult, error) {
 	claims, err := s.ParseClaims(refreshToken)
 	if err != nil {
 		return nil, err
@@ -582,6 +860,7 @@ func (s *AdminSecurityService) RefreshTokens(refreshToken, clientIP, userAgent s
 	if claims.TokenUse != tokenUseRefresh {
 		return nil, errors.New("请使用刷新令牌")
 	}
+	var previousIP string
 	redisClient := repository.GetRedis()
 	if redisClient != nil {
 		ctx, cancel := repository.RedisContext()
@@ -589,6 +868,9 @@ func (s *AdminSecurityService) RefreshTokens(refreshToken, clientIP, userAgent s
 		exists, existsErr := redisClient.Exists(ctx, sessionTokenKey(claims.SessionID, claims.JTI)).Result()
 		if existsErr == nil && exists == 0 {
 			return nil, errors.New("会话已失效，请重新登录")
+		}
+		if meta, metaErr := s.readSessionMeta(ctx, redisClient, claims.SessionID); metaErr == nil && meta != nil {
+			previousIP = strings.TrimSpace(meta.ClientIP)
 		}
 		usedKey := fmt.Sprintf("refresh_token:used:%s", claims.JTI)
 		usedMarked, markErr := redisClient.SetNX(ctx, usedKey, "1", s.RefreshTokenTTL()).Result()
@@ -607,13 +889,21 @@ func (s *AdminSecurityService) RefreshTokens(refreshToken, clientIP, userAgent s
 		return nil, errors.New("账号已被禁用")
 	}
 	status := s.ResolveSecurityStatus(admin)
-	pair, err := s.IssueTokenPair(admin, status.LoginStage, claims.SessionID, clientIP, userAgent)
+	networkTrustLevel, restrictedSession, err := s.ClassifyNetworkTrust(admin, clientIP, deviceID)
+	if err != nil {
+		return nil, err
+	}
+	pair, err := s.IssueTokenPairWithNetwork(admin, status.LoginStage, claims.SessionID, clientIP, userAgent, deviceID, networkTrustLevel, restrictedSession)
 	if err != nil {
 		return nil, err
 	}
 	return &AdminRefreshResult{
-		Pair:  pair,
-		Admin: admin,
+		Pair:              pair,
+		Admin:             admin,
+		NetworkTrustLevel: networkTrustLevel,
+		RestrictedSession: restrictedSession,
+		IPChanged:         previousIP != "" && strings.TrimSpace(clientIP) != "" && previousIP != strings.TrimSpace(clientIP),
+		PreviousIP:        previousIP,
 	}, nil
 }
 
@@ -847,7 +1137,10 @@ func (s *AdminSecurityService) CreateRecoveryRequest(admin *model.SysAdmin) erro
 }
 
 func (s *AdminSecurityService) ParseAllowedCIDRs() ([]*net.IPNet, error) {
-	raw := strings.TrimSpace(s.cfg.AdminAuth.AllowedCIDRs)
+	raw := strings.TrimSpace(s.cfg.AdminAuth.TrustedCIDRs)
+	if raw == "" {
+		raw = strings.TrimSpace(s.cfg.AdminAuth.AllowedCIDRs)
+	}
 	if raw == "" {
 		return nil, nil
 	}
@@ -888,7 +1181,7 @@ func (s *AdminSecurityService) IsIPAllowed(clientIP string) (bool, error) {
 		return false, err
 	}
 	if len(allowedCIDRs) == 0 {
-		return true, nil
+		return false, nil
 	}
 	ip := net.ParseIP(clientIP)
 	if ip == nil {
@@ -1215,12 +1508,35 @@ func (s *AdminSecurityService) readSessionMeta(ctx context.Context, redisClient 
 	return &meta, nil
 }
 
+func (s *AdminSecurityService) readTrustedDevice(ctx context.Context, redisClient *redis.Client, adminID uint64, deviceHash string) (*AdminTrustedDeviceItem, error) {
+	raw, err := redisClient.Get(ctx, adminTrustedDeviceMetaKey(adminID, deviceHash)).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var item AdminTrustedDeviceItem
+	if err := json.Unmarshal([]byte(raw), &item); err != nil {
+		return nil, err
+	}
+	return &item, nil
+}
+
 func adminSessionIndexKey(adminID uint64) string {
 	return fmt.Sprintf("%s%d", adminSessionIndexKeyPrefix, adminID)
 }
 
 func adminSessionMetaKey(sessionID string) string {
 	return fmt.Sprintf("%s%s", adminSessionMetaKeyPrefix, strings.TrimSpace(sessionID))
+}
+
+func adminTrustedDeviceIndexKey(adminID uint64) string {
+	return fmt.Sprintf("%s%d", adminTrustedDeviceIndexPref, adminID)
+}
+
+func adminTrustedDeviceMetaKey(adminID uint64, deviceHash string) string {
+	return fmt.Sprintf("%s%d:%s", adminTrustedDevicePrefix, adminID, strings.TrimSpace(deviceHash))
 }
 
 func adminReauthKey(sessionID, proof string) string {
@@ -1236,6 +1552,39 @@ func truncateString(value string, max int) string {
 		return value
 	}
 	return value[:max]
+}
+
+func hashAdminDeviceID(deviceID string) string {
+	deviceID = strings.TrimSpace(deviceID)
+	if deviceID == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(deviceID))
+	return hex.EncodeToString(sum[:])
+}
+
+func adminIDFromModel(admin *model.SysAdmin) uint64 {
+	if admin == nil {
+		return 0
+	}
+	return admin.ID
+}
+
+func normalizeAdminNetworkTrustLevel(value string) string {
+	switch strings.TrimSpace(value) {
+	case AdminNetworkTrustTrustedNetwork, AdminNetworkTrustTrustedDevice, AdminNetworkTrustUntrustedChallenged, AdminNetworkTrustRestricted:
+		return strings.TrimSpace(value)
+	default:
+		return AdminNetworkTrustUntrustedChallenged
+	}
+}
+
+func adminSecurityChallengeRequired(loginStage, networkTrustLevel string, restrictedSession bool) bool {
+	networkTrustLevel = normalizeAdminNetworkTrustLevel(networkTrustLevel)
+	if restrictedSession || networkTrustLevel == AdminNetworkTrustRestricted {
+		return true
+	}
+	return loginStage != AdminLoginStageActive && networkTrustLevel == AdminNetworkTrustUntrustedChallenged
 }
 
 func verifyTOTPCode(secret, code string, now time.Time, window int) bool {

@@ -901,6 +901,10 @@ body {
   margin-top: 4px;
 }
 
+.hz-login__alert {
+  margin-bottom: 16px;
+}
+
 .hz-login__otp-reset {
   margin-bottom: 12px;
 }
