@@ -28,6 +28,21 @@ func setupLegalComplianceTestDB(t *testing.T) *gorm.DB {
 	return db
 }
 
+func setupLegalComplianceFallbackTestDB(t *testing.T) *gorm.DB {
+	t.Helper()
+	db, err := gorm.Open(gormsqlite.Open(":memory:"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite db: %v", err)
+	}
+	if err := db.AutoMigrate(&model.SystemConfig{}); err != nil {
+		t.Fatalf("auto migrate system configs: %v", err)
+	}
+	previousDB := repository.DB
+	repository.DB = db
+	t.Cleanup(func() { repository.DB = previousDB })
+	return db
+}
+
 func seedLegalSystemConfigs(t *testing.T, db *gorm.DB) {
 	t.Helper()
 	items := []model.SystemConfig{
@@ -79,6 +94,28 @@ func TestLegalComplianceLegacyImportIsIdempotent(t *testing.T) {
 	}
 	if len(docs) != len(legalDocumentDefinitions()) {
 		t.Fatalf("expected %d docs, got %d", len(legalDocumentDefinitions()), len(docs))
+	}
+}
+
+func TestLegalComplianceCurrentFallsBackWhenReleaseTableMissing(t *testing.T) {
+	db := setupLegalComplianceFallbackTestDB(t)
+	seedLegalSystemConfigs(t, db)
+
+	current, err := (&LegalComplianceService{}).CurrentView()
+	if err != nil {
+		t.Fatalf("current view should fallback when release table is missing: %v", err)
+	}
+	if current.CurrentRelease == nil {
+		t.Fatalf("expected fallback current release")
+	}
+	if current.CurrentRelease.Version != "v1.3.1-20260530" {
+		t.Fatalf("expected legacy version fallback, got %q", current.CurrentRelease.Version)
+	}
+	if current.CurrentRelease.PublishedAt != "" || current.CurrentRelease.PublishedByAdminID != 0 {
+		t.Fatalf("fallback should not fake publish metadata: %+v", current.CurrentRelease)
+	}
+	if len(current.Documents) != len(legalDocumentDefinitions()) {
+		t.Fatalf("expected fallback legal documents")
 	}
 }
 

@@ -375,12 +375,18 @@ func (s *LegalComplianceService) fallbackPublishedView() (*LegalComplianceReleas
 	version := configSvc.getPublicConfigValue(model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion())
 	effectiveRaw := configSvc.getPublicConfigValue(model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate())
 	docs := s.buildLegacySnapshotsFromConfigs()
+	effectiveAt := effectiveRaw
+	if parsed, err := parseLegalEffectiveAt(effectiveRaw); err == nil {
+		effectiveAt = parsed.Format(time.RFC3339)
+	}
 	return &LegalComplianceReleaseView{
-		Version:       version,
-		EffectiveDate: effectiveRaw,
-		Documents:     docs,
-		ContentHash:   hashLegalDocuments(docs),
-		Status:        model.LegalComplianceReleaseStatusPublished,
+		Version:        version,
+		EffectiveAt:    effectiveAt,
+		EffectiveDate:  effectiveRaw,
+		Documents:      docs,
+		ContentHash:    hashLegalDocuments(docs),
+		Status:         model.LegalComplianceReleaseStatusPublished,
+		LegacyImported: true,
 	}, nil
 }
 
@@ -401,7 +407,21 @@ func (s *LegalComplianceService) ActivePublicRelease() (*LegalComplianceReleaseV
 
 func (s *LegalComplianceService) CurrentView() (*LegalComplianceCurrentView, error) {
 	if err := s.EnsureLegacyReleaseImported(); err != nil {
-		return nil, err
+		currentView, fallbackErr := s.fallbackPublishedView()
+		if fallbackErr != nil {
+			return nil, err
+		}
+		rows := buildLegalComplianceRows(currentView.Documents, currentView.Documents)
+		nextVersions := map[string]string{
+			"patch": generateNextLegalVersion(currentView.Version, "patch", time.Now()),
+			"minor": generateNextLegalVersion(currentView.Version, "minor", time.Now()),
+			"major": generateNextLegalVersion(currentView.Version, "major", time.Now()),
+		}
+		return &LegalComplianceCurrentView{
+			CurrentRelease: currentView,
+			Documents:      rows,
+			NextVersions:   nextVersions,
+		}, nil
 	}
 	now := time.Now()
 	current, err := s.getActivePublishedRelease(repository.DB, now)

@@ -884,6 +884,53 @@ const formatLegalDate = (value?: string) => {
   return parsed.isValid() ? parsed.format("YYYY-MM-DD") : value;
 };
 
+const extractLegalComplianceCurrent = (
+  response: unknown,
+): LegalComplianceCurrent | null => {
+  const envelope = response as
+    | {
+        data?: {
+          legalCompliance?: LegalComplianceCurrent;
+          currentRelease?: LegalComplianceRelease | null;
+          documents?: LegalComplianceDocumentAdminRow[];
+        };
+        legalCompliance?: LegalComplianceCurrent;
+        currentRelease?: LegalComplianceRelease | null;
+        documents?: LegalComplianceDocumentAdminRow[];
+      }
+    | null
+    | undefined;
+  const payload = envelope?.data || envelope;
+  if (!payload) {
+    return null;
+  }
+  if ("legalCompliance" in payload && payload.legalCompliance) {
+    return payload.legalCompliance;
+  }
+  if ("currentRelease" in payload || "documents" in payload) {
+    return payload as LegalComplianceCurrent;
+  }
+  return null;
+};
+
+const extractLegalComplianceReleaseItems = (
+  response: unknown,
+): LegalComplianceRelease[] => {
+  const envelope = response as
+    | {
+        data?: {
+          items?: LegalComplianceRelease[];
+          list?: LegalComplianceRelease[];
+        };
+        items?: LegalComplianceRelease[];
+        list?: LegalComplianceRelease[];
+      }
+    | null
+    | undefined;
+  const payload = envelope?.data || envelope;
+  return payload?.items || payload?.list || [];
+};
+
 const toStoredAsset = (asset?: AdminUploadedAsset | null) =>
   String(asset?.path || asset?.url || "");
 
@@ -1079,8 +1126,7 @@ const SystemSettings: React.FC = () => {
       const configs: AdminSystemConfigItem[] = bizRes?.data?.configs || [];
       const bizConfigMap = applyPaymentConfig(configs);
       const legalRes = (await adminLegalComplianceApi.current()) as any;
-      const legalData = (legalRes?.data?.legalCompliance ||
-        null) as LegalComplianceCurrent | null;
+      const legalData = extractLegalComplianceCurrent(legalRes);
       setLegalCompliance(legalData);
       const legalDraftFormValues = LEGAL_DOCUMENT_CONFIGS.reduce(
         (acc, doc) => {
@@ -1418,9 +1464,7 @@ const SystemSettings: React.FC = () => {
       });
       message.success("草稿已保存，正式发布前不会影响前台展示");
       const legalRes = (await adminLegalComplianceApi.current()) as any;
-      setLegalCompliance(
-        (legalRes?.data?.legalCompliance || null) as LegalComplianceCurrent | null,
-      );
+      setLegalCompliance(extractLegalComplianceCurrent(legalRes));
     } catch (error) {
       message.error(error instanceof Error ? error.message : "保存失败");
     } finally {
@@ -1469,7 +1513,7 @@ const SystemSettings: React.FC = () => {
         page: 1,
         pageSize: 50,
       })) as any;
-      setReleaseHistory((res?.data?.items || []) as LegalComplianceRelease[]);
+      setReleaseHistory(extractLegalComplianceReleaseItems(res));
     } catch (error) {
       message.error(error instanceof Error ? error.message : "加载历史版本失败");
     } finally {
