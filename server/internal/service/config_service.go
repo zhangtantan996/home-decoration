@@ -809,6 +809,9 @@ type PublicLegalDocument struct {
 	Title         string `json:"title"`
 	Version       string `json:"version"`
 	EffectiveDate string `json:"effectiveDate"`
+	EffectiveAt   string `json:"effectiveAt,omitempty"`
+	PublishedAt   string `json:"publishedAt,omitempty"`
+	ReleaseID     uint64 `json:"releaseId,omitempty"`
 	Content       string `json:"content"`
 }
 
@@ -1010,9 +1013,61 @@ func (s *ConfigService) buildPublicLegalDocuments(version, effectiveDate string)
 	}
 }
 
+func (s *ConfigService) buildPublicLegalDocumentsFromRelease(release *LegalComplianceReleaseView) []PublicLegalDocument {
+	if release == nil || len(release.Documents) == 0 {
+		return nil
+	}
+	docs := make([]PublicLegalDocument, 0, len(release.Documents))
+	for _, doc := range release.Documents {
+		docs = append(docs, PublicLegalDocument{
+			Slug:          doc.Slug,
+			Title:         doc.Title,
+			Version:       release.Version,
+			EffectiveDate: release.EffectiveDate,
+			EffectiveAt:   release.EffectiveAt,
+			PublishedAt:   release.PublishedAt,
+			ReleaseID:     release.ID,
+			Content:       doc.Content,
+		})
+	}
+	return docs
+}
+
+func publicLegalDocumentContent(docs []PublicLegalDocument, slug, fallback string) string {
+	for _, doc := range docs {
+		if doc.Slug == slug && strings.TrimSpace(doc.Content) != "" {
+			return doc.Content
+		}
+	}
+	return fallback
+}
+
 func (s *ConfigService) GetPublicSiteConfig() PublicSiteConfig {
 	version := s.getPublicConfigValue(model.ConfigKeyPublicLegalVersion, embeddedPublicLegalVersion())
 	effectiveDate := s.getPublicConfigValue(model.ConfigKeyPublicLegalEffectiveDate, embeddedPublicLegalEffectiveDate())
+	legalDocuments := s.buildPublicLegalDocuments(version, effectiveDate)
+	if release, err := (&LegalComplianceService{}).ActivePublicRelease(); err == nil && release != nil && len(release.Documents) > 0 {
+		version = release.Version
+		effectiveDate = release.EffectiveDate
+		if docs := s.buildPublicLegalDocumentsFromRelease(release); len(docs) > 0 {
+			legalDocuments = docs
+		}
+	}
+	transactionRules := publicLegalDocumentContent(
+		legalDocuments,
+		"transaction-rules",
+		s.getPublicConfigValue(model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()),
+	)
+	refundRules := publicLegalDocumentContent(
+		legalDocuments,
+		"refund-rules",
+		s.getPublicConfigValue(model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()),
+	)
+	merchantOnboarding := publicLegalDocumentContent(
+		legalDocuments,
+		"merchant-rules",
+		s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()),
+	)
 	return PublicSiteConfig{
 		BrandName:               s.getPublicConfigValue(model.ConfigKeyPublicBrandName, "禾泽云"),
 		CompanyName:             s.getPublicConfigValue(model.ConfigKeyPublicCompanyName, "陕西禾泽云创科技有限公司"),
@@ -1028,10 +1083,10 @@ func (s *ConfigService) GetPublicSiteConfig() PublicSiteConfig {
 		PrivacyEmail:            s.getPublicConfigValue(model.ConfigKeyPublicPrivacyEmail, ""),
 		LegalVersion:            version,
 		LegalEffectiveDate:      effectiveDate,
-		TransactionRules:        s.getPublicConfigValue(model.ConfigKeyPublicTransactionRules, defaultPublicTransactionRules()),
-		RefundRules:             s.getPublicConfigValue(model.ConfigKeyPublicRefundRules, defaultPublicRefundRules()),
-		MerchantOnboarding:      s.getPublicConfigValue(model.ConfigKeyPublicMerchantOnboarding, defaultPublicMerchantOnboardingRules()),
-		LegalDocuments:          s.buildPublicLegalDocuments(version, effectiveDate),
+		TransactionRules:        transactionRules,
+		RefundRules:             refundRules,
+		MerchantOnboarding:      merchantOnboarding,
+		LegalDocuments:          legalDocuments,
 		ThirdPartyServices:      s.detectPublicThirdPartyServices(),
 	}
 }

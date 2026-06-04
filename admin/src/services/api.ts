@@ -2306,6 +2306,72 @@ export const adminSystemConfigApi = {
     api.put("/admin/system-configs/batch", data),
 };
 
+export interface LegalComplianceDocumentSnapshot {
+  slug: string;
+  title: string;
+  category: string;
+  content: string;
+  characterCount: number;
+}
+
+export interface LegalComplianceDocumentAdminRow {
+  slug: string;
+  title: string;
+  category: string;
+  description: string;
+  onlineContent: string;
+  draftContent: string;
+  onlineCharacterCount: number;
+  draftCharacterCount: number;
+  changed: boolean;
+  status: "synced" | "draft_changed" | "incomplete" | string;
+}
+
+export interface LegalComplianceRelease {
+  id?: number;
+  version: string;
+  effectiveAt?: string;
+  effectiveDate?: string;
+  publishedAt?: string;
+  publishedByAdminId?: number;
+  documents: LegalComplianceDocumentSnapshot[];
+  contentHash?: string;
+  changeSummary?: string;
+  reason?: string;
+  status: "draft" | "published" | string;
+  legacyImported?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface LegalComplianceCurrent {
+  currentRelease?: LegalComplianceRelease | null;
+  pendingRelease?: LegalComplianceRelease | null;
+  draft?: LegalComplianceRelease | null;
+  documents: LegalComplianceDocumentAdminRow[];
+  nextVersions?: Record<"patch" | "minor" | "major", string>;
+}
+
+export interface LegalCompliancePublishPayload {
+  versionBump: "patch" | "minor" | "major";
+  effectiveAt: string;
+  changeSummary?: string;
+  reason?: string;
+  recentReauthProof?: string;
+}
+
+export const adminLegalComplianceApi = {
+  current: () => api.get("/admin/legal-compliance/releases/current"),
+  draft: () => api.get("/admin/legal-compliance/draft"),
+  saveDraftDocument: (slug: string, data: { content: string }) =>
+    api.put(`/admin/legal-compliance/draft/documents/${slug}`, data),
+  publishDraft: (data: LegalCompliancePublishPayload) =>
+    api.post("/admin/legal-compliance/draft/publish", data),
+  listReleases: (params?: { page?: number; pageSize?: number }) =>
+    api.get("/admin/legal-compliance/releases", { params }),
+  getRelease: (id: number) => api.get(`/admin/legal-compliance/releases/${id}`),
+};
+
 // 数据导出
 export const adminExportApi = {
   users: (params?: any) =>

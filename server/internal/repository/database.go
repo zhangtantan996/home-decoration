@@ -144,6 +144,7 @@ func autoMigrate() error {
 		&model.AdminLog{},
 		// 业务流程扩展 (2025-12-28)
 		&model.SystemConfig{},
+		&model.LegalComplianceRelease{},
 		&model.Demand{},
 		&model.DemandMatch{},
 		&model.Contract{},

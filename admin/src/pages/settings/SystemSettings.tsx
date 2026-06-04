@@ -20,6 +20,7 @@ import {
   DatePicker,
   Image,
   Upload,
+  Modal,
 } from "antd";
 import {
   EditOutlined,
@@ -30,9 +31,13 @@ import {
 } from "@ant-design/icons";
 import {
   adminSettingsApi,
+  adminLegalComplianceApi,
   adminSystemConfigApi,
   adminUploadApi,
   type AdminSystemConfigItem,
+  type LegalComplianceCurrent,
+  type LegalComplianceDocumentAdminRow,
+  type LegalComplianceRelease,
 } from "../../services/api";
 import type { UploadProps } from "antd/es/upload/interface";
 import AdminReauthModal from "../../components/AdminReauthModal";
@@ -197,6 +202,21 @@ interface ComplianceFormValues {
   legalVersion?: string;
   legalEffectiveDate?: string;
 }
+
+const COMPLIANCE_BASE_FORM_FIELDS: (keyof ComplianceFormValues)[] = [
+  "brandName",
+  "companyName",
+  "companyCreditCode",
+  "companyRegisterAddress",
+  "companyContactAddress",
+  "icp",
+  "miniProgramRecordNumber",
+  "securityBeian",
+  "customerPhone",
+  "customerEmail",
+  "complaintEmail",
+  "privacyEmail",
+];
 
 const getLegalTextLength = (value?: string) =>
   String(value || "")
@@ -852,6 +872,65 @@ const renderSecretCustodyStatus = (ready: boolean) => (
   </Tag>
 );
 
+const formatLegalDateTime = (value?: string) => {
+  if (!value) return "-";
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format("YYYY/MM/DD HH:mm") : value;
+};
+
+const formatLegalDate = (value?: string) => {
+  if (!value) return "-";
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.format("YYYY-MM-DD") : value;
+};
+
+const extractLegalComplianceCurrent = (
+  response: unknown,
+): LegalComplianceCurrent | null => {
+  const envelope = response as
+    | {
+        data?: {
+          legalCompliance?: LegalComplianceCurrent;
+          currentRelease?: LegalComplianceRelease | null;
+          documents?: LegalComplianceDocumentAdminRow[];
+        };
+        legalCompliance?: LegalComplianceCurrent;
+        currentRelease?: LegalComplianceRelease | null;
+        documents?: LegalComplianceDocumentAdminRow[];
+      }
+    | null
+    | undefined;
+  const payload = envelope?.data || envelope;
+  if (!payload) {
+    return null;
+  }
+  if ("legalCompliance" in payload && payload.legalCompliance) {
+    return payload.legalCompliance;
+  }
+  if ("currentRelease" in payload || "documents" in payload) {
+    return payload as LegalComplianceCurrent;
+  }
+  return null;
+};
+
+const extractLegalComplianceReleaseItems = (
+  response: unknown,
+): LegalComplianceRelease[] => {
+  const envelope = response as
+    | {
+        data?: {
+          items?: LegalComplianceRelease[];
+          list?: LegalComplianceRelease[];
+        };
+        items?: LegalComplianceRelease[];
+        list?: LegalComplianceRelease[];
+      }
+    | null
+    | undefined;
+  const payload = envelope?.data || envelope;
+  return payload?.items || payload?.list || [];
+};
+
 const toStoredAsset = (asset?: AdminUploadedAsset | null) =>
   String(asset?.path || asset?.url || "");
 
@@ -874,8 +953,23 @@ const SystemSettings: React.FC = () => {
   const [editingLegalDocSlug, setEditingLegalDocSlug] = useState<string | null>(
     null,
   );
+  const [legalCompliance, setLegalCompliance] =
+    useState<LegalComplianceCurrent | null>(null);
+  const [releaseHistoryOpen, setReleaseHistoryOpen] = useState(false);
+  const [releaseHistoryLoading, setReleaseHistoryLoading] = useState(false);
+  const [releaseHistory, setReleaseHistory] = useState<
+    LegalComplianceRelease[]
+  >([]);
+  const [publishOpen, setPublishOpen] = useState(false);
   const [pendingAction, setPendingAction] = useState<
-    "base" | "payment" | "feature" | "biz" | "homePopup" | "compliance" | null
+    | "base"
+    | "payment"
+    | "feature"
+    | "biz"
+    | "homePopup"
+    | "compliance"
+    | "legalPublish"
+    | null
   >(null);
   const [pendingPayload, setPendingPayload] = useState<Record<
     string,
@@ -895,6 +989,7 @@ const SystemSettings: React.FC = () => {
   const [featureForm] = Form.useForm();
   const [popupForm] = Form.useForm<HomePopupFormValues>();
   const [complianceForm] = Form.useForm();
+  const [publishForm] = Form.useForm();
   const popupPreviewValues = Form.useWatch([], popupForm) as
     | Partial<HomePopupFormValues>
     | undefined;
@@ -918,36 +1013,119 @@ const SystemSettings: React.FC = () => {
     [editingLegalDocSlug],
   );
 
-  const legalVersionPreview =
-    readComplianceValue("legalVersion") || "v1.3.0-20260520";
+  const currentLegalRelease = legalCompliance?.currentRelease || null;
+  const pendingLegalRelease = legalCompliance?.pendingRelease || null;
+  const draftLegalRelease = legalCompliance?.draft || null;
+  const legalVersionPreview = currentLegalRelease?.version || "未发布";
   const legalEffectiveDatePreview =
-    readComplianceValue("legalEffectiveDate") || "2026-05-20";
+    currentLegalRelease?.effectiveDate ||
+    formatLegalDate(currentLegalRelease?.effectiveAt);
   const customerPhonePreview =
     readComplianceValue("customerPhone") || "17764774797";
   const customerEmailPreview = readComplianceValue("customerEmail");
   const privacyEmailPreview = readComplianceValue("privacyEmail");
 
-  const legalDocumentRows = useMemo(
-    () =>
-      LEGAL_DOCUMENT_CONFIGS.map((doc) => {
+  const legalDocumentRows = useMemo<LegalComplianceDocumentAdminRow[]>(
+    () => {
+      if (legalCompliance?.documents?.length) {
+        return legalCompliance.documents.map((row) => {
+          const config = LEGAL_DOCUMENT_CONFIGS.find(
+            (doc) => doc.slug === row.slug,
+          );
+          const formContent = config
+            ? readComplianceValue(config.formName)
+            : row.draftContent;
+          const nextDraftContent = normalizeLegalText(
+            formContent || row.draftContent || row.onlineContent,
+          );
+          const changed =
+            normalizeLegalText(row.onlineContent) !== nextDraftContent;
+          return {
+            ...row,
+            draftContent: nextDraftContent,
+            draftCharacterCount: getLegalTextLength(nextDraftContent),
+            changed,
+            status:
+              changed && row.status !== "pending_effective"
+                ? "draft_changed"
+                : row.status,
+          };
+        });
+      }
+      return LEGAL_DOCUMENT_CONFIGS.map((doc) => {
         const content = readComplianceValue(doc.formName);
         const characterCount = getLegalTextLength(content);
-        const status =
-          characterCount >= 20
-            ? "ready"
-            : characterCount > 0
-              ? "draft"
-              : "empty";
         return {
-          ...doc,
-          content,
-          characterCount,
-          status,
+          slug: doc.slug,
+          title: doc.title,
+          category: doc.category,
+          description: doc.description,
+          onlineContent: content,
+          draftContent: content,
+          onlineCharacterCount: characterCount,
+          draftCharacterCount: characterCount,
+          changed: false,
+          status: characterCount >= 20 ? "synced" : "incomplete",
         };
-      }),
+      });
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [compliancePreviewValues],
+    [legalCompliance, compliancePreviewValues],
   );
+
+  const editingLegalDocRow = useMemo(
+    () =>
+      legalDocumentRows.find((item) => item.slug === editingLegalDocSlug) ||
+      null,
+    [editingLegalDocSlug, legalDocumentRows],
+  );
+
+  const unsavedLegalDocumentChanges = useMemo(
+    () => {
+      if (!legalCompliance?.documents?.length) {
+        return [];
+      }
+      return LEGAL_DOCUMENT_CONFIGS.reduce(
+        (changes, doc) => {
+          const row = legalCompliance.documents.find(
+            (item) => item.slug === doc.slug,
+          );
+          const localContent = normalizeLegalText(
+            readComplianceValue(doc.formName),
+          );
+          const savedDraftContent = normalizeLegalText(
+            row?.draftContent || row?.onlineContent || "",
+          );
+          if (localContent && localContent !== savedDraftContent) {
+            changes.push({ doc, content: localContent });
+          }
+          return changes;
+        },
+        [] as { doc: LegalDocumentConfig; content: string }[],
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [legalCompliance, compliancePreviewValues],
+  );
+  const unsavedLegalDocumentSlugSet = useMemo<Set<string>>(
+    () =>
+      new Set<string>(unsavedLegalDocumentChanges.map((item) => item.doc.slug)),
+    [unsavedLegalDocumentChanges],
+  );
+  const hasUnsavedLegalDocumentChanges =
+    unsavedLegalDocumentChanges.length > 0;
+  const canPublishLegalPackage =
+    Boolean(draftLegalRelease) || hasUnsavedLegalDocumentChanges;
+  const legalDraftStatusTitle = hasUnsavedLegalDocumentChanges
+    ? "有未保存修改"
+    : draftLegalRelease
+      ? "有未发布草稿"
+      : "与线上一致";
+  const legalDraftStatusHint = hasUnsavedLegalDocumentChanges
+    ? "点击发布会先保存草稿"
+    : pendingLegalRelease
+      ? `待生效版本：${pendingLegalRelease.version}`
+      : "暂无待生效版本";
 
   useEffect(() => {
     loadSettings();
@@ -994,6 +1172,23 @@ const SystemSettings: React.FC = () => {
       const bizRes = (await adminSystemConfigApi.list()) as any;
       const configs: AdminSystemConfigItem[] = bizRes?.data?.configs || [];
       const bizConfigMap = applyPaymentConfig(configs);
+      const legalRes = (await adminLegalComplianceApi.current()) as any;
+      const legalData = extractLegalComplianceCurrent(legalRes);
+      setLegalCompliance(legalData);
+      const legalDraftFormValues = LEGAL_DOCUMENT_CONFIGS.reduce(
+        (acc, doc) => {
+          const row = legalData?.documents?.find(
+            (item) => item.slug === doc.slug,
+          );
+          acc[doc.formName] =
+            row?.draftContent ||
+            row?.onlineContent ||
+            bizConfigMap[doc.configKey] ||
+            "";
+          return acc;
+        },
+        {} as Partial<Record<LegalDocumentFormName, string>>,
+      );
       featureForm.setFieldsValue({
         outboxWorkerEnabled: isConfigEnabled(
           bizConfigMap[FEATURE_SWITCH_KEYS.outboxWorkerEnabled],
@@ -1037,37 +1232,7 @@ const SystemSettings: React.FC = () => {
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.complaintEmail] || "",
         privacyEmail:
           bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyEmail] || "",
-        userAgreement:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement] || "",
-        privacyPolicy:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy] || "",
-        personalInfoCollectionList:
-          bizConfigMap[
-            PUBLIC_COMPLIANCE_CONFIG_KEYS.personalInfoCollectionList
-          ] || "",
-        transactionRules:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules] || "",
-        refundRules:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.refundRules] || "",
-        merchantOnboardingRules:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules] ||
-          "",
-        merchantOnboardingAgreement:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingAgreement] ||
-          "",
-        platformRules:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.platformRules] || "",
-        privacyDataProcessing:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyDataProcessing] ||
-          "",
-        thirdPartySharing:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing] || "",
-        legalVersion:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion] ||
-          "v1.3.0-20260520",
-        legalEffectiveDate:
-          bizConfigMap[PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate] ||
-          "2026-05-20",
+        ...legalDraftFormValues,
       });
       bizForm.setFieldsValue({
         surveyDepositDefault: Number(
@@ -1287,13 +1452,11 @@ const SystemSettings: React.FC = () => {
   };
 
   const buildCompliancePayload = async () => {
-    const values = (await complianceForm.validateFields()) as ComplianceFormValues;
+    const values = (await complianceForm.validateFields(
+      COMPLIANCE_BASE_FORM_FIELDS,
+    )) as ComplianceFormValues;
     const readValue = (field: keyof ComplianceFormValues) =>
       String(values[field] ?? complianceForm.getFieldValue(field) ?? "");
-
-    LEGAL_DOCUMENT_CONFIGS.forEach((doc) => {
-      assertLegalDocumentContent(doc, readValue(doc.formName));
-    });
 
     return {
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.brandName]: String(
@@ -1330,73 +1493,123 @@ const SystemSettings: React.FC = () => {
       [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyEmail]: String(
         readValue("privacyEmail") || "",
       ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.userAgreement]: String(
-        normalizeLegalText(readValue("userAgreement")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyPolicy]: String(
-        normalizeLegalText(readValue("privacyPolicy")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.personalInfoCollectionList]: String(
-        normalizeLegalText(readValue("personalInfoCollectionList")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.transactionRules]: String(
-        normalizeLegalText(readValue("transactionRules")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.refundRules]: String(
-        normalizeLegalText(readValue("refundRules")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingRules]: String(
-        normalizeLegalText(readValue("merchantOnboardingRules")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.merchantOnboardingAgreement]: String(
-        normalizeLegalText(readValue("merchantOnboardingAgreement")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.platformRules]: String(
-        normalizeLegalText(readValue("platformRules")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.privacyDataProcessing]: String(
-        normalizeLegalText(readValue("privacyDataProcessing")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.thirdPartySharing]: String(
-        normalizeLegalText(readValue("thirdPartySharing")),
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion]: String(
-        readValue("legalVersion") || "v1.3.0-20260520",
-      ),
-      [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate]: String(
-        readValue("legalEffectiveDate") || "2026-05-20",
-      ),
     };
+  };
+
+  const refreshLegalCompliance = async () => {
+    const legalRes = (await adminLegalComplianceApi.current()) as any;
+    const legalData = extractLegalComplianceCurrent(legalRes);
+    setLegalCompliance(legalData);
+    return legalData;
   };
 
   const requestSaveComplianceDocument = async (doc: LegalDocumentConfig) => {
     try {
       const values = (await complianceForm.validateFields([
-        "legalVersion",
-        "legalEffectiveDate",
         doc.formName,
       ])) as ComplianceFormValues;
       const content = String(
         values[doc.formName] ?? complianceForm.getFieldValue(doc.formName) ?? "",
       );
       assertLegalDocumentContent(doc, content);
-      setPendingAction("compliance");
+      setSavingCompliance(true);
+      await adminLegalComplianceApi.saveDraftDocument(doc.slug, {
+        content: normalizeLegalText(content),
+      });
+      message.success("草稿已保存，正式发布前不会影响前台展示");
+      await refreshLegalCompliance();
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "保存失败");
+    } finally {
+      setSavingCompliance(false);
+    }
+  };
+
+  const saveUnsavedLegalDocumentChanges = async () => {
+    if (!unsavedLegalDocumentChanges.length) {
+      return legalCompliance;
+    }
+    unsavedLegalDocumentChanges.forEach(({ doc, content }) => {
+      assertLegalDocumentContent(doc, content);
+    });
+    setSavingCompliance(true);
+    try {
+      for (const { doc, content } of unsavedLegalDocumentChanges) {
+        await adminLegalComplianceApi.saveDraftDocument(doc.slug, {
+          content,
+        });
+      }
+      message.success(
+        `已先保存 ${unsavedLegalDocumentChanges.length} 份协议草稿，正式发布前不会影响前台展示`,
+      );
+      return await refreshLegalCompliance();
+    } finally {
+      setSavingCompliance(false);
+    }
+  };
+
+  const openLegalPublishModal = async () => {
+    try {
+      const latestLegalCompliance = hasUnsavedLegalDocumentChanges
+        ? await saveUnsavedLegalDocumentChanges()
+        : legalCompliance;
+      if (!latestLegalCompliance?.draft) {
+        message.warning("当前没有已保存的协议草稿，请先编辑文档后再发布");
+        return;
+      }
+      publishForm.setFieldsValue({
+        versionBump: "patch",
+        effectiveAt: dayjs(),
+        changeSummary: "",
+      });
+      setPublishOpen(true);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "发布前保存草稿失败");
+    }
+  };
+
+  const requestPublishLegalDraft = async () => {
+    try {
+      const values = await publishForm.validateFields();
+      let latestDraft = draftLegalRelease;
+      if (!latestDraft) {
+        const latestLegalCompliance = await refreshLegalCompliance();
+        latestDraft = latestLegalCompliance?.draft || null;
+      }
+      if (!latestDraft) {
+        message.warning("当前没有已保存的协议草稿，请先保存至少一份文档草稿");
+        return;
+      }
+      const effectiveAt = values.effectiveAt as Dayjs | undefined;
+      if (!effectiveAt?.isValid()) {
+        message.error("请选择协议生效时间");
+        return;
+      }
+      setPendingAction("legalPublish");
       setPendingPayload({
-        [doc.configKey]: normalizeLegalText(content),
-        [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalVersion]: String(
-          values.legalVersion ||
-            complianceForm.getFieldValue("legalVersion") ||
-            "v1.3.0-20260520",
-        ),
-        [PUBLIC_COMPLIANCE_CONFIG_KEYS.legalEffectiveDate]: String(
-          values.legalEffectiveDate ||
-            complianceForm.getFieldValue("legalEffectiveDate") ||
-            "2026-05-20",
-        ),
+        versionBump: String(values.versionBump || "patch"),
+        effectiveAt: effectiveAt.toISOString(),
+        changeSummary: String(values.changeSummary || ""),
       });
       setReauthOpen(true);
     } catch (error) {
-      message.error(error instanceof Error ? error.message : "保存失败");
+      message.error(error instanceof Error ? error.message : "发布失败");
+    }
+  };
+
+  const loadReleaseHistory = async () => {
+    setReleaseHistoryOpen(true);
+    setReleaseHistoryLoading(true);
+    try {
+      const res = (await adminLegalComplianceApi.listReleases({
+        page: 1,
+        pageSize: 50,
+      })) as any;
+      setReleaseHistory(extractLegalComplianceReleaseItems(res));
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "加载历史版本失败");
+    } finally {
+      setReleaseHistoryLoading(false);
     }
   };
 
@@ -1469,7 +1682,7 @@ const SystemSettings: React.FC = () => {
       return;
     }
 
-    const nextPayload = {
+    const nextPayload: Record<string, string> = {
       ...pendingPayload,
       reason: payload.reason || "",
       recentReauthProof: payload.recentReauthProof,
@@ -1483,7 +1696,10 @@ const SystemSettings: React.FC = () => {
       setSavingFeature(true);
     } else if (pendingAction === "homePopup") {
       setSavingHomePopup(true);
-    } else if (pendingAction === "compliance") {
+    } else if (
+      pendingAction === "compliance" ||
+      pendingAction === "legalPublish"
+    ) {
       setSavingCompliance(true);
     } else {
       setSavingBiz(true);
@@ -1504,7 +1720,21 @@ const SystemSettings: React.FC = () => {
         message.success("首页弹窗保存成功");
       } else if (pendingAction === "compliance") {
         await adminSystemConfigApi.batchUpdate(nextPayload);
-        message.success("对外内容与合规信息保存成功");
+        message.success("合规基础信息保存成功");
+      } else if (pendingAction === "legalPublish") {
+        await adminLegalComplianceApi.publishDraft({
+          versionBump:
+            nextPayload.versionBump === "major" ||
+            nextPayload.versionBump === "minor"
+              ? nextPayload.versionBump
+              : "patch",
+          effectiveAt: nextPayload.effectiveAt,
+          changeSummary: nextPayload.changeSummary,
+          reason: nextPayload.reason,
+          recentReauthProof: nextPayload.recentReauthProof,
+        });
+        message.success("协议包发布成功");
+        setPublishOpen(false);
       } else {
         await adminSystemConfigApi.batchUpdate(nextPayload);
         message.success("业务配置保存成功");
@@ -2274,39 +2504,63 @@ const SystemSettings: React.FC = () => {
 
             <Card
               size="small"
-              title="协议与规则"
+              title="协议包发布管理"
               className="system-settings-section-card"
+              extra={
+                <Space>
+                  <Button onClick={() => void loadReleaseHistory()}>
+                    历史版本
+                  </Button>
+                  <Button
+                    type="primary"
+                    loading={savingCompliance}
+                    disabled={!canPublishLegalPackage}
+                    onClick={() => void openLegalPublishModal()}
+                  >
+                    {hasUnsavedLegalDocumentChanges
+                      ? "保存并发布协议包"
+                      : "发布协议包"}
+                  </Button>
+                </Space>
+              }
             >
               <Typography.Text
                 type="secondary"
                 className="system-settings-block-hint"
               >
-                正文通过独立文档维护，前台按公开法务页展示。暂不使用 Word/PDF 上传作为主内容，避免移动端阅读、搜索和版本对比困难。
+                协议正文先保存为草稿，不影响前台展示；正式发布时统一生成版本、生效时间、发布时间和发布人，并只做一次再认证。
               </Typography.Text>
-              <Typography.Text
-                type="secondary"
-                className="system-settings-block-hint"
-              >
-                当前分为公开侧 7 份文档和服务商侧 3 份协议。不是重复文档，而是展示对象和使用场景不同。
-              </Typography.Text>
-              <Row gutter={16}>
-                <Col span={12}>
-                  <Form.Item
-                    label="协议版本"
-                    name="legalVersion"
-                    rules={[{ required: true, message: "请输入协议版本" }]}
-                  >
-                    <Input placeholder="v1.3.0-20260520" />
-                  </Form.Item>
+              <Row gutter={16} className="system-settings-legal-release-summary">
+                <Col xs={24} md={8}>
+                  <div className="system-settings-legal-release-card">
+                    <Typography.Text type="secondary">当前线上版本</Typography.Text>
+                    <Typography.Title level={5}>{legalVersionPreview}</Typography.Title>
+                    <Typography.Text type="secondary">
+                      生效：{legalEffectiveDatePreview}
+                    </Typography.Text>
+                  </div>
                 </Col>
-                <Col span={12}>
-                  <Form.Item
-                    label="生效日期"
-                    name="legalEffectiveDate"
-                    rules={[{ required: true, message: "请输入生效日期" }]}
-                  >
-                    <Input placeholder="2026-05-20" />
-                  </Form.Item>
+                <Col xs={24} md={8}>
+                  <div className="system-settings-legal-release-card">
+                    <Typography.Text type="secondary">发布时间</Typography.Text>
+                    <Typography.Title level={5}>
+                      {formatLegalDateTime(currentLegalRelease?.publishedAt)}
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      发布人 ID：{currentLegalRelease?.publishedByAdminId || "-"}
+                    </Typography.Text>
+                  </div>
+                </Col>
+                <Col xs={24} md={8}>
+                  <div className="system-settings-legal-release-card">
+                    <Typography.Text type="secondary">草稿状态</Typography.Text>
+                    <Typography.Title level={5}>
+                      {legalDraftStatusTitle}
+                    </Typography.Title>
+                    <Typography.Text type="secondary">
+                      {legalDraftStatusHint}
+                    </Typography.Text>
+                  </div>
                 </Col>
               </Row>
               <Table
@@ -2332,49 +2586,47 @@ const SystemSettings: React.FC = () => {
                     ),
                   },
                   {
-                    title: "适用端",
-                    dataIndex: "category",
-                    width: 110,
-                    render: (category: string) => (
-                      <Tag color={category === "服务商侧" ? "purple" : "blue"}>
-                        {category}
-                      </Tag>
+                    title: "线上 / 草稿字数",
+                    width: 150,
+                    render: (_: unknown, row) => (
+                      <Space direction="vertical" size={0}>
+                        <Typography.Text>
+                          线上 {row.onlineCharacterCount} 字
+                        </Typography.Text>
+                        <Typography.Text type="secondary">
+                          草稿 {row.draftCharacterCount} 字
+                        </Typography.Text>
+                      </Space>
                     ),
                   },
                   {
-                    title: "Slug",
-                    dataIndex: "slug",
-                    width: 180,
-                    render: (slug: string) => <Tag>{slug}</Tag>,
-                  },
-                  {
-                    title: "字数",
-                    dataIndex: "characterCount",
-                    width: 100,
-                    render: (count: number) => `${count} 字`,
-                  },
-                  {
-                    title: "状态",
+                    title: "草稿状态",
                     dataIndex: "status",
-                    width: 110,
-                    render: (status: string) => {
-                      if (status === "ready") {
-                        return <Tag color="success">已配置</Tag>;
+                    width: 130,
+                    render: (_: string, row) => {
+                      if (row.changed) {
+                        if (unsavedLegalDocumentSlugSet.has(row.slug)) {
+                          return <Tag color="warning">未保存修改</Tag>;
+                        }
+                        if (row.status === "pending_effective") {
+                          return <Tag color="processing">待生效版本</Tag>;
+                        }
+                        return <Tag color="warning">有未发布修改</Tag>;
                       }
-                      if (status === "draft") {
+                      if (row.status === "incomplete") {
                         return <Tag color="warning">待补全</Tag>;
                       }
-                      return <Tag color="default">空白</Tag>;
+                      return <Tag color="success">线上一致</Tag>;
                     },
                   },
                   {
-                    title: "版本 / 生效日期",
-                    width: 170,
+                    title: "当前发布",
+                    width: 190,
                     render: () => (
                       <Space direction="vertical" size={0}>
                         <Typography.Text>{legalVersionPreview}</Typography.Text>
                         <Typography.Text type="secondary">
-                          {legalEffectiveDatePreview}
+                          生效 {legalEffectiveDatePreview}
                         </Typography.Text>
                       </Space>
                     ),
@@ -2403,7 +2655,7 @@ const SystemSettings: React.FC = () => {
                   loading={savingCompliance}
                   onClick={() => void requestSave("compliance")}
                 >
-                  保存对外内容
+                  保存合规基础信息
                 </Button>
               </Space>
             </div>
@@ -2475,9 +2727,16 @@ const SystemSettings: React.FC = () => {
                         {editingLegalDoc.title}
                       </Typography.Title>
                       <Typography.Paragraph type="secondary">
-                        版本：{legalVersionPreview} · 生效日期：
+                        草稿预览。当前线上版本：{legalVersionPreview} · 生效日期：
                         {legalEffectiveDatePreview}
                       </Typography.Paragraph>
+                      <div className="system-settings-legal-online-compare">
+                        <Typography.Text strong>当前线上内容</Typography.Text>
+                        <Typography.Paragraph type="secondary" ellipsis={{ rows: 4 }}>
+                          {editingLegalDocRow?.onlineContent || "暂无线上内容"}
+                        </Typography.Paragraph>
+                      </div>
+                      <Divider />
                       <div className="system-settings-legal-preview-content">
                         {renderLegalPreviewBlocks(
                           readComplianceValue(editingLegalDoc.formName),
@@ -2921,10 +3180,116 @@ const SystemSettings: React.FC = () => {
         </div>
       ) : null}
 
+      <Modal
+        title="发布协议包"
+        open={publishOpen}
+        onCancel={() => setPublishOpen(false)}
+        onOk={() => void requestPublishLegalDraft()}
+        confirmLoading={savingCompliance}
+        okText="提交再认证并发布"
+      >
+        <Typography.Paragraph type="secondary">
+          本次会发布完整协议包，版本号由后端按当前线上版本自动递增；发布后会记录真实发布时间、发布人和审计日志。
+        </Typography.Paragraph>
+        <Form form={publishForm} layout="vertical">
+          <Form.Item
+            label="版本递增"
+            name="versionBump"
+            rules={[{ required: true, message: "请选择版本递增类型" }]}
+          >
+            <Select
+              options={[
+                {
+                  value: "patch",
+                  label: `补丁版本 ${legalCompliance?.nextVersions?.patch || ""}`,
+                },
+                {
+                  value: "minor",
+                  label: `小版本 ${legalCompliance?.nextVersions?.minor || ""}`,
+                },
+                {
+                  value: "major",
+                  label: `大版本 ${legalCompliance?.nextVersions?.major || ""}`,
+                },
+              ]}
+            />
+          </Form.Item>
+          <Form.Item
+            label="生效时间"
+            name="effectiveAt"
+            rules={[{ required: true, message: "请选择生效时间" }]}
+          >
+            <DatePicker showTime className="system-settings-full-width" />
+          </Form.Item>
+          <Form.Item
+            label="变更说明"
+            name="changeSummary"
+            rules={[{ required: true, message: "请输入本次协议包变更说明" }]}
+          >
+            <Input.TextArea
+              rows={3}
+              placeholder="例如：统一更新预约规则、隐私政策和服务商资料授权条款"
+            />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Drawer
+        title="协议包历史版本"
+        width={760}
+        open={releaseHistoryOpen}
+        onClose={() => setReleaseHistoryOpen(false)}
+      >
+        <Table
+          rowKey={(row) => String(row.id || row.version)}
+          loading={releaseHistoryLoading}
+          pagination={false}
+          dataSource={releaseHistory}
+          columns={[
+            {
+              title: "版本",
+              dataIndex: "version",
+              render: (version: string, row) => (
+                <Space direction="vertical" size={0}>
+                  <Typography.Text strong>{version}</Typography.Text>
+                  {row.legacyImported ? <Tag>历史回填</Tag> : null}
+                </Space>
+              ),
+            },
+            {
+              title: "生效时间",
+              dataIndex: "effectiveAt",
+              render: (value: string, row) =>
+                formatLegalDateTime(value || row.effectiveDate),
+            },
+            {
+              title: "发布时间",
+              dataIndex: "publishedAt",
+              render: (value: string) => formatLegalDateTime(value),
+            },
+            {
+              title: "发布人",
+              dataIndex: "publishedByAdminId",
+              width: 90,
+              render: (value: number) => value || "-",
+            },
+            {
+              title: "说明",
+              dataIndex: "changeSummary",
+              render: (value: string) => value || "-",
+            },
+          ]}
+        />
+      </Drawer>
+
       <AdminReauthModal
         open={reauthOpen}
-        title="提交系统配置变更"
-        description="系统设置、支付开关、首页弹窗、对外内容和业务配置属于高危修改，提交前必须再次认证。"
+        title={pendingAction === "legalPublish" ? "发布协议包" : "提交系统配置变更"}
+        description={
+          pendingAction === "legalPublish"
+            ? "发布协议包会更新前台协议版本、生效时间和公开正文，提交前必须再次认证。"
+            : "系统设置、支付开关、首页弹窗、合规基础信息和业务配置属于高危修改，提交前必须再次认证。"
+        }
         onCancel={() => {
           setReauthOpen(false);
           setPendingAction(null);
