@@ -282,7 +282,9 @@ func (s *LegalComplianceService) EnsureLegacyReleaseImported() error {
 
 func (s *LegalComplianceService) ensureLegacyReleaseImportedTx(tx *gorm.DB) error {
 	var count int64
-	if err := tx.Model(&model.LegalComplianceRelease{}).Count(&count).Error; err != nil {
+	if err := tx.Model(&model.LegalComplianceRelease{}).
+		Where("status = ?", model.LegalComplianceReleaseStatusPublished).
+		Count(&count).Error; err != nil {
 		return err
 	}
 	if count > 0 {

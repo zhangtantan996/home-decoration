@@ -97,6 +97,57 @@ func TestLegalComplianceLegacyImportIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestLegalComplianceLegacyImportIgnoresDraftOnlyRows(t *testing.T) {
+	db := setupLegalComplianceTestDB(t)
+	seedLegalSystemConfigs(t, db)
+	svc := &LegalComplianceService{}
+	docs := svc.buildLegacySnapshotsFromConfigs()
+	for index := range docs {
+		if docs[index].Slug == "user-agreement" {
+			docs[index].Content = "这是提前保存但尚未发布的用户服务协议草稿，不能阻止历史协议包回填。"
+		}
+	}
+	docJSON, err := encodeLegalDocumentsJSON(docs)
+	if err != nil {
+		t.Fatalf("encode docs: %v", err)
+	}
+	if err := db.Create(&model.LegalComplianceRelease{
+		Status:        model.LegalComplianceReleaseStatusDraft,
+		DocumentsJSON: docJSON,
+		ContentHash:   hashLegalDocuments(docs),
+	}).Error; err != nil {
+		t.Fatalf("create draft release: %v", err)
+	}
+
+	if err := svc.EnsureLegacyReleaseImported(); err != nil {
+		t.Fatalf("import legacy with draft present: %v", err)
+	}
+
+	var publishedCount int64
+	if err := db.Model(&model.LegalComplianceRelease{}).
+		Where("status = ?", model.LegalComplianceReleaseStatusPublished).
+		Count(&publishedCount).Error; err != nil {
+		t.Fatalf("count published releases: %v", err)
+	}
+	if publishedCount != 1 {
+		t.Fatalf("expected one imported published release, got %d", publishedCount)
+	}
+
+	release, err := svc.PublishDraft(PublishLegalComplianceInput{
+		VersionBump:   "patch",
+		EffectiveAt:   time.Now().Add(-time.Hour).Format(time.RFC3339),
+		ChangeSummary: "发布草稿",
+		Reason:        "验证草稿不阻止历史回填",
+		AdminID:       7,
+	})
+	if err != nil {
+		t.Fatalf("publish draft: %v", err)
+	}
+	if !strings.HasPrefix(release.Version, "v1.3.2-") {
+		t.Fatalf("expected version to advance from imported legacy version, got %s", release.Version)
+	}
+}
+
 func TestLegalComplianceCurrentFallsBackWhenReleaseTableMissing(t *testing.T) {
 	db := setupLegalComplianceFallbackTestDB(t)
 	seedLegalSystemConfigs(t, db)

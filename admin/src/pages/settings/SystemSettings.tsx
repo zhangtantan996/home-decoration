@@ -1571,7 +1571,12 @@ const SystemSettings: React.FC = () => {
   const requestPublishLegalDraft = async () => {
     try {
       const values = await publishForm.validateFields();
-      if (!draftLegalRelease) {
+      let latestDraft = draftLegalRelease;
+      if (!latestDraft) {
+        const latestLegalCompliance = await refreshLegalCompliance();
+        latestDraft = latestLegalCompliance?.draft || null;
+      }
+      if (!latestDraft) {
         message.warning("当前没有已保存的协议草稿，请先保存至少一份文档草稿");
         return;
       }
