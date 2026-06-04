@@ -1080,6 +1080,53 @@ const SystemSettings: React.FC = () => {
     [editingLegalDocSlug, legalDocumentRows],
   );
 
+  const unsavedLegalDocumentChanges = useMemo(
+    () => {
+      if (!legalCompliance?.documents?.length) {
+        return [];
+      }
+      return LEGAL_DOCUMENT_CONFIGS.reduce(
+        (changes, doc) => {
+          const row = legalCompliance.documents.find(
+            (item) => item.slug === doc.slug,
+          );
+          const localContent = normalizeLegalText(
+            readComplianceValue(doc.formName),
+          );
+          const savedDraftContent = normalizeLegalText(
+            row?.draftContent || row?.onlineContent || "",
+          );
+          if (localContent && localContent !== savedDraftContent) {
+            changes.push({ doc, content: localContent });
+          }
+          return changes;
+        },
+        [] as { doc: LegalDocumentConfig; content: string }[],
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [legalCompliance, compliancePreviewValues],
+  );
+  const unsavedLegalDocumentSlugSet = useMemo<Set<string>>(
+    () =>
+      new Set<string>(unsavedLegalDocumentChanges.map((item) => item.doc.slug)),
+    [unsavedLegalDocumentChanges],
+  );
+  const hasUnsavedLegalDocumentChanges =
+    unsavedLegalDocumentChanges.length > 0;
+  const canPublishLegalPackage =
+    Boolean(draftLegalRelease) || hasUnsavedLegalDocumentChanges;
+  const legalDraftStatusTitle = hasUnsavedLegalDocumentChanges
+    ? "有未保存修改"
+    : draftLegalRelease
+      ? "有未发布草稿"
+      : "与线上一致";
+  const legalDraftStatusHint = hasUnsavedLegalDocumentChanges
+    ? "点击发布会先保存草稿"
+    : pendingLegalRelease
+      ? `待生效版本：${pendingLegalRelease.version}`
+      : "暂无待生效版本";
+
   useEffect(() => {
     loadSettings();
   }, []);
@@ -1449,6 +1496,13 @@ const SystemSettings: React.FC = () => {
     };
   };
 
+  const refreshLegalCompliance = async () => {
+    const legalRes = (await adminLegalComplianceApi.current()) as any;
+    const legalData = extractLegalComplianceCurrent(legalRes);
+    setLegalCompliance(legalData);
+    return legalData;
+  };
+
   const requestSaveComplianceDocument = async (doc: LegalDocumentConfig) => {
     try {
       const values = (await complianceForm.validateFields([
@@ -1463,8 +1517,7 @@ const SystemSettings: React.FC = () => {
         content: normalizeLegalText(content),
       });
       message.success("草稿已保存，正式发布前不会影响前台展示");
-      const legalRes = (await adminLegalComplianceApi.current()) as any;
-      setLegalCompliance(extractLegalComplianceCurrent(legalRes));
+      await refreshLegalCompliance();
     } catch (error) {
       message.error(error instanceof Error ? error.message : "保存失败");
     } finally {
@@ -1472,13 +1525,47 @@ const SystemSettings: React.FC = () => {
     }
   };
 
-  const openLegalPublishModal = () => {
-    publishForm.setFieldsValue({
-      versionBump: "patch",
-      effectiveAt: dayjs(),
-      changeSummary: "",
+  const saveUnsavedLegalDocumentChanges = async () => {
+    if (!unsavedLegalDocumentChanges.length) {
+      return legalCompliance;
+    }
+    unsavedLegalDocumentChanges.forEach(({ doc, content }) => {
+      assertLegalDocumentContent(doc, content);
     });
-    setPublishOpen(true);
+    setSavingCompliance(true);
+    try {
+      for (const { doc, content } of unsavedLegalDocumentChanges) {
+        await adminLegalComplianceApi.saveDraftDocument(doc.slug, {
+          content,
+        });
+      }
+      message.success(
+        `已先保存 ${unsavedLegalDocumentChanges.length} 份协议草稿，正式发布前不会影响前台展示`,
+      );
+      return await refreshLegalCompliance();
+    } finally {
+      setSavingCompliance(false);
+    }
+  };
+
+  const openLegalPublishModal = async () => {
+    try {
+      const latestLegalCompliance = hasUnsavedLegalDocumentChanges
+        ? await saveUnsavedLegalDocumentChanges()
+        : legalCompliance;
+      if (!latestLegalCompliance?.draft) {
+        message.warning("当前没有已保存的协议草稿，请先编辑文档后再发布");
+        return;
+      }
+      publishForm.setFieldsValue({
+        versionBump: "patch",
+        effectiveAt: dayjs(),
+        changeSummary: "",
+      });
+      setPublishOpen(true);
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : "发布前保存草稿失败");
+    }
   };
 
   const requestPublishLegalDraft = async () => {
@@ -2422,10 +2509,12 @@ const SystemSettings: React.FC = () => {
                   <Button
                     type="primary"
                     loading={savingCompliance}
-                    disabled={!draftLegalRelease}
-                    onClick={openLegalPublishModal}
+                    disabled={!canPublishLegalPackage}
+                    onClick={() => void openLegalPublishModal()}
                   >
-                    发布协议包
+                    {hasUnsavedLegalDocumentChanges
+                      ? "保存并发布协议包"
+                      : "发布协议包"}
                   </Button>
                 </Space>
               }
@@ -2461,12 +2550,10 @@ const SystemSettings: React.FC = () => {
                   <div className="system-settings-legal-release-card">
                     <Typography.Text type="secondary">草稿状态</Typography.Text>
                     <Typography.Title level={5}>
-                      {draftLegalRelease ? "有未发布草稿" : "与线上一致"}
+                      {legalDraftStatusTitle}
                     </Typography.Title>
                     <Typography.Text type="secondary">
-                      {pendingLegalRelease
-                        ? `待生效版本：${pendingLegalRelease.version}`
-                        : "暂无待生效版本"}
+                      {legalDraftStatusHint}
                     </Typography.Text>
                   </div>
                 </Col>
@@ -2513,6 +2600,9 @@ const SystemSettings: React.FC = () => {
                     width: 130,
                     render: (_: string, row) => {
                       if (row.changed) {
+                        if (unsavedLegalDocumentSlugSet.has(row.slug)) {
+                          return <Tag color="warning">未保存修改</Tag>;
+                        }
                         if (row.status === "pending_effective") {
                           return <Tag color="processing">待生效版本</Tag>;
                         }
