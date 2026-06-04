@@ -119,6 +119,25 @@ func TestLegalComplianceCurrentFallsBackWhenReleaseTableMissing(t *testing.T) {
 	}
 }
 
+func TestLegalComplianceListReleasesFallsBackWhenReleaseTableMissing(t *testing.T) {
+	db := setupLegalComplianceFallbackTestDB(t)
+	seedLegalSystemConfigs(t, db)
+
+	items, total, err := (&LegalComplianceService{}).ListReleases(1, 20)
+	if err != nil {
+		t.Fatalf("list releases should fallback when release table is missing: %v", err)
+	}
+	if total != 1 || len(items) != 1 {
+		t.Fatalf("expected one fallback release, total=%d len=%d", total, len(items))
+	}
+	if items[0].Version != "v1.3.1-20260530" || !items[0].LegacyImported {
+		t.Fatalf("unexpected fallback item: %+v", items[0])
+	}
+	if items[0].PublishedAt != "" || items[0].PublishedByAdminID != 0 {
+		t.Fatalf("fallback history should not fake publish metadata: %+v", items[0])
+	}
+}
+
 func TestPublicSiteConfigPrefersActiveLegalComplianceRelease(t *testing.T) {
 	db := setupLegalComplianceTestDB(t)
 	seedLegalSystemConfigs(t, db)

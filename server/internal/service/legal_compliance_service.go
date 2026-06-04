@@ -385,6 +385,7 @@ func (s *LegalComplianceService) fallbackPublishedView() (*LegalComplianceReleas
 		EffectiveDate:  effectiveRaw,
 		Documents:      docs,
 		ContentHash:    hashLegalDocuments(docs),
+		ChangeSummary:  "旧配置兜底展示，尚未形成正式发布记录",
 		Status:         model.LegalComplianceReleaseStatusPublished,
 		LegacyImported: true,
 	}, nil
@@ -766,14 +767,27 @@ func (s *LegalComplianceService) ListReleases(page, pageSize int) ([]LegalCompli
 	if pageSize <= 0 || pageSize > 100 {
 		pageSize = 20
 	}
+	fallbackList := func() ([]LegalComplianceReleaseView, int64, error) {
+		view, err := s.fallbackPublishedView()
+		if err != nil {
+			return nil, 0, err
+		}
+		if page > 1 {
+			return []LegalComplianceReleaseView{}, 1, nil
+		}
+		return []LegalComplianceReleaseView{*view}, 1, nil
+	}
 	if err := s.EnsureLegacyReleaseImported(); err != nil {
-		return nil, 0, err
+		return fallbackList()
 	}
 	query := repository.DB.Model(&model.LegalComplianceRelease{}).
 		Where("status = ?", model.LegalComplianceReleaseStatusPublished)
 	var total int64
 	if err := query.Count(&total).Error; err != nil {
-		return nil, 0, err
+		return fallbackList()
+	}
+	if total == 0 {
+		return fallbackList()
 	}
 	var releases []model.LegalComplianceRelease
 	if err := query.Order("effective_at DESC, published_at DESC, id DESC").
