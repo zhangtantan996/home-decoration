@@ -3603,7 +3603,7 @@ func AdminSetMaterialShopAvailability(c *gin.Context) {
 
 // AdminRefundIntentFee 管理员手动退款意向金
 func AdminRefundIntentFee(c *gin.Context) {
-	bookingID := parseUint64(c.Param("bookingId"))
+	bookingID := parseUint64(c.Param("id"))
 	adminID := c.GetUint64("admin_id")
 	if adminID == 0 {
 		adminID = c.GetUint64("adminId")
