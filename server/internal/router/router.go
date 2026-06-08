@@ -791,10 +791,10 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 
 			// 预约管理
 			admin.GET("/bookings", bookingListPerm, handler.AdminListBookings)
+			admin.GET("/bookings/refundable", financeTransactionApprovePerm, handler.AdminGetRefundableBookings)
 			admin.GET("/bookings/:id", bookingListPerm, handler.AdminGetBooking)
 			admin.PATCH("/bookings/:id/status", bookingEditPerm, handler.AdminUpdateBookingStatus)
-			admin.GET("/bookings/refundable", financeTransactionApprovePerm, handler.AdminGetRefundableBookings)
-			admin.POST("/bookings/:bookingId/refund", financeTransactionApprovePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminRefundIntentFee)
+			admin.POST("/bookings/:id/refund", financeTransactionApprovePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminRefundIntentFee)
 
 			// 评价管理
 			admin.GET("/reviews", reviewListPerm, handler.AdminListReviews)

@@ -3,6 +3,7 @@ package router
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"home-decoration-server/internal/middleware"
@@ -60,5 +61,37 @@ func TestDebugCorsAllowsLocalProxyPorts(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 5175 to pass cors in debug mode, got status=%d", rec.Code)
+	}
+}
+
+func TestCorsAllowsKnownClientCustomHeaders(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(middleware.Cors([]string{"https://admin.hezeyunchuang.com"}))
+	r.POST("/api/v1/admin/login", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodOptions, "/api/v1/admin/login", nil)
+	req.Header.Set("Origin", "https://admin.hezeyunchuang.com")
+	req.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	req.Header.Set("Access-Control-Request-Headers", "content-type,x-admin-device-id")
+	rec := httptest.NewRecorder()
+
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNoContent {
+		t.Fatalf("expected preflight to pass, got status=%d", rec.Code)
+	}
+	allowedHeaders := strings.ToLower(rec.Header().Get("Access-Control-Allow-Headers"))
+	for _, expected := range []string{
+		"x-admin-device-id",
+		"x-device-id",
+		"x-admin-reauth",
+		"x-active-role",
+	} {
+		if !strings.Contains(allowedHeaders, expected) {
+			t.Fatalf("expected %s to be allowed, got %q", expected, rec.Header().Get("Access-Control-Allow-Headers"))
+		}
 	}
 }
