@@ -4,6 +4,7 @@ import Taro, {
   useLoad,
   usePageScroll,
   useShareAppMessage,
+  useShareTimeline,
 } from "@tarojs/taro";
 
 import { Button } from "@/components/Button";
@@ -314,6 +315,12 @@ const ProviderDetailPage: React.FC = () => {
   useShareAppMessage(() => ({
     title: `${displayName} - 服务商详情`,
     path: `/pages/providers/detail/index?id=${params.id}&type=${params.type}`,
+    imageUrl: coverImage || avatarUrl || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: `${displayName} - 服务商详情`,
+    query: `id=${encodeURIComponent(params.id)}&type=${encodeURIComponent(params.type)}`,
     imageUrl: coverImage || avatarUrl || undefined,
   }));
 

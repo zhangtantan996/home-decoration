@@ -335,8 +335,17 @@ type Booking struct {
 	PhoneEncrypted           string     `json:"-" gorm:"column:phone_encrypted;type:text"`
 	Notes                    string     `json:"notes" gorm:"type:text"`
 	NotesEncrypted           string     `json:"-" gorm:"column:notes_encrypted;type:text"`
-	HouseLayout              string     `json:"houseLayout" gorm:"size:50"`             // e.g., "3室2厅2卫"
-	Status                   int8       `json:"status" gorm:"default:1"`                // 1:pending, 2:confirmed, 3:completed, 4:cancelled
+	HouseLayout              string     `json:"houseLayout" gorm:"size:50"` // e.g., "3室2厅2卫"
+	Status                   int8       `json:"status" gorm:"default:1"`    // 1:pending, 2:confirmed, 3:completed, 4:cancelled
+	FollowStatus             string     `json:"followStatus" gorm:"size:32;default:'pending_contact';index"`
+	LeadQuality              string     `json:"leadQuality" gorm:"size:32;default:'unknown';index"`
+	AssignedAdminID          uint64     `json:"assignedAdminId" gorm:"index;default:0"`
+	NextFollowAt             *time.Time `json:"nextFollowAt" gorm:"index"`
+	InvalidReason            string     `json:"invalidReason" gorm:"size:300"`
+	ConvertedProjectID       uint64     `json:"convertedProjectId" gorm:"index;default:0"`
+	SourceType               string     `json:"sourceType" gorm:"size:32;default:'mini_booking';index"`
+	SourceID                 uint64     `json:"sourceId" gorm:"index;default:0"`
+	LastFollowedAt           *time.Time `json:"lastFollowedAt"`
 	IntentFee                float64    `json:"intentFee" gorm:"default:0"`             // 意向金金额 (从系统配置读取)
 	IntentFeePaid            bool       `json:"intentFeePaid" gorm:"default:false"`     // 是否已支付意向金
 	IntentFeeDeducted        bool       `json:"intentFeeDeducted" gorm:"default:false"` // 是否已抵扣至设计费

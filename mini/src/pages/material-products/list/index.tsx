@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { View } from '@tarojs/components';
-import Taro, { useRouter } from '@tarojs/taro';
+import Taro, { useRouter, useShareAppMessage, useShareTimeline } from '@tarojs/taro';
 
 import { Empty } from '@/components/Empty';
 import MaterialProductCard from '@/components/material-products/MaterialProductCard';
@@ -45,6 +45,18 @@ const MaterialProductListPage: React.FC = () => {
   }, [fetchShop]);
 
   const products = useMemo(() => shop?.products || [], [shop]);
+
+  useShareAppMessage(() => ({
+    title: shop?.name ? `${shop.name}｜门店商品` : '门店商品',
+    path: `/pages/material-products/list/index?shopId=${shopId}`,
+    imageUrl: shop?.cover || shop?.brandLogo || products[0]?.coverImage || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: shop?.name ? `${shop.name}｜门店商品` : '门店商品',
+    query: shopId ? `shopId=${encodeURIComponent(String(shopId))}` : '',
+    imageUrl: shop?.cover || shop?.brandLogo || products[0]?.coverImage || undefined,
+  }));
 
   const handleBack = () => {
     if (Taro.getCurrentPages().length > 1) {

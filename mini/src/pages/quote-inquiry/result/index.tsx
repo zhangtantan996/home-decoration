@@ -408,13 +408,13 @@ const QuoteInquiryResultPage: React.FC = () => {
               <View className="quote-inquiry-result__tip-item">
                 <View className="quote-inquiry-result__tip-dot" />
                 <Text className="quote-inquiry-result__tip-text">
-                  以上报价为系统估算结果，实际价格以量房后的正式报价为准。
+                  以上报价为系统估算结果，仅供装修预算参考，最终以线下沟通确认为准。
                 </Text>
               </View>
             </View>
           ) : (
             <Text className="quote-inquiry-result__tips-summary">
-              {tips[0] || '以上报价为系统估算结果，实际价格以量房后的正式报价为准。'}
+              {tips[0] || '以上报价为系统估算结果，仅供装修预算参考，最终以线下沟通确认为准。'}
             </Text>
           )}
         </View>

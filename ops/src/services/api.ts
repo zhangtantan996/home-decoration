@@ -251,9 +251,95 @@ export interface BookingItem {
   budgetRange?: string;
   preferredDate?: string;
   status?: number;
+  followStatus?: LeadFollowStatus;
+  leadQuality?: LeadQuality;
+  assignedAdminId?: number;
+  assignedAdminName?: string;
+  nextFollowAt?: string;
+  invalidReason?: string;
+  convertedProjectId?: number;
+  sourceType?: string;
+  sourceId?: number;
+  lastFollowedAt?: string;
   notes?: string;
   createdAt?: string;
   updatedAt?: string;
+}
+
+export type LeadFollowStatus =
+  | 'pending_contact'
+  | 'contacted'
+  | 'interested'
+  | 'invalid'
+  | 'converted_project'
+  | 'pending_booking'
+  | 'converted_booking'
+  | 'closed';
+
+export type LeadQuality = 'unknown' | 'low_intent' | 'valid' | 'high_intent' | 'invalid';
+
+export interface BookingQuery {
+  page?: number;
+  pageSize?: number;
+  status?: number;
+  followStatus?: LeadFollowStatus;
+  assignedAdminId?: number;
+  sourceType?: string;
+  keyword?: string;
+  startDate?: string;
+  endDate?: string;
+}
+
+export interface BookingFollowUpPayload {
+  status?: number;
+  followStatus?: LeadFollowStatus;
+  leadQuality?: LeadQuality;
+  assignedAdminId?: number;
+  nextFollowAt?: string;
+  invalidReason?: string;
+  convertedProjectId?: number;
+  notes?: string;
+}
+
+export interface QuoteInquiryItem {
+  id: number;
+  userId?: number;
+  phoneMasked?: string;
+  phone?: string;
+  addressMasked?: string;
+  address?: string;
+  cityCode?: string;
+  cityName?: string;
+  area?: number;
+  houseLayout?: string;
+  renovationType?: string;
+  style?: string;
+  budgetRange?: string;
+  totalMin?: number;
+  totalMax?: number;
+  conversionStatus?: string;
+  followStatus?: LeadFollowStatus;
+  assignedAdminId?: number;
+  nextFollowAt?: string;
+  invalidReason?: string;
+  lastFollowedAt?: string;
+  source?: string;
+  hasPhone?: boolean;
+  createdAt?: string;
+}
+
+export interface QuoteInquiryQuery {
+  page?: number;
+  pageSize?: number;
+  keyword?: string;
+  followStatus?: LeadFollowStatus;
+  conversionStatus?: string;
+  assignedAdminId?: number;
+  city?: string;
+  cityCode?: string;
+  startDate?: string;
+  endDate?: string;
+  hasPhone?: boolean;
 }
 
 export interface ProjectOwnerOption {
@@ -501,11 +587,38 @@ export const updateCase = (id: number, payload: Record<string, unknown>) => api.
 export const deleteCase = (id: number) => api.delete(`/admin/cases/${id}`);
 export const toggleCaseInspiration = (id: number, showInInspiration: boolean) => api.patch(`/admin/cases/${id}/inspiration`, { showInInspiration });
 
-export const listBookings = async (page = 1, pageSize = 20) =>
-  normalizePage<BookingItem>(await api.get('/admin/bookings', { params: { page, pageSize } }));
+export const listBookings = async (
+  pageOrParams: number | BookingQuery = 1,
+  pageSize = 20,
+) => {
+  const params = typeof pageOrParams === 'number'
+    ? { page: pageOrParams, pageSize }
+    : { page: 1, pageSize: 20, ...pageOrParams };
+  return normalizePage<BookingItem>(await api.get('/admin/bookings', { params }));
+};
 export const getBooking = (id: number) => api.get<unknown, BookingItem>(`/admin/bookings/${id}`);
-export const updateBookingStatus = (id: number, status: number, notes?: string) =>
-  api.patch(`/admin/bookings/${id}/status`, { status, notes });
+export const updateBookingStatus = (id: number, payloadOrStatus: BookingFollowUpPayload | number, notes?: string) =>
+  api.patch(`/admin/bookings/${id}/status`, typeof payloadOrStatus === 'number' ? { status: payloadOrStatus, notes } : payloadOrStatus);
+export const convertBookingToProject = (bookingId: number, payload: Record<string, unknown>) =>
+  api.post<unknown, ProjectDetail>(`/admin/bookings/${bookingId}/convert-project`, payload);
+
+export const listQuoteInquiries = async (params?: QuoteInquiryQuery) =>
+  normalizePage<QuoteInquiryItem>(await api.get('/admin/quote-inquiries', { params }));
+export const updateQuoteInquiryFollowUp = (id: number, payload: {
+  followStatus?: LeadFollowStatus;
+  assignedAdminId?: number;
+  nextFollowAt?: string;
+  invalidReason?: string;
+  notes?: string;
+}) => api.patch(`/admin/quote-inquiries/${id}/follow-up`, payload);
+export const convertQuoteInquiryToBooking = (id: number, payload: {
+  ownerId?: number;
+  providerId: number;
+  providerType: 'designer' | 'company';
+  preferredDate: string;
+  notes?: string;
+  reason?: string;
+}) => api.post<unknown, BookingItem>(`/admin/quote-inquiries/${id}/convert-booking`, payload);
 
 export const listProjects = async (params?: {
   page?: number;

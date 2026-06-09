@@ -172,6 +172,8 @@ type AdminQuoteInquiryListFilter struct {
 	City             string
 	CityCode         string
 	ConversionStatus string
+	FollowStatus     string
+	AssignedAdminID  uint64
 	StartDate        string
 	EndDate          string
 	HasPhone         *bool
@@ -193,6 +195,11 @@ type AdminQuoteInquiryListItem struct {
 	TotalMin         float64 `json:"totalMin"`
 	TotalMax         float64 `json:"totalMax"`
 	ConversionStatus string  `json:"conversionStatus"`
+	FollowStatus     string  `json:"followStatus"`
+	AssignedAdminID  uint64  `json:"assignedAdminId"`
+	NextFollowAt     string  `json:"nextFollowAt,omitempty"`
+	InvalidReason    string  `json:"invalidReason,omitempty"`
+	LastFollowedAt   string  `json:"lastFollowedAt,omitempty"`
 	Source           string  `json:"source"`
 	HasPhone         bool    `json:"hasPhone"`
 	CreatedAt        string  `json:"createdAt"`
@@ -207,6 +214,17 @@ type AdminQuoteInquiryDetail struct {
 	EstimatedDurationDays int          `json:"estimatedDurationDays"`
 	OpenID                string       `json:"openId,omitempty"`
 	UpdatedAt             string       `json:"updatedAt"`
+}
+
+type UpdateQuoteInquiryFollowUpInput struct {
+	FollowStatus    string
+	AssignedAdminID *uint64
+	NextFollowAt    *time.Time
+	InvalidReason   string
+	Notes           string
+	OperatorID      uint64
+	ClientIP        string
+	UserAgent       string
 }
 
 // CreateInquiry 创建询价记录并计算报价
@@ -256,6 +274,7 @@ func (s *QuoteInquiryService) CreateInquiry(req *CreateInquiryRequest) (*model.Q
 		MaterialFeeMax:        quoteResult.MaterialFee.Max,
 		EstimatedDurationDays: quoteResult.EstimatedDuration,
 		ConversionStatus:      "pending",
+		FollowStatus:          model.LeadFollowStatusPendingBooking,
 		Source:                normalizedReq.Source,
 	}
 
@@ -386,6 +405,104 @@ func (s *QuoteInquiryService) AdminListInquiries(filter AdminQuoteInquiryListFil
 	return items, total, nil
 }
 
+func (s *QuoteInquiryService) UpdateFollowUp(id uint64, input UpdateQuoteInquiryFollowUpInput) (*AdminQuoteInquiryDetail, error) {
+	if id == 0 {
+		return nil, errors.New("报价线索ID无效")
+	}
+
+	var updated model.QuoteInquiry
+	err := repository.DB.Transaction(func(tx *gorm.DB) error {
+		var inquiry model.QuoteInquiry
+		if err := tx.First(&inquiry, id).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errors.New("报价线索不存在")
+			}
+			return err
+		}
+
+		before := map[string]interface{}{
+			"followStatus":    inquiry.FollowStatus,
+			"assignedAdminId": inquiry.AssignedAdminID,
+			"nextFollowAt":    inquiry.NextFollowAt,
+			"invalidReason":   inquiry.InvalidReason,
+		}
+
+		updates := map[string]interface{}{}
+		if strings.TrimSpace(input.FollowStatus) != "" {
+			followStatus := model.NormalizeLeadFollowStatus(input.FollowStatus)
+			if followStatus == "" {
+				return errors.New("跟进状态无效")
+			}
+			if followStatus == model.LeadFollowStatusInvalid && strings.TrimSpace(input.InvalidReason) == "" && strings.TrimSpace(inquiry.InvalidReason) == "" {
+				return errors.New("无效线索必须填写无效原因")
+			}
+			updates["follow_status"] = followStatus
+			inquiry.FollowStatus = followStatus
+		}
+		if input.AssignedAdminID != nil {
+			updates["assigned_admin_id"] = *input.AssignedAdminID
+			inquiry.AssignedAdminID = *input.AssignedAdminID
+		}
+		if input.NextFollowAt != nil {
+			updates["next_follow_at"] = input.NextFollowAt
+			inquiry.NextFollowAt = input.NextFollowAt
+		}
+		if strings.TrimSpace(input.InvalidReason) != "" {
+			reason := strings.TrimSpace(input.InvalidReason)
+			if len([]rune(reason)) > 300 {
+				return errors.New("无效原因不能超过 300 字符")
+			}
+			updates["invalid_reason"] = reason
+			inquiry.InvalidReason = reason
+		}
+		if len(updates) == 0 && strings.TrimSpace(input.Notes) == "" {
+			return errors.New("没有可更新内容")
+		}
+		now := time.Now()
+		updates["last_followed_at"] = &now
+		updates["updated_at"] = now
+
+		if len(updates) > 0 {
+			if err := tx.Model(&model.QuoteInquiry{}).Where("id = ?", id).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+
+		after := map[string]interface{}{
+			"followStatus":    inquiry.FollowStatus,
+			"assignedAdminId": inquiry.AssignedAdminID,
+			"nextFollowAt":    inquiry.NextFollowAt,
+			"invalidReason":   inquiry.InvalidReason,
+			"notes":           strings.TrimSpace(input.Notes),
+		}
+		if err := (&AuditLogService{}).CreateBusinessRecordTx(tx, &CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    input.OperatorID,
+			OperationType: "quote_inquiry_follow_up",
+			ResourceType:  "quote_inquiry",
+			ResourceID:    id,
+			Reason:        firstNonEmpty(strings.TrimSpace(input.Notes), "更新报价线索跟进"),
+			Result:        "success",
+			BeforeState:   before,
+			AfterState:    after,
+			ClientIP:      input.ClientIP,
+			UserAgent:     input.UserAgent,
+		}); err != nil {
+			return err
+		}
+
+		if err := tx.First(&updated, id).Error; err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return buildAdminQuoteInquiryDetail(&updated, parseQuoteInquiryResult(&updated)), nil
+}
+
 // Calculate 计算报价
 func (s *QuoteInquiryService) Calculate(req *CreateInquiryRequest) (*QuoteResult, error) {
 	normalizedReq, _, err := normalizeCreateInquiryRequest(req)
@@ -445,6 +562,9 @@ func (s *QuoteInquiryService) getInquiryByID(id uint64) (*model.QuoteInquiry, er
 		}
 		return nil, fmt.Errorf("查询报价记录失败: %w", err)
 	}
+	if err := RestoreQuoteInquirySensitiveFields(&inquiry); err != nil {
+		return nil, fmt.Errorf("报价记录敏感信息解密失败: %w", err)
+	}
 	return &inquiry, nil
 }
 
@@ -493,6 +613,11 @@ func buildAdminQuoteInquiryListItem(inquiry *model.QuoteInquiry) AdminQuoteInqui
 		TotalMin:         inquiry.TotalMin,
 		TotalMax:         inquiry.TotalMax,
 		ConversionStatus: strings.TrimSpace(inquiry.ConversionStatus),
+		FollowStatus:     model.NormalizeLeadFollowStatus(inquiry.FollowStatus),
+		AssignedAdminID:  inquiry.AssignedAdminID,
+		NextFollowAt:     formatOptionalQuoteInquiryTime(inquiry.NextFollowAt),
+		InvalidReason:    strings.TrimSpace(inquiry.InvalidReason),
+		LastFollowedAt:   formatOptionalQuoteInquiryTime(inquiry.LastFollowedAt),
 		Source:           strings.TrimSpace(inquiry.Source),
 		HasPhone:         phone != "",
 		CreatedAt:        inquiry.CreatedAt.Format(quoteInquiryDateFormat),
@@ -565,6 +690,14 @@ func parseQuoteInquiryResult(inquiry *model.QuoteInquiry) *QuoteResult {
 func applyQuoteInquiryAdminFilters(query *gorm.DB, filter AdminQuoteInquiryListFilter) *gorm.DB {
 	if filter.ConversionStatus != "" {
 		query = query.Where("conversion_status = ?", strings.TrimSpace(filter.ConversionStatus))
+	}
+	if rawFollowStatus := strings.TrimSpace(filter.FollowStatus); rawFollowStatus != "" {
+		if followStatus := model.NormalizeLeadFollowStatus(rawFollowStatus); followStatus != "" {
+			query = query.Where("follow_status = ?", followStatus)
+		}
+	}
+	if filter.AssignedAdminID > 0 {
+		query = query.Where("assigned_admin_id = ?", filter.AssignedAdminID)
 	}
 
 	if cityFilter := strings.TrimSpace(quoteInquiryFirstNonEmpty(filter.City, filter.CityCode)); cityFilter != "" {
@@ -783,6 +916,13 @@ func parseQuoteInquiryDate(raw string) time.Time {
 		return time.Time{}
 	}
 	return parsed
+}
+
+func formatOptionalQuoteInquiryTime(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return ""
+	}
+	return value.Format(time.RFC3339)
 }
 
 func cloneUint64Pointer(value *uint64) *uint64 {

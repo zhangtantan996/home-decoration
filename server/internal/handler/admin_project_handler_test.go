@@ -11,6 +11,7 @@ import (
 
 	"home-decoration-server/internal/model"
 	"home-decoration-server/internal/repository"
+	"home-decoration-server/pkg/utils"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -34,6 +35,7 @@ func setupAdminProjectHandlerDB(t *testing.T) *gorm.DB {
 		&model.SupervisorAccount{},
 		&model.SupervisorProfile{},
 		&model.ProjectSupervisorAssignment{},
+		&model.QuoteInquiry{},
 	)
 
 	oldDB := repository.DB
@@ -145,6 +147,375 @@ func TestAdminCreateProjectPrefillsFromBookingAndWritesAudit(t *testing.T) {
 	}
 	if audit.Metadata == "" || audit.Metadata == "{}" {
 		t.Fatalf("expected audit metadata with creation source, got %q", audit.Metadata)
+	}
+}
+
+func TestAdminUpdateBookingStatusRequiresInvalidReason(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	booking := model.Booking{
+		Base:          model.Base{ID: 610},
+		UserID:        601,
+		ProviderID:    602,
+		ProviderType:  "company",
+		Address:       "西安市雁塔区科技路 99 号",
+		Area:          120,
+		PreferredDate: "2026-05-18",
+		Phone:         "13800138610",
+		Status:        1,
+		FollowStatus:  model.LeadFollowStatusPendingContact,
+		LeadQuality:   model.LeadQualityUnknown,
+	}
+	if err := db.Create(&booking).Error; err != nil {
+		t.Fatalf("create booking: %v", err)
+	}
+
+	body := []byte(`{"followStatus":"invalid"}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPatch, "/api/v1/admin/bookings/610/status", body, gin.Params{{Key: "id", Value: "610"}})
+
+	AdminUpdateBookingStatus(ctx)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected http status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var envelope struct {
+		Code int    `json:"code"`
+		Msg  string `json:"msg"`
+	}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if envelope.Code == 0 {
+		t.Fatalf("expected invalid lead without reason to be rejected")
+	}
+}
+
+func TestAdminUpdateBookingStatusEncryptsFollowUpNotes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	booking := model.Booking{
+		Base:          model.Base{ID: 611},
+		UserID:        601,
+		ProviderID:    602,
+		ProviderType:  "company",
+		Address:       "西安市雁塔区科技路 99 号",
+		Area:          120,
+		PreferredDate: "2026-05-18",
+		Phone:         "13800138611",
+		Status:        1,
+		FollowStatus:  model.LeadFollowStatusPendingContact,
+		LeadQuality:   model.LeadQualityUnknown,
+	}
+	if err := db.Create(&booking).Error; err != nil {
+		t.Fatalf("create booking: %v", err)
+	}
+
+	body := []byte(`{"notes":"业主晚上八点后方便接电话"}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPatch, "/api/v1/admin/bookings/611/status", body, gin.Params{{Key: "id", Value: "611"}})
+
+	AdminUpdateBookingStatus(ctx)
+	decodeHandlerEnvelope[any](t, recorder)
+
+	var raw struct {
+		Notes          string
+		NotesEncrypted string
+	}
+	if err := db.Table("bookings").
+		Select("notes, notes_encrypted").
+		Where("id = ?", booking.ID).
+		Scan(&raw).Error; err != nil {
+		t.Fatalf("scan booking notes: %v", err)
+	}
+	if raw.NotesEncrypted == "" || raw.Notes == "业主晚上八点后方便接电话" {
+		t.Fatalf("expected follow-up notes encrypted at rest, got %+v", raw)
+	}
+}
+
+func TestAdminGetBookingRestoresEncryptedFollowUpNotes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	encryptedNotes, err := utils.Encrypt("业主晚上八点后方便接电话")
+	if err != nil {
+		t.Fatalf("encrypt notes: %v", err)
+	}
+	booking := model.Booking{
+		Base:           model.Base{ID: 612},
+		UserID:         601,
+		ProviderID:     602,
+		ProviderType:   "company",
+		Address:        "西安市雁塔区科技路 99 号",
+		Area:           120,
+		PreferredDate:  "2026-05-18",
+		Phone:          "13800138612",
+		Notes:          "[encrypted]",
+		NotesEncrypted: encryptedNotes,
+		Status:         1,
+		FollowStatus:   model.LeadFollowStatusPendingContact,
+		LeadQuality:    model.LeadQualityUnknown,
+	}
+	if err := db.Create(&booking).Error; err != nil {
+		t.Fatalf("create booking: %v", err)
+	}
+
+	ctx, recorder := newAdminJSONContext(http.MethodGet, "/api/v1/admin/bookings/612", nil, gin.Params{{Key: "id", Value: "612"}})
+
+	AdminGetBooking(ctx)
+
+	data := decodeHandlerEnvelope[map[string]any](t, recorder)
+	if data["notes"] != "业主晚上八点后方便接电话" {
+		t.Fatalf("expected decrypted notes in detail, got %#v", data["notes"])
+	}
+}
+
+func TestAdminConvertBookingToProjectBackfillsBookingLeadStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	owner := model.User{Base: model.Base{ID: 621}, Phone: "13800138621", Status: 1, Nickname: "预约业主"}
+	provider := model.Provider{Base: model.Base{ID: 622}, ProviderType: 2, CompanyName: "预约装修公司"}
+	booking := model.Booking{
+		Base:          model.Base{ID: 623},
+		UserID:        owner.ID,
+		ProviderID:    provider.ID,
+		ProviderType:  "company",
+		Address:       "西安市雁塔区丈八东路 88 号",
+		Area:          108,
+		PreferredDate: "2026-05-18",
+		Phone:         "13800138623",
+		Status:        1,
+		FollowStatus:  model.LeadFollowStatusInterested,
+		LeadQuality:   model.LeadQualityHighIntent,
+	}
+	for _, record := range []any{&owner, &provider, &booking} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	body := []byte(`{
+		"name": "预约转项目",
+		"coverImage": "/uploads/projects/booking-convert-cover.png",
+		"budget": 188000,
+		"materialMethod": "platform",
+		"entryStartDate": "2026-05-20",
+		"entryEndDate": "2026-05-30"
+	}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPost, "/api/v1/admin/bookings/623/convert-project", body, gin.Params{{Key: "id", Value: "623"}})
+
+	AdminConvertBookingToProject(ctx)
+
+	data := decodeHandlerEnvelope[map[string]any](t, recorder)
+	projectID, ok := data["id"].(float64)
+	if !ok || projectID <= 0 {
+		t.Fatalf("expected created project id, got %#v", data["id"])
+	}
+	var updated model.Booking
+	if err := db.First(&updated, booking.ID).Error; err != nil {
+		t.Fatalf("load updated booking: %v", err)
+	}
+	if updated.ConvertedProjectID != uint64(projectID) || updated.FollowStatus != model.LeadFollowStatusConvertedProject {
+		t.Fatalf("expected booking converted to project, got convertedProjectId=%d followStatus=%q", updated.ConvertedProjectID, updated.FollowStatus)
+	}
+	var audit model.AuditLog
+	if err := db.Where("operation_type = ? AND resource_id = ?", "booking_convert_project", booking.ID).First(&audit).Error; err != nil {
+		t.Fatalf("expected booking convert audit: %v", err)
+	}
+}
+
+func TestAdminConvertBookingToProjectRestoresEncryptedBookingAddress(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	owner := model.User{Base: model.Base{ID: 631}, Phone: "13800138631", Status: 1, Nickname: "加密预约业主"}
+	provider := model.Provider{Base: model.Base{ID: 632}, ProviderType: 2, CompanyName: "加密预约装修公司"}
+	encryptedAddress, err := utils.Encrypt("西安市雁塔区真实地址 100 号")
+	if err != nil {
+		t.Fatalf("encrypt address: %v", err)
+	}
+	booking := model.Booking{
+		Base:             model.Base{ID: 633},
+		UserID:           owner.ID,
+		ProviderID:       provider.ID,
+		ProviderType:     "company",
+		Address:          "西安市***号",
+		AddressEncrypted: encryptedAddress,
+		Area:             108,
+		PreferredDate:    "2026-05-18",
+		Phone:            "13800138633",
+		Status:           1,
+		FollowStatus:     model.LeadFollowStatusInterested,
+		LeadQuality:      model.LeadQualityHighIntent,
+	}
+	for _, record := range []any{&owner, &provider, &booking} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	body := []byte(`{
+		"name": "加密预约转项目",
+		"coverImage": "/uploads/projects/booking-encrypted-cover.png",
+		"budget": 188000,
+		"materialMethod": "platform",
+		"entryStartDate": "2026-05-20",
+		"entryEndDate": "2026-05-30"
+	}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPost, "/api/v1/admin/bookings/633/convert-project", body, gin.Params{{Key: "id", Value: "633"}})
+
+	AdminConvertBookingToProject(ctx)
+
+	data := decodeHandlerEnvelope[map[string]any](t, recorder)
+	if data["address"] != "西安市雁塔区真实地址 100 号" {
+		t.Fatalf("expected converted project to use decrypted booking address, got %#v", data["address"])
+	}
+}
+
+func TestAdminConvertQuoteInquiryToBookingRejectsMissingOwnerWithoutOrphanBooking(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	inquiry := model.QuoteInquiry{
+		Base:           model.Base{ID: 701},
+		Phone:          "13800138701",
+		Address:        "西安市雁塔区科技路 101 号",
+		Area:           98,
+		HouseLayout:    "三室两厅",
+		RenovationType: "新房装修",
+		BudgetRange:    "15-20万",
+		FollowStatus:   model.LeadFollowStatusPendingBooking,
+	}
+	provider := model.Provider{Base: model.Base{ID: 702}, ProviderType: 2, CompanyName: "报价转化装修公司"}
+	for _, record := range []any{&inquiry, &provider} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	body := []byte(`{
+		"ownerId": 799,
+		"providerId": 702,
+		"providerType": "company",
+		"preferredDate": "2026-05-20"
+	}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPost, "/api/v1/admin/quote-inquiries/701/convert-booking", body, gin.Params{{Key: "id", Value: "701"}})
+
+	AdminConvertQuoteInquiryToBooking(ctx)
+
+	if recorder.Code != http.StatusBadRequest {
+		t.Fatalf("unexpected http status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var bookingCount int64
+	if err := db.Model(&model.Booking{}).Where("source_type = ? AND source_id = ?", "quote_inquiry", inquiry.ID).Count(&bookingCount).Error; err != nil {
+		t.Fatalf("count bookings: %v", err)
+	}
+	if bookingCount != 0 {
+		t.Fatalf("expected no orphan booking, got %d", bookingCount)
+	}
+}
+
+func TestAdminConvertQuoteInquiryToBookingIsAtomicAndBackfillsSource(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	owner := model.User{Base: model.Base{ID: 711}, Phone: "13800138711", Status: 1, Nickname: "报价业主"}
+	provider := model.Provider{Base: model.Base{ID: 712}, ProviderType: 2, CompanyName: "报价转化装修公司"}
+	inquiry := model.QuoteInquiry{
+		Base:           model.Base{ID: 713},
+		UserID:         &owner.ID,
+		Phone:          "13800138713",
+		Address:        "西安市雁塔区科技路 102 号",
+		Area:           118,
+		HouseLayout:    "三室两厅",
+		RenovationType: "旧房翻新",
+		BudgetRange:    "20-30万",
+		FollowStatus:   model.LeadFollowStatusPendingBooking,
+	}
+	for _, record := range []any{&owner, &provider, &inquiry} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	body := []byte(`{
+		"providerId": 712,
+		"providerType": "company",
+		"preferredDate": "2026-05-20",
+		"notes": "报价线索已电话确认"
+	}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPost, "/api/v1/admin/quote-inquiries/713/convert-booking", body, gin.Params{{Key: "id", Value: "713"}})
+
+	AdminConvertQuoteInquiryToBooking(ctx)
+
+	data := decodeHandlerEnvelope[map[string]any](t, recorder)
+	bookingID, ok := data["id"].(float64)
+	if !ok || bookingID <= 0 {
+		t.Fatalf("expected created booking id, got %#v", data["id"])
+	}
+
+	var booking model.Booking
+	if err := db.First(&booking, uint64(bookingID)).Error; err != nil {
+		t.Fatalf("load booking: %v", err)
+	}
+	if booking.SourceType != "quote_inquiry" || booking.SourceID != inquiry.ID || booking.UserID != owner.ID {
+		t.Fatalf("expected booking source backfilled, got sourceType=%q sourceId=%d owner=%d", booking.SourceType, booking.SourceID, booking.UserID)
+	}
+	var updated model.QuoteInquiry
+	if err := db.First(&updated, inquiry.ID).Error; err != nil {
+		t.Fatalf("load inquiry: %v", err)
+	}
+	if updated.ConvertedToBookingID == nil || *updated.ConvertedToBookingID != booking.ID || updated.FollowStatus != model.LeadFollowStatusConvertedBooking {
+		t.Fatalf("expected quote inquiry converted, got converted=%v followStatus=%q", updated.ConvertedToBookingID, updated.FollowStatus)
+	}
+}
+
+func TestAdminConvertQuoteInquiryToBookingRestoresEncryptedContactFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := setupAdminProjectHandlerDB(t)
+
+	owner := model.User{Base: model.Base{ID: 721}, Phone: "13800138721", Status: 1, Nickname: "加密报价业主"}
+	provider := model.Provider{Base: model.Base{ID: 722}, ProviderType: 2, CompanyName: "加密报价装修公司"}
+	encryptedPhone, err := utils.Encrypt("13800138723")
+	if err != nil {
+		t.Fatalf("encrypt phone: %v", err)
+	}
+	encryptedAddress, err := utils.Encrypt("西安市雁塔区报价真实地址 102 号")
+	if err != nil {
+		t.Fatalf("encrypt address: %v", err)
+	}
+	inquiry := model.QuoteInquiry{
+		Base:             model.Base{ID: 723},
+		UserID:           &owner.ID,
+		Phone:            "138****8723",
+		PhoneEncrypted:   encryptedPhone,
+		Address:          "西安市***号",
+		AddressEncrypted: encryptedAddress,
+		Area:             118,
+		HouseLayout:      "三室两厅",
+		RenovationType:   "旧房翻新",
+		BudgetRange:      "20-30万",
+		FollowStatus:     model.LeadFollowStatusPendingBooking,
+	}
+	for _, record := range []any{&owner, &provider, &inquiry} {
+		if err := db.Create(record).Error; err != nil {
+			t.Fatalf("seed record: %v", err)
+		}
+	}
+
+	body := []byte(`{
+		"providerId": 722,
+		"providerType": "company",
+		"preferredDate": "2026-05-20"
+	}`)
+	ctx, recorder := newAdminJSONContext(http.MethodPost, "/api/v1/admin/quote-inquiries/723/convert-booking", body, gin.Params{{Key: "id", Value: "723"}})
+
+	AdminConvertQuoteInquiryToBooking(ctx)
+
+	data := decodeHandlerEnvelope[map[string]any](t, recorder)
+	if data["phone"] != "13800138723" || data["address"] != "西安市雁塔区报价真实地址 102 号" {
+		t.Fatalf("expected converted booking to use decrypted contact fields, got phone=%#v address=%#v", data["phone"], data["address"])
 	}
 }
 

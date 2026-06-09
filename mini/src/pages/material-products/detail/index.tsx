@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Image, Swiper, SwiperItem, Text, View } from '@tarojs/components';
-import Taro, { useRouter } from '@tarojs/taro';
+import Taro, { useRouter, useShareAppMessage, useShareTimeline } from '@tarojs/taro';
 
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
@@ -68,6 +68,20 @@ const MaterialProductDetailPage: React.FC = () => {
   const product = useMemo(() => getMaterialProductById(shop, productId), [productId, shop]);
   const productImages = useMemo(() => (product ? getMaterialProductImages(product) : []), [product]);
   const specRows = useMemo(() => (product ? getMaterialProductSpecRows(product) : []), [product]);
+
+  useShareAppMessage(() => ({
+    title: product?.name ? `${product.name}｜主材商品` : '主材商品详情',
+    path: `/pages/material-products/detail/index?shopId=${shopId}&productId=${productId}`,
+    imageUrl: productImages[0] || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: product?.name ? `${product.name}｜主材商品` : '主材商品详情',
+    query: shopId && productId
+      ? `shopId=${encodeURIComponent(String(shopId))}&productId=${encodeURIComponent(String(productId))}`
+      : '',
+    imageUrl: productImages[0] || undefined,
+  }));
 
   useEffect(() => {
     setCurrentImageIndex(0);

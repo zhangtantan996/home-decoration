@@ -16,11 +16,13 @@ import { useAuthStore } from '../stores/authStore';
 import {
   listBookings,
   listCases,
+  listQuoteInquiries,
   listMaterialShops,
   listProviders,
   showApiError,
   type BookingItem,
   type CaseItem,
+  type QuoteInquiryItem,
   type MaterialShopItem,
   type ProviderItem,
 } from '../services/api';
@@ -32,6 +34,7 @@ interface DashboardState {
   shops: MaterialShopItem[];
   cases: CaseItem[];
   bookings: BookingItem[];
+  quoteInquiries: QuoteInquiryItem[];
 }
 
 const emptyState: DashboardState = {
@@ -41,6 +44,7 @@ const emptyState: DashboardState = {
   shops: [],
   cases: [],
   bookings: [],
+  quoteInquiries: [],
 };
 
 const DashboardPage = () => {
@@ -53,13 +57,14 @@ const DashboardPage = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const [designers, foremen, companies, shops, cases, bookings] = await Promise.all([
+        const [designers, foremen, companies, shops, cases, bookings, quoteInquiries] = await Promise.all([
           listProviders('designer'),
           listProviders('foreman'),
           listProviders('company'),
           listMaterialShops(),
           listCases(),
-          listBookings(),
+          listBookings({ page: 1, pageSize: 200 }),
+          listQuoteInquiries({ page: 1, pageSize: 200 }),
         ]);
         setState({
           designers: designers.list,
@@ -68,6 +73,7 @@ const DashboardPage = () => {
           shops: shops.list,
           cases: cases.list,
           bookings: bookings.list,
+          quoteInquiries: quoteInquiries.list,
         });
       } catch (error) {
         showApiError(error, '工作台加载失败');
@@ -79,46 +85,58 @@ const DashboardPage = () => {
   }, []);
 
   const supply = [...state.designers, ...state.foremen, ...state.companies, ...state.shops];
-  const onlineCount = supply.filter((item) => item.status !== 0).length;
-  const offlineCount = Math.max(0, supply.length - onlineCount);
-  const pendingBookings = state.bookings.filter((item) => !item.status || item.status === 1).length;
+  const leads = [...state.bookings, ...state.quoteInquiries];
+  const pendingBookings = leads.filter((item) => ['pending_contact', 'pending_booking', undefined, ''].includes(String(item.followStatus || ''))).length;
+  const interestedLeads = leads.filter((item) => item.followStatus === 'interested').length;
+  const convertedLeads = leads.filter((item) => item.followStatus === 'converted_project' || item.followStatus === 'converted_booking').length;
+  const invalidLeads = leads.filter((item) => item.followStatus === 'invalid').length;
+  const overdueLeads = leads.filter((item) => {
+    if (!item.nextFollowAt) return false;
+    const date = new Date(item.nextFollowAt);
+    return Number.isFinite(date.getTime()) && date.getTime() < Date.now();
+  }).length;
+  const invalidRate = leads.length ? `${((invalidLeads / leads.length) * 100).toFixed(1)}%` : '0.0%';
   const visibleCases = state.cases.filter((item) => item.showInInspiration !== false).length;
   const nickname = user?.nickname || user?.username || '超级管理员';
 
   const statCards = [
     {
       key: 'total',
-      label: '商家总数',
-      value: supply.length,
-      changeLabel: '较昨日',
-      changeValue: '—',
+      label: '线索总量',
+      value: leads.length,
+      changeLabel: '今日新增',
+      changeValue: String(leads.filter((item) => {
+        if (!item.createdAt) return false;
+        const date = new Date(item.createdAt);
+        return Number.isFinite(date.getTime()) && date.toDateString() === new Date().toDateString();
+      }).length),
       changeTone: 'neutral',
       tone: 'blue',
       icon: <UserAddOutlined />,
     },
     {
       key: 'online',
-      label: '已上线',
-      value: onlineCount,
-      changeLabel: '较昨日',
-      changeValue: '—',
+      label: '有意向',
+      value: interestedLeads,
+      changeLabel: '已转化',
+      changeValue: String(convertedLeads),
       changeTone: 'positive',
       tone: 'green',
       icon: <CheckCircleOutlined />,
     },
     {
       key: 'offline',
-      label: '已下线',
-      value: offlineCount,
-      changeLabel: '较昨日',
-      changeValue: '—',
+      label: '超时未跟进',
+      value: overdueLeads,
+      changeLabel: '无效率',
+      changeValue: invalidRate,
       changeTone: 'negative',
       tone: 'red',
       icon: <AppstoreOutlined />,
     },
     {
       key: 'booking',
-      label: '待联系预约',
+      label: '待联系线索',
       value: pendingBookings,
       changeLabel: '较昨日',
       changeValue: '—',
@@ -170,8 +188,8 @@ const DashboardPage = () => {
   const todoItems = [
     {
       key: 'bookings',
-      title: '预约待联系',
-      description: '需要运营线下联系与备注',
+      title: '线索待联系',
+      description: '预约和智能报价都需要运营跟进',
       value: pendingBookings,
       icon: <UserAddOutlined />,
       tone: 'red',

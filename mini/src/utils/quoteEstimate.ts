@@ -153,7 +153,7 @@ export const calculateQuoteEstimate = (
   return {
     minTotal,
     maxTotal,
-    summary: `按 ${input.area}㎡ · ${input.renovationType} 的常见成交区间估算，当前需求更适合先锁定方案方向，再进入正式报价。`,
+    summary: `按 ${input.area}㎡ · ${input.renovationType} 的常见预算区间估算，结果仅供参考，最终以线下沟通确认为准。`,
     budgetHint: resolveBudgetHint(
       budgetRule.min,
       budgetRule.max,

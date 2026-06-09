@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // BookingService 预约服务
@@ -17,6 +19,8 @@ type BookingService struct{}
 // configSvc 配置服务实例
 var configSvc = &ConfigService{}
 var businessFlowSvc = &BusinessFlowService{}
+
+const defaultSurveyRefundNotice = "量房完成后若不继续设计，默认退回 60% 给用户，剩余 40% 冻结待平台判定；若后续确认设计方案，量房费转为设计费的一部分。"
 
 // CreateBookingRequest 创建预约请求
 type CreateBookingRequest struct {
@@ -34,59 +38,88 @@ type CreateBookingRequest struct {
 
 // Create 创建预约
 func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*model.Booking, error) {
+	booking, provider, err := s.createWithDB(repository.DB, userID, req)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := businessFlowSvc.EnsureLeadFlow(nil, model.BusinessFlowSourceBooking, booking.ID, userID, req.ProviderID); err != nil {
+		log.Printf("[business_flow] ensure booking flow failed: %v", err)
+	}
+	if provider != nil && provider.UserID > 0 {
+		if err := (&NotificationService{}).NotifyBookingCreated(booking, provider.UserID); err != nil {
+			log.Printf("[booking] notify provider booking created failed: %v", err)
+		}
+	}
+
+	return booking, nil
+}
+
+// CreateTx 在外部事务内创建预约，仅写主数据，不触发通知等事务外副作用。
+func (s *BookingService) CreateTx(tx *gorm.DB, userID uint64, req *CreateBookingRequest) (*model.Booking, error) {
+	booking, _, err := s.createWithDB(tx, userID, req)
+	return booking, err
+}
+
+func (s *BookingService) createWithDB(db *gorm.DB, userID uint64, req *CreateBookingRequest) (*model.Booking, *model.Provider, error) {
+	if db == nil {
+		db = repository.DB
+	}
 	req.ProviderType = normalizeLightBookingProviderType(req.ProviderType)
 	if !isLightBookingProviderTypeAllowed(req.ProviderType) {
-		return nil, errors.New("当前仅支持预约设计师和装修公司")
+		return nil, nil, errors.New("当前仅支持预约设计师和装修公司")
 	}
 	normalizeCreateBookingRequest(req)
 	// 输入校验
 	addressLen := len([]rune(req.Address))
 	if addressLen < 5 || addressLen > 100 {
-		return nil, errors.New("地址长度需在 5-100 字符之间")
+		return nil, nil, errors.New("地址长度需在 5-100 字符之间")
 	}
 	if req.Area < residentialAreaMin || req.Area > residentialAreaMax {
-		return nil, errors.New("房屋面积需在 10-2000 ㎡ 之间")
+		return nil, nil, errors.New("房屋面积需在 10-2000 ㎡ 之间")
 	}
 	if !utils.ValidatePhone(req.Phone) {
-		return nil, errors.New("请输入有效手机号")
+		return nil, nil, errors.New("请输入有效手机号")
 	}
 	if !isValidPreferredDateText(req.PreferredDate) {
-		return nil, errors.New("请选择有效预约时间")
+		return nil, nil, errors.New("请选择有效预约时间")
 	}
 	if len([]rune(req.RenovationType)) > 30 {
-		return nil, errors.New("装修类型不能超过 30 字符")
+		return nil, nil, errors.New("装修类型不能超过 30 字符")
 	}
 	if len([]rune(req.BudgetRange)) > 40 {
-		return nil, errors.New("预算范围不能超过 40 字符")
+		return nil, nil, errors.New("预算范围不能超过 40 字符")
 	}
 	if len([]rune(req.HouseLayout)) > 30 {
-		return nil, errors.New("户型不能超过 30 字符")
+		return nil, nil, errors.New("户型不能超过 30 字符")
 	}
 	if len([]rune(req.Notes)) > 500 {
-		return nil, errors.New("补充说明不能超过 500 字符")
+		return nil, nil, errors.New("补充说明不能超过 500 字符")
 	}
 
 	// 获取量房费金额：服务商自定义 > 平台默认
-	surveyDepositAmount, err := configSvc.GetSurveyDepositDefault()
+	surveyDepositAmount, err := configSvc.GetSurveyDepositDefaultTx(db)
 	if err != nil {
 		surveyDepositAmount = 99
 	}
 	surveyDepositSource := "system_default"
 	var provider model.Provider
-	if err := repository.DB.First(&provider, req.ProviderID).Error; err != nil {
-		return nil, errors.New("服务商不存在")
+	if err := db.First(&provider, req.ProviderID).Error; err != nil {
+		return nil, nil, errors.New("服务商不存在")
 	}
 	if provider.ProviderType > 0 && normalizeLightBookingProviderTypeCode(provider.ProviderType) != req.ProviderType {
-		return nil, errors.New("预约对象类型不匹配")
+		return nil, nil, errors.New("预约对象类型不匹配")
 	}
 	if !isLightBookingProviderTypeAllowed(normalizeLightBookingProviderTypeCode(provider.ProviderType)) {
-		return nil, errors.New("当前仅支持预约设计师和装修公司")
+		return nil, nil, errors.New("当前仅支持预约设计师和装修公司")
 	}
 	if provider.SurveyDepositPrice > 0 {
 		surveyDepositAmount = provider.SurveyDepositPrice
 		surveyDepositSource = "provider_override"
 	}
-	surveyRefundNotice := configSvc.GetSurveyRefundNotice()
+	surveyRefundNotice := defaultSurveyRefundNotice
+	if db == repository.DB {
+		surveyRefundNotice = configSvc.GetSurveyRefundNotice()
+	}
 
 	booking := &model.Booking{
 		UserID:              userID,
@@ -101,6 +134,9 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 		Notes:               req.Notes,
 		HouseLayout:         req.HouseLayout,
 		Status:              1,
+		FollowStatus:        model.LeadFollowStatusPendingContact,
+		LeadQuality:         model.LeadQualityUnknown,
+		SourceType:          "mini_booking",
 		IntentFee:           surveyDepositAmount, // 兼容镜像字段
 		IntentFeePaid:       false,               // 兼容镜像字段
 		SurveyDeposit:       surveyDepositAmount,
@@ -113,25 +149,17 @@ func (s *BookingService) Create(userID uint64, req *CreateBookingRequest) (*mode
 	plainNotes := booking.Notes
 
 	if err := encryptBookingSensitiveFields(booking); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	if err := repository.DB.Create(booking).Error; err != nil {
-		return nil, err
+	if err := db.Create(booking).Error; err != nil {
+		return nil, nil, err
 	}
 	booking.Address = plainAddress
 	booking.Phone = plainPhone
 	booking.Notes = plainNotes
-	if _, err := businessFlowSvc.EnsureLeadFlow(nil, model.BusinessFlowSourceBooking, booking.ID, userID, req.ProviderID); err != nil {
-		log.Printf("[business_flow] ensure booking flow failed: %v", err)
-	}
-	if provider.UserID > 0 {
-		if err := (&NotificationService{}).NotifyBookingCreated(booking, provider.UserID); err != nil {
-			log.Printf("[booking] notify provider booking created failed: %v", err)
-		}
-	}
 
-	return booking, nil
+	return booking, &provider, nil
 }
 
 func normalizeCreateBookingRequest(req *CreateBookingRequest) {

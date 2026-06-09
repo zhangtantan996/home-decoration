@@ -26,6 +26,7 @@ import ReauthModal from '../components/ReauthModal';
 import RequiredLabel from '../components/RequiredLabel';
 import {
   assignSupervisor,
+  convertBookingToProject,
   createProject,
   getBooking,
   getProject,
@@ -584,7 +585,9 @@ const ProjectsPage = () => {
         payload.enabledPhaseTypes = Array.from(new Set([...REQUIRED_PHASE_TYPES, ...selectedPhases]));
       }
       if (drawerMode === 'create') {
-        const created = await createProject(payload);
+        const created = prefillBooking?.id
+          ? await convertBookingToProject(prefillBooking.id, payload)
+          : await createProject(payload);
         if (values.initialSupervisorId && created?.id) {
           setSecureAction({
             type: 'assign',

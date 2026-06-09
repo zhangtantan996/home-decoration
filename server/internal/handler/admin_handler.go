@@ -2419,6 +2419,15 @@ func AdminListBookings(c *gin.Context) {
 	page := parseInt(c.Query("page"), 1)
 	pageSize := parseInt(c.Query("pageSize"), 10)
 	status := c.Query("status")
+	followStatus := ""
+	if rawFollowStatus := strings.TrimSpace(c.Query("followStatus")); rawFollowStatus != "" {
+		followStatus = model.NormalizeLeadFollowStatus(rawFollowStatus)
+	}
+	assignedAdminID := parseUint64(c.Query("assignedAdminId"))
+	sourceType := strings.TrimSpace(c.Query("sourceType"))
+	keyword := strings.TrimSpace(c.Query("keyword"))
+	startDate := parseAdminDateOnly(c.Query("startDate"))
+	endDate := parseAdminDateOnly(c.Query("endDate"))
 
 	var bookings []model.Booking
 	var total int64
@@ -2427,15 +2436,54 @@ func AdminListBookings(c *gin.Context) {
 	if status != "" {
 		db = db.Where("status = ?", status)
 	}
+	if followStatus != "" {
+		db = db.Where("follow_status = ?", followStatus)
+	}
+	if assignedAdminID > 0 {
+		db = db.Where("assigned_admin_id = ?", assignedAdminID)
+	}
+	if sourceType != "" {
+		db = db.Where("source_type = ?", sourceType)
+	}
+	if keyword != "" {
+		like := "%" + keyword + "%"
+		db = db.Where(`(
+			CAST(id AS TEXT) LIKE ? OR
+			CAST(user_id AS TEXT) LIKE ? OR
+			CAST(provider_id AS TEXT) LIKE ? OR
+			address LIKE ? OR
+			phone LIKE ? OR
+			notes LIKE ? OR
+			budget_range LIKE ?
+		)`, like, like, like, like, like, like, like)
+	}
+	if !startDate.IsZero() {
+		db = db.Where("created_at >= ?", startDate)
+	}
+	if !endDate.IsZero() {
+		db = db.Where("created_at < ?", endDate.Add(24*time.Hour))
+	}
 
 	db.Count(&total)
 	db.Offset((page - 1) * pageSize).Limit(pageSize).Order("id DESC").Find(&bookings)
+	adminNames := loadSysAdminNamesForBookings(bookings)
 	for i := range bookings {
 		bookings[i].Phone = maskPhoneValue(bookings[i].Phone)
 	}
+	type bookingLeadItem struct {
+		model.Booking
+		AssignedAdminName string `json:"assignedAdminName,omitempty"`
+	}
+	items := make([]bookingLeadItem, 0, len(bookings))
+	for _, booking := range bookings {
+		items = append(items, bookingLeadItem{
+			Booking:           booking,
+			AssignedAdminName: adminNames[booking.AssignedAdminID],
+		})
+	}
 
 	response.Success(c, gin.H{
-		"list":  bookings,
+		"list":  items,
 		"total": total,
 	})
 }
@@ -2452,6 +2500,10 @@ func AdminGetBooking(c *gin.Context) {
 		response.NotFound(c, "预约不存在")
 		return
 	}
+	if err := service.RestoreBookingSensitiveFields(&booking); err != nil {
+		response.ServerError(c, "预约敏感信息解密失败")
+		return
+	}
 	booking.Phone = visiblePhoneForAdmin(c, booking.Phone)
 	response.Success(c, booking)
 }
@@ -2460,11 +2512,23 @@ func AdminGetBooking(c *gin.Context) {
 func AdminUpdateBookingStatus(c *gin.Context) {
 	id := c.Param("id")
 	var req struct {
-		Status *int8   `json:"status"`
-		Notes  *string `json:"notes"`
+		Status             *int8   `json:"status"`
+		FollowStatus       string  `json:"followStatus"`
+		LeadQuality        string  `json:"leadQuality"`
+		AssignedAdminID    *uint64 `json:"assignedAdminId"`
+		NextFollowAt       string  `json:"nextFollowAt"`
+		InvalidReason      string  `json:"invalidReason"`
+		ConvertedProjectID *uint64 `json:"convertedProjectId"`
+		Notes              *string `json:"notes"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		response.BadRequest(c, "参数错误")
+		return
+	}
+
+	var booking model.Booking
+	if err := repository.DB.First(&booking, id).Error; err != nil {
+		response.NotFound(c, "预约不存在")
 		return
 	}
 
@@ -2476,19 +2540,232 @@ func AdminUpdateBookingStatus(c *gin.Context) {
 		}
 		updates["status"] = *req.Status
 	}
+	if strings.TrimSpace(req.FollowStatus) != "" {
+		followStatus := model.NormalizeLeadFollowStatus(req.FollowStatus)
+		if followStatus == "" {
+			response.BadRequest(c, "跟进状态无效")
+			return
+		}
+		if followStatus == model.LeadFollowStatusInvalid && strings.TrimSpace(req.InvalidReason) == "" && strings.TrimSpace(booking.InvalidReason) == "" {
+			response.BadRequest(c, "无效线索必须填写无效原因")
+			return
+		}
+		if followStatus == model.LeadFollowStatusConvertedProject && booking.ConvertedProjectID == 0 && (req.ConvertedProjectID == nil || *req.ConvertedProjectID == 0) {
+			response.BadRequest(c, "已转项目必须关联项目")
+			return
+		}
+		updates["follow_status"] = followStatus
+	}
+	if strings.TrimSpace(req.LeadQuality) != "" {
+		leadQuality := model.NormalizeLeadQuality(req.LeadQuality)
+		if leadQuality == "" {
+			response.BadRequest(c, "线索质量无效")
+			return
+		}
+		updates["lead_quality"] = leadQuality
+	}
+	if req.AssignedAdminID != nil {
+		updates["assigned_admin_id"] = *req.AssignedAdminID
+	}
+	if trimmed := strings.TrimSpace(req.NextFollowAt); trimmed != "" {
+		parsed, err := parseAdminDateTime(trimmed)
+		if err != nil {
+			response.BadRequest(c, "下次跟进时间格式无效")
+			return
+		}
+		updates["next_follow_at"] = &parsed
+	}
+	if strings.TrimSpace(req.InvalidReason) != "" {
+		invalidReason := strings.TrimSpace(req.InvalidReason)
+		if len([]rune(invalidReason)) > 300 {
+			response.BadRequest(c, "无效原因不能超过 300 字符")
+			return
+		}
+		updates["invalid_reason"] = invalidReason
+	}
+	if req.ConvertedProjectID != nil {
+		updates["converted_project_id"] = *req.ConvertedProjectID
+	}
 	if req.Notes != nil {
-		updates["notes"] = strings.TrimSpace(*req.Notes)
+		notes, notesEncrypted, err := service.PrepareBookingNotesForStorage(*req.Notes)
+		if err != nil {
+			response.BadRequest(c, err.Error())
+			return
+		}
+		updates["notes"] = notes
+		updates["notes_encrypted"] = notesEncrypted
 	}
 	if len(updates) == 0 {
 		response.BadRequest(c, "没有可更新内容")
 		return
 	}
+	now := time.Now()
+	updates["last_followed_at"] = &now
 
 	if err := repository.DB.Model(&model.Booking{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		response.ServerError(c, "更新失败")
 		return
 	}
 	response.Success(c, nil)
+}
+
+func AdminConvertBookingToProject(c *gin.Context) {
+	bookingID := parseUint64(c.Param("id"))
+	if bookingID == 0 {
+		response.BadRequest(c, "无效预约ID")
+		return
+	}
+	var req struct {
+		Reason string `json:"reason"`
+		service.CreateProjectRequest
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "参数错误")
+		return
+	}
+	if strings.TrimSpace(req.MaterialMethod) == "" {
+		req.MaterialMethod = "platform"
+	}
+	coverImage, err := requireNonEmptyLocalAssetReference("项目背景图", req.CoverImage)
+	if err != nil {
+		response.BadRequest(c, err.Error())
+		return
+	}
+	req.CoverImage = coverImage
+
+	var booking model.Booking
+	if err := repository.DB.First(&booking, bookingID).Error; err != nil {
+		response.NotFound(c, "预约不存在")
+		return
+	}
+	if booking.ConvertedProjectID > 0 {
+		response.BadRequest(c, "该预约已转项目")
+		return
+	}
+	if err := service.RestoreBookingSensitiveFields(&booking); err != nil {
+		response.ServerError(c, "预约敏感信息解密失败")
+		return
+	}
+	if req.OwnerID == 0 {
+		req.OwnerID = booking.UserID
+	}
+	if req.ProviderID == 0 {
+		req.ProviderID = booking.ProviderID
+	}
+	if strings.TrimSpace(req.Name) == "" {
+		req.Name = strings.TrimSpace(booking.Address) + "装修项目"
+	}
+	if strings.TrimSpace(req.Address) == "" {
+		req.Address = booking.Address
+	}
+	if req.Area <= 0 {
+		req.Area = booking.Area
+	}
+	if strings.TrimSpace(req.EntryStartDate) == "" {
+		req.EntryStartDate = strings.TrimSpace(booking.PreferredDate)
+	}
+
+	var project *model.Project
+	err = repository.DB.Transaction(func(tx *gorm.DB) error {
+		created, err := adminProjectService.CreateProjectTx(tx, &req.CreateProjectRequest)
+		if err != nil {
+			return err
+		}
+		project = created
+		now := time.Now()
+		if err := tx.Model(&model.Booking{}).Where("id = ?", booking.ID).Updates(map[string]interface{}{
+			"converted_project_id": project.ID,
+			"follow_status":        model.LeadFollowStatusConvertedProject,
+			"status":               int8(3),
+			"last_followed_at":     &now,
+			"updated_at":           now,
+		}).Error; err != nil {
+			return err
+		}
+		return (&service.AuditLogService{}).CreateBusinessRecordTx(tx, &service.CreateAuditRecordInput{
+			OperatorType:  "admin",
+			OperatorID:    c.GetUint64("adminId"),
+			OperationType: "booking_convert_project",
+			ResourceType:  "booking",
+			ResourceID:    booking.ID,
+			Reason:        readAdminReason(c, req.Reason, "预约转项目"),
+			Result:        "success",
+			BeforeState: map[string]interface{}{
+				"followStatus":       booking.FollowStatus,
+				"convertedProjectId": booking.ConvertedProjectID,
+			},
+			AfterState: map[string]interface{}{
+				"followStatus":       model.LeadFollowStatusConvertedProject,
+				"convertedProjectId": project.ID,
+			},
+			Metadata: map[string]interface{}{
+				"projectId": project.ID,
+				"source":    "booking_convert",
+			},
+			ClientIP:  c.ClientIP(),
+			UserAgent: c.Request.UserAgent(),
+		})
+	})
+	if err != nil {
+		respondSchemaAwareDomainMutationError(c, err, "转项目失败", "转项目失败，请联系管理员检查数据库是否已升级")
+		return
+	}
+
+	response.SuccessWithMessage(c, "预约已转项目", project)
+}
+
+func parseAdminDateOnly(raw string) time.Time {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}
+	}
+	parsed, err := time.ParseInLocation("2006-01-02", raw, time.Local)
+	if err != nil {
+		return time.Time{}
+	}
+	return parsed
+}
+
+func parseAdminDateTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, errors.New("empty time")
+	}
+	if parsed, err := time.Parse(time.RFC3339, raw); err == nil {
+		return parsed, nil
+	}
+	return time.ParseInLocation("2006-01-02 15:04", raw, time.Local)
+}
+
+func loadSysAdminNamesForBookings(bookings []model.Booking) map[uint64]string {
+	ids := make([]uint64, 0)
+	seen := map[uint64]struct{}{}
+	for _, booking := range bookings {
+		if booking.AssignedAdminID == 0 {
+			continue
+		}
+		if _, ok := seen[booking.AssignedAdminID]; ok {
+			continue
+		}
+		seen[booking.AssignedAdminID] = struct{}{}
+		ids = append(ids, booking.AssignedAdminID)
+	}
+	if len(ids) == 0 {
+		return map[uint64]string{}
+	}
+	var admins []model.SysAdmin
+	if err := repository.DB.Select("id", "nickname", "username").Where("id IN ?", ids).Find(&admins).Error; err != nil {
+		return map[uint64]string{}
+	}
+	result := make(map[uint64]string, len(admins))
+	for _, admin := range admins {
+		name := strings.TrimSpace(admin.Nickname)
+		if name == "" {
+			name = strings.TrimSpace(admin.Username)
+		}
+		result[admin.ID] = name
+	}
+	return result
 }
 
 // ==================== Admin 评价管理 ====================

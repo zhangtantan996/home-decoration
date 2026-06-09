@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, ScrollView, Text, View } from '@tarojs/components';
-import Taro, { useRouter } from '@tarojs/taro';
+import Taro, { useRouter, useShareAppMessage, useShareTimeline } from '@tarojs/taro';
 
 import { Card } from '@/components/Card';
 import { Empty } from '@/components/Empty';
@@ -75,6 +75,18 @@ const MaterialShopDetailPage: React.FC = () => {
     () => resolveMaterialCoverUrl({ cover: detail?.cover, productImages: productFallbackImages }),
     [detail?.cover, productFallbackImages],
   );
+
+  useShareAppMessage(() => ({
+    title: detail?.name ? `${detail.name}｜主材门店` : '主材门店',
+    path: `/pages/material-shops/detail/index?id=${shopId}`,
+    imageUrl: heroImage || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: detail?.name ? `${detail.name}｜主材门店` : '主材门店',
+    query: shopId ? `id=${encodeURIComponent(String(shopId))}` : '',
+    imageUrl: heroImage || undefined,
+  }));
 
   const handleShowAllProducts = () => {
     if (!detail?.id) return;

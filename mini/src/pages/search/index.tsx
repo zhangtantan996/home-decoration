@@ -1,4 +1,8 @@
-import Taro, { useLoad } from "@tarojs/taro";
+import Taro, {
+  useLoad,
+  useShareAppMessage,
+  useShareTimeline,
+} from "@tarojs/taro";
 import { Image, ScrollView, Text, View } from "@tarojs/components";
 import React, { useMemo, useRef, useState } from "react";
 
@@ -452,6 +456,24 @@ export default function SearchPage() {
 
     Taro.switchTab({ url: "/pages/home/index" });
   };
+
+  useShareAppMessage(() => {
+    const shareKeyword = (searchedKeyword || keywordInput).trim();
+    const query = shareKeyword ? `q=${encodeURIComponent(shareKeyword)}` : "";
+    return {
+      title: shareKeyword ? `搜索「${shareKeyword}」｜禾泽云` : "禾泽云搜索",
+      path: `/pages/search/index${query ? `?${query}` : ""}`,
+    };
+  });
+
+  useShareTimeline(() => {
+    const shareKeyword = (searchedKeyword || keywordInput).trim();
+    const query = shareKeyword ? `q=${encodeURIComponent(shareKeyword)}` : "";
+    return {
+      title: shareKeyword ? `搜索「${shareKeyword}」｜禾泽云` : "禾泽云搜索",
+      query,
+    };
+  });
 
   const runSearch = async (keyword: string) => {
     const normalizedKeyword = keyword.trim();

@@ -641,6 +641,11 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			opsAdmin.GET("/bookings", opsBookingListPerm, handler.AdminListBookings)
 			opsAdmin.GET("/bookings/:id", opsBookingListPerm, handler.AdminGetBooking)
 			opsAdmin.PATCH("/bookings/:id/status", opsBookingEditPerm, handler.AdminUpdateBookingStatus)
+			opsAdmin.POST("/bookings/:id/convert-project", opsProjectEditPerm, handler.AdminConvertBookingToProject)
+			opsAdmin.GET("/quote-inquiries", opsBookingListPerm, handler.AdminListQuoteInquiries)
+			opsAdmin.GET("/quote-inquiries/:id", opsBookingListPerm, handler.AdminGetQuoteInquiry)
+			opsAdmin.PATCH("/quote-inquiries/:id/follow-up", opsBookingEditPerm, handler.AdminUpdateQuoteInquiryFollowUp)
+			opsAdmin.POST("/quote-inquiries/:id/convert-booking", opsBookingEditPerm, handler.AdminConvertQuoteInquiryToBooking)
 
 			opsAdmin.GET("/material-shops", opsMaterialShopListPerm, handler.AdminListMaterialShops)
 			opsAdmin.GET("/material-shops/:id", opsMaterialShopListPerm, handler.AdminGetMaterialShop)
@@ -794,6 +799,7 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			admin.GET("/bookings/refundable", financeTransactionApprovePerm, handler.AdminGetRefundableBookings)
 			admin.GET("/bookings/:id", bookingListPerm, handler.AdminGetBooking)
 			admin.PATCH("/bookings/:id/status", bookingEditPerm, handler.AdminUpdateBookingStatus)
+			admin.POST("/bookings/:id/convert-project", projectEditPerm, handler.AdminConvertBookingToProject)
 			admin.POST("/bookings/:id/refund", financeTransactionApprovePerm, middleware.RequireAdminReason("reason"), middleware.RequireAdminReauth(), handler.AdminRefundIntentFee)
 
 			// 评价管理
@@ -1096,6 +1102,8 @@ func Setup(cfg *config.Config, dictHandler *handler.DictionaryHandler) *gin.Engi
 			// ========== 智能报价询价管理 ==========
 			admin.GET("/quote-inquiries", demandListPerm, handler.AdminListQuoteInquiries)
 			admin.GET("/quote-inquiries/:id", demandListPerm, handler.AdminGetQuoteInquiry)
+			admin.PATCH("/quote-inquiries/:id/follow-up", demandAssignPerm, handler.AdminUpdateQuoteInquiryFollowUp)
+			admin.POST("/quote-inquiries/:id/convert-booking", demandAssignPerm, handler.AdminConvertQuoteInquiryToBooking)
 
 			// ========== 争议预约管理 ==========
 			admin.GET("/disputed-bookings", bookingListPerm, handler.AdminListDisputedBookings)

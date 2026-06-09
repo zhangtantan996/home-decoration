@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Button as TaroButton, Image, Text, View } from '@tarojs/components';
-import Taro, { useLoad, useShareAppMessage } from '@tarojs/taro';
+import Taro, { useLoad, useShareAppMessage, useShareTimeline } from '@tarojs/taro';
 
 import { Button } from '@/components/Button';
 import { Card } from '@/components/Card';
@@ -87,6 +87,12 @@ const SceneDetailPage: React.FC = () => {
   useShareAppMessage(() => ({
     title: detail?.title || '案例实景',
     path: `/pages/cases/scene-detail/index?sceneId=${sceneId}&providerId=${providerId}&providerType=${providerType}&providerName=${encodeURIComponent(providerName)}`,
+    imageUrl: coverImage || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: detail?.title || '案例实景',
+    query: `sceneId=${encodeURIComponent(String(sceneId))}&providerId=${encodeURIComponent(String(providerId))}&providerType=${encodeURIComponent(providerType)}&providerName=${encodeURIComponent(providerName)}`,
     imageUrl: coverImage || undefined,
   }));
 
