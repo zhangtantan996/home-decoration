@@ -70,6 +70,56 @@ func encryptBookingSensitiveFields(booking *model.Booking) error {
 	return nil
 }
 
+// PrepareBookingNotesForStorage returns the persisted display value and encrypted value for booking notes.
+func PrepareBookingNotesForStorage(notes string) (string, string, error) {
+	notes = strings.TrimSpace(notes)
+	if notes == "" {
+		return "", "", nil
+	}
+	encrypted, err := encryptSensitiveString(notes)
+	if err != nil {
+		return "", "", err
+	}
+	if encrypted == "" {
+		return notes, "", nil
+	}
+	return "[encrypted]", encrypted, nil
+}
+
+func restoreEncryptedString(maskedValue, encryptedValue string) (string, error) {
+	if strings.TrimSpace(encryptedValue) == "" {
+		return strings.TrimSpace(maskedValue), nil
+	}
+	decrypted, err := utils.Decrypt(encryptedValue)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(decrypted), nil
+}
+
+// RestoreBookingSensitiveFields restores encrypted booking fields for privileged internal flows.
+func RestoreBookingSensitiveFields(booking *model.Booking) error {
+	if booking == nil {
+		return nil
+	}
+	address, err := restoreEncryptedString(booking.Address, booking.AddressEncrypted)
+	if err != nil {
+		return err
+	}
+	phone, err := restoreEncryptedString(booking.Phone, booking.PhoneEncrypted)
+	if err != nil {
+		return err
+	}
+	notes, err := restoreEncryptedString(booking.Notes, booking.NotesEncrypted)
+	if err != nil {
+		return err
+	}
+	booking.Address = address
+	booking.Phone = phone
+	booking.Notes = notes
+	return nil
+}
+
 func encryptProjectSensitiveFields(project *model.Project) error {
 	if project == nil {
 		return nil
@@ -122,5 +172,23 @@ func encryptQuoteInquirySensitiveFields(inquiry *model.QuoteInquiry) error {
 		inquiry.Phone = utils.MaskPhone(strings.TrimSpace(inquiry.Phone))
 	}
 
+	return nil
+}
+
+// RestoreQuoteInquirySensitiveFields restores encrypted quote inquiry fields for privileged internal flows.
+func RestoreQuoteInquirySensitiveFields(inquiry *model.QuoteInquiry) error {
+	if inquiry == nil {
+		return nil
+	}
+	address, err := restoreEncryptedString(inquiry.Address, inquiry.AddressEncrypted)
+	if err != nil {
+		return err
+	}
+	phone, err := restoreEncryptedString(inquiry.Phone, inquiry.PhoneEncrypted)
+	if err != nil {
+		return err
+	}
+	inquiry.Address = address
+	inquiry.Phone = phone
 	return nil
 }

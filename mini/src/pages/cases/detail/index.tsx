@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Image, Text, View } from '@tarojs/components';
-import Taro, { useLoad, usePageScroll, useShareAppMessage } from '@tarojs/taro';
+import Taro, { useLoad, usePageScroll, useShareAppMessage, useShareTimeline } from '@tarojs/taro';
 
 import { Empty } from '@/components/Empty';
 import { Icon } from '@/components/Icon';
@@ -235,6 +235,12 @@ const CaseDetailPage: React.FC = () => {
   useShareAppMessage(() => ({
     title: detailTitle,
     path: `/pages/cases/detail/index?caseId=${caseId}&providerId=${providerId}&providerType=${providerType}&providerName=${encodeURIComponent(providerName)}&source=${source}`,
+    imageUrl: coverImage || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: detailTitle,
+    query: `caseId=${encodeURIComponent(String(caseId))}&providerId=${encodeURIComponent(String(providerId))}&providerType=${encodeURIComponent(providerType)}&providerName=${encodeURIComponent(providerName)}&source=${encodeURIComponent(source)}`,
     imageUrl: coverImage || undefined,
   }));
 

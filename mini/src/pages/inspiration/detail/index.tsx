@@ -1,4 +1,4 @@
-import Taro, { useLoad, usePageScroll, useShareAppMessage } from '@tarojs/taro';
+import Taro, { useLoad, usePageScroll, useShareAppMessage, useShareTimeline } from '@tarojs/taro';
 import { Image, Text, View } from '@tarojs/components';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -125,6 +125,12 @@ export default function InspirationDetailPage() {
   useShareAppMessage(() => ({
     title: detail?.title || '灵感详情',
     path: `/pages/inspiration/detail/index?id=${id}`,
+    imageUrl: coverImage || undefined,
+  }));
+
+  useShareTimeline(() => ({
+    title: detail?.title || '灵感详情',
+    query: id ? `id=${encodeURIComponent(String(id))}` : '',
     imageUrl: coverImage || undefined,
   }));
 

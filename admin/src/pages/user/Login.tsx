@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Card, Form, Input, Button, message, Typography, Alert } from 'antd';
+import { Card, Form, Input, Button, message, Typography } from 'antd';
 import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { adminAuthApi } from '../../services/api';
@@ -66,13 +66,13 @@ const buildNetworkNotice = (payload: AdminLoginPayload) => {
   const restrictedSession = Boolean(payload.restrictedSession || payload.security?.restrictedSession);
   const loginStage = payload.loginStage || payload.security?.loginStage;
   if (restrictedSession || trustLevel === 'restricted') {
-    return '当前网络未被标记为可信，本次登录会进入受限会话。高危操作需要完成二次认证。';
+    return '非可信网络，登录后为受限会话，高危操作需二次认证。';
   }
   if (payload.securityChallengeRequired || payload.security?.securityChallengeRequired) {
-    return '当前网络未被标记为可信，请完成动态验证码等额外验证后继续。';
+    return '非可信网络，需要完成动态验证码校验后继续。';
   }
   if (loginStage === 'active' && trustLevel === 'untrusted_challenged') {
-    return '当前网络未被标记为可信，额外验证已通过。本次会话会记录安全审计，高危操作仍需二次认证。';
+    return '非可信网络已完成校验，本次会话会记录安全审计。';
   }
   return '';
 };
@@ -109,7 +109,6 @@ const Login: React.FC = () => {
       setOtpRequired(true);
       setNetworkNotice(notice);
       form.setFieldValue('otpCode', '');
-      message.info(notice || '请输入动态验证码完成登录');
       return;
     }
 
@@ -221,24 +220,20 @@ const Login: React.FC = () => {
             <Text className="hz-login__form-subtitle">请输入管理员账号、密码，按需完成动态验证码校验</Text>
           </div>
 
-          {otpRequired ? (
-            <Alert
-              type="info"
-              showIcon
-              className="hz-login__alert"
-              message="已通过账号密码校验"
-              description="请输入当前 TOTP 动态验证码完成最终登录。"
-            />
-          ) : null}
-
-          {networkNotice ? (
-            <Alert
-              type="warning"
-              showIcon
-              className="hz-login__alert"
-              message="网络安全提示"
-              description={networkNotice}
-            />
+          {otpRequired || networkNotice ? (
+            <div className="hz-login__status-strip" role="status" aria-live="polite">
+              <span className="hz-login__status-icon">
+                <SafetyCertificateOutlined />
+              </span>
+              <span className="hz-login__status-copy">
+                <Text strong>{otpRequired ? '账号密码已通过，继续输入 6 位动态验证码' : '登录安全校验'}</Text>
+                {networkNotice ? (
+                  <Text type="secondary" className="hz-login__status-note">
+                    {networkNotice}
+                  </Text>
+                ) : null}
+              </span>
+            </div>
           ) : null}
 
           <Form

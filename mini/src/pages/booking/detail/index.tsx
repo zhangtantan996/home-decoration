@@ -11,7 +11,6 @@ import { usePullToRefreshFeedback } from '@/hooks/usePullToRefreshFeedback';
 import { cancelBooking, getBookingDetail, type BookingDetailResponse } from '@/services/bookings';
 import { useAuthStore } from '@/store/auth';
 import { showErrorToast } from '@/utils/error';
-import { consumePaymentRefreshNotice } from '@/utils/paymentRefresh';
 import { normalizeProviderMediaUrl } from '@/utils/providerMedia';
 import { formatServerDateTime } from '@/utils/serverTime';
 
@@ -158,7 +157,6 @@ const BookingDetailPage: React.FC = () => {
     if (!routeReady || !id || !auth.token) {
       return;
     }
-    consumePaymentRefreshNotice();
     void runReload();
   });
 
@@ -176,7 +174,7 @@ const BookingDetailPage: React.FC = () => {
     if (!pageVisible || !routeReady || !id || !auth.token) {
       return;
     }
-    if (statusGroup !== 'pending_confirmation' && statusGroup !== 'pending_payment') {
+    if (statusGroup !== 'pending_confirmation') {
       return;
     }
 

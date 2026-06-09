@@ -92,6 +92,7 @@ High-risk work requires explicit scope framing, targeted verification, and curre
 - Always report what was verified and what was not.
 - Start with the smallest meaningful validation for the touched surface.
 - Root verification entrypoints are `npm run verify:backend|admin|ops|merchant|web|mobile|mini|supervisor`; prefer these over ad hoc command bundles when they match the touched surface.
+- For release or cross-surface changes, use `npm run smoke:release` or a narrower evidence-backed smoke path.
 - `npm run verify:supervisor` includes supervisor lint, build, and the apply service-area smoke via `scripts/testing/run_supervisor_apply_service_area_smoke.sh`.
 - Root `npm run dev:web` and `npm run dev:user-web` intentionally fail because user-web is no longer the default local entry; use `*:legacy` variants only when maintaining the old H5 surface.
 - If validation fails, report symptom, repro path, likely cause, and next step; continue fixing unless a high-risk boundary needs user confirmation.

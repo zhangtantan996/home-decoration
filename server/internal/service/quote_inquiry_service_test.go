@@ -20,7 +20,7 @@ func setupQuoteInquiryServiceTestDB(t *testing.T) *gorm.DB {
 	if err != nil {
 		t.Fatalf("open sqlite: %v", err)
 	}
-	if err := db.AutoMigrate(&model.QuoteInquiry{}); err != nil {
+	if err := db.AutoMigrate(&model.QuoteInquiry{}, &model.AuditLog{}); err != nil {
 		t.Fatalf("auto migrate quote inquiry: %v", err)
 	}
 
@@ -394,4 +394,54 @@ func TestQuoteInquiryService_AdminListInquiries_Filters(t *testing.T) {
 	if total != 1 || len(dateItems) != 1 || dateItems[0].ID != third.ID {
 		t.Fatalf("unexpected date filter result: total=%d items=%+v", total, dateItems)
 	}
+}
+
+func TestQuoteInquiryServiceUpdateFollowUpValidatesInvalidReason(t *testing.T) {
+	db := setupQuoteInquiryServiceTestDB(t)
+	svc := &QuoteInquiryService{}
+	inquiry := model.QuoteInquiry{
+		Phone:            "13800138000",
+		Address:          "西安市雁塔区科技路 88 号",
+		CityCode:         "610100",
+		Area:             90,
+		RenovationType:   "新房装修",
+		Style:            "现代简约",
+		ConversionStatus: "pending",
+		FollowStatus:     model.LeadFollowStatusPendingContact,
+	}
+	if err := db.Create(&inquiry).Error; err != nil {
+		t.Fatalf("create inquiry: %v", err)
+	}
+
+	if _, err := svc.UpdateFollowUp(inquiry.ID, UpdateQuoteInquiryFollowUpInput{
+		FollowStatus: model.LeadFollowStatusInvalid,
+		OperatorID:   9001,
+	}); err == nil {
+		t.Fatalf("expected invalid lead without reason to be rejected")
+	}
+
+	nextFollowAt := time.Now().Add(24 * time.Hour).Truncate(time.Second)
+	detail, err := svc.UpdateFollowUp(inquiry.ID, UpdateQuoteInquiryFollowUpInput{
+		FollowStatus:    model.LeadFollowStatusInvalid,
+		AssignedAdminID: uint64PointerForQuoteInquiryTest(9001),
+		NextFollowAt:    &nextFollowAt,
+		InvalidReason:   "手机号无法接通",
+		Notes:           "二次拨打无人接听",
+		OperatorID:      9001,
+	})
+	if err != nil {
+		t.Fatalf("UpdateFollowUp: %v", err)
+	}
+	if detail.FollowStatus != model.LeadFollowStatusInvalid || detail.InvalidReason != "手机号无法接通" {
+		t.Fatalf("unexpected follow-up detail: %+v", detail.AdminQuoteInquiryListItem)
+	}
+
+	var audit model.AuditLog
+	if err := db.Where("operation_type = ? AND resource_id = ?", "quote_inquiry_follow_up", inquiry.ID).First(&audit).Error; err != nil {
+		t.Fatalf("expected follow-up audit: %v", err)
+	}
+}
+
+func uint64PointerForQuoteInquiryTest(value uint64) *uint64 {
+	return &value
 }

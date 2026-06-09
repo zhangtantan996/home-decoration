@@ -42,6 +42,11 @@ type QuoteInquiry struct {
 	ConversionStatus     string     `json:"conversionStatus" gorm:"size:20;default:'pending';index"`
 	ConvertedToBookingID *uint64    `json:"convertedToBookingId"`
 	ConvertedAt          *time.Time `json:"convertedAt"`
+	FollowStatus         string     `json:"followStatus" gorm:"size:32;default:'pending_booking';index"`
+	AssignedAdminID      uint64     `json:"assignedAdminId" gorm:"index;default:0"`
+	NextFollowAt         *time.Time `json:"nextFollowAt" gorm:"index"`
+	InvalidReason        string     `json:"invalidReason" gorm:"size:300"`
+	LastFollowedAt       *time.Time `json:"lastFollowedAt"`
 
 	// 来源追踪
 	Source string `json:"source" gorm:"size:50;default:'mini_program'"`

@@ -1,4 +1,8 @@
-import Taro, { useDidShow } from "@tarojs/taro";
+import Taro, {
+  useDidShow,
+  useShareAppMessage,
+  useShareTimeline,
+} from "@tarojs/taro";
 import { Image, ScrollView, Text, View } from "@tarojs/components";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -519,6 +523,16 @@ export default function Home() {
   const [materialCategoryPanelVisible, setMaterialCategoryPanelVisible] = useState(false);
   const [providerOrgFilter, setProviderOrgFilter] =
     useState<ProviderOrgFilter>("all");
+
+  useShareAppMessage(() => ({
+    title: "禾泽云｜西安装修设计与主材服务",
+    path: "/pages/home/index",
+  }));
+
+  useShareTimeline(() => ({
+    title: "禾泽云｜西安装修设计与主材服务",
+    query: "",
+  }));
   const [providerItems, setProviderItems] = useState<ProviderListItem[]>([]);
   const [materialItems, setMaterialItems] = useState<MaterialShopItem[]>([]);
   const [providerPage, setProviderPage] = useState(1);
