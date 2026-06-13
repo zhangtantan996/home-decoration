@@ -36,6 +36,7 @@ export type IconName =
   | 'plus'
   | 'calendar'
   | 'phone'
+  | 'copy'
   | 'more-horizontal'
   | 'trash';
 
@@ -111,6 +112,8 @@ const iconSvgMap: Record<IconName, (color: string) => string> = {
     wrapSvg('<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M8 3v4"/><path d="M16 3v4"/><path d="M4 10h16"/>', color),
   phone: (color) =>
     wrapSvg('<path d="M5 4h4l2 5-2.5 1.5a13 13 0 0 0 5 5L15 13l5 2v4a2 2 0 0 1-2 2A15 15 0 0 1 3 6a2 2 0 0 1 2-2z"/>', color),
+  copy: (color) =>
+    wrapSvg('<rect x="9" y="9" width="10" height="11" rx="2"/><path d="M7 15H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v1"/>', color),
   'more-horizontal': (color) =>
     wrapFilledSvg('<circle cx="6" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="18" cy="12" r="1.8"/>', color),
   trash: (color) =>
@@ -150,6 +153,7 @@ const fallbackGlyphMap: Record<IconName, string> = {
   plus: '+',
   calendar: '◫',
   phone: '◌',
+  copy: '⧉',
   'more-horizontal': '…',
   trash: '⌫',
 };

@@ -124,14 +124,24 @@ const BookingsPage = () => {
   const load = async () => {
     setLoading(true);
     try {
-      const [bookings, quotes] = await Promise.all([
+      const [bookingsResult, quotesResult] = await Promise.allSettled([
         listBookings({ page: 1, pageSize: 200, keyword: keyword.trim() || undefined, followStatus: activeTab === 'bookings' ? followStatusFilter : undefined }),
         listQuoteInquiries({ page: 1, pageSize: 200, keyword: keyword.trim() || undefined, followStatus: activeTab === 'quotes' ? followStatusFilter : undefined }),
       ]);
-      setBookingItems(bookings.list);
-      setQuoteItems(quotes.list);
-    } catch (error) {
-      showApiError(error, '线索加载失败');
+
+      if (bookingsResult.status === 'fulfilled') {
+        setBookingItems(bookingsResult.value.list);
+      } else {
+        setBookingItems([]);
+        showApiError(bookingsResult.reason, '预约线索加载失败');
+      }
+
+      if (quotesResult.status === 'fulfilled') {
+        setQuoteItems(quotesResult.value.list);
+      } else {
+        setQuoteItems([]);
+        showApiError(quotesResult.reason, '智能报价线索加载失败');
+      }
     } finally {
       setLoading(false);
     }

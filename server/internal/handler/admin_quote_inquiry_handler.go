@@ -18,7 +18,7 @@ import (
 // AdminQuoteInquiryQuery 管理后台查询参数
 type AdminQuoteInquiryQuery struct {
 	Page             int    `form:"page" binding:"omitempty,min=1"`
-	PageSize         int    `form:"pageSize" binding:"omitempty,min=1,max=100"`
+	PageSize         int    `form:"pageSize" binding:"omitempty,min=1"`
 	Keyword          string `form:"keyword"`
 	ConversionStatus string `form:"conversionStatus"`
 	FollowStatus     string `form:"followStatus"`
@@ -42,6 +42,8 @@ func AdminListQuoteInquiries(c *gin.Context) {
 	}
 	if query.PageSize <= 0 {
 		query.PageSize = 10
+	} else if query.PageSize > 100 {
+		query.PageSize = 100
 	}
 
 	items, total, err := quoteInquiryService.AdminListInquiries(service.AdminQuoteInquiryListFilter{

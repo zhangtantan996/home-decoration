@@ -512,6 +512,7 @@ const findMaterialCategoryOption = (
 };
 
 export default function Home() {
+  const navigationLockRef = useRef(false);
   const [activeCategory, setActiveCategory] =
     useState<HomeCategory>("designer");
   const [designerSortBy, setDesignerSortBy] = useState("recommend");
@@ -590,6 +591,7 @@ export default function Home() {
   );
 
   useDidShow(() => {
+    navigationLockRef.current = false;
     const providerEntryState = consumePendingHomeProviderEntry() as
       | {
           activeCategory?: HomeCategory;
@@ -627,6 +629,20 @@ export default function Home() {
       }
     })();
   });
+
+  const runWithNavigationLock = useCallback(async (action: () => Promise<unknown>) => {
+    if (navigationLockRef.current) {
+      return;
+    }
+    navigationLockRef.current = true;
+    try {
+      await action();
+    } finally {
+      setTimeout(() => {
+        navigationLockRef.current = false;
+      }, 500);
+    }
+  }, []);
 
   useEffect(() => {
     setCustomTabBarInteractionDisabled(showQuotePopup || materialCategoryPanelVisible);
@@ -903,7 +919,15 @@ export default function Home() {
   const handleOpenGlobalSearch = () => {
     setSortMenuVisible(false);
     setMaterialCategoryPanelVisible(false);
-    Taro.navigateTo({ url: "/pages/search/index?from=home" });
+    void runWithNavigationLock(() =>
+      Taro.navigateTo({ url: "/pages/search/index?from=home" }),
+    );
+  };
+
+  const handleOpenPlatformSupport = () => {
+    void runWithNavigationLock(() =>
+      Taro.navigateTo({ url: "/pages/support/index" }),
+    );
   };
 
   const handleToggleSortMenu = () => {
@@ -935,15 +959,19 @@ export default function Home() {
   const handleProviderClick = (provider: ProviderListItem) => {
     const providerType = getProviderType(provider.providerType);
     const providerName = encodeURIComponent(getProviderName(provider));
-    Taro.navigateTo({
-      url: `/pages/providers/detail/index?id=${provider.id}&type=${providerType}&providerName=${providerName}`,
-    });
+    void runWithNavigationLock(() =>
+      Taro.navigateTo({
+        url: `/pages/providers/detail/index?id=${provider.id}&type=${providerType}&providerName=${providerName}`,
+      }),
+    );
   };
 
   const handleMaterialShopClick = (shop: MaterialShopItem) => {
-    Taro.navigateTo({
-      url: `/pages/material-shops/detail/index?id=${shop.id}`,
-    });
+    void runWithNavigationLock(() =>
+      Taro.navigateTo({
+        url: `/pages/material-shops/detail/index?id=${shop.id}`,
+      }),
+    );
   };
 
   const handleOpenHomePopupAction = async (action?: HomePopupAction) => {
@@ -956,12 +984,14 @@ export default function Home() {
 
     markHomePopupHandled(homePopup);
     setShowQuotePopup(false);
-    if (TAB_PAGE_PATHS.has(target.split("?")[0] || target)) {
-      await Taro.switchTab({ url: (target.split("?")[0] || target) as string });
-      return;
-    }
+    await runWithNavigationLock(async () => {
+      if (TAB_PAGE_PATHS.has(target.split("?")[0] || target)) {
+        await Taro.switchTab({ url: (target.split("?")[0] || target) as string });
+        return;
+      }
 
-    await Taro.navigateTo({ url: target });
+      await Taro.navigateTo({ url: target });
+    });
   };
 
   const handleCloseQuotePopup = () => {
@@ -1669,6 +1699,17 @@ export default function Home() {
           </View>
         </View>
       ) : null}
+
+      <View
+        className="home-page__support-fab"
+        onClick={handleOpenPlatformSupport}
+        hoverClass="home-page__support-fab--pressed"
+      >
+        <View className="home-page__support-fab-icon">
+          <Icon name="support" size={26} color={colors.white} />
+        </View>
+        <Text className="home-page__support-fab-title">咨询平台</Text>
+      </View>
     </View>
   );
 }

@@ -303,7 +303,7 @@ export default function Profile() {
             <Card className="profile-page__card" title="帮助与支持">
               <ListItem title="意见反馈" arrow onClick={handleFeedback} />
               <ListItem title="关于我们" arrow onClick={handleAbout} />
-              <ListItem title="联系客服" arrow onClick={handleSupport} />
+              <ListItem title="咨询平台" arrow onClick={handleSupport} />
             </Card>
           </View>
         </>
@@ -336,7 +336,7 @@ export default function Profile() {
           <Card className="profile-page__card profile-page__card--guest-services" title="平台服务">
             <ListItem title="意见反馈" arrow onClick={handleFeedback} />
             <ListItem title="关于我们" arrow onClick={handleAbout} />
-            <ListItem title="联系客服" arrow onClick={handleSupport} />
+            <ListItem title="咨询平台" arrow onClick={handleSupport} />
           </Card>
         </View>
       )}

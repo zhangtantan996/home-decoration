@@ -358,6 +358,10 @@ const ProviderDetailPage: React.FC = () => {
     });
   };
 
+  const handleConsultPlatform = () => {
+    Taro.navigateTo({ url: "/pages/support/index" });
+  };
+
   const handleOpenCaseGallery = () => {
     if (!params.id) return;
     const providerName = encodeURIComponent(displayName);
@@ -809,6 +813,14 @@ const ProviderDetailPage: React.FC = () => {
       ) : canBookProvider ? (
         <View className="provider-detail-page__bottom-bar">
           <View className="provider-detail-page__bottom-pill">
+            <Button
+              onClick={handleConsultPlatform}
+              size="lg"
+              variant="outline"
+              className="provider-detail-page__secondary-button"
+            >
+              咨询平台
+            </Button>
             <Button
               onClick={handleBook}
               size="lg"

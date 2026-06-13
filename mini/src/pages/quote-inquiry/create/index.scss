@@ -453,4 +453,15 @@
       box-shadow: 0 12rpx 30rpx rgba(0, 179, 92, 0.18);
     }
   }
+
+  &__consult {
+    height: 88rpx;
+    margin-bottom: 14rpx;
+    border-radius: 24rpx;
+    border-color: $color-line-soft;
+    background: $color-surface-card;
+    color: $color-gray-700;
+    font-size: 26rpx;
+    font-weight: 700;
+  }
 }
