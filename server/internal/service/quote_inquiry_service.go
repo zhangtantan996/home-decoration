@@ -436,6 +436,10 @@ func (s *QuoteInquiryService) UpdateFollowUp(id uint64, input UpdateQuoteInquiry
 			if followStatus == model.LeadFollowStatusInvalid && strings.TrimSpace(input.InvalidReason) == "" && strings.TrimSpace(inquiry.InvalidReason) == "" {
 				return errors.New("无效线索必须填写无效原因")
 			}
+			if followStatus == model.LeadFollowStatusConvertedBooking &&
+				(inquiry.ConversionStatus != "converted" || inquiry.ConvertedToBookingID == nil || *inquiry.ConvertedToBookingID == 0) {
+				return errors.New("已转预约状态只能通过转预约操作设置")
+			}
 			updates["follow_status"] = followStatus
 			inquiry.FollowStatus = followStatus
 		}

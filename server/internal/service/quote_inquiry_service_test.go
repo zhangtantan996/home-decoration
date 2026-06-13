@@ -442,6 +442,31 @@ func TestQuoteInquiryServiceUpdateFollowUpValidatesInvalidReason(t *testing.T) {
 	}
 }
 
+func TestQuoteInquiryServiceUpdateFollowUpRejectsManualConvertedBooking(t *testing.T) {
+	db := setupQuoteInquiryServiceTestDB(t)
+	svc := &QuoteInquiryService{}
+	inquiry := model.QuoteInquiry{
+		Phone:            "13800138000",
+		Address:          "杭州市西湖区文一路 88 号",
+		CityCode:         "330100",
+		Area:             98,
+		RenovationType:   "新房装修",
+		Style:            "现代简约",
+		ConversionStatus: "pending",
+		FollowStatus:     model.LeadFollowStatusPendingBooking,
+	}
+	if err := db.Create(&inquiry).Error; err != nil {
+		t.Fatalf("create inquiry: %v", err)
+	}
+
+	if _, err := svc.UpdateFollowUp(inquiry.ID, UpdateQuoteInquiryFollowUpInput{
+		FollowStatus: model.LeadFollowStatusConvertedBooking,
+		OperatorID:   9001,
+	}); err == nil {
+		t.Fatalf("expected manual converted booking status to be rejected")
+	}
+}
+
 func uint64PointerForQuoteInquiryTest(value uint64) *uint64 {
 	return &value
 }

@@ -57,7 +57,15 @@ const DashboardPage = () => {
     const load = async () => {
       setLoading(true);
       try {
-        const [designers, foremen, companies, shops, cases, bookings, quoteInquiries] = await Promise.all([
+        const [
+          designersResult,
+          foremenResult,
+          companiesResult,
+          shopsResult,
+          casesResult,
+          bookingsResult,
+          quoteInquiriesResult,
+        ] = await Promise.allSettled([
           listProviders('designer'),
           listProviders('foreman'),
           listProviders('company'),
@@ -66,17 +74,26 @@ const DashboardPage = () => {
           listBookings({ page: 1, pageSize: 200 }),
           listQuoteInquiries({ page: 1, pageSize: 200 }),
         ]);
-        setState({
-          designers: designers.list,
-          foremen: foremen.list,
-          companies: companies.list,
-          shops: shops.list,
-          cases: cases.list,
-          bookings: bookings.list,
-          quoteInquiries: quoteInquiries.list,
-        });
-      } catch (error) {
-        showApiError(error, '工作台加载失败');
+
+        const nextState: DashboardState = {
+          designers: designersResult.status === 'fulfilled' ? designersResult.value.list : [],
+          foremen: foremenResult.status === 'fulfilled' ? foremenResult.value.list : [],
+          companies: companiesResult.status === 'fulfilled' ? companiesResult.value.list : [],
+          shops: shopsResult.status === 'fulfilled' ? shopsResult.value.list : [],
+          cases: casesResult.status === 'fulfilled' ? casesResult.value.list : [],
+          bookings: bookingsResult.status === 'fulfilled' ? bookingsResult.value.list : [],
+          quoteInquiries: quoteInquiriesResult.status === 'fulfilled' ? quoteInquiriesResult.value.list : [],
+        };
+
+        setState(nextState);
+
+        if (designersResult.status === 'rejected') showApiError(designersResult.reason, '设计师数据加载失败');
+        if (foremenResult.status === 'rejected') showApiError(foremenResult.reason, '工长数据加载失败');
+        if (companiesResult.status === 'rejected') showApiError(companiesResult.reason, '装修公司数据加载失败');
+        if (shopsResult.status === 'rejected') showApiError(shopsResult.reason, '主材商数据加载失败');
+        if (casesResult.status === 'rejected') showApiError(casesResult.reason, '灵感内容加载失败');
+        if (bookingsResult.status === 'rejected') showApiError(bookingsResult.reason, '预约线索加载失败');
+        if (quoteInquiriesResult.status === 'rejected') showApiError(quoteInquiriesResult.reason, '智能报价线索加载失败');
       } finally {
         setLoading(false);
       }
