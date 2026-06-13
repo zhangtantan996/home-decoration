@@ -1,0 +1,197 @@
+@import "../../theme/tokens";
+
+.support-page {
+  &__content {
+    display: flex;
+    flex-direction: column;
+    gap: 20rpx;
+  }
+
+  &__hero-card,
+  &__qr-card,
+  &__tips-card {
+    margin-bottom: 0 !important;
+  }
+
+  &__hero {
+    display: flex;
+    align-items: flex-start;
+    gap: 18rpx;
+  }
+
+  &__hero-icon {
+    width: 84rpx;
+    height: 84rpx;
+    border-radius: 28rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    background: $color-brand-soft;
+  }
+
+  &__hero-main {
+    min-width: 0;
+    flex: 1;
+  }
+
+  &__hero-title {
+    display: block;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.3;
+  }
+
+  &__hero-phone {
+    color: $color-text-primary;
+    font-size: 46rpx;
+    font-weight: 800;
+    line-height: 1.15;
+  }
+
+  &__hero-phone-row {
+    display: flex;
+    align-items: center;
+    gap: 16rpx;
+    margin-top: 10rpx;
+  }
+
+  &__hero-actions {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+    flex-shrink: 0;
+  }
+
+  &__hero-action {
+    width: 64rpx;
+    height: 64rpx;
+    border-radius: 999rpx;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: $color-brand-soft;
+    border: 1rpx solid $color-line-soft;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+
+    &--pressed {
+      transform: scale(0.96);
+      opacity: 0.88;
+    }
+  }
+
+  &__hero-copy {
+    display: block;
+    margin-top: 12rpx;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.5;
+  }
+
+  &__qr-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  &__qr-box {
+    width: 264rpx;
+    height: 264rpx;
+    padding: 12rpx;
+    border-radius: 28rpx;
+    background: $color-bg-card;
+    border: 1rpx solid $color-line-soft;
+    box-shadow: $shadow-sm;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  &__qr-image {
+    width: 100%;
+    height: 100%;
+    border-radius: 20rpx;
+    display: block;
+  }
+
+  &__qr-title {
+    display: block;
+    margin-top: 20rpx;
+    color: $color-text-primary;
+    font-size: 27rpx;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  &__qr-wechat {
+    color: $color-text-primary;
+    font-size: 26rpx;
+    font-weight: 700;
+    line-height: 1.5;
+  }
+
+  &__qr-wechat-row {
+    display: flex;
+    align-items: center;
+    gap: 12rpx;
+    margin-top: 12rpx;
+  }
+
+  &__wechat-button {
+    min-width: 220rpx;
+    height: 78rpx;
+    margin-top: 18rpx;
+    margin-bottom: 0;
+    border-radius: 999rpx;
+    border-color: $color-line-soft;
+    color: $color-info;
+    background: $color-brand-soft;
+    font-size: 26rpx;
+    font-weight: 700;
+  }
+
+  &__wechat-button--secondary {
+    margin-top: 12rpx;
+    background: $color-bg-card;
+    color: $color-text-primary;
+  }
+
+  &__qr-note {
+    display: block;
+    margin-top: 14rpx;
+    color: $color-text-secondary;
+    font-size: 23rpx;
+    line-height: 1.5;
+  }
+
+  &__tips-list {
+    display: flex;
+    flex-direction: column;
+    gap: 16rpx;
+  }
+
+  &__tip-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12rpx;
+  }
+
+  &__tip-dot {
+    width: 10rpx;
+    height: 10rpx;
+    margin-top: 12rpx;
+    border-radius: 999rpx;
+    flex-shrink: 0;
+    background: $color-info;
+  }
+
+  &__tip-text {
+    flex: 1;
+    color: $color-text-secondary;
+    font-size: 25rpx;
+    line-height: 1.7;
+  }
+}
