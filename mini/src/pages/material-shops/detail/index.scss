@@ -67,7 +67,8 @@
   }
 
   &__summary,
-  &__section {
+  &__section,
+  &__consult-section {
     padding: 28rpx;
   }
 
@@ -190,6 +191,10 @@
     margin-bottom: 18rpx;
   }
 
+  &__section-head--compact {
+    margin-bottom: 12rpx;
+  }
+
   &__section-title {
     display: block;
     color: $color-text-primary;
@@ -235,6 +240,33 @@
     background: $color-gray-50;
     color: $color-text-tertiary;
     font-size: 26rpx;
+  }
+
+  &__consult-copy {
+    display: block;
+    color: $color-text-secondary;
+    font-size: 24rpx;
+    line-height: 1.65;
+  }
+
+  &__consult-action {
+    height: 84rpx;
+    margin-top: 20rpx;
+    border-radius: 24rpx;
+    border: 1rpx solid $color-line-soft;
+    background: $color-gray-50;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: $color-text-primary;
+    font-size: 28rpx;
+    font-weight: 700;
+    transition: transform 0.18s ease, opacity 0.18s ease;
+
+    &--pressed {
+      transform: translateY(2rpx);
+      opacity: 0.78;
+    }
   }
 
   &__service-grid {

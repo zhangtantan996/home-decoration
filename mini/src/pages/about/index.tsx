@@ -100,7 +100,7 @@ export default function AboutPage() {
           ) : null}
         </Card>
 
-        <Button variant="outline" block onClick={handleOpenSupport}>联系平台客服</Button>
+        <Button variant="outline" block onClick={handleOpenSupport}>咨询平台</Button>
       </View>
     </View>
   );

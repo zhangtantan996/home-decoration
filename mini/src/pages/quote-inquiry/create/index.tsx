@@ -327,6 +327,10 @@ const QuoteInquiryCreatePage: React.FC = () => {
     }
   };
 
+  const handleConsultPlatform = () => {
+    Taro.navigateTo({ url: '/pages/support/index' });
+  };
+
   return (
     <View className="quote-inquiry-create" style={pageBottomStyle}>
       <MiniPageNav title="智能报价" onBack={handleBack} placeholder />
@@ -505,6 +509,15 @@ const QuoteInquiryCreatePage: React.FC = () => {
       </View>
 
       <View className="quote-inquiry-create__footer" style={fixedBottomBarStyle}>
+        <Button
+          block
+          size="large"
+          variant="outline"
+          className="quote-inquiry-create__consult"
+          onClick={handleConsultPlatform}
+        >
+          咨询平台
+        </Button>
         <Button
           block
           size="large"

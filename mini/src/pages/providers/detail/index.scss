@@ -574,6 +574,9 @@
   }
 
   &__bottom-pill {
+    display: grid;
+    grid-template-columns: 220rpx minmax(0, 1fr);
+    gap: 12rpx;
     padding: 6rpx;
     border-radius: 999rpx;
     background: #ffffff;
@@ -581,12 +584,28 @@
     overflow: hidden;
   }
 
+  &__secondary-button,
   &__primary-button {
-    width: 100%;
     margin-bottom: 0;
     height: 96rpx;
-    border: none;
     border-radius: 999rpx;
+  }
+
+  &__secondary-button {
+    width: 100%;
+    border-color: $color-line-soft;
+    background: $color-gray-50;
+    color: $color-text-primary;
+    box-shadow: none;
+
+    &::after {
+      border: none;
+    }
+  }
+
+  &__primary-button {
+    width: 100%;
+    border: none;
     background: #111111;
     box-shadow: none;
 

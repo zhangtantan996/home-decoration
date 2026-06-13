@@ -208,8 +208,12 @@ const BookingDetailPage: React.FC = () => {
     });
   }, [detail?.provider?.id, detail?.provider?.providerType]);
 
+  const handleConsultPlatform = useCallback(() => {
+    void Taro.navigateTo({ url: '/pages/support/index' });
+  }, []);
+
   const handleMoreAction = useCallback(async () => {
-    const items = ['刷新页面'];
+    const items = ['刷新页面', '咨询平台'];
     if (detail?.provider?.id) {
       items.push('查看服务方');
     }
@@ -219,11 +223,15 @@ const BookingDetailPage: React.FC = () => {
         await runReload();
         return;
       }
+      if (res.tapIndex === 1) {
+        handleConsultPlatform();
+        return;
+      }
       handleOpenProvider();
     } catch {
       return;
     }
-  }, [detail?.provider?.id, handleOpenProvider, runReload]);
+  }, [detail?.provider?.id, handleConsultPlatform, handleOpenProvider, runReload]);
 
   const handleCancelBooking = useCallback(async () => {
     if (!detail?.booking?.id || actionLoading) {

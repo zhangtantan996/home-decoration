@@ -115,6 +115,10 @@ const MaterialShopDetailPage: React.FC = () => {
     Taro.setClipboardData({ data: phone });
   };
 
+  const handleConsultPlatform = () => {
+    Taro.navigateTo({ url: '/pages/support/index' });
+  };
+
   const settled = detail?.isSettled !== false;
   const slowLoadingVisible = useSlowLoadingHint(loading);
   const pageNav = <MiniPageNav title="主材门店" onBack={handleBack} placeholder />;
@@ -289,6 +293,24 @@ const MaterialShopDetailPage: React.FC = () => {
               <Text>暂无门店商品</Text>
             </View>
           )}
+        </View>
+      </Card>
+
+      <Card className="material-detail-page__section-card">
+        <View className="material-detail-page__consult-section">
+          <View className="material-detail-page__section-head material-detail-page__section-head--compact">
+            <Text className="material-detail-page__section-title">咨询平台</Text>
+          </View>
+          <Text className="material-detail-page__consult-copy">
+            还没确定门店或商品方案时，可以先联系平台沟通需求。
+          </Text>
+          <View
+            className="material-detail-page__consult-action"
+            onClick={handleConsultPlatform}
+            hoverClass="material-detail-page__consult-action--pressed"
+          >
+            <Text>咨询平台</Text>
+          </View>
         </View>
       </Card>
 

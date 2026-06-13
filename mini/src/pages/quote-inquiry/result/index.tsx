@@ -154,6 +154,10 @@ const QuoteInquiryResultPage: React.FC = () => {
     void Taro.redirectTo({ url: '/pages/quote-inquiry/create/index' });
   };
 
+  const handleConsultPlatform = () => {
+    Taro.navigateTo({ url: '/pages/support/index' });
+  };
+
   if (loading || !detail) {
     return (
       <View className="quote-inquiry-result" style={pageBottomStyle}>
@@ -431,6 +435,9 @@ const QuoteInquiryResultPage: React.FC = () => {
           </View>
           <View className="quote-inquiry-result__secondary-action" onClick={handleRegenerateQuote}>
             <Text className="quote-inquiry-result__secondary-action-text">重算报价</Text>
+          </View>
+          <View className="quote-inquiry-result__secondary-action" onClick={handleConsultPlatform}>
+            <Text className="quote-inquiry-result__secondary-action-text">咨询平台</Text>
           </View>
         </View>
       </View>

@@ -37,7 +37,9 @@ If docs conflict with executable code, scripts, CI, or checked-in config, follow
 - Local development defaults to `dev` or a branch derived from `dev`. Do not use `main` as a working branch.
 - Any `git push` requires explicit user confirmation.
 - If push is approved, default target is `origin/dev`. Do not sync or push `origin/main` unless the user explicitly asks for `main` release/sync.
+- Test/production release is tag-driven; use `deploy/README.md` and `docs/DEPLOYMENT_CHECKLIST.md` as the release entrypoints.
 - Never run destructive delete, revert, reset, schema destruction, production-impacting operations, real-account operations, or external-service writes without explicit confirmation.
+- Production smoke/performance probes must stay read-only and low intensity. Do not enable write smoke or write k6 flags against production domains.
 - Never overwrite or revert user changes you did not make.
 - Secrets must stay in env/config. Never commit JWT secrets, DB passwords, API keys, tokens, RAM credentials, SMS keys, OSS keys, or payment secrets.
 - `.env` and `.env.local` are gitignored and must not be committed.
@@ -92,6 +94,9 @@ High-risk work requires explicit scope framing, targeted verification, and curre
 - Always report what was verified and what was not.
 - Start with the smallest meaningful validation for the touched surface.
 - Root verification entrypoints are `npm run verify:backend|admin|ops|merchant|web|mobile|mini|supervisor`; prefer these over ad hoc command bundles when they match the touched surface.
+- Launch readiness entrypoints are `npm run verify:launch:standard|smoke|security|perf` and `npm run verify:launch`; use `docs/上线前测试与验收门禁.md` for the light-appointment release gate.
+- Light-appointment smoke is `npm run verify:launch:smoke`; writes require explicit local-only flags such as `ENABLE_WRITE_SMOKE=1` plus tokens/provider IDs.
+- Light-appointment k6 performance is `npm run perf:light-appointment`; write pressure requires local-only `K6_ENABLE_WRITES=1`.
 - For release or cross-surface changes, use `npm run smoke:release` or a narrower evidence-backed smoke path.
 - `npm run verify:supervisor` includes supervisor lint, build, and the apply service-area smoke via `scripts/testing/run_supervisor_apply_service_area_smoke.sh`.
 - Root `npm run dev:web` and `npm run dev:user-web` intentionally fail because user-web is no longer the default local entry; use `*:legacy` variants only when maintaining the old H5 surface.
